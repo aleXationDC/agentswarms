@@ -57,9 +57,12 @@ function LoginPage() {
   } | null>(null);
 
   useEffect(() => {
-    const url = import.meta.env.VITE_SUPABASE_URL;
+    // Same-origin "/supabase" proxy path (see integrations/supabase/client.ts)
+    // rather than a build-time-baked absolute origin, so this probe works
+    // from every reachable origin, not just the one VITE_SUPABASE_URL named.
+    const url = `${window.location.origin}/supabase`;
     const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) return;
+    if (!key) return;
     fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
       .then((r) => (r.ok ? r.json() : null))
       .then((j: { external?: { google?: boolean; apple?: boolean } } | null) => {

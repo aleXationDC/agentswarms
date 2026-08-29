@@ -3,9 +3,20 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./types";
 
 function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR (server-side rendering)
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  // In the browser, always call Supabase through the same origin the page
+  // itself was loaded from (via a "/supabase" reverse-proxy path), instead
+  // of a single origin baked into the bundle at build time. The app is
+  // reachable from more than one origin (e.g. a Tailscale-only host and a
+  // public host gated by Maintenance Access); a hardcoded absolute
+  // VITE_SUPABASE_URL only works from whichever single origin it names and
+  // silently breaks every Supabase call (login, session, etc.) from any
+  // other reachable origin. SSR/server code keeps using the internal
+  // SUPABASE_URL / VITE_SUPABASE_URL env value directly, since it talks to
+  // the gateway over the internal network, not through a browser origin.
+  const SUPABASE_URL =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/supabase`
+      : import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const SUPABASE_PUBLISHABLE_KEY =
     import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 
