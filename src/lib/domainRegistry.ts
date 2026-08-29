@@ -35,8 +35,14 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { embedTexts } from "@/utils/tools/embedding.server";
-import { resolveEmbedTarget } from "@/utils/tools/embedTarget.server";
+
+async function loadEmbeddingTargets() {
+  const [{ embedTexts }, { resolveEmbedTarget }] = await Promise.all([
+    import("@/utils/tools/embedding.server"),
+    import("@/utils/tools/embedTarget.server"),
+  ]);
+  return { embedTexts, resolveEmbedTarget };
+}
 
 export const DOMAIN_DATASET = "domain_registry";
 
@@ -375,6 +381,7 @@ async function bestSemanticMatch(
   confirmed: { rowId: number; row: DomainRow }[],
 ): Promise<{ hit: { rowId: number; row: DomainRow }; similarity: number } | null> {
   try {
+    const { resolveEmbedTarget, embedTexts } = await loadEmbeddingTargets();
     const target = await resolveEmbedTarget(userId);
     if (!target) return null;
 

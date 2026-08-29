@@ -20,9 +20,15 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { embedAndStoreDocuments, type EmbedDocInput } from "@/utils/tools/embedding.server";
-import { resolveEmbedTarget } from "@/utils/tools/embedTarget.server";
+
+async function loadFilingPolicyServerDeps() {
+  const [{ supabaseAdmin }, { embedAndStoreDocuments }, { resolveEmbedTarget }] = await Promise.all([
+    import("@/integrations/supabase/client.server"),
+    import("@/utils/tools/embedding.server"),
+    import("@/utils/tools/embedTarget.server"),
+  ]);
+  return { supabaseAdmin, embedAndStoreDocuments, resolveEmbedTarget };
+}
 
 /** The knowledge base confirmed filing rules live in. Created on first use. */
 export const FILING_POLICY_KB_NAME = "aleXation Filing Knowledge";
@@ -74,6 +80,7 @@ export async function promoteConfirmedRule(args: {
   /** The approval the disagreement started from, when known. */
   approvalId?: string | null;
 }): Promise<PolicyPromotion> {
+  const { supabaseAdmin, resolveEmbedTarget, embedAndStoreDocuments } = await loadFilingPolicyServerDeps();
   const rule = args.rule.trim();
   const confirmedAt = new Date().toISOString();
   if (!rule) return { promoted: false, reason: "not_confirmed" };
