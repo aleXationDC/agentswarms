@@ -141,7 +141,16 @@ TENANT="$(sb_get POOLER_TENANT_ID)"; TENANT="${TENANT:-agentswarms}"
 
 # ── 4. start the stack and wait until it is REALLY ready ────────────────────
 say "Starting Supabase (docker compose up -d) — first pull downloads ~2 GB of images"
-( cd "$SB_DIR/docker" && docker compose up -d )
+# First boot initialises Postgres (bootstrap migrations, the extra databases,
+# the pg_graphql migrations). On slower volume I/O that outlasts the health wait
+# Compose gives the services depending on it, and they abort in "created" while
+# Postgres itself goes healthy moments later. Retrying starts the ones that gave
+# up; it is not a fix for a genuinely broken database, which fails again here.
+start_stack() { ( cd "$SB_DIR/docker" && docker compose up -d ); }
+if ! start_stack; then
+  warn "Services gave up waiting on Postgres first-boot init - retrying once"
+  start_stack || die "Supabase stack failed to start - check: (cd $SB_DIR/docker && docker compose ps && docker compose logs db)"
+fi
 
 say "Waiting for the auth service (up to ${WAIT_SECS}s)"
 deadline=$(( $(date +%s) + WAIT_SECS ))
@@ -171,12 +180,12 @@ done
 # ── 6. apply the AgentSwarms schema ──────────────────────────────────────────
 # supabase link is for Cloud projects; against self-hosted we point the CLI at
 # the database directly, through the session pooler the stack publishes on 5432.
-DB_URL="postgresql://postgres.${TENANT}:${PG_PW}@127.0.0.1:5432/postgres"
+DB_URL="postgresql://postgres.${TENANT}:${PG_PW}@127.0.0.1:5432/postgres?sslmode=disable"
 say "Applying database migrations (npx supabase db push)"
 if ! npx --yes supabase db push --db-url "$DB_URL"; then
   # Older stacks publish Postgres directly instead of through the pooler.
   warn "Push via the pooler failed — retrying against Postgres directly"
-  DB_URL="postgresql://postgres:${PG_PW}@127.0.0.1:5432/postgres"
+  DB_URL="postgresql://postgres:${PG_PW}@127.0.0.1:5432/postgres?sslmode=disable"
   npx --yes supabase db push --db-url "$DB_URL" || die "Migrations failed — see output above"
 fi
 
@@ -219,7 +228,20 @@ setenv() {
     printf '%s="%s"\n' "$k" "$v" >> .env
   fi
 }
-setenv SUPABASE_URL                 "$SB_URL"
+# The browser and the SERVER HALF need DIFFERENT URLs when the app runs in a
+# container. localhost:8000 is Kong from the host and from a browser, but
+# inside the app container localhost is that container -- the fetch simply
+# fails, and the app reports it as an auth error because every server-side
+# Supabase call goes through it. Supabase self-hosted is its own compose
+# project here, not a shared network, so the app reaches it across the host
+# gateway. With --dev the app runs ON the host and the plain URL is right.
+SB_URL_SERVER="$SB_URL"
+case " ${APP_FLAGS[*]-} " in
+  *" --dev "*) : ;;
+  *) SB_URL_SERVER="$(printf '%s' "$SB_URL" | sed -E 's#//(localhost|127\.0\.0\.1)(:|/|$)#//host.docker.internal\2#')" ;;
+esac
+[ "$SB_URL_SERVER" = "$SB_URL" ] || say "Server-side Supabase URL for the container: $SB_URL_SERVER"
+setenv SUPABASE_URL                 "$SB_URL_SERVER"
 setenv SUPABASE_PUBLISHABLE_KEY     "$ANON_KEY"
 setenv SUPABASE_SERVICE_ROLE_KEY    "$SERVICE_KEY"
 setenv VITE_SUPABASE_URL            "$SB_URL"
