@@ -332,15 +332,15 @@ export const startClarification = createServerFn({ method: "POST" })
             .maybeSingle();
           if (!convo?.id) return { ok: false, error: "Could not create the conversation" };
           conversationId = convo.id;
-            await supabaseAdmin
-              .from("approvals")
-              .update({
-                payload: {
-                  ...payload,
-                  clarification_conversation_id: conversationId,
-                },
-              })
-              .eq("id", approval.id);
+          await supabaseAdmin
+            .from("approvals")
+            .update({
+              payload: {
+                ...payload,
+                clarification_conversation_id: conversationId,
+              },
+            })
+            .eq("id", approval.id);
           // The approval payload is the authoritative per-episode binding, but
           // the case column must not be left pointing at a stale thread: it is
           // the fallback the chat uses to recognise an ordinary sidebar visit.

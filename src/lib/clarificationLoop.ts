@@ -172,10 +172,7 @@ export async function findCaseForApproval(
   if (fallbackSubjectKey) {
     const legacy = await findCase(sb, userId, fallbackSubjectKey);
     if (legacy) {
-      await sb
-        .from("clarification_cases")
-        .update({ approval_id: approvalId })
-        .eq("id", legacy.id);
+      await sb.from("clarification_cases").update({ approval_id: approvalId }).eq("id", legacy.id);
       return { ...legacy, approval_id: approvalId };
     }
   }
@@ -243,9 +240,10 @@ export async function recordProposal(
       latest_swarm_run_id: args.runId ?? existing.latest_swarm_run_id,
       swarm_id: args.swarmId ?? existing.swarm_id,
       // The envelope is deterministic and must not drift between cycles.
-      envelope: existing.envelope && Object.keys(existing.envelope).length > 0
-        ? existing.envelope
-        : args.envelope,
+      envelope:
+        existing.envelope && Object.keys(existing.envelope).length > 0
+          ? existing.envelope
+          : args.envelope,
       proposals: [...(existing.proposals ?? []), entry],
       cycle_count: cycle,
       status: "open",
@@ -327,7 +325,12 @@ export async function recordDecision(
   try {
     const { setReviewStatus } = await import("@/lib/documentRegistry");
     await setReviewStatus(sb, args.userId, args.subjectKey, {
-      review: args.decision === "approved" ? "approved" : status === "abandoned" ? "manual" : "clarifying",
+      review:
+        args.decision === "approved"
+          ? "approved"
+          : status === "abandoned"
+            ? "manual"
+            : "clarifying",
       approvedPath:
         args.decision === "approved"
           ? ((proposals.at(-1)?.proposal?.proposed_folder_path as string | undefined) ?? null)

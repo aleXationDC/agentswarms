@@ -269,12 +269,17 @@ function ReviewDetailPage() {
             value={registry?.document_family ?? proposal.document_family}
           />
           <Field label="Organisation" value={proposal.sender_or_issuer ?? registry?.organization} />
-          <Field label="Primary domain" value={registry?.primary_domain ?? proposal.primary_domain} />
+          <Field
+            label="Primary domain"
+            value={registry?.primary_domain ?? proposal.primary_domain}
+          />
           <Field label="Domain status" value={registry?.primary_domain_status} />
           <Field
             label="Topics"
             value={
-              Array.isArray(proposal.topics) ? proposal.topics.join(", ") : (registry?.topics ?? null)
+              Array.isArray(proposal.topics)
+                ? proposal.topics.join(", ")
+                : (registry?.topics ?? null)
             }
           />
           <Field label="Document date" value={registry?.document_date ?? proposal.document_date} />
@@ -353,9 +358,7 @@ function ReviewDetailPage() {
             value={approval.decided_at ? format(new Date(approval.decided_at), "PPp") : null}
           />
           <Field label="Clarification status" value={kase?.status ?? "—"} />
-          {approval.decision_note && (
-            <Field label="Decision note" value={approval.decision_note} />
-          )}
+          {approval.decision_note && <Field label="Decision note" value={approval.decision_note} />}
         </FieldGrid>
       </Section>
 
@@ -480,15 +483,7 @@ function FieldGrid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{children}</div>;
 }
 
-function Field({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
+function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   if (value == null || value === "") return null;
   return (
     <div className="min-w-0">

@@ -85,10 +85,7 @@ async function documentLabel(
   };
 }
 
-async function domainTableId(
-  sb: SupabaseClient<Database>,
-  userId: string,
-): Promise<string | null> {
+async function domainTableId(sb: SupabaseClient<Database>, userId: string): Promise<string | null> {
   const { data } = await sb
     .from("user_data_tables")
     .select("id")
@@ -163,11 +160,7 @@ export async function requestDomainPromotion(
   // caller. The row records the document this domain was actually first seen
   // in; a caller-supplied filename can silently be the wrong document, which
   // makes the card argue from evidence that does not belong to it.
-  const sourceDocument = await documentLabel(
-    sb,
-    args.userId,
-    str(domain.source_document_id),
-  );
+  const sourceDocument = await documentLabel(sb, args.userId, str(domain.source_document_id));
   const sourceFilename = args.sourceFilename ?? sourceDocument?.filename ?? null;
 
   const lines: string[] = [

@@ -397,10 +397,7 @@ function PlaygroundPage() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const query = supabase
-        .from("clarification_cases")
-        .select("id, approval_id, status")
-        .limit(1);
+      const query = supabase.from("clarification_cases").select("id, approval_id, status").limit(1);
       const { data: kase } = appr?.id
         ? await query.eq("approval_id", appr.id).maybeSingle()
         : await query.eq("conversation_id", activeConvo).maybeSingle();
@@ -1500,7 +1497,11 @@ function PlaygroundPage() {
         return;
       }
       const res = await advanceClarificationFn({
-        data: { access_token: token, case_id: clarifyCtx.caseId, approval_id: clarifyCtx.approvalId },
+        data: {
+          access_token: token,
+          case_id: clarifyCtx.caseId,
+          approval_id: clarifyCtx.approvalId,
+        },
       });
       if (!res.ok) {
         toast.error("Could not continue", { description: res.error, duration: 9000 });

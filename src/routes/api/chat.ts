@@ -1532,7 +1532,11 @@ export const Route = createFileRoute("/api/chat")({
                   // nothing and a node's attached skills would silently vanish.
                   // Read as the service role on that path, scoped to the run's
                   // owner, which is the same guard the data tools use.
-                  const sb = authToken ? getServerSupabase(authToken) : isInternalRun ? supabaseAdmin : null;
+                  const sb = authToken
+                    ? getServerSupabase(authToken)
+                    : isInternalRun
+                      ? supabaseAdmin
+                      : null;
                   if (sb) {
                     let q = sb
                       .from("agent_skills")

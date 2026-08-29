@@ -117,7 +117,12 @@ function str(v: unknown): string | null {
 
 function aliasList(v: unknown): string[] {
   const s = str(v);
-  return s ? s.split("\n").map((x) => x.trim()).filter(Boolean) : [];
+  return s
+    ? s
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function cosine(a: number[], b: number[]): number {
@@ -280,7 +285,10 @@ export async function resolveDomain(
     if (!known.has(proposed.toLowerCase())) {
       patch.aliases = [...aliases, proposed].join("\n");
     }
-    await sb.from("user_data_rows").update({ row: patch as unknown as Json }).eq("id", target.rowId);
+    await sb
+      .from("user_data_rows")
+      .update({ row: patch as unknown as Json })
+      .eq("id", target.rowId);
     return {
       domainId: String(target.row.domain_id),
       canonicalName: String(target.row.canonical_name),
@@ -460,7 +468,10 @@ export async function confirmDomain(
     source_conversation_id: args.sourceConversationId ?? hit.row.source_conversation_id ?? null,
     source_approval_id: args.sourceApprovalId ?? hit.row.source_approval_id ?? null,
   };
-  await sb.from("user_data_rows").update({ row: row as unknown as Json }).eq("id", hit.rowId);
+  await sb
+    .from("user_data_rows")
+    .update({ row: row as unknown as Json })
+    .eq("id", hit.rowId);
   return { confirmed: true };
 }
 
@@ -504,8 +515,7 @@ export async function mergeDomains(
       row: {
         ...dst.row,
         aliases: [...merged].join("\n"),
-        document_count:
-          Number(dst.row.document_count ?? 0) + Number(src.row.document_count ?? 0),
+        document_count: Number(dst.row.document_count ?? 0) + Number(src.row.document_count ?? 0),
       } as unknown as Json,
     })
     .eq("id", dst.rowId);

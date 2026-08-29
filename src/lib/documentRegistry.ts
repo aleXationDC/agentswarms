@@ -320,9 +320,7 @@ export async function upsertRegistryRow(
     }
   }
 
-  await sb
-    .from("user_data_rows")
-    .insert({ table_id: tableId, row: row as unknown as Json });
+  await sb.from("user_data_rows").insert({ table_id: tableId, row: row as unknown as Json });
   return { tableId, action: "inserted" };
 }
 

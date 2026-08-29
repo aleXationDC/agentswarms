@@ -93,8 +93,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
             await setReviewStatus(supabaseAdmin as never, run.user_id, documentId, {
               review: approval.status === "approved" ? "approved" : "rejected",
               approvedPath:
-                approval.status === "approved" &&
-                typeof proposal?.proposed_folder_path === "string"
+                approval.status === "approved" && typeof proposal?.proposed_folder_path === "string"
                   ? proposal.proposed_folder_path
                   : null,
             });

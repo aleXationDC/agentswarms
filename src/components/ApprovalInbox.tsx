@@ -78,8 +78,11 @@ function timeAgo(iso: string) {
 export function ApprovalInbox() {
   const { user } = useAuth();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const { decide: decideApproval, rejectWithReason: rejectApprovalWithReason, busy } =
-    useApprovalActions();
+  const {
+    decide: decideApproval,
+    rejectWithReason: rejectApprovalWithReason,
+    busy,
+  } = useApprovalActions();
   const navigate = useNavigate();
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reason, setReason] = useState("");

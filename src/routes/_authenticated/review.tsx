@@ -71,10 +71,12 @@ function fieldFromItem(item: ReviewQueueItem) {
       (proposal?.source_filename as string) ??
       (proposal?.subject as string) ??
       item.approval.action_title,
-    documentType: (registry?.document_type as string) ?? (proposal?.document_type as string) ?? null,
+    documentType:
+      (registry?.document_type as string) ?? (proposal?.document_type as string) ?? null,
     documentFamily:
       (registry?.document_family as string) ?? (proposal?.document_family as string) ?? null,
-    primaryDomain: (registry?.primary_domain as string) ?? (proposal?.primary_domain as string) ?? null,
+    primaryDomain:
+      (registry?.primary_domain as string) ?? (proposal?.primary_domain as string) ?? null,
     proposedPath:
       (registry?.proposed_path as string) ?? (proposal?.proposed_folder_path as string) ?? null,
     confidence: (registry?.confidence as number) ?? (proposal?.confidence as number) ?? null,
@@ -268,7 +270,9 @@ function ReviewQueuePage() {
                       className="block p-2"
                     >
                       {f.documentType ?? "—"}
-                      {f.documentFamily ? <span className="text-muted-foreground"> · {f.documentFamily}</span> : null}
+                      {f.documentFamily ? (
+                        <span className="text-muted-foreground"> · {f.documentFamily}</span>
+                      ) : null}
                     </Link>
                   </TableCell>
                   <TableCell className="hidden lg:table-cell p-0 text-xs">
@@ -328,19 +332,13 @@ function ReviewQueuePage() {
   );
 }
 
-function KpiCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "warn";
-}) {
+function KpiCard({ label, value, tone }: { label: string; value: number; tone?: "warn" }) {
   return (
     <Card className="p-3">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-2xl font-semibold tabular-nums ${tone === "warn" && value > 0 ? "text-red-500" : ""}`}>
+      <p
+        className={`text-2xl font-semibold tabular-nums ${tone === "warn" && value > 0 ? "text-red-500" : ""}`}
+      >
         {value}
       </p>
     </Card>

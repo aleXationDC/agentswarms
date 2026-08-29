@@ -165,8 +165,7 @@ async function serverChat(args: {
         // them here a deployed/headless run silently behaves differently from
         // the same swarm run in the editor: kb_search has no KB to search, and
         // an attached skill never reaches the prompt.
-        skillIds:
-          Array.isArray(d.skillIds) && d.skillIds.length > 0 ? d.skillIds : undefined,
+        skillIds: Array.isArray(d.skillIds) && d.skillIds.length > 0 ? d.skillIds : undefined,
         knowledgeBaseIds: d.knowledgeBaseId ? [d.knowledgeBaseId] : undefined,
         toolConfigs: d.toolConfigs && typeof d.toolConfigs === "object" ? d.toolConfigs : undefined,
         guardrails:
@@ -372,8 +371,7 @@ async function createApprovalRequest(args: {
             await requestDomainPromotion(supabaseAdmin as never, {
               userId: args.userId,
               domainId: domain.domainId,
-              reason:
-                String(proposal.domain_reason ?? proposal.reasoning ?? "").trim() || null,
+              reason: String(proposal.domain_reason ?? proposal.reasoning ?? "").trim() || null,
               nearest: domain.nearest ?? null,
               sourceFilename: String(envelope.filename ?? "") || null,
             });

@@ -158,10 +158,7 @@ export function useApprovalActions() {
    * jump into the conversation immediately (the inbox does) or stay put and
    * offer an "Open conversation" link (the Review detail page does).
    */
-  const rejectWithReason = async (
-    approval: ApprovalLike,
-    note: string,
-  ): Promise<ClarifyResult> => {
+  const rejectWithReason = async (approval: ApprovalLike, note: string): Promise<ClarifyResult> => {
     setBusy(true);
     try {
       const { error } = await supabase

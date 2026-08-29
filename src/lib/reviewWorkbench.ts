@@ -70,8 +70,7 @@ export type ReviewQueueItem = {
 };
 
 function docIdFromPayload(payload: unknown): string | null {
-  const proposal = (payload as { proposal?: Record<string, unknown> } | null | undefined)
-    ?.proposal;
+  const proposal = (payload as { proposal?: Record<string, unknown> } | null | undefined)?.proposal;
   if (!proposal) return null;
   return subjectKeyFromEnvelope(proposal);
 }

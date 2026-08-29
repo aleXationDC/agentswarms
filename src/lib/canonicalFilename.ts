@@ -128,7 +128,8 @@ export function buildCanonicalFilename(args: {
   let source: DocumentDateSource = "unknown";
 
   if (date) {
-    const claimed = typeof args.documentDateSource === "string" ? args.documentDateSource.trim() : "";
+    const claimed =
+      typeof args.documentDateSource === "string" ? args.documentDateSource.trim() : "";
     source =
       claimed === "explicit_document" || claimed === "inferred_document"
         ? claimed
