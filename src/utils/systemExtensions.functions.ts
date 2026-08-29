@@ -51,7 +51,7 @@ export type MaintenanceAccess = {
 };
 
 export type ExternalExtensionLink = {
-  key: "system_monitor" | "gitea" | "renovate" | "n8n";
+  key: "system_monitor" | "gitea" | "renovate" | "n8n" | "matrix_admin";
   label: string;
   url: string | null;
 };
@@ -93,6 +93,7 @@ function externalExtensionLinks(): ExternalExtensionLink[] {
     { key: "gitea", label: "Gitea", url: process.env.GITEA_URL || null },
     { key: "renovate", label: "Renovate", url: process.env.RENOVATE_URL || null },
     { key: "n8n", label: "n8n", url: process.env.N8N_URL || null },
+    { key: "matrix_admin", label: "Matrix Admin", url: process.env.MATRIX_ADMIN_URL || null },
   ];
 }
 

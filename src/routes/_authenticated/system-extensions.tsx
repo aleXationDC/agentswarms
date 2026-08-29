@@ -182,7 +182,7 @@ function SystemExtensionsTabs({ token }: { token: string }) {
         <ExtensionLinkCard
           title="Matrix Admin"
           description="Native Ketesa administration UI for the Matrix homeserver. It opens in a new tab and keeps its own Matrix administrator authentication."
-          link={{ url: "https://admin.matrix.alexation.com" }}
+          link={state.extensions.find((e) => e.key === "matrix_admin") ?? null}
           publicTarget="matrix_admin"
           maintenanceOpen={state.maintenance.status === "OPEN"}
           token={token}

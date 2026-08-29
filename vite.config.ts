@@ -49,6 +49,7 @@ export default defineConfig(async ({ command, mode }) => {
     "git.alexation.com",
     "ops.alexation.com",
     "n8n.alexation.com",
+    "admin.matrix.alexation.com",
     "ops-alexation-one.tailf4170c.ts.net",
   ];
   const serverAllowedHosts = configuredAllowedHosts(process.env.AGENTSWARMS_ALLOWED_HOSTS);
