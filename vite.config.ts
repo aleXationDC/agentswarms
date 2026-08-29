@@ -43,6 +43,13 @@ function stripExternalCssFontImports(): PluginOption {
 }
 
 export default defineConfig(async ({ command, mode }) => {
+  const defaultAllowedHosts = [
+    "host.docker.internal",
+    "agentswarms",
+    "git.alexation.com",
+    "ops.alexation.com",
+    "n8n.alexation.com",
+  ];
   const serverAllowedHosts = configuredAllowedHosts(process.env.AGENTSWARMS_ALLOWED_HOSTS);
   const plugins: PluginOption[] = [
     stripExternalCssFontImports(),
@@ -132,10 +139,15 @@ export default defineConfig(async ({ command, mode }) => {
       // http://host.docker.internal:8080 (dev mode). Vite's host check rejects
       // unknown Host headers with "Blocked request", which would break every
       // agentswarms.chat()/kb_search() call from a server kernel.
-      allowedHosts: ["host.docker.internal", "agentswarms", ...serverAllowedHosts],
+      allowedHosts: [...defaultAllowedHosts, ...serverAllowedHosts],
       watch: {
         awaitWriteFinish: { stabilityThreshold: 1000, pollInterval: 100 },
       },
+    },
+    preview: {
+      host: "::",
+      port: 8080,
+      allowedHosts: [...defaultAllowedHosts, ...serverAllowedHosts],
     },
   };
 });
