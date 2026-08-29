@@ -2980,6 +2980,60 @@ export type Database = {
         };
         Relationships: [];
       };
+      maintenance_access: {
+        Row: {
+          id: boolean;
+          opening_phrase_hash: string | null;
+          answer_phrase: string;
+          maintenance_path: string;
+          status: string;
+          opened_at: string | null;
+          last_activity_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: boolean;
+          opening_phrase_hash?: string | null;
+          answer_phrase?: string;
+          maintenance_path?: string;
+          status?: string;
+          opened_at?: string | null;
+          last_activity_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          id?: boolean;
+          opening_phrase_hash?: string | null;
+          answer_phrase?: string;
+          maintenance_path?: string;
+          status?: string;
+          opened_at?: string | null;
+          last_activity_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      matrix_system_access: {
+        Row: {
+          id: boolean;
+          control_room_id: string;
+          operator_mxids: string[];
+          updated_at: string;
+        };
+        Insert: {
+          id?: boolean;
+          control_room_id?: string;
+          operator_mxids?: string[];
+          updated_at?: string;
+        };
+        Update: {
+          id?: boolean;
+          control_room_id?: string;
+          operator_mxids?: string[];
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       messages: {
         Row: {
           content: string;
@@ -4588,6 +4642,32 @@ export type Database = {
         Returns: undefined;
       };
       cleanup_old_observability_data: { Args: never; Returns: undefined };
+      set_opening_phrase: {
+        Args: { phrase: string };
+        Returns: undefined;
+      };
+      begin_maintenance_command: {
+        Args: { candidate: string };
+        Returns: string | null;
+      };
+      open_maintenance_after_redaction: {
+        Args: { dispatch_id: string; trigger_event_id: string; room_id: string };
+        Returns: { opened: boolean; session_id: string | null; answer_phrase: string | null }[];
+      };
+      record_maintenance_answer_event: {
+        Args: { trigger_event_id: string; matrix_answer_event_id: string };
+        Returns: undefined;
+      };
+      maintenance_answer_redaction_candidates: {
+        Args: never;
+        Returns: { session_id: string; room_id: string; answer_event_id: string }[];
+      };
+      record_maintenance_answer_redaction: {
+        Args: { session_id: string; succeeded: boolean; error_message?: string | null };
+        Returns: undefined;
+      };
+      touch_maintenance_activity: { Args: never; Returns: undefined };
+      close_maintenance: { Args: never; Returns: undefined };
       concurrency_acquire: {
         Args: { _bucket: string; _max: number; _lease_seconds?: number };
         /** The lease id, or null when the bucket is at its cap. */

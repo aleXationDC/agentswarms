@@ -63,6 +63,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiBiRouteImport } from './routes/api/bi'
 import { Route as ApiA2aRouteImport } from './routes/api/a2a'
 import { Route as AuthenticatedTracesRouteImport } from './routes/_authenticated/traces'
+import { Route as AuthenticatedSystemExtensionsRouteImport } from './routes/_authenticated/system-extensions'
 import { Route as AuthenticatedSwarmsRouteImport } from './routes/_authenticated/swarms'
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedSemanticsRouteImport } from './routes/_authenticated/semantics'
@@ -99,6 +100,8 @@ import { Route as EmbedAgentKeyRouteImport } from './routes/embed.agent.$key'
 import { Route as ApiWarehouseSchemaRouteImport } from './routes/api/warehouse/schema'
 import { Route as ApiWarehouseQueryRouteImport } from './routes/api/warehouse/query'
 import { Route as ApiTemplatesProvisionRouteImport } from './routes/api/templates.provision'
+import { Route as ApiSystemExtensionsMaintenancePathCheckRouteImport } from './routes/api/system-extensions.maintenance-path-check'
+import { Route as ApiSystemExtensionsMaintenanceGateRouteImport } from './routes/api/system-extensions.maintenance-gate'
 import { Route as ApiSwarmRunRouteImport } from './routes/api/swarm.run'
 import { Route as ApiSlackCommandRouteImport } from './routes/api/slack.command'
 import { Route as ApiSkillsGenerateRouteImport } from './routes/api/skills.generate'
@@ -408,6 +411,12 @@ const AuthenticatedTracesRoute = AuthenticatedTracesRouteImport.update({
   path: '/traces',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSystemExtensionsRoute =
+  AuthenticatedSystemExtensionsRouteImport.update({
+    id: '/system-extensions',
+    path: '/system-extensions',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSwarmsRoute = AuthenticatedSwarmsRouteImport.update({
   id: '/swarms',
   path: '/swarms',
@@ -593,6 +602,18 @@ const ApiTemplatesProvisionRoute = ApiTemplatesProvisionRouteImport.update({
   path: '/api/templates/provision',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSystemExtensionsMaintenancePathCheckRoute =
+  ApiSystemExtensionsMaintenancePathCheckRouteImport.update({
+    id: '/api/system-extensions/maintenance-path-check',
+    path: '/api/system-extensions/maintenance-path-check',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSystemExtensionsMaintenanceGateRoute =
+  ApiSystemExtensionsMaintenanceGateRouteImport.update({
+    id: '/api/system-extensions/maintenance-gate',
+    path: '/api/system-extensions/maintenance-gate',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSwarmRunRoute = ApiSwarmRunRouteImport.update({
   id: '/api/swarm/run',
   path: '/api/swarm/run',
@@ -843,6 +864,7 @@ export interface FileRoutesByFullPath {
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/swarms': typeof AuthenticatedSwarmsRoute
+  '/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -911,6 +933,8 @@ export interface FileRoutesByFullPath {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
+  '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -972,6 +996,7 @@ export interface FileRoutesByTo {
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/swarms': typeof AuthenticatedSwarmsRoute
+  '/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -1040,6 +1065,8 @@ export interface FileRoutesByTo {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
+  '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -1104,6 +1131,7 @@ export interface FileRoutesById {
   '/_authenticated/semantics': typeof AuthenticatedSemanticsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
   '/_authenticated/swarms': typeof AuthenticatedSwarmsRoute
+  '/_authenticated/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/_authenticated/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -1172,6 +1200,8 @@ export interface FileRoutesById {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
+  '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -1236,6 +1266,7 @@ export interface FileRouteTypes {
     | '/semantics'
     | '/skills'
     | '/swarms'
+    | '/system-extensions'
     | '/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -1304,6 +1335,8 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/maintenance-gate'
+    | '/api/system-extensions/maintenance-path-check'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1365,6 +1398,7 @@ export interface FileRouteTypes {
     | '/semantics'
     | '/skills'
     | '/swarms'
+    | '/system-extensions'
     | '/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -1433,6 +1467,8 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/maintenance-gate'
+    | '/api/system-extensions/maintenance-path-check'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1496,6 +1532,7 @@ export interface FileRouteTypes {
     | '/_authenticated/semantics'
     | '/_authenticated/skills'
     | '/_authenticated/swarms'
+    | '/_authenticated/system-extensions'
     | '/_authenticated/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -1564,6 +1601,8 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/maintenance-gate'
+    | '/api/system-extensions/maintenance-path-check'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1629,6 +1668,8 @@ export interface RootRouteChildren {
   ApiSkillsGenerateRoute: typeof ApiSkillsGenerateRoute
   ApiSlackCommandRoute: typeof ApiSlackCommandRoute
   ApiSwarmRunRoute: typeof ApiSwarmRunRoute
+  ApiSystemExtensionsMaintenanceGateRoute: typeof ApiSystemExtensionsMaintenanceGateRoute
+  ApiSystemExtensionsMaintenancePathCheckRoute: typeof ApiSystemExtensionsMaintenancePathCheckRoute
   ApiTemplatesProvisionRoute: typeof ApiTemplatesProvisionRoute
   ApiWarehouseQueryRoute: typeof ApiWarehouseQueryRoute
   ApiWarehouseSchemaRoute: typeof ApiWarehouseSchemaRoute
@@ -2021,6 +2062,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTracesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/system-extensions': {
+      id: '/_authenticated/system-extensions'
+      path: '/system-extensions'
+      fullPath: '/system-extensions'
+      preLoaderRoute: typeof AuthenticatedSystemExtensionsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/swarms': {
       id: '/_authenticated/swarms'
       path: '/swarms'
@@ -2271,6 +2319,20 @@ declare module '@tanstack/react-router' {
       path: '/api/templates/provision'
       fullPath: '/api/templates/provision'
       preLoaderRoute: typeof ApiTemplatesProvisionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-extensions/maintenance-path-check': {
+      id: '/api/system-extensions/maintenance-path-check'
+      path: '/api/system-extensions/maintenance-path-check'
+      fullPath: '/api/system-extensions/maintenance-path-check'
+      preLoaderRoute: typeof ApiSystemExtensionsMaintenancePathCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-extensions/maintenance-gate': {
+      id: '/api/system-extensions/maintenance-gate'
+      path: '/api/system-extensions/maintenance-gate'
+      fullPath: '/api/system-extensions/maintenance-gate'
+      preLoaderRoute: typeof ApiSystemExtensionsMaintenanceGateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/swarm/run': {
@@ -2611,6 +2673,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSemanticsRoute: typeof AuthenticatedSemanticsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
   AuthenticatedSwarmsRoute: typeof AuthenticatedSwarmsRoute
+  AuthenticatedSystemExtensionsRoute: typeof AuthenticatedSystemExtensionsRoute
   AuthenticatedTracesRoute: typeof AuthenticatedTracesRoute
   AuthenticatedAdminIamRoute: typeof AuthenticatedAdminIamRoute
   AuthenticatedAdminRuntimeRoute: typeof AuthenticatedAdminRuntimeRoute
@@ -2649,6 +2712,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSemanticsRoute: AuthenticatedSemanticsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
   AuthenticatedSwarmsRoute: AuthenticatedSwarmsRoute,
+  AuthenticatedSystemExtensionsRoute: AuthenticatedSystemExtensionsRoute,
   AuthenticatedTracesRoute: AuthenticatedTracesRoute,
   AuthenticatedAdminIamRoute: AuthenticatedAdminIamRoute,
   AuthenticatedAdminRuntimeRoute: AuthenticatedAdminRuntimeRoute,
@@ -2847,6 +2911,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSkillsGenerateRoute: ApiSkillsGenerateRoute,
   ApiSlackCommandRoute: ApiSlackCommandRoute,
   ApiSwarmRunRoute: ApiSwarmRunRoute,
+  ApiSystemExtensionsMaintenanceGateRoute:
+    ApiSystemExtensionsMaintenanceGateRoute,
+  ApiSystemExtensionsMaintenancePathCheckRoute:
+    ApiSystemExtensionsMaintenancePathCheckRoute,
   ApiTemplatesProvisionRoute: ApiTemplatesProvisionRoute,
   ApiWarehouseQueryRoute: ApiWarehouseQueryRoute,
   ApiWarehouseSchemaRoute: ApiWarehouseSchemaRoute,

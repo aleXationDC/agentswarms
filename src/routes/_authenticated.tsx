@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import { AppLayout } from "@/components/AppLayout";
 import { usePrefetchProviderModels } from "@/hooks/use-provider-models";
+import { useMaintenanceActivityHeartbeat } from "@/hooks/use-maintenance-activity-heartbeat";
 
 export const Route = createFileRoute("/_authenticated")({
   head: () => ({
@@ -24,6 +25,7 @@ function AuthenticatedLayout() {
   // free tier in particular changes continuously, so a list baked into the
   // bundle goes stale between releases.
   usePrefetchProviderModels();
+  useMaintenanceActivityHeartbeat();
 
   if (loading) {
     return (
