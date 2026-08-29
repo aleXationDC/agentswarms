@@ -4668,6 +4668,22 @@ export type Database = {
       };
       touch_maintenance_activity: { Args: never; Returns: undefined };
       close_maintenance: { Args: never; Returns: undefined };
+      issue_extension_access_ticket: {
+        Args: {
+          requested_target_key: string;
+          requested_target_host: string;
+          requesting_user: string | null;
+        };
+        Returns: string | null;
+      };
+      redeem_extension_access_ticket: {
+        Args: { candidate_nonce: string; requesting_host: string };
+        Returns: { ok: boolean; grant_expires_at: string | null }[];
+      };
+      check_extension_access_grant: {
+        Args: { candidate_nonce: string; requesting_host: string };
+        Returns: boolean;
+      };
       concurrency_acquire: {
         Args: { _bucket: string; _max: number; _lease_seconds?: number };
         /** The lease id, or null when the bucket is at its cap. */

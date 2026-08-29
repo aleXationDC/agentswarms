@@ -152,6 +152,9 @@ function SystemExtensionsTabs({ token }: { token: string }) {
           title="Gitea"
           description="Source of truth for aleXation One repositories. Full Gitea UI opens in a new tab; not reimplemented here."
           link={state.extensions.find((e) => e.key === "gitea") ?? null}
+          publicTarget="gitea"
+          maintenanceOpen={state.maintenance.status === "OPEN"}
+          token={token}
         />
       </TabsContent>
 
@@ -168,6 +171,9 @@ function SystemExtensionsTabs({ token }: { token: string }) {
           title="n8n"
           description="Workflow automation. Not part of the Matrix↔AgentSwarms conversation path — this is a status/entry point only."
           link={state.extensions.find((e) => e.key === "n8n") ?? null}
+          publicTarget="n8n"
+          maintenanceOpen={state.maintenance.status === "OPEN"}
+          token={token}
         />
       </TabsContent>
     </Tabs>
@@ -178,28 +184,80 @@ function ExtensionLinkCard({
   title,
   description,
   link,
+  publicTarget,
+  maintenanceOpen,
+  token,
 }: {
   title: string;
   description: string;
   link: { url: string | null } | null;
+  // When set, this extension also supports the generic one-use ticket
+  // launch for public (non-Tailscale) access, gated by Maintenance status.
+  publicTarget?: "gitea" | "n8n";
+  maintenanceOpen?: boolean;
+  token?: string;
 }) {
+  const [launching, setLaunching] = useState(false);
+
+  const launchPublicly = async () => {
+    setLaunching(true);
+    try {
+      const res = await fetch("/api/system-extensions/request-access-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ access_token: token, target: publicTarget }),
+      });
+      const body = (await res.json()) as { ok: boolean; redirect_url?: string; error?: string };
+      if (!body.ok || !body.redirect_url) {
+        toast.error(body.error ?? "Could not create a public access ticket");
+        return;
+      }
+      window.open(body.redirect_url, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Could not reach AgentSwarms to issue an access ticket");
+    } finally {
+      setLaunching(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
         {link?.url ? (
           <Button asChild variant="outline" size="sm" className="gap-2">
             <a href={link.url} target="_blank" rel="noreferrer noopener">
-              Open in new tab <ExternalLink className="h-3.5 w-3.5" />
+              Open via Tailscale <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </Button>
         ) : (
           <p className="text-sm text-muted-foreground">
             Not configured. Set the corresponding URL environment variable to enable this link.
           </p>
+        )}
+        {publicTarget && (
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={!maintenanceOpen || launching}
+              onClick={launchPublicly}
+            >
+              {launching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Launch publicly (one-use link) <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+            {!maintenanceOpen && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Only available while Maintenance is OPEN. This never permanently exposes this
+                host — it issues a single-use, host-bound, ~90s ticket that opens the Network Gate
+                for a short grant; native {title} login is still required.
+              </p>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

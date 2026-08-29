@@ -100,8 +100,11 @@ import { Route as EmbedAgentKeyRouteImport } from './routes/embed.agent.$key'
 import { Route as ApiWarehouseSchemaRouteImport } from './routes/api/warehouse/schema'
 import { Route as ApiWarehouseQueryRouteImport } from './routes/api/warehouse/query'
 import { Route as ApiTemplatesProvisionRouteImport } from './routes/api/templates.provision'
+import { Route as ApiSystemExtensionsRequestAccessTicketRouteImport } from './routes/api/system-extensions.request-access-ticket'
+import { Route as ApiSystemExtensionsRedeemTicketRouteImport } from './routes/api/system-extensions.redeem-ticket'
 import { Route as ApiSystemExtensionsMaintenancePathCheckRouteImport } from './routes/api/system-extensions.maintenance-path-check'
 import { Route as ApiSystemExtensionsMaintenanceGateRouteImport } from './routes/api/system-extensions.maintenance-gate'
+import { Route as ApiSystemExtensionsExtensionGateRouteImport } from './routes/api/system-extensions.extension-gate'
 import { Route as ApiSwarmRunRouteImport } from './routes/api/swarm.run'
 import { Route as ApiSlackCommandRouteImport } from './routes/api/slack.command'
 import { Route as ApiSkillsGenerateRouteImport } from './routes/api/skills.generate'
@@ -602,6 +605,18 @@ const ApiTemplatesProvisionRoute = ApiTemplatesProvisionRouteImport.update({
   path: '/api/templates/provision',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSystemExtensionsRequestAccessTicketRoute =
+  ApiSystemExtensionsRequestAccessTicketRouteImport.update({
+    id: '/api/system-extensions/request-access-ticket',
+    path: '/api/system-extensions/request-access-ticket',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSystemExtensionsRedeemTicketRoute =
+  ApiSystemExtensionsRedeemTicketRouteImport.update({
+    id: '/api/system-extensions/redeem-ticket',
+    path: '/api/system-extensions/redeem-ticket',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSystemExtensionsMaintenancePathCheckRoute =
   ApiSystemExtensionsMaintenancePathCheckRouteImport.update({
     id: '/api/system-extensions/maintenance-path-check',
@@ -612,6 +627,12 @@ const ApiSystemExtensionsMaintenanceGateRoute =
   ApiSystemExtensionsMaintenanceGateRouteImport.update({
     id: '/api/system-extensions/maintenance-gate',
     path: '/api/system-extensions/maintenance-gate',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSystemExtensionsExtensionGateRoute =
+  ApiSystemExtensionsExtensionGateRouteImport.update({
+    id: '/api/system-extensions/extension-gate',
+    path: '/api/system-extensions/extension-gate',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiSwarmRunRoute = ApiSwarmRunRouteImport.update({
@@ -933,8 +954,11 @@ export interface FileRoutesByFullPath {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/extension-gate': typeof ApiSystemExtensionsExtensionGateRoute
   '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
   '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
+  '/api/system-extensions/redeem-ticket': typeof ApiSystemExtensionsRedeemTicketRoute
+  '/api/system-extensions/request-access-ticket': typeof ApiSystemExtensionsRequestAccessTicketRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -1065,8 +1089,11 @@ export interface FileRoutesByTo {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/extension-gate': typeof ApiSystemExtensionsExtensionGateRoute
   '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
   '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
+  '/api/system-extensions/redeem-ticket': typeof ApiSystemExtensionsRedeemTicketRoute
+  '/api/system-extensions/request-access-ticket': typeof ApiSystemExtensionsRequestAccessTicketRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -1200,8 +1227,11 @@ export interface FileRoutesById {
   '/api/skills/generate': typeof ApiSkillsGenerateRoute
   '/api/slack/command': typeof ApiSlackCommandRoute
   '/api/swarm/run': typeof ApiSwarmRunRoute
+  '/api/system-extensions/extension-gate': typeof ApiSystemExtensionsExtensionGateRoute
   '/api/system-extensions/maintenance-gate': typeof ApiSystemExtensionsMaintenanceGateRoute
   '/api/system-extensions/maintenance-path-check': typeof ApiSystemExtensionsMaintenancePathCheckRoute
+  '/api/system-extensions/redeem-ticket': typeof ApiSystemExtensionsRedeemTicketRoute
+  '/api/system-extensions/request-access-ticket': typeof ApiSystemExtensionsRequestAccessTicketRoute
   '/api/templates/provision': typeof ApiTemplatesProvisionRoute
   '/api/warehouse/query': typeof ApiWarehouseQueryRoute
   '/api/warehouse/schema': typeof ApiWarehouseSchemaRoute
@@ -1335,8 +1365,11 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/extension-gate'
     | '/api/system-extensions/maintenance-gate'
     | '/api/system-extensions/maintenance-path-check'
+    | '/api/system-extensions/redeem-ticket'
+    | '/api/system-extensions/request-access-ticket'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1467,8 +1500,11 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/extension-gate'
     | '/api/system-extensions/maintenance-gate'
     | '/api/system-extensions/maintenance-path-check'
+    | '/api/system-extensions/redeem-ticket'
+    | '/api/system-extensions/request-access-ticket'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1601,8 +1637,11 @@ export interface FileRouteTypes {
     | '/api/skills/generate'
     | '/api/slack/command'
     | '/api/swarm/run'
+    | '/api/system-extensions/extension-gate'
     | '/api/system-extensions/maintenance-gate'
     | '/api/system-extensions/maintenance-path-check'
+    | '/api/system-extensions/redeem-ticket'
+    | '/api/system-extensions/request-access-ticket'
     | '/api/templates/provision'
     | '/api/warehouse/query'
     | '/api/warehouse/schema'
@@ -1668,8 +1707,11 @@ export interface RootRouteChildren {
   ApiSkillsGenerateRoute: typeof ApiSkillsGenerateRoute
   ApiSlackCommandRoute: typeof ApiSlackCommandRoute
   ApiSwarmRunRoute: typeof ApiSwarmRunRoute
+  ApiSystemExtensionsExtensionGateRoute: typeof ApiSystemExtensionsExtensionGateRoute
   ApiSystemExtensionsMaintenanceGateRoute: typeof ApiSystemExtensionsMaintenanceGateRoute
   ApiSystemExtensionsMaintenancePathCheckRoute: typeof ApiSystemExtensionsMaintenancePathCheckRoute
+  ApiSystemExtensionsRedeemTicketRoute: typeof ApiSystemExtensionsRedeemTicketRoute
+  ApiSystemExtensionsRequestAccessTicketRoute: typeof ApiSystemExtensionsRequestAccessTicketRoute
   ApiTemplatesProvisionRoute: typeof ApiTemplatesProvisionRoute
   ApiWarehouseQueryRoute: typeof ApiWarehouseQueryRoute
   ApiWarehouseSchemaRoute: typeof ApiWarehouseSchemaRoute
@@ -2321,6 +2363,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTemplatesProvisionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/system-extensions/request-access-ticket': {
+      id: '/api/system-extensions/request-access-ticket'
+      path: '/api/system-extensions/request-access-ticket'
+      fullPath: '/api/system-extensions/request-access-ticket'
+      preLoaderRoute: typeof ApiSystemExtensionsRequestAccessTicketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-extensions/redeem-ticket': {
+      id: '/api/system-extensions/redeem-ticket'
+      path: '/api/system-extensions/redeem-ticket'
+      fullPath: '/api/system-extensions/redeem-ticket'
+      preLoaderRoute: typeof ApiSystemExtensionsRedeemTicketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/system-extensions/maintenance-path-check': {
       id: '/api/system-extensions/maintenance-path-check'
       path: '/api/system-extensions/maintenance-path-check'
@@ -2333,6 +2389,13 @@ declare module '@tanstack/react-router' {
       path: '/api/system-extensions/maintenance-gate'
       fullPath: '/api/system-extensions/maintenance-gate'
       preLoaderRoute: typeof ApiSystemExtensionsMaintenanceGateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-extensions/extension-gate': {
+      id: '/api/system-extensions/extension-gate'
+      path: '/api/system-extensions/extension-gate'
+      fullPath: '/api/system-extensions/extension-gate'
+      preLoaderRoute: typeof ApiSystemExtensionsExtensionGateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/swarm/run': {
@@ -2911,10 +2974,14 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSkillsGenerateRoute: ApiSkillsGenerateRoute,
   ApiSlackCommandRoute: ApiSlackCommandRoute,
   ApiSwarmRunRoute: ApiSwarmRunRoute,
+  ApiSystemExtensionsExtensionGateRoute: ApiSystemExtensionsExtensionGateRoute,
   ApiSystemExtensionsMaintenanceGateRoute:
     ApiSystemExtensionsMaintenanceGateRoute,
   ApiSystemExtensionsMaintenancePathCheckRoute:
     ApiSystemExtensionsMaintenancePathCheckRoute,
+  ApiSystemExtensionsRedeemTicketRoute: ApiSystemExtensionsRedeemTicketRoute,
+  ApiSystemExtensionsRequestAccessTicketRoute:
+    ApiSystemExtensionsRequestAccessTicketRoute,
   ApiTemplatesProvisionRoute: ApiTemplatesProvisionRoute,
   ApiWarehouseQueryRoute: ApiWarehouseQueryRoute,
   ApiWarehouseSchemaRoute: ApiWarehouseSchemaRoute,
