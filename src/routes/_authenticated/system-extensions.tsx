@@ -129,6 +129,7 @@ function SystemExtensionsTabs({ token }: { token: string }) {
         <TabsTrigger value="gitea">Gitea</TabsTrigger>
         <TabsTrigger value="renovate">Renovate</TabsTrigger>
         <TabsTrigger value="n8n">n8n</TabsTrigger>
+        <TabsTrigger value="matrix-admin">Matrix Admin</TabsTrigger>
       </TabsList>
 
       <TabsContent value="monitor">
@@ -176,6 +177,17 @@ function SystemExtensionsTabs({ token }: { token: string }) {
           token={token}
         />
       </TabsContent>
+
+      <TabsContent value="matrix-admin">
+        <ExtensionLinkCard
+          title="Matrix Admin"
+          description="Native Ketesa administration UI for the Matrix homeserver. It opens in a new tab and keeps its own Matrix administrator authentication."
+          link={{ url: "https://admin.matrix.alexation.com" }}
+          publicTarget="matrix_admin"
+          maintenanceOpen={state.maintenance.status === "OPEN"}
+          token={token}
+        />
+      </TabsContent>
     </Tabs>
   );
 }
@@ -193,7 +205,7 @@ function ExtensionLinkCard({
   link: { url: string | null } | null;
   // When set, this extension also supports the generic one-use ticket
   // launch for public (non-Tailscale) access, gated by Maintenance status.
-  publicTarget?: "gitea" | "n8n";
+  publicTarget?: "gitea" | "n8n" | "matrix_admin";
   maintenanceOpen?: boolean;
   token?: string;
 }) {
@@ -253,7 +265,7 @@ function ExtensionLinkCard({
             {!maintenanceOpen && (
               <p className="mt-1 text-xs text-muted-foreground">
                 Only available while Maintenance is OPEN. This never permanently exposes this
-                host — it issues a single-use, host-bound, ~90s ticket that opens the Network Gate
+                host — it issues a single-use, host-bound, 60-second ticket that opens the Network Gate
                 for a short grant; native {title} login is still required.
               </p>
             )}

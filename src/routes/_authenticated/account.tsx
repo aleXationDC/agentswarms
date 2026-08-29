@@ -32,6 +32,7 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -424,6 +425,8 @@ function AccountPage() {
         </CardContent>
       </Card>
 
+      <MfaSecurityCard />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -593,5 +596,177 @@ function AccountPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+type TotpEnrollment = {
+  factorId: string;
+  qrCode: string;
+  secret: string;
+};
+
+function MfaSecurityCard() {
+  const [factors, setFactors] = useState<
+    { id: string; friendly_name?: string; status: string; factor_type: string }[]
+  >([]);
+  const [currentLevel, setCurrentLevel] = useState<string | null>(null);
+  const [nextLevel, setNextLevel] = useState<string | null>(null);
+  const [enrollment, setEnrollment] = useState<TotpEnrollment | null>(null);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true);
+    const [{ data: factorData, error: factorError }, { data: assuranceData, error: assuranceError }] =
+      await Promise.all([
+        supabase.auth.mfa.listFactors(),
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      ]);
+    if (factorError) toast.error(factorError.message);
+    if (assuranceError) toast.error(assuranceError.message);
+    setFactors((factorData?.all ?? []).filter((factor) => factor.factor_type === "totp"));
+    setCurrentLevel(assuranceData?.currentLevel ?? null);
+    setNextLevel(assuranceData?.nextLevel ?? null);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const beginEnrollment = async () => {
+    setWorking(true);
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "AgentSwarms authenticator",
+    });
+    setWorking(false);
+    if (error || !data?.totp) {
+      toast.error(error?.message ?? "Could not start TOTP enrollment");
+      return;
+    }
+    setEnrollment({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
+    setCode("");
+  };
+
+  const verifyEnrollment = async () => {
+    if (!enrollment || !/^\d{6}$/.test(code)) {
+      toast.error("Enter the six-digit code from your authenticator app");
+      return;
+    }
+    setWorking(true);
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: enrollment.factorId,
+      code,
+    });
+    setWorking(false);
+    if (error) {
+      toast.error("The verification code was not accepted");
+      return;
+    }
+    setEnrollment(null);
+    setCode("");
+    await refresh();
+    toast.success("Authenticator enrolled; this session is now AAL2");
+  };
+
+  const challenge = async (factorId: string) => {
+    if (!/^\d{6}$/.test(code)) {
+      toast.error("Enter the six-digit code from your authenticator app");
+      return;
+    }
+    setWorking(true);
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    setWorking(false);
+    if (error) {
+      toast.error("The verification code was not accepted");
+      return;
+    }
+    setCode("");
+    await refresh();
+    toast.success("Multi-factor authentication verified");
+  };
+
+  const removeFactor = async (factorId: string) => {
+    setWorking(true);
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    setWorking(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    await refresh();
+    toast.success("Authenticator removed");
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="h-4 w-4 text-primary" /> Multi-factor authentication
+        </CardTitle>
+        <CardDescription>
+          TOTP is required only to launch protected System Extensions through public Maintenance
+          Access. Normal AgentSwarms use remains available at AAL1.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading MFA status…
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+              <span>Current assurance: <strong>{currentLevel ?? "unknown"}</strong></span>
+              <span>Available after verification: <strong>{nextLevel ?? "unknown"}</strong></span>
+            </div>
+            {enrollment ? (
+              <div className="space-y-3 rounded-md border p-4">
+                <p className="text-sm">Scan this QR code with your authenticator app, then enter its code to finish enrollment.</p>
+                <img src={enrollment.qrCode} alt="TOTP enrollment QR code" className="h-48 w-48 rounded bg-white p-2" />
+                <div className="flex items-center gap-2">
+                  <code className="break-all text-xs">{enrollment.secret}</code>
+                  <Button type="button" size="icon" variant="ghost" aria-label="Copy TOTP secret" onClick={() => void navigator.clipboard.writeText(enrollment.secret)}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Label htmlFor="totp-enrollment-code">Authenticator code</Label>
+                <Input id="totp-enrollment-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} />
+                <div className="flex gap-2">
+                  <Button type="button" disabled={working} onClick={verifyEnrollment}>Verify and enable</Button>
+                  <Button type="button" variant="outline" disabled={working} onClick={() => setEnrollment(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : factors.length === 0 ? (
+              <Button type="button" disabled={working} onClick={beginEnrollment}>
+                {working ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Enroll authenticator app
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                {factors.map((factor) => (
+                  <div key={factor.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                    <span>{factor.friendly_name || "Authenticator app"} ({factor.status})</span>
+                    <Button type="button" variant="destructive" size="sm" disabled={working} onClick={() => void removeFactor(factor.id)}>Remove</Button>
+                  </div>
+                ))}
+                {currentLevel !== "aal2" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="totp-challenge-code">Authenticator code</Label>
+                    <Input id="totp-challenge-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} />
+                    <Button type="button" disabled={working} onClick={() => void challenge(factors[0].id)}>
+                      {working ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Verify for AAL2
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
