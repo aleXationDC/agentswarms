@@ -1,0 +1,222 @@
+{
+    "edges": [
+        {
+            "id": "e-input-agent",
+            "source": "document-input",
+            "target": "understand-and-propose"
+        },
+        {
+            "id": "e-agent-approval",
+            "source": "understand-and-propose",
+            "target": "human-approval"
+        },
+        {
+            "id": "e-approval-condition",
+            "source": "human-approval",
+            "target": "approval-check"
+        },
+        {
+            "id": "e-approved-ablagebot",
+            "label": "yes",
+            "source": "approval-check",
+            "target": "ablagebot"
+        },
+        {
+            "id": "e-ablagebot-output",
+            "source": "ablagebot",
+            "target": "draft-result"
+        }
+    ],
+    "nodes": [
+        {
+            "id": "document-input",
+            "data": {
+                "id": "document-input",
+                "kind": "input",
+                "label": "Document from n8n",
+                "avatar": "📥",
+                "status": "idle",
+                "position": {
+                    "x": 40,
+                    "y": 220
+                },
+                "outputVar": "document"
+            },
+            "type": "input",
+            "measured": {
+                "width": 150,
+                "height": 113
+            },
+            "position": {
+                "x": 40,
+                "y": 220
+            }
+        },
+        {
+            "id": "understand-and-propose",
+            "data": {
+                "id": "understand-and-propose",
+                "kind": "agent",
+                "label": "Understand & propose filing",
+                "model": "google/gemini-2.5-flash",
+                "avatar": "🧠",
+                "inputs": [
+                    "document"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 360,
+                    "y": 220
+                },
+                "provider": "openrouter",
+                "skillIds": [
+                    "8a8a0161-b5cb-46f8-8bee-56a774ab65a8"
+                ],
+                "outputVar": "proposal",
+                "temperature": 0.2,
+                "enabledTools": [
+                    "kb_search"
+                ],
+                "systemPrompt": "You are Document Intake Swarm v0.1 for aleXation One. Analyze the supplied metadata and extracted document content and produce a SEMANTIC filing proposal.\n\nReturn ONLY strict valid JSON with exactly these fields: document_type, document_date, sender_or_issuer, subject, summary, important_entities, para_class, proposed_container, proposed_folder_path, proposed_filename, confidence, reason_for_classification, warnings, requires_human_review.\n\nDo NOT output document_id, drive_file_id, drive_url, content_hash, parent_folders, source_filename, mime_type, file_size or extraction_status. Those are technical identity facts owned by the input envelope; the runtime attaches them authoritatively after your answer. Never transcribe, repeat or invent an ID or hash.\n\npara_class must be exactly Projects, Areas, Resources, or Archive, or null when unknown. Use null or unknown for facts not present in the document; never hallucinate metadata. Filing policy: prefer simple stable shallow folders, prefer existing meaningful containers, keep related documents near each other when useful, avoid folders for attributes better represented as metadata, and propose a new subfolder only when it materially improves human navigation. The Drive structure must remain useful without AgentSwarms. confidence is a number from 0 to 1. proposed_folder_path is the full shallow target path a human would see in Drive, e.g. 03_Ressources/AI/Claude Code. proposed_filename must keep the original file extension. warnings is a short plain-text note of anything uncertain or missing, or exactly \"none\". requires_human_review must always be true. This is a read-only draft: never claim that a Drive action was executed and do not create folders.\n\nBEFORE proposing, call kb_search to look up confirmed filing rules and established containers for this document's organisation, document family and topic. Confirmed rules were agreed with the user in earlier clarification dialogues and OUTRANK your own judgement: if one applies, follow it and say so in reason_for_classification. If kb_search returns nothing relevant, proceed on your own analysis. Remember that the physical folder structure stays shallow — an organisational or document-function context normally outranks the product topic, which belongs in the semantic fields rather than in a folder.\n\nSEMANTIC METADATA (in addition to the fields above, include these keys in the same JSON object): document_family, primary_domain, primary_context, topics, related_entity.\nThese carry the meaning that the shallow folder path deliberately does NOT express, and they are what later search and reporting rely on.\n- document_family: the reusable class of document, e.g. \"Terms & Policies\", \"Invoices\", \"Contracts\", \"Correspondence\", \"Tax documents\". Reuse an established family when kb_search shows one.\n- primary_domain: the recurring area of life or business this belongs to, e.g. \"Deutsche Telekom / Employment\". Use a domain confirmed in filing knowledge when one fits; otherwise give your best provisional value. A domain you merely inferred is provisional, not established — never present it as confirmed.\n- primary_context: the single context you judged strongest for filing, and the reason the path looks the way it does.\n- topics: array of the meaningful subjects/products the document is about. This is where a product like a specific tool belongs when it did NOT earn a folder.\n- related_entity: the specific project, property, contract or person this concerns, or null.\nUse null for anything the document does not support. Do not invent a domain to fill the field.\n\nCANONICAL FILENAME: also include document_date and document_date_source.\n- document_date: \"YYYY-MM-DD\" — the authoritative date OF THE DOCUMENT (issue/invoice/letter/policy publication date), not when the file was uploaded. Null if you cannot establish one; never invent one.\n- document_date_source: \"explicit_document\" if the date is printed in the document, \"inferred_document\" if you concluded it from the content, \"source_arrival\" if the document has no reliable date of its own and you fell back to when it arrived in the inbox.\nDo not format the filename yourself: the canonical \"YYYY-MM-DD_<name>.<ext>\" string is assembled deterministically downstream from these two fields. Report proposed_filename as the meaningful name without a date prefix.\n",
+                "knowledgeBaseId": "96b8dbd1-a7bb-4b8a-9803-73e7215d1bc1"
+            },
+            "type": "agent",
+            "measured": {
+                "width": 250,
+                "height": 106
+            },
+            "position": {
+                "x": 360,
+                "y": 220
+            },
+            "selected": true
+        },
+        {
+            "id": "human-approval",
+            "data": {
+                "id": "human-approval",
+                "kind": "approval",
+                "label": "Human review required",
+                "avatar": "🛡️",
+                "inputs": [
+                    "proposal"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 760,
+                    "y": 220
+                },
+                "outputVar": "reviewed_proposal",
+                "approvalRisk": "medium",
+                "approvalTitle": "Review document filing proposal (no action is executed)"
+            },
+            "type": "approval",
+            "measured": {
+                "width": 218,
+                "height": 106
+            },
+            "position": {
+                "x": 760,
+                "y": 220
+            },
+            "selected": false
+        },
+        {
+            "id": "approval-check",
+            "data": {
+                "id": "approval-check",
+                "kind": "condition",
+                "label": "Approved?",
+                "avatar": "❓",
+                "inputs": [
+                    "reviewed_proposal_approved",
+                    "reviewed_proposal"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 1080,
+                    "y": 220
+                },
+                "outputVar": "decision",
+                "conditionPrompt": "Is reviewed_proposal_approved equal to yes?"
+            },
+            "type": "condition",
+            "measured": {
+                "width": 180,
+                "height": 91
+            },
+            "position": {
+                "x": 1080,
+                "y": 220
+            }
+        },
+        {
+            "id": "draft-result",
+            "data": {
+                "id": "draft-result",
+                "kind": "output",
+                "label": "Ablagebot result (dry-run)",
+                "avatar": "🧾",
+                "inputs": [
+                    "filing_result"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 1720,
+                    "y": 220
+                },
+                "outputVar": "final"
+            },
+            "type": "output",
+            "measured": {
+                "width": 150,
+                "height": 113
+            },
+            "position": {
+                "x": 1720,
+                "y": 220
+            }
+        },
+        {
+            "id": "ablagebot",
+            "data": {
+                "id": "ablagebot",
+                "kind": "http",
+                "label": "Ablagebot (n8n dry-run)",
+                "avatar": "🗂️",
+                "inputs": [
+                    "reviewed_proposal"
+                ],
+                "status": "idle",
+                "httpUrl": "http://n8n:5678/api/v1/workflows/Y1s3xo9rw3LIvpwc/execute",
+                "httpBody": "{{reviewed_proposal}}",
+                "position": {
+                    "x": 1400,
+                    "y": 220
+                },
+                "outputVar": "filing_result",
+                "httpMethod": "POST",
+                "httpHeaders": [
+                    {
+                        "key": "X-N8N-API-KEY",
+                        "value": "{{secret:n8n_document_filing_api_key}}"
+                    },
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "httpTimeoutMs": 30000
+            },
+            "type": "http",
+            "measured": {
+                "width": 226,
+                "height": 91
+            },
+            "position": {
+                "x": 1400,
+                "y": 220
+            }
+        }
+    ]
+}

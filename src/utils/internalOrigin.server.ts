@@ -19,14 +19,23 @@ function normalize(url: string): string {
 /**
  * Absolute origin this server uses to call its own HTTP API.
  *
- * Order: PUBLIC_APP_URL → SITE_URL → loopback on the app's own port. The
- * loopback fallback keeps single-container / VM deployments working with no
- * extra configuration (the process simply calls itself), while remaining immune
- * to Host-header spoofing. Set PUBLIC_APP_URL when the app is not reachable on
- * localhost from inside its own container.
+ * Order: INTERNAL_APP_ORIGIN → PUBLIC_APP_URL → SITE_URL → loopback on the
+ * app's own port. The loopback fallback keeps single-container / VM deployments
+ * working with no extra configuration (the process simply calls itself), while
+ * remaining immune to Host-header spoofing. Set PUBLIC_APP_URL when the app is
+ * not reachable on localhost from inside its own container.
+ *
+ * INTERNAL_APP_ORIGIN takes precedence because PUBLIC_APP_URL is also the
+ * user-facing link base (emails, MCP registration). When the public address is
+ * an external ingress the container cannot dial back through — a tailnet or
+ * reverse-proxy hostname that resolves only outside the Docker network — every
+ * self-call dies in undici's 10s connect timeout and surfaces as a bare
+ * "fetch failed". This split lets the public URL stay correct for links while
+ * self-calls take a route the process can actually reach.
  */
 export function resolveInternalOrigin(): string {
-  const configured = process.env.PUBLIC_APP_URL || process.env.SITE_URL;
+  const configured =
+    process.env.INTERNAL_APP_ORIGIN || process.env.PUBLIC_APP_URL || process.env.SITE_URL;
   if (configured && /^https?:\/\/\S+$/i.test(configured.trim())) {
     return normalize(configured.trim());
   }

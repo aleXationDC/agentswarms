@@ -1527,13 +1527,19 @@ export const Route = createFileRoute("/api/chat")({
                   body: string;
                   tags: string[];
                 }> = [];
-                if (dbIds.length > 0 && authToken) {
-                  const sb = getServerSupabase(authToken);
+                if (dbIds.length > 0) {
+                  // Headless swarm runs carry no user JWT, so RLS would return
+                  // nothing and a node's attached skills would silently vanish.
+                  // Read as the service role on that path, scoped to the run's
+                  // owner, which is the same guard the data tools use.
+                  const sb = authToken ? getServerSupabase(authToken) : isInternalRun ? supabaseAdmin : null;
                   if (sb) {
-                    const { data } = await sb
+                    let q = sb
                       .from("agent_skills")
                       .select("id, name, description, body, tags")
                       .in("id", dbIds);
+                    if (!authToken && userId) q = q.eq("user_id", userId);
+                    const { data } = await q;
                     userSkillRows = (data ?? []) as typeof userSkillRows;
                   }
                 }

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
-import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
+import { useNavigate, Link } from "@tanstack/react-router";
 import {
   Inbox,
   CheckCircle2,
@@ -11,6 +10,8 @@ import {
   Database,
   Terminal,
   Globe,
+  Network,
+  Maximize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import {
+  useApprovalActions,
+  canClarifyApproval,
+  isDomainPromotionApproval,
+} from "@/hooks/use-approval-actions";
 
 type Approval = {
   id: string;
@@ -46,6 +52,7 @@ type Approval = {
 };
 
 const ACTION_ICON: Record<string, any> = {
+  domain_promotion: Network,
   n8n_webhook: Webhook,
   mcp_tool: Database,
   shell_command: Terminal,
@@ -71,7 +78,11 @@ function timeAgo(iso: string) {
 export function ApprovalInbox() {
   const { user } = useAuth();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const resumeRunFn = useServerFn(resumeApprovedSwarmRun);
+  const { decide: decideApproval, rejectWithReason: rejectApprovalWithReason, busy } =
+    useApprovalActions();
+  const navigate = useNavigate();
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -165,50 +176,36 @@ export function ApprovalInbox() {
 
   const decide = async (id: string, status: "approved" | "rejected") => {
     const item = approvals.find((a) => a.id === id);
-    const { error } = await supabase
-      .from("approvals")
-      .update({ status, decided_at: new Date().toISOString(), decided_by: user?.id ?? null })
-      .eq("id", id);
-    if (error) {
-      toast.error("Failed to update approval");
-      return;
-    }
-    if (status === "approved") {
-      toast.success(`Approved: ${item?.action_title}`, {
-        description: `${item?.agent_name} is resuming.`,
-      });
-    } else {
-      toast.error(`Rejected: ${item?.action_title}`, {
-        description: `${item?.agent_name} has been halted.`,
-      });
-    }
+    if (!item) return;
+    await decideApproval(item, status);
+  };
 
-    // A headless run (API key / schedule) parks at its approval node with a
-    // checkpoint and cannot continue itself — recording the decision is only
-    // half the job. Runs started from the canvas ignore this: they are still
-    // waiting in the tab that started them.
-    if (item?.swarm_run_id) {
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token;
-        if (token) {
-          const res = await resumeRunFn({
-            data: { access_token: token, approval_id: id },
-          });
-          if (!res.ok) {
-            toast.warning("Decision saved, but the run could not be resumed", {
-              description: res.error,
-              duration: 9000,
-            });
-          }
-        }
-      } catch (e) {
-        toast.warning("Decision saved, but the run could not be resumed", {
-          description: (e as Error).message,
-          duration: 9000,
-        });
-      }
-    }
+  const canClarify = canClarifyApproval;
+  const isDomainPromotion = isDomainPromotionApproval;
+
+  /**
+   * Reject with a reason: records the decision, then hands the disagreement to
+   * the Clarification Agent and drops the human straight into the conversation.
+   */
+  const rejectWithReason = async (ap: Approval) => {
+    const res = await rejectApprovalWithReason(ap, reason);
+    if (!res.ok) return;
+    setApprovals((prev) => prev.filter((x) => x.id !== ap.id));
+    setRejecting(null);
+    setReason("");
+    setOpen(false);
+    // Deep-link into the native chat: same agent, same conversation, plus the
+    // case id so the playground can offer "generate the revised proposal"
+    // once the agent declares consensus.
+    navigate({
+      to: "/playground",
+      search: {
+        agentId: res.agent_id,
+        conversationId: res.conversation_id,
+        caseId: res.case_id,
+        approvalId: res.approval_id,
+      },
+    });
   };
 
   return (
@@ -297,7 +294,7 @@ export function ApprovalInbox() {
                         <Icon className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                         <div className="min-w-0">
                           <p className="text-xs font-semibold">{ap.action_title}</p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                          <p className="text-[11px] text-muted-foreground mt-0.5 whitespace-pre-line">
                             {ap.description}
                           </p>
                         </div>
@@ -311,22 +308,75 @@ export function ApprovalInbox() {
                           {JSON.stringify(ap.payload, null, 2)}
                         </pre>
                       </details>
+
+                      {canClarify(ap) && (
+                        <Link
+                          to="/review/$approvalId"
+                          params={{ approvalId: ap.id }}
+                          onClick={() => setOpen(false)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                        >
+                          <Maximize2 className="h-3 w-3" /> Open full review
+                        </Link>
+                      )}
                     </div>
 
-                    <div className="flex border-t border-border">
-                      <button
-                        onClick={() => decide(ap.id, "rejected")}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
-                      >
-                        <XCircle className="h-3.5 w-3.5" /> Reject
-                      </button>
-                      <button
-                        onClick={() => decide(ap.id, "approved")}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                      </button>
-                    </div>
+                    {rejecting === ap.id ? (
+                      <div className="border-t border-border p-2 space-y-2">
+                        <p className="text-[11px] text-muted-foreground">
+                          {isDomainPromotion(ap)
+                            ? "Why is this not the right domain? The agent will discuss it with you."
+                            : "Why is this wrong? The agent will discuss it with you."}
+                        </p>
+                        <textarea
+                          autoFocus
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          rows={3}
+                          placeholder={
+                            isDomainPromotion(ap)
+                              ? "e.g. AI@DTIT is a topic, not a durable domain. Reuse Deutsche Telekom / Internal Policies and file it as Terms und Policies."
+                              : "e.g. This belongs under Deutsche Telekom, not AI — and keep the folders shallow."
+                          }
+                          className="w-full rounded-md bg-background border border-border/60 p-2 text-[11px] resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setRejecting(null);
+                              setReason("");
+                            }}
+                            className="flex-1 py-1.5 text-[11px] rounded-md border border-border hover:bg-muted/50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => rejectWithReason(ap)}
+                            className="flex-1 py-1.5 text-[11px] rounded-md bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                          >
+                            {busy ? "Starting…" : "Discuss with agent"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex border-t border-border">
+                        <button
+                          onClick={() =>
+                            canClarify(ap) ? setRejecting(ap.id) : decide(ap.id, "rejected")
+                          }
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Reject
+                        </button>
+                        <button
+                          onClick={() => decide(ap.id, "approved")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

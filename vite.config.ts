@@ -124,7 +124,7 @@ export default defineConfig(async ({ command, mode }) => {
       // http://host.docker.internal:8080 (dev mode). Vite's host check rejects
       // unknown Host headers with "Blocked request", which would break every
       // agentswarms.chat()/kb_search() call from a server kernel.
-      allowedHosts: ["host.docker.internal"],
+      allowedHosts: ["host.docker.internal", "agentswarms"],
       watch: {
         awaitWriteFinish: { stabilityThreshold: 1000, pollInterval: 100 },
       },

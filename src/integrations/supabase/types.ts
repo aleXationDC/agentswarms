@@ -392,6 +392,7 @@ export type Database = {
           created_at: string;
           decided_at: string | null;
           decided_by: string | null;
+          decision_note: string | null;
           description: string | null;
           id: string;
           notified_at: string | null;
@@ -412,6 +413,7 @@ export type Database = {
           created_at?: string;
           decided_at?: string | null;
           decided_by?: string | null;
+          decision_note?: string | null;
           description?: string | null;
           id?: string;
           notified_at?: string | null;
@@ -432,6 +434,7 @@ export type Database = {
           created_at?: string;
           decided_at?: string | null;
           decided_by?: string | null;
+          decision_note?: string | null;
           description?: string | null;
           id?: string;
           notified_at?: string | null;
@@ -440,6 +443,60 @@ export type Database = {
           status?: string;
           swarm_run_id?: string | null;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      clarification_cases: {
+        Row: {
+          id: string;
+          user_id: string;
+          subject_key: string;
+          subject_kind: string;
+          swarm_id: string | null;
+          latest_swarm_run_id: string | null;
+          conversation_id: string | null;
+          approval_id: string | null;
+          agent_id: string | null;
+          envelope: Json;
+          proposals: Json;
+          cycle_count: number;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          subject_key: string;
+          subject_kind?: string;
+          swarm_id?: string | null;
+          latest_swarm_run_id?: string | null;
+          conversation_id?: string | null;
+          approval_id?: string | null;
+          agent_id?: string | null;
+          envelope?: Json;
+          proposals?: Json;
+          cycle_count?: number;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          subject_key?: string;
+          subject_kind?: string;
+          swarm_id?: string | null;
+          latest_swarm_run_id?: string | null;
+          conversation_id?: string | null;
+          approval_id?: string | null;
+          agent_id?: string | null;
+          envelope?: Json;
+          proposals?: Json;
+          cycle_count?: number;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };

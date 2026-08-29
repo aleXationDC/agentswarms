@@ -58,6 +58,9 @@ import {
   JS_SANDBOX_UNAVAILABLE,
 } from "@/utils/jsSandbox.server";
 import { coerceParams, missingRequired } from "@/lib/swarmComponents";
+import { buildApprovalPayload, formatApprovalDescription } from "@/lib/approvalSummary";
+import { applyAuthoritativeIdentity, parseJsonObject } from "@/lib/documentIdentity";
+import { recordProposal, subjectKeyFromEnvelope } from "@/lib/clarificationLoop";
 import { resolveDeployedGraph } from "@/lib/swarmPublish";
 import { safeStringify } from "@/lib/sandbox/jsSandbox";
 import { envInt } from "@/utils/rateLimit.server";
@@ -132,31 +135,56 @@ async function serverChat(args: {
   // the headless-safe set and owner-scopes the data tools (scopeUserId), so
   // agent-embedded kb_search / sql_query work without a user JWT.
   const enabledTools = Array.isArray(d.enabledTools) ? d.enabledTools : undefined;
-  const res = await fetch(`${args.origin}/api/chat`, {
-    method: "POST",
-    signal: args.signal,
-    headers: { "Content-Type": "application/json", "x-internal-run-secret": secret },
-    body: JSON.stringify({
-      internalUserId: args.userId,
-      provider: d.provider || "openrouter",
-      model: d.model || "google/gemini-3-flash-preview",
-      systemPrompt: args.systemPrompt,
-      temperature: typeof d.temperature === "number" ? d.temperature : 0.4,
-      maxTokens: 8192,
-      messages: [
-        ...(args.history ?? []).map((h) => ({ role: h.role, content: h.content })),
-        { role: "user", content: args.userMessage },
-      ],
-      enabledTools,
-      toolConfigs: d.toolConfigs && typeof d.toolConfigs === "object" ? d.toolConfigs : undefined,
-      guardrails:
-        d.guardrails && typeof d.guardrails === "object" && Object.keys(d.guardrails).length > 0
-          ? d.guardrails
-          : undefined,
-      // No memory in headless runs (no user-scoped store).
-      memoryOverrides: { stm_enabled: false, ltm_enabled: false, ltm_scope: "none" },
-    }),
-  });
+  const chatUrl = `${args.origin}/api/chat`;
+  // A transport-level failure here (DNS, connect timeout, TLS) surfaces from
+  // undici as a bare "fetch failed" with the real reason hidden in `cause`.
+  // Unwrap it so Swarm Traces name the failing self-call instead of leaving
+  // every network fault indistinguishable. The URL is operator configuration,
+  // never user input, and the internal secret lives in a header — so neither is
+  // exposed by this message.
+  let res: Response;
+  try {
+    res = await fetch(chatUrl, {
+      method: "POST",
+      signal: args.signal,
+      headers: { "Content-Type": "application/json", "x-internal-run-secret": secret },
+      body: JSON.stringify({
+        internalUserId: args.userId,
+        provider: d.provider || "openrouter",
+        model: d.model || "google/gemini-3-flash-preview",
+        systemPrompt: args.systemPrompt,
+        temperature: typeof d.temperature === "number" ? d.temperature : 0.4,
+        maxTokens: 8192,
+        messages: [
+          ...(args.history ?? []).map((h) => ({ role: h.role, content: h.content })),
+          { role: "user", content: args.userMessage },
+        ],
+        enabledTools,
+        // Skills and the node's knowledge base are part of the node's saved
+        // configuration, and the browser runtime already forwards both. Without
+        // them here a deployed/headless run silently behaves differently from
+        // the same swarm run in the editor: kb_search has no KB to search, and
+        // an attached skill never reaches the prompt.
+        skillIds:
+          Array.isArray(d.skillIds) && d.skillIds.length > 0 ? d.skillIds : undefined,
+        knowledgeBaseIds: d.knowledgeBaseId ? [d.knowledgeBaseId] : undefined,
+        toolConfigs: d.toolConfigs && typeof d.toolConfigs === "object" ? d.toolConfigs : undefined,
+        guardrails:
+          d.guardrails && typeof d.guardrails === "object" && Object.keys(d.guardrails).length > 0
+            ? d.guardrails
+            : undefined,
+        // No memory in headless runs (no user-scoped store).
+        memoryOverrides: { stm_enabled: false, ltm_enabled: false, ltm_scope: "none" },
+      }),
+    });
+  } catch (err) {
+    const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+    const detail = cause?.code || cause?.message || (err as Error).message;
+    throw new Error(
+      `chat self-call to ${chatUrl} failed: ${detail}. ` +
+        `Set INTERNAL_APP_ORIGIN to an address this server can reach itself on.`,
+    );
+  }
   if (!res.ok || !res.body) {
     const txt = await res.text().catch(() => "");
     throw new Error(`chat failed [${res.status}]: ${txt.slice(0, 300)}`);
@@ -241,6 +269,8 @@ function stripFence(s: string): string {
 async function createApprovalRequest(args: {
   userId: string;
   runId: string | null;
+  swarmId: string;
+  runInput: string;
   node: Node<SwarmNodeData>;
   content: string;
 }): Promise<void> {
@@ -252,19 +282,112 @@ async function createApprovalRequest(args: {
     approverGroupIds?: string[];
   };
   try {
-    await supabaseAdmin.from("approvals").insert({
-      user_id: args.userId,
-      agent_name: d.label || "Approval gate",
-      agent_avatar: d.avatar || "🛡️",
-      action_type: "swarm_step",
-      action_title: d.approvalTitle || `Approve step: ${d.label ?? "step"}`,
-      description: args.content.slice(0, 1000),
-      risk_level: d.approvalRisk || "medium",
-      payload: { last_output: args.content.slice(0, 4000) },
-      approver_user_ids: Array.isArray(d.approverUserIds) ? d.approverUserIds : [],
-      approver_group_ids: Array.isArray(d.approverGroupIds) ? d.approverGroupIds : [],
-      swarm_run_id: args.runId,
-    } as never);
+    const payload = buildApprovalPayload(args.content);
+    const { data: inserted } = await supabaseAdmin
+      .from("approvals")
+      .insert({
+        user_id: args.userId,
+        agent_name: d.label || "Approval gate",
+        agent_avatar: d.avatar || "🛡️",
+        action_type: "swarm_step",
+        action_title: d.approvalTitle || `Approve step: ${d.label ?? "step"}`,
+        description: formatApprovalDescription(args.content),
+        risk_level: d.approvalRisk || "medium",
+        payload,
+        approver_user_ids: Array.isArray(d.approverUserIds) ? d.approverUserIds : [],
+        approver_group_ids: Array.isArray(d.approverGroupIds) ? d.approverGroupIds : [],
+        swarm_run_id: args.runId,
+      } as never)
+      .select("id")
+      .maybeSingle();
+
+    // Register the proposal against its subject so a rejection has something to
+    // argue about — this is what lets cycle N+1 know what cycle N proposed and
+    // why it was refused. Only applies when the run input is a document
+    // envelope; ordinary approvals are untouched.
+    try {
+      const envelope = parseJsonObject(args.runInput);
+      const proposal = (payload as { proposal?: Record<string, unknown> }).proposal;
+      const subjectKey = envelope ? subjectKeyFromEnvelope(envelope) : null;
+      if (envelope && proposal && subjectKey) {
+        await recordProposal(supabaseAdmin, {
+          userId: args.userId,
+          subjectKey,
+          swarmId: args.swarmId,
+          runId: args.runId,
+          approvalId: (inserted as { id?: string } | null)?.id ?? null,
+          envelope,
+          proposal,
+        });
+
+        // Register the document as soon as a proposal exists, marked as
+        // awaiting review. Registration is deliberately NOT deferred until
+        // approval: a document that reached a proposal is a document we have
+        // seen, and "which documents are still unreviewed?" is one of the
+        // questions the registry has to answer. Approval later updates the row
+        // in place rather than creating it.
+        const { buildRegistryRow, upsertRegistryRow } = await import("@/lib/documentRegistry");
+
+        // Resolve the model's free-text domain to a stable id BEFORE the row is
+        // written, so drift is reconciled at the only moment it is cheap: two
+        // spellings of one domain never both reach the registry.
+        const { resolveDomain } = await import("@/lib/domainRegistry");
+        let domain = null;
+        try {
+          domain = await resolveDomain(supabaseAdmin as never, {
+            userId: args.userId,
+            proposedName: String(proposal.primary_domain ?? ""),
+            sourceDocumentId: String(envelope.document_id ?? "") || null,
+            sourceApprovalId: (inserted as { id?: string } | null)?.id ?? null,
+            proposedBy: "document-intake-swarm",
+          });
+        } catch (e) {
+          // Domain governance is metadata quality, not correctness of the
+          // proposal — never fail a classification because resolution broke.
+          console.warn("[swarmExecute] domain resolution failed:", (e as Error).message);
+        }
+
+        await upsertRegistryRow(
+          supabaseAdmin as never,
+          args.userId,
+          buildRegistryRow({
+            envelope,
+            proposal,
+            humanReviewStatus: "pending",
+            domain,
+            provenance: {
+              approval_id: (inserted as { id?: string } | null)?.id ?? null,
+              swarm_run_id: args.runId,
+              classified_by: "document-intake-swarm",
+            },
+          }),
+        );
+
+        // A brand-new candidate domain is a proposal to change how FUTURE
+        // documents get classified, so it needs its own human decision — the
+        // filing approval above only speaks about this one document.
+        if (domain?.isNewCandidate) {
+          try {
+            const { requestDomainPromotion } = await import("@/lib/domainGovernance");
+            await requestDomainPromotion(supabaseAdmin as never, {
+              userId: args.userId,
+              domainId: domain.domainId,
+              reason:
+                String(proposal.domain_reason ?? proposal.reasoning ?? "").trim() || null,
+              nearest: domain.nearest ?? null,
+              sourceFilename: String(envelope.filename ?? "") || null,
+            });
+          } catch (e) {
+            console.warn("[swarmExecute] domain promotion request failed:", (e as Error).message);
+          }
+        }
+      }
+    } catch (e) {
+      // Never let case bookkeeping break the approval itself: losing the case
+      // record costs us the clarification loop, losing the approval costs the
+      // run.
+      console.warn("[swarmExecute] could not record case / registry entry:", (e as Error).message);
+    }
   } catch (e) {
     console.warn("[swarmExecute] could not create approval request:", (e as Error).message);
   }
@@ -857,6 +980,8 @@ export async function executeSwarmServer(opts: {
             await createApprovalRequest({
               userId: opts.userId,
               runId,
+              swarmId: opts.swarm.id,
+              runInput: opts.input,
               node,
               content: pending,
             });
@@ -874,7 +999,19 @@ export async function executeSwarmServer(opts: {
               systemPrompt: interpolate(d.systemPrompt || "You are a helpful assistant.", ctx),
               userMessage: gatherInputs(node, ctx, lastOutput),
             });
-            write(out);
+            // Re-assert the run input's identity fields over the model's answer
+            // BEFORE anything downstream (approval card, executor) can read it.
+            // Done here rather than at the approval node so a corrupted file id
+            // can never reach a condition, a sub-swarm or an HTTP call either.
+            // No-op unless both the input and the answer are JSON objects.
+            const { text: reconciled, corrected } = applyAuthoritativeIdentity(out, opts.input);
+            if (corrected.length > 0) {
+              console.warn(
+                `[swarmExecute] node "${d.label}" altered identity field(s) ` +
+                  `${corrected.join(", ")}; restored from run input.`,
+              );
+            }
+            write(reconciled);
             return;
           }
           if (kind === "subswarm") {

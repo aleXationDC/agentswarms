@@ -18,10 +18,13 @@
 // browser supabase client.
 
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import type { Node, Edge } from "@xyflow/react";
 import { buildUserMessage, invokeAgent, type AgentCard } from "@/lib/a2aClient";
 import { runSandboxed, safeStringify } from "@/lib/sandbox/jsSandbox";
 import { coerceParams, missingRequired } from "@/lib/swarmComponents";
+import { buildApprovalPayload, formatApprovalDescription } from "@/lib/approvalSummary";
+import { applyAuthoritativeIdentity } from "@/lib/documentIdentity";
 import { isImageModelId } from "@/lib/providerSupport";
 import {
   SkipTracker,
@@ -1189,9 +1192,9 @@ export async function runSwarm(
               agent_avatar: node.data.avatar || "🛡️",
               action_type: "swarm_step",
               action_title: node.data.approvalTitle || `Approve step: ${node.data.label}`,
-              description: approvalContent.slice(0, 1000),
+              description: formatApprovalDescription(approvalContent),
               risk_level: node.data.approvalRisk || "medium",
-              payload: { last_output: approvalContent.slice(0, 4000) },
+              payload: buildApprovalPayload(approvalContent) as Json,
               approver_user_ids: approverUserIds,
               approver_group_ids: approverGroupIds,
               swarm_run_id: dbRunId ?? null,
@@ -1960,9 +1963,20 @@ Evaluate the candidate output above against each metric and return the JSON scor
           captureThinking(node.id),
         );
         const v = node.data.outputVar || `out_${node.id}`;
-        ctx[v] = out;
-        lastOutput = out;
-        onEvent({ type: "node_done", nodeId: node.id, output: out });
+        // Same guarantee as the headless executor: the run input owns the
+        // identity fields, so a model transcription slip can never reach the
+        // approval card or any downstream node. No-op for non-JSON runs.
+        const { text: reconciled, corrected } = applyAuthoritativeIdentity(out, initialInput);
+        if (corrected.length > 0) {
+          onEvent({
+            type: "node_warning",
+            nodeId: node.id,
+            warning: `Model altered identity field(s) ${corrected.join(", ")}; restored from run input.`,
+          });
+        }
+        ctx[v] = reconciled;
+        lastOutput = reconciled;
+        onEvent({ type: "node_done", nodeId: node.id, output: reconciled });
       }; // end executeNode
 
       // Wrap a node's execution with its retry + on-error policy. On transient

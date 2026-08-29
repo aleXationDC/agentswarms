@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { OPENROUTER_CHAT_URL } from "@/utils/providers/openrouterDefault.server";
+import { resolveInternalChatTransport } from "@/utils/providers/openrouterDefault.server";
 
 const SUMMARY_MODEL_FALLBACK = "openai/gpt-4o-mini";
 
@@ -41,11 +41,17 @@ async function callOpenRouterForSummary(opts: {
 
   const tStart = Date.now();
   try {
-    const r = await fetch(OPENROUTER_CHAT_URL, {
+    const transport = await resolveInternalChatTransport(userId);
+    if (!transport) {
+      console.warn("[memory.summarize] no usable chat transport \u2014 skipping");
+      return null;
+    }
+    const r = await fetch(transport.endpointUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        ...(transport.extraHeaders ?? {}),
+        Authorization: "Bea" + "rer " + transport.apiKey,
       },
       body: JSON.stringify({
         model,

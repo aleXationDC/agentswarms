@@ -67,6 +67,7 @@ import { Route as AuthenticatedSwarmsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedSemanticsRouteImport } from './routes/_authenticated/semantics'
 import { Route as AuthenticatedSecretsRouteImport } from './routes/_authenticated/secrets'
+import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
 import { Route as AuthenticatedPromptsRouteImport } from './routes/_authenticated/prompts'
 import { Route as AuthenticatedPromptCompareRouteImport } from './routes/_authenticated/prompt-compare'
 import { Route as AuthenticatedPlaygroundRouteImport } from './routes/_authenticated/playground'
@@ -121,6 +122,7 @@ import { Route as ApiBiDirectQueryRouteImport } from './routes/api/bi.direct-que
 import { Route as ApiBiCronRouteImport } from './routes/api/bi.cron'
 import { Route as ApiAuthSsoConfigRouteImport } from './routes/api/auth/sso-config'
 import { Route as ApiAuditExportRouteImport } from './routes/api/audit.export'
+import { Route as AuthenticatedReviewApprovalIdRouteImport } from './routes/_authenticated/review_.$approvalId'
 import { Route as AuthenticatedMcpBuilderAppIdRouteImport } from './routes/_authenticated/mcp-builder_.$appId'
 import { Route as AuthenticatedBiDashboardIdRouteImport } from './routes/_authenticated/bi_.$dashboardId'
 import { Route as AuthenticatedAnalyticsObservabilityRouteImport } from './routes/_authenticated/analytics_.observability'
@@ -426,6 +428,11 @@ const AuthenticatedSecretsRoute = AuthenticatedSecretsRouteImport.update({
   path: '/secrets',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedPromptsRoute = AuthenticatedPromptsRouteImport.update({
   id: '/prompts',
   path: '/prompts',
@@ -701,6 +708,12 @@ const ApiAuditExportRoute = ApiAuditExportRouteImport.update({
   path: '/api/audit/export',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedReviewApprovalIdRoute =
+  AuthenticatedReviewApprovalIdRouteImport.update({
+    id: '/review_/$approvalId',
+    path: '/review/$approvalId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedMcpBuilderAppIdRoute =
   AuthenticatedMcpBuilderAppIdRouteImport.update({
     id: '/mcp-builder_/$appId',
@@ -825,6 +838,7 @@ export interface FileRoutesByFullPath {
   '/playground': typeof AuthenticatedPlaygroundRoute
   '/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/prompts': typeof AuthenticatedPromptsRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/secrets': typeof AuthenticatedSecretsRoute
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
@@ -873,6 +887,7 @@ export interface FileRoutesByFullPath {
   '/analytics/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/bi/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
   '/mcp-builder/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/review/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -952,6 +967,7 @@ export interface FileRoutesByTo {
   '/playground': typeof AuthenticatedPlaygroundRoute
   '/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/prompts': typeof AuthenticatedPromptsRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/secrets': typeof AuthenticatedSecretsRoute
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
@@ -1000,6 +1016,7 @@ export interface FileRoutesByTo {
   '/analytics/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/bi/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
   '/mcp-builder/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/review/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -1082,6 +1099,7 @@ export interface FileRoutesById {
   '/_authenticated/playground': typeof AuthenticatedPlaygroundRoute
   '/_authenticated/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/_authenticated/prompts': typeof AuthenticatedPromptsRoute
+  '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/secrets': typeof AuthenticatedSecretsRoute
   '/_authenticated/semantics': typeof AuthenticatedSemanticsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
@@ -1130,6 +1148,7 @@ export interface FileRoutesById {
   '/_authenticated/analytics_/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/_authenticated/bi_/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
   '/_authenticated/mcp-builder_/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/_authenticated/review_/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -1212,6 +1231,7 @@ export interface FileRouteTypes {
     | '/playground'
     | '/prompt-compare'
     | '/prompts'
+    | '/review'
     | '/secrets'
     | '/semantics'
     | '/skills'
@@ -1260,6 +1280,7 @@ export interface FileRouteTypes {
     | '/analytics/observability'
     | '/bi/$dashboardId'
     | '/mcp-builder/$appId'
+    | '/review/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -1339,6 +1360,7 @@ export interface FileRouteTypes {
     | '/playground'
     | '/prompt-compare'
     | '/prompts'
+    | '/review'
     | '/secrets'
     | '/semantics'
     | '/skills'
@@ -1387,6 +1409,7 @@ export interface FileRouteTypes {
     | '/analytics/observability'
     | '/bi/$dashboardId'
     | '/mcp-builder/$appId'
+    | '/review/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -1468,6 +1491,7 @@ export interface FileRouteTypes {
     | '/_authenticated/playground'
     | '/_authenticated/prompt-compare'
     | '/_authenticated/prompts'
+    | '/_authenticated/review'
     | '/_authenticated/secrets'
     | '/_authenticated/semantics'
     | '/_authenticated/skills'
@@ -1516,6 +1540,7 @@ export interface FileRouteTypes {
     | '/_authenticated/analytics_/observability'
     | '/_authenticated/bi_/$dashboardId'
     | '/_authenticated/mcp-builder_/$appId'
+    | '/_authenticated/review_/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -2024,6 +2049,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSecretsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/review': {
+      id: '/_authenticated/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthenticatedReviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/prompts': {
       id: '/_authenticated/prompts'
       path: '/prompts'
@@ -2402,6 +2434,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuditExportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/review_/$approvalId': {
+      id: '/_authenticated/review_/$approvalId'
+      path: '/review/$approvalId'
+      fullPath: '/review/$approvalId'
+      preLoaderRoute: typeof AuthenticatedReviewApprovalIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/mcp-builder_/$appId': {
       id: '/_authenticated/mcp-builder_/$appId'
       path: '/mcp-builder/$appId'
@@ -2567,6 +2606,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPlaygroundRoute: typeof AuthenticatedPlaygroundRoute
   AuthenticatedPromptCompareRoute: typeof AuthenticatedPromptCompareRoute
   AuthenticatedPromptsRoute: typeof AuthenticatedPromptsRoute
+  AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
   AuthenticatedSecretsRoute: typeof AuthenticatedSecretsRoute
   AuthenticatedSemanticsRoute: typeof AuthenticatedSemanticsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
@@ -2577,6 +2617,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAnalyticsObservabilityRoute: typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   AuthenticatedBiDashboardIdRoute: typeof AuthenticatedBiDashboardIdRoute
   AuthenticatedMcpBuilderAppIdRoute: typeof AuthenticatedMcpBuilderAppIdRoute
+  AuthenticatedReviewApprovalIdRoute: typeof AuthenticatedReviewApprovalIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -2603,6 +2644,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPlaygroundRoute: AuthenticatedPlaygroundRoute,
   AuthenticatedPromptCompareRoute: AuthenticatedPromptCompareRoute,
   AuthenticatedPromptsRoute: AuthenticatedPromptsRoute,
+  AuthenticatedReviewRoute: AuthenticatedReviewRoute,
   AuthenticatedSecretsRoute: AuthenticatedSecretsRoute,
   AuthenticatedSemanticsRoute: AuthenticatedSemanticsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
@@ -2614,6 +2656,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedAnalyticsObservabilityRouteWithChildren,
   AuthenticatedBiDashboardIdRoute: AuthenticatedBiDashboardIdRoute,
   AuthenticatedMcpBuilderAppIdRoute: AuthenticatedMcpBuilderAppIdRoute,
+  AuthenticatedReviewApprovalIdRoute: AuthenticatedReviewApprovalIdRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

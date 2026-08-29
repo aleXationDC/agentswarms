@@ -29,6 +29,7 @@ import {
   Code2,
   LifeBuoy,
   Wrench,
+  ClipboardCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+      // Operational review work surface over approvals/clarification cases —
+      // the full-detail counterpart to the compact ApprovalInbox popup.
+      { title: "Review", url: "/review", icon: ClipboardCheck },
       // The handbook was reachable from the marketing site only, which is the
       // one place you are NOT standing when you get stuck using the product.
       { title: "Documentation", url: "/docs", icon: LifeBuoy },

@@ -74,6 +74,35 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           return { ok: true, status: run.status, runId: run.id, output: "" };
         }
 
+        // An approval decided here is the only signal the registry gets for the
+        // approve path (rejection travels through the clarification loop), so
+        // reflect it before resuming. Best-effort, for the same reason as
+        // everywhere else: bookkeeping must not be able to block a run.
+        try {
+          const { setReviewStatus } = await import("@/lib/documentRegistry");
+          const { data: full } = await supabaseAdmin
+            .from("approvals")
+            .select("payload")
+            .eq("id", approval.id)
+            .maybeSingle();
+          const proposal = ((full?.payload ?? {}) as { proposal?: Record<string, unknown> })
+            .proposal;
+          const documentId =
+            typeof proposal?.document_id === "string" ? proposal.document_id : null;
+          if (documentId) {
+            await setReviewStatus(supabaseAdmin as never, run.user_id, documentId, {
+              review: approval.status === "approved" ? "approved" : "rejected",
+              approvedPath:
+                approval.status === "approved" &&
+                typeof proposal?.proposed_folder_path === "string"
+                  ? proposal.proposed_folder_path
+                  : null,
+            });
+          }
+        } catch (e) {
+          console.warn("[resume] registry review status not updated:", (e as Error).message);
+        }
+
         const result = await resumeSwarmRun({
           runId: run.id,
           userId: run.user_id,

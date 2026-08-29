@@ -84,6 +84,7 @@ import { pptxThumbUri, docxThumbUri, xlsxThumbUri } from "@/lib/docGen/docThumb"
 import { planDocument } from "@/lib/docGen/plan";
 import { encodeModelChoice, isBiCompatProvider } from "@/utils/providers/modelChoice";
 import { gatherDocContext } from "@/utils/docGen.functions";
+import { advanceClarification } from "@/utils/clarification.functions";
 import { toast } from "sonner";
 import {
   ModelFallbackDialog,
@@ -101,8 +102,21 @@ const STARTER_PROMPTS = [
 ];
 
 export const Route = createFileRoute("/_authenticated/playground")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    agentId?: string;
+    // Set when the Approval inbox hands a rejected proposal over to the
+    // Clarification Agent, so the chat opens on the right conversation and can
+    // offer to generate the revised proposal once the two of them agree.
+    conversationId?: string;
+    caseId?: string;
+    approvalId?: string;
+  } => ({
     agentId: (search.agentId as string) || undefined,
+    conversationId: (search.conversationId as string) || undefined,
+    caseId: (search.caseId as string) || undefined,
+    approvalId: (search.approvalId as string) || undefined,
   }),
   component: PlaygroundPage,
 });
@@ -178,7 +192,7 @@ function showChatError(message: string) {
 
 function PlaygroundPage() {
   const { user } = useAuth();
-  const { agentId } = Route.useSearch();
+  const { agentId, conversationId: deepLinkConvo, caseId, approvalId } = Route.useSearch();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -210,6 +224,19 @@ function PlaygroundPage() {
   const [armedDoc, setArmedDoc] = useState<DocFormat | null>(null);
   const [docPhase, setDocPhase] = useState<"idle" | "gathering" | "planning" | "building">("idle");
   const gatherDocContextFn = useServerFn(gatherDocContext);
+  // Clarification loop: when this chat was opened from a rejected filing
+  // proposal, the human can ask the agent to turn the agreed outcome into a
+  // revised proposal. The check is server-side — it only succeeds once the
+  // agent itself has declared consensus, so this button cannot force one.
+  const advanceClarificationFn = useServerFn(advanceClarification);
+  const [clarifyBusy, setClarifyBusy] = useState(false);
+  // The clarification episode is a property of the *conversation*, not of the
+  // URL that happened to open it. Resolving it from the open thread is what
+  // lets the human leave, come back via the ordinary sidebar, and still find
+  // "Create revised proposal" waiting.
+  const [clarifyCtx, setClarifyCtx] = useState<{ caseId: string; approvalId?: string } | null>(
+    null,
+  );
   const dataScopeRef = useRef<DocScope>("sample");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Developer inspector (request/tools/trace) — collapsed by default so the
@@ -348,6 +375,49 @@ function PlaygroundPage() {
     if (activeConvo) loadMessages();
   }, [activeConvo]);
 
+  // Resolve the clarification episode for whatever thread is open. The deep
+  // link from the Approval inbox is only a shortcut; the durable binding lives
+  // on the approval payload (this episode) with the case row as the fallback
+  // for threads created before that binding existed.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (caseId) {
+        if (!cancelled) setClarifyCtx({ caseId, approvalId });
+        return;
+      }
+      if (!activeConvo) {
+        if (!cancelled) setClarifyCtx(null);
+        return;
+      }
+      const { data: appr } = await supabase
+        .from("approvals")
+        .select("id")
+        .eq("payload->>clarification_conversation_id", activeConvo)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const query = supabase
+        .from("clarification_cases")
+        .select("id, approval_id, status")
+        .limit(1);
+      const { data: kase } = appr?.id
+        ? await query.eq("approval_id", appr.id).maybeSingle()
+        : await query.eq("conversation_id", activeConvo).maybeSingle();
+      if (cancelled) return;
+      // A resolved or abandoned case stays readable as history, but must not
+      // offer to spawn yet another proposal.
+      if (!kase || kase.status === "resolved" || kase.status === "abandoned") {
+        setClarifyCtx(null);
+        return;
+      }
+      setClarifyCtx({ caseId: kase.id, approvalId: appr?.id ?? kase.approval_id ?? undefined });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConvo, caseId, approvalId]);
+
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, thinking]);
@@ -388,7 +458,11 @@ function PlaygroundPage() {
     if (data) {
       setConversations(data);
       if (data.length > 0) {
-        if (!activeConvo) setActiveConvo(data[0].id);
+        // A deep link from the Approval inbox must land on the clarification
+        // thread itself, not merely the most recent chat with that agent.
+        const deepLinked = deepLinkConvo && data.find((c) => c.id === deepLinkConvo);
+        if (deepLinked) setActiveConvo(deepLinkConvo);
+        else if (!activeConvo) setActiveConvo(data[0].id);
       } else if (user && selectedAgent) {
         // Auto-create a first conversation so the input is usable
         const { data: newConvo } = await supabase
@@ -1407,6 +1481,60 @@ function PlaygroundPage() {
     hasDecidedApproval: approvalSignals.decided,
   };
 
+  /**
+   * Ask the server whether the dialogue has converged, and if so start the next
+   * proposal cycle.
+   *
+   * Consensus is NOT decided here: the server re-reads the agent's own last
+   * message and looks for the consensus block it was told to emit. A human
+   * pressing this button early simply gets "keep talking".
+   */
+  async function requestRevisedProposal() {
+    if (!clarifyCtx || clarifyBusy) return;
+    setClarifyBusy(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess.session?.access_token;
+      if (!token) {
+        toast.error("Session expired");
+        return;
+      }
+      const res = await advanceClarificationFn({
+        data: { access_token: token, case_id: clarifyCtx.caseId, approval_id: clarifyCtx.approvalId },
+      });
+      if (!res.ok) {
+        toast.error("Could not continue", { description: res.error, duration: 9000 });
+        return;
+      }
+      if (!res.consensus) {
+        toast.info("Not yet agreed", {
+          description:
+            "The agent has not confirmed consensus. Keep talking until it summarises what you agreed.",
+          duration: 8000,
+        });
+        return;
+      }
+      if (res.status === "abandoned") {
+        toast.warning("Stopped after too many cycles", {
+          description: "This document is marked for manual handling. Nothing was filed.",
+          duration: 12000,
+        });
+        return;
+      }
+      const promoted = res.policy?.promoted
+        ? " The confirmed rule was saved to your knowledge base."
+        : "";
+      toast.success("Revised proposal requested", {
+        description: `A new run is producing proposal v${(res.run_id && 2) || 2}. Check the Approval inbox.${promoted}`,
+        duration: 10000,
+      });
+    } catch (e) {
+      toast.error("Could not continue", { description: (e as Error).message });
+    } finally {
+      setClarifyBusy(false);
+    }
+  }
+
   return (
     <div className="flex h-[calc(100vh-3rem)] w-full overflow-hidden">
       {/* Mobile sidebar trigger */}
@@ -1527,6 +1655,27 @@ function PlaygroundPage() {
             </Button>
           </div>
         </div>
+
+        {/* Clarification banner: only when this chat was opened from a rejected
+            filing proposal. Keeps the loop visible without a bespoke chat UI. */}
+        {clarifyCtx && (
+          <div className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+            <p className="min-w-0 flex-1 text-xs text-amber-200/90">
+              Clarifying a rejected filing proposal. Talk it through, and once you agree, ask for
+              the revised proposal.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={clarifyBusy}
+              onClick={requestRevisedProposal}
+              className="h-7 shrink-0 border-amber-500/40 text-xs hover:bg-amber-500/20"
+            >
+              {clarifyBusy ? "Checking…" : "Create revised proposal"}
+            </Button>
+          </div>
+        )}
 
         {/* Messages area */}
         <div className="relative flex-1 min-w-0 overflow-hidden bg-gradient-to-b from-muted/20 via-background to-background">
