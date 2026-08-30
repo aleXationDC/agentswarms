@@ -2,6 +2,8 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   applyHumanProposalOverride,
+  applyBulkProposalOverride,
+  analyzeBulkFieldValues,
   findDuplicateCandidates,
   validateParaFolderPath,
   fetchReviewQueue,
@@ -20,6 +22,7 @@ function createMockSupabase() {
     from: vi.fn((table: string) => {
       let filterEq = new Map<string, any>();
       let filterGte = new Map<string, any>();
+      let filterIn = new Map<string, any[]>();
 
       const builder: any = {
         select: vi.fn(() => builder),
@@ -27,11 +30,29 @@ function createMockSupabase() {
           filterEq.set(col, val);
           return builder;
         }),
+        in: vi.fn((col: string, val: any[]) => {
+          filterIn.set(col, val);
+          return builder;
+        }),
         gte: vi.fn((col: string, val: any) => {
           filterGte.set(col, val);
           return builder;
         }),
         order: vi.fn(() => builder),
+        then: (resolve: any) => {
+          if (table === "approvals") {
+            let list = Array.from(approvals.values());
+            if (filterIn.has("id")) {
+              const ids = new Set(filterIn.get("id"));
+              list = list.filter((a) => ids.has(a.id));
+            }
+            if (filterEq.has("user_id")) {
+              list = list.filter((a) => a.user_id === filterEq.get("user_id"));
+            }
+            return resolve({ data: list, error: null });
+          }
+          return resolve({ data: [], error: null });
+        },
         limit: vi.fn(() => {
           if (table === "approvals") {
             const list = Array.from(approvals.values());
@@ -268,5 +289,165 @@ describe("Review Workbench & Direct Human Override", () => {
     });
 
     expect(candidates).toHaveLength(0);
+  });
+
+  it("analyzes field values across multiple items and detects mixed values (DMS-D1-0003-REVIEW-v2 §14.3)", () => {
+    const items = [
+      {
+        approval: {
+          payload: {
+            proposal: {
+              document_type: "invoice",
+              sender_or_issuer: "Deutsche Telekom",
+              proposed_folder_path: "02_Areas/Finanzen",
+              topics: ["telecom", "billing"],
+            },
+          },
+        },
+      },
+      {
+        approval: {
+          payload: {
+            proposal: {
+              document_type: "invoice",
+              sender_or_issuer: "Vodafone",
+              proposed_folder_path: "02_Areas/Finanzen",
+              topics: ["telecom"],
+            },
+          },
+        },
+      },
+    ];
+
+    const analysis = analyzeBulkFieldValues(items);
+    expect(analysis.document_type.isMixed).toBe(false);
+    expect(analysis.document_type.commonValue).toBe("invoice");
+
+    expect(analysis.sender_or_issuer.isMixed).toBe(true);
+    expect(analysis.sender_or_issuer.uniqueValues).toEqual(["Deutsche Telekom", "Vodafone"]);
+
+    expect(analysis.proposed_folder_path.isMixed).toBe(false);
+    expect(analysis.proposed_folder_path.commonValue).toBe("02_Areas/Finanzen");
+
+    expect(analysis.topics.isMixed).toBe(true);
+  });
+
+  it("applies bulk classification patch to multiple items with zero LLM calls and topics add/remove/replace", async () => {
+    const sb = createMockSupabase();
+    sb._mockData.approvals.set("appr-b1", {
+      id: "appr-b1",
+      user_id: "user-1",
+      status: "pending",
+      payload: {
+        envelope: { source_filename: "2026-08-01 Bill 1.pdf" },
+        proposal: {
+          document_type: "contract",
+          sender_or_issuer: "Old Org",
+          proposed_folder_path: "04_Archive",
+          topics: ["old_topic"],
+        },
+      },
+    });
+    sb._mockData.approvals.set("appr-b2", {
+      id: "appr-b2",
+      user_id: "user-1",
+      status: "pending",
+      payload: {
+        envelope: { source_filename: "2026-08-02 Bill 2.pdf" },
+        proposal: {
+          document_type: "receipt",
+          sender_or_issuer: "Old Org",
+          proposed_folder_path: "04_Archive",
+          topics: ["existing_topic"],
+        },
+      },
+    });
+
+    const bulkRes = await applyBulkProposalOverride(sb, "user-1", ["appr-b1", "appr-b2"], {
+      document_type: { apply: true, value: "invoice" },
+      sender_or_issuer: { apply: true, value: "Deutsche Telekom" },
+      proposed_folder_path: { apply: true, value: "02_Areas/Finanzen/Telekommunikation" },
+      topics: { apply: true, mode: "add", values: ["telecom", "monthly"] },
+      document_family: { apply: false, value: "Ignored" },
+    });
+
+    expect(bulkRes.ok).toBe(true);
+    expect(bulkRes.count).toBe(2);
+
+    const updated1 = sb._mockData.approvals.get("appr-b1").payload.proposal;
+    expect(updated1.document_type).toBe("invoice");
+    expect(updated1.sender_or_issuer).toBe("Deutsche Telekom");
+    expect(updated1.proposed_folder_path).toBe("02_Areas/Finanzen/Telekommunikation");
+    expect(updated1.topics).toContain("old_topic");
+    expect(updated1.topics).toContain("telecom");
+    expect(updated1.topics).toContain("monthly");
+    expect(updated1.bulk_overridden).toBe(true);
+    expect(updated1.document_family).toBeUndefined(); // unapplied field untouched
+
+    const updated2 = sb._mockData.approvals.get("appr-b2").payload.proposal;
+    expect(updated2.document_type).toBe("invoice");
+    expect(updated2.sender_or_issuer).toBe("Deutsche Telekom");
+    expect(updated2.topics).toContain("existing_topic");
+    expect(updated2.topics).toContain("telecom");
+  });
+
+  it("fails full-set validation and creates NO partial updates if any item has invalid PARA folder", async () => {
+    const sb = createMockSupabase();
+    sb._mockData.approvals.set("appr-valid", {
+      id: "appr-valid",
+      user_id: "user-1",
+      status: "pending",
+      payload: {
+        envelope: { source_filename: "doc1.pdf" },
+        proposal: { document_type: "invoice", proposed_folder_path: "04_Archive" },
+      },
+    });
+    sb._mockData.approvals.set("appr-invalid", {
+      id: "appr-invalid",
+      user_id: "user-1",
+      status: "pending",
+      payload: {
+        envelope: { source_filename: "doc2.pdf" },
+        proposal: { document_type: "invoice", proposed_folder_path: "04_Archive" },
+      },
+    });
+
+    // Test invalid PARA root
+    const bulkRes = await applyBulkProposalOverride(sb, "user-1", ["appr-valid", "appr-invalid"], {
+      proposed_folder_path: { apply: true, value: "00_Inbox/Subfolder" },
+    });
+
+    expect(bulkRes.ok).toBe(false);
+    expect(bulkRes.error).toMatch(/not allowed/);
+
+    // Confirm that NO approval was updated in database (no partial updates)
+    const after1 = sb._mockData.approvals.get("appr-valid").payload.proposal;
+    expect(after1.proposed_folder_path).toBe("04_Archive");
+  });
+
+  it("fails full-set validation if any selected approval is not pending", async () => {
+    const sb = createMockSupabase();
+    sb._mockData.approvals.set("appr-p1", {
+      id: "appr-p1",
+      user_id: "user-1",
+      status: "pending",
+      payload: { proposal: { document_type: "invoice" } },
+    });
+    sb._mockData.approvals.set("appr-p2", {
+      id: "appr-p2",
+      user_id: "user-1",
+      status: "approved", // already approved
+      payload: { proposal: { document_type: "invoice" } },
+    });
+
+    const bulkRes = await applyBulkProposalOverride(sb, "user-1", ["appr-p1", "appr-p2"], {
+      document_type: { apply: true, value: "receipt" },
+    });
+
+    expect(bulkRes.ok).toBe(false);
+    expect(bulkRes.error).toMatch(/approved.*state/);
+
+    const afterP1 = sb._mockData.approvals.get("appr-p1").payload.proposal;
+    expect(afterP1.document_type).toBe("invoice");
   });
 });

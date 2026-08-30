@@ -107,6 +107,297 @@ export type ProposalOverrideEdits = {
   [key: string]: unknown;
 };
 
+export type BulkFieldApply<T> = {
+  apply: boolean;
+  value: T;
+};
+
+export type BulkTopicsApply = {
+  apply: boolean;
+  mode: "add" | "remove" | "replace";
+  values: string[];
+};
+
+export type BulkProposalOverridePatch = {
+  document_type?: BulkFieldApply<string>;
+  document_family?: BulkFieldApply<string>;
+  sender_or_issuer?: BulkFieldApply<string>;
+  organization_id?: BulkFieldApply<string>;
+  primary_domain?: BulkFieldApply<string>;
+  document_date?: BulkFieldApply<string>;
+  proposed_folder_path?: BulkFieldApply<string>;
+  proposed_folder_id?: BulkFieldApply<string>;
+  topics?: BulkTopicsApply;
+  summary?: BulkFieldApply<string>;
+  [key: string]: unknown;
+};
+
+export type BulkFieldAnalysis = {
+  fieldName: string;
+  isMixed: boolean;
+  commonValue?: string;
+  uniqueValues: string[];
+  totalCount: number;
+};
+
+/**
+ * Analyze field values across multiple proposal items to detect uniform vs mixed values (DMS-D1-0003-REVIEW-v2 §14.3).
+ */
+export function analyzeBulkFieldValues(
+  items: Array<{ approval: { payload: unknown } }>,
+): Record<string, BulkFieldAnalysis> {
+  const fields = [
+    "document_type",
+    "document_family",
+    "sender_or_issuer",
+    "primary_domain",
+    "document_date",
+    "proposed_folder_path",
+    "summary",
+  ];
+
+  const result: Record<string, BulkFieldAnalysis> = {};
+
+  for (const field of fields) {
+    const rawValues = items.map((item) => {
+      const p = ((item.approval?.payload as any)?.proposal ?? {}) as Record<string, any>;
+      const val = p[field];
+      return val != null && val !== "" ? String(val) : "";
+    });
+
+    const uniqueSet = new Set(rawValues.filter(Boolean));
+    const uniqueValues = Array.from(uniqueSet);
+    const isMixed = uniqueValues.length > 1;
+    const commonValue = uniqueValues.length === 1 ? uniqueValues[0] : undefined;
+
+    result[field] = {
+      fieldName: field,
+      isMixed,
+      commonValue,
+      uniqueValues,
+      totalCount: items.length,
+    };
+  }
+
+  // Topics analysis
+  const allTopicSets = items.map((item) => {
+    const p = ((item.approval?.payload as any)?.proposal ?? {}) as Record<string, any>;
+    const t = Array.isArray(p.topics) ? p.topics.map(String).sort().join(",") : "";
+    return t;
+  });
+  const uniqueTopicSets = Array.from(new Set(allTopicSets.filter(Boolean)));
+  result["topics"] = {
+    fieldName: "topics",
+    isMixed: uniqueTopicSets.length > 1,
+    commonValue: uniqueTopicSets.length === 1 ? uniqueTopicSets[0] : undefined,
+    uniqueValues: uniqueTopicSets,
+    totalCount: items.length,
+  };
+
+  return result;
+}
+
+/**
+ * Apply Bulk Human Override to multiple native approval proposals (DMS-D1-0003-REVIEW-v2 §14).
+ * - Full pre-validation of all targets before any persistence (no silent partial updates).
+ * - Zero LLM calls for direct bulk edit.
+ * - Rejects any immutable identity fields.
+ * - Respects explicit apply / not-apply flags per field.
+ * - Supports Topics add / remove / replace.
+ * - Recomputes canonical filenames and records Human Override provenance per proposal.
+ */
+export async function applyBulkProposalOverride(
+  sb: SupabaseClient,
+  userId: string,
+  approvalIds: string[],
+  patch: BulkProposalOverridePatch,
+): Promise<{ ok: boolean; error?: string; count?: number; invalidId?: string }> {
+  if (!approvalIds || approvalIds.length === 0) {
+    return { ok: false, error: "No approvals selected for bulk edit" };
+  }
+
+  // Check for immutable field modification attempts in patch keys
+  for (const key of Object.keys(patch)) {
+    if (IMMUTABLE_IDENTITY_FIELDS.has(key)) {
+      return {
+        ok: false,
+        error: `Field "${key}" is an immutable identity/source field and cannot be modified by bulk override.`,
+      };
+    }
+  }
+
+  // Fetch all target approvals
+  const { data: approvals, error: fetchErr } = await sb
+    .from("approvals")
+    .select("*")
+    .in("id", approvalIds)
+    .eq("user_id", userId);
+
+  if (fetchErr || !approvals) {
+    return { ok: false, error: fetchErr?.message || "Failed to fetch approvals" };
+  }
+
+  if (approvals.length !== approvalIds.length) {
+    return {
+      ok: false,
+      error: `Could only find ${approvals.length} of ${approvalIds.length} requested approvals.`,
+    };
+  }
+
+  // Ensure all approvals are in "pending" status
+  for (const appr of approvals) {
+    if (appr.status !== "pending") {
+      return {
+        ok: false,
+        error: `Item ${appr.id.slice(0, 8)} is in "${appr.status}" state. Only pending items can be bulk-edited.`,
+        invalidId: appr.id,
+      };
+    }
+  }
+
+  // Phase 1: In-memory simulation and full-set validation
+  const simulatedUpdates: Array<{
+    approvalId: string;
+    updatedPayload: Record<string, any>;
+    updatedProposal: Record<string, any>;
+  }> = [];
+
+  for (const appr of approvals) {
+    const payload = (appr.payload || {}) as Record<string, any>;
+    const currentProposal = (payload.proposal || {}) as Record<string, any>;
+    const envelope = (payload.envelope || {}) as Record<string, any>;
+
+    // Folder path validation
+    let finalFolderPath = currentProposal.proposed_folder_path || "04_Archive";
+    if (patch.proposed_folder_path?.apply) {
+      const val = validateParaFolderPath(patch.proposed_folder_path.value);
+      if (!val.valid) {
+        return {
+          ok: false,
+          error: `Invalid folder path for item ${appr.id.slice(0, 8)}: ${val.error}`,
+          invalidId: appr.id,
+        };
+      }
+      finalFolderPath = val.cleanPath!;
+    }
+
+    // Topics computation
+    let finalTopics = Array.isArray(currentProposal.topics) ? [...currentProposal.topics] : [];
+    if (patch.topics?.apply) {
+      const targetValues = patch.topics.values || [];
+      if (patch.topics.mode === "replace") {
+        finalTopics = [...targetValues];
+      } else if (patch.topics.mode === "add") {
+        const set = new Set(finalTopics);
+        for (const t of targetValues) {
+          if (t && t.trim()) set.add(t.trim());
+        }
+        finalTopics = Array.from(set);
+      } else if (patch.topics.mode === "remove") {
+        const removeSet = new Set(targetValues.map((t) => t.trim().toLowerCase()));
+        finalTopics = finalTopics.filter((t) => !removeSet.has(t.trim().toLowerCase()));
+      }
+    }
+
+    // Date & Canonical Filename computation
+    const originalFilename =
+      envelope.source_filename ||
+      currentProposal.source_filename ||
+      envelope.original_filename ||
+      "document.pdf";
+
+    const docDate = patch.document_date?.apply
+      ? patch.document_date.value
+      : currentProposal.document_date ?? envelope.message_date;
+
+    const docDateSource = patch.document_date?.apply
+      ? "explicit_document"
+      : currentProposal.document_date_source ?? "explicit_document";
+
+    let canonicalName = currentProposal.canonical_eml_filename || currentProposal.canonical_filename;
+    if (patch.document_date?.apply || !canonicalName) {
+      const built = buildCanonicalFilename({
+        originalFilename,
+        documentDate: docDate,
+        documentDateSource: docDateSource,
+      });
+      canonicalName = built.canonicalFilename;
+    }
+
+    // Build prospective updated proposal
+    const updatedProposal: Record<string, any> = {
+      ...currentProposal,
+      ...(patch.document_type?.apply ? { document_type: patch.document_type.value } : {}),
+      ...(patch.document_family?.apply ? { document_family: patch.document_family.value } : {}),
+      ...(patch.sender_or_issuer?.apply ? { sender_or_issuer: patch.sender_or_issuer.value } : {}),
+      ...(patch.organization_id?.apply ? { organization_id: patch.organization_id.value } : {}),
+      ...(patch.primary_domain?.apply ? { primary_domain: patch.primary_domain.value } : {}),
+      ...(patch.proposed_folder_path?.apply ? { proposed_folder_path: finalFolderPath } : {}),
+      ...(patch.proposed_folder_id?.apply ? { proposed_folder_id: patch.proposed_folder_id.value } : {}),
+      ...(patch.topics?.apply ? { topics: finalTopics } : {}),
+      ...(patch.summary?.apply ? { summary: patch.summary.value } : {}),
+      document_date: docDate,
+      document_date_source: docDateSource,
+      canonical_filename: canonicalName,
+      human_overridden: true,
+      bulk_overridden: true,
+      overridden_at: new Date().toISOString(),
+    };
+
+    const updatedPayload = {
+      ...payload,
+      proposal: updatedProposal,
+    };
+
+    simulatedUpdates.push({
+      approvalId: appr.id,
+      updatedPayload,
+      updatedProposal,
+    });
+  }
+
+  // Phase 2: Persistence across all validated targets
+  for (const sim of simulatedUpdates) {
+    const { error: updateErr } = await sb
+      .from("approvals")
+      .update({ payload: sim.updatedPayload })
+      .eq("id", sim.approvalId)
+      .eq("user_id", userId);
+
+    if (updateErr) {
+      return {
+        ok: false,
+        error: `Failed to update approval ${sim.approvalId.slice(0, 8)}: ${updateErr.message}`,
+        invalidId: sim.approvalId,
+      };
+    }
+
+    // Append clarification history if case exists
+    const docId = docIdFromPayload(sim.updatedPayload);
+    const kase = await findCaseForApproval(sb, userId, sim.approvalId, docId);
+    if (kase) {
+      const history = Array.isArray(kase.proposals) ? [...kase.proposals] : [];
+      history.push({
+        cycle: (kase.cycle_count || 1) + 1,
+        proposal: sim.updatedProposal,
+        approval_id: sim.approvalId,
+        decision: null,
+        rejection_note: "Bulk Human Override applied",
+      });
+      await sb
+        .from("clarification_cases")
+        .update({
+          proposals: history,
+          cycle_count: (kase.cycle_count || 1) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", kase.id);
+    }
+  }
+
+  return { ok: true, count: simulatedUpdates.length };
+}
+
 /**
  * Apply direct Human Override to the current native approval proposal (DMS-D1-0003-REVIEW §7.7).
  * - Modifies approvals.payload.proposal with zero LLM calls.

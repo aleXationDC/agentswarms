@@ -8,14 +8,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { ClipboardList, Search } from "lucide-react";
+import {
+  ClipboardList,
+  Search,
+  Layers,
+  X,
+  Save,
+  AlertCircle,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -35,8 +52,12 @@ import { listClaim, UNKNOWN_COUNT } from "@/lib/listClaim";
 import {
   fetchReviewQueue,
   computeReviewKpis,
+  applyBulkProposalOverride,
+  analyzeBulkFieldValues,
+  CANONICAL_PARA_ROOTS,
   type ReviewQueueItem,
   type ReviewStatus,
+  type BulkProposalOverridePatch,
 } from "@/lib/reviewWorkbench";
 
 export const Route = createFileRoute("/_authenticated/review")({
@@ -105,23 +126,45 @@ function ReviewQueuePage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "confidence">("newest");
 
+  // Multi-row selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Central Bulk Classification Dialog state
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkForm, setBulkForm] = useState<{
+    document_type: { apply: boolean; value: string };
+    document_family: { apply: boolean; value: string };
+    sender_or_issuer: { apply: boolean; value: string };
+    primary_domain: { apply: boolean; value: string };
+    document_date: { apply: boolean; value: string };
+    proposed_folder_path: { apply: boolean; value: string };
+    topics: { apply: boolean; mode: "add" | "remove" | "replace"; valuesString: string };
+  }>({
+    document_type: { apply: false, value: "" },
+    document_family: { apply: false, value: "" },
+    sender_or_issuer: { apply: false, value: "" },
+    primary_domain: { apply: false, value: "" },
+    document_date: { apply: false, value: "" },
+    proposed_folder_path: { apply: false, value: "04_Archive" },
+    topics: { apply: false, mode: "add", valuesString: "" },
+  });
+
+  const load = async (uid: string) => {
+    const { items: loaded, error } = await fetchReviewQueue(supabase, uid);
+    if (error) {
+      setLoadError(error);
+      setItems([]);
+      return;
+    }
+    setLoadError(null);
+    setItems(loaded);
+  };
+
   useEffect(() => {
     if (!user) return;
-    let mounted = true;
-    void (async () => {
-      const { items: loaded, error } = await fetchReviewQueue(supabase, user.id);
-      if (!mounted) return;
-      if (error) {
-        setLoadError(error);
-        setItems([]);
-        return;
-      }
-      setLoadError(null);
-      setItems(loaded);
-    })();
-    return () => {
-      mounted = false;
-    };
+    void load(user.id);
   }, [user]);
 
   const kpis = useMemo(() => computeReviewKpis(items ?? []), [items]);
@@ -150,6 +193,141 @@ function ReviewQueuePage() {
     });
     return list;
   }, [items, statusFilter, typeFilter, search, sort]);
+
+  const selectedItems = useMemo(() => {
+    if (!items) return [];
+    return items.filter((i) => selectedIds.has(i.approvalId));
+  }, [items, selectedIds]);
+
+  const bulkAnalysis = useMemo(() => {
+    return analyzeBulkFieldValues(selectedItems);
+  }, [selectedItems]);
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((i) => selectedIds.has(i.approvalId));
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      const next = new Set(selectedIds);
+      for (const item of filtered) {
+        next.delete(item.approvalId);
+      }
+      setSelectedIds(next);
+    } else {
+      const next = new Set(selectedIds);
+      for (const item of filtered) {
+        next.add(item.approvalId);
+      }
+      setSelectedIds(next);
+    }
+  };
+
+  const toggleItemSelection = (approvalId: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(approvalId)) {
+      next.delete(approvalId);
+    } else {
+      next.add(approvalId);
+    }
+    setSelectedIds(next);
+  };
+
+  const openBulkDialog = () => {
+    setBulkError(null);
+    setBulkSaving(false);
+    setBulkForm({
+      document_type: { apply: false, value: bulkAnalysis.document_type?.commonValue || "" },
+      document_family: { apply: false, value: bulkAnalysis.document_family?.commonValue || "" },
+      sender_or_issuer: { apply: false, value: bulkAnalysis.sender_or_issuer?.commonValue || "" },
+      primary_domain: { apply: false, value: bulkAnalysis.primary_domain?.commonValue || "" },
+      document_date: { apply: false, value: bulkAnalysis.document_date?.commonValue || "" },
+      proposed_folder_path: {
+        apply: false,
+        value: bulkAnalysis.proposed_folder_path?.commonValue || "04_Archive",
+      },
+      topics: { apply: false, mode: "add", valuesString: "" },
+    });
+    setBulkDialogOpen(true);
+  };
+
+  const handleCopyFromReference = (refApprovalId: string) => {
+    const ref = selectedItems.find((i) => i.approvalId === refApprovalId);
+    if (!ref) return;
+    const p = ((ref.approval.payload as any)?.proposal ?? {}) as Record<string, any>;
+    setBulkForm({
+      document_type: { apply: Boolean(p.document_type), value: p.document_type || "" },
+      document_family: { apply: Boolean(p.document_family), value: p.document_family || "" },
+      sender_or_issuer: { apply: Boolean(p.sender_or_issuer), value: p.sender_or_issuer || "" },
+      primary_domain: { apply: Boolean(p.primary_domain), value: p.primary_domain || "" },
+      document_date: { apply: Boolean(p.document_date), value: p.document_date || "" },
+      proposed_folder_path: {
+        apply: Boolean(p.proposed_folder_path),
+        value: p.proposed_folder_path || "04_Archive",
+      },
+      topics: {
+        apply: Array.isArray(p.topics) && p.topics.length > 0,
+        mode: "replace",
+        valuesString: Array.isArray(p.topics) ? p.topics.join(", ") : "",
+      },
+    });
+  };
+
+  const handleSaveBulk = async () => {
+    if (!user) return;
+    setBulkSaving(true);
+    setBulkError(null);
+
+    const patch: BulkProposalOverridePatch = {
+      ...(bulkForm.document_type.apply
+        ? { document_type: { apply: true, value: bulkForm.document_type.value } }
+        : {}),
+      ...(bulkForm.document_family.apply
+        ? { document_family: { apply: true, value: bulkForm.document_family.value } }
+        : {}),
+      ...(bulkForm.sender_or_issuer.apply
+        ? { sender_or_issuer: { apply: true, value: bulkForm.sender_or_issuer.value } }
+        : {}),
+      ...(bulkForm.primary_domain.apply
+        ? { primary_domain: { apply: true, value: bulkForm.primary_domain.value } }
+        : {}),
+      ...(bulkForm.document_date.apply
+        ? { document_date: { apply: true, value: bulkForm.document_date.value } }
+        : {}),
+      ...(bulkForm.proposed_folder_path.apply
+        ? { proposed_folder_path: { apply: true, value: bulkForm.proposed_folder_path.value } }
+        : {}),
+      ...(bulkForm.topics.apply
+        ? {
+            topics: {
+              apply: true,
+              mode: bulkForm.topics.mode,
+              values: bulkForm.topics.valuesString
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean),
+            },
+          }
+        : {}),
+    };
+
+    const res = await applyBulkProposalOverride(
+      supabase,
+      user.id,
+      Array.from(selectedIds),
+      patch,
+    );
+
+    setBulkSaving(false);
+
+    if (!res.ok) {
+      setBulkError(res.error || "Bulk update failed");
+      return;
+    }
+
+    setBulkDialogOpen(false);
+    setSelectedIds(new Set());
+    await load(user.id);
+  };
 
   const claim = listClaim({
     loaded: items !== null,
@@ -187,6 +365,44 @@ function ReviewQueuePage() {
         <KpiCard label="Approved today" value={kpis.approvedToday} />
         <KpiCard label="Needs attention" value={kpis.needsAttention} tone="warn" />
       </div>
+
+      {/* Selection Action Bar (when rows are selected) */}
+      {selectedIds.size > 0 && (
+        <Card className="p-3 bg-primary/5 border-primary/20 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="default" className="text-xs">
+              {selectedIds.size} selected
+            </Badge>
+            {filtered.length > selectedIds.size && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs text-muted-foreground hover:text-primary"
+                onClick={toggleSelectAllFiltered}
+              >
+                Select all {filtered.length} filtered items
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="h-3.5 w-3.5" /> Clear selection
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 h-8 text-xs"
+              onClick={openBulkDialog}
+            >
+              <Layers className="h-3.5 w-3.5" /> Edit Classification
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-3 flex flex-col sm:flex-row gap-2 sm:items-center">
         <div className="relative flex-1 min-w-0">
@@ -237,6 +453,13 @@ function ReviewQueuePage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 text-center">
+                <Checkbox
+                  checked={allFilteredSelected}
+                  onCheckedChange={toggleSelectAllFiltered}
+                  aria-label="Select all"
+                />
+              </TableHead>
               <TableHead>Item / Source</TableHead>
               <TableHead className="hidden md:table-cell">Type / Family</TableHead>
               <TableHead className="hidden lg:table-cell">Domain</TableHead>
@@ -249,7 +472,7 @@ function ReviewQueuePage() {
           <TableBody>
             {claim.message === "error" && (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-sm" role="alert">
+                <TableCell colSpan={8} className="py-8 text-center text-sm" role="alert">
                   <span className="text-warning">
                     The review queue could not be loaded — {loadError}.
                   </span>
@@ -258,7 +481,7 @@ function ReviewQueuePage() {
             )}
             {claim.message === "empty" && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-10">
                   <ClipboardList className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
                   Nothing to review. Items needing a decision will appear here.
                 </TableCell>
@@ -266,15 +489,26 @@ function ReviewQueuePage() {
             )}
             {claim.message !== "error" && claim.message !== "empty" && filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
+                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-10">
                   No items match this filter.
                 </TableCell>
               </TableRow>
             )}
             {filtered.map((item) => {
               const f = fieldFromItem(item);
+              const isSelected = selectedIds.has(item.approvalId);
               return (
-                <TableRow key={item.approvalId} className="hover:bg-muted/40">
+                <TableRow
+                  key={item.approvalId}
+                  className={`hover:bg-muted/40 ${isSelected ? "bg-primary/5" : ""}`}
+                >
+                  <TableCell className="text-center p-2">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleItemSelection(item.approvalId)}
+                      aria-label={`Select ${f.filename}`}
+                    />
+                  </TableCell>
                   <TableCell className="p-0 max-w-[16rem]">
                     <Link
                       to="/review/$approvalId"
@@ -358,6 +592,360 @@ function ReviewQueuePage() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Central Bulk Classification Dialog (DMS-D1-0003-REVIEW-v2 §14) */}
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" />
+              Bulk Classification ({selectedIds.size} items)
+            </DialogTitle>
+            <DialogDescription>
+              Edit classification fields across all selected proposals. Fields set to 'Not applied'
+              remain untouched.
+            </DialogDescription>
+          </DialogHeader>
+
+          {bulkError && (
+            <Card className="p-3 border-red-500/40 bg-red-500/10 text-red-500 text-xs flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{bulkError}</span>
+            </Card>
+          )}
+
+          {/* Reference item selector */}
+          <div className="p-2.5 bg-muted/40 rounded border space-y-1.5">
+            <p className="text-xs font-medium">Take values from reference item</p>
+            <Select onValueChange={handleCopyFromReference}>
+              <SelectTrigger className="h-8 text-xs bg-background">
+                <SelectValue placeholder="Choose a reference item to populate fields…" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedItems.map((it) => (
+                  <SelectItem key={it.approvalId} value={it.approvalId}>
+                    {fieldFromItem(it).filename}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            {/* Document Type */}
+            <BulkFieldRow
+              label="Document Type"
+              isMixed={bulkAnalysis.document_type?.isMixed}
+              uniqueCount={bulkAnalysis.document_type?.uniqueValues.length}
+              applied={bulkForm.document_type.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  document_type: { ...bulkForm.document_type, apply },
+                })
+              }
+            >
+              <Input
+                disabled={!bulkForm.document_type.apply}
+                value={bulkForm.document_type.value}
+                onChange={(e) =>
+                  setBulkForm({
+                    ...bulkForm,
+                    document_type: { ...bulkForm.document_type, value: e.target.value },
+                  })
+                }
+                placeholder="invoice, contract, receipt, etc."
+                className="h-8 text-xs"
+              />
+            </BulkFieldRow>
+
+            {/* Document Family */}
+            <BulkFieldRow
+              label="Document Family"
+              isMixed={bulkAnalysis.document_family?.isMixed}
+              uniqueCount={bulkAnalysis.document_family?.uniqueValues.length}
+              applied={bulkForm.document_family.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  document_family: { ...bulkForm.document_family, apply },
+                })
+              }
+            >
+              <Input
+                disabled={!bulkForm.document_family.apply}
+                value={bulkForm.document_family.value}
+                onChange={(e) =>
+                  setBulkForm({
+                    ...bulkForm,
+                    document_family: { ...bulkForm.document_family, value: e.target.value },
+                  })
+                }
+                placeholder="Legal, Finance, Operations, etc."
+                className="h-8 text-xs"
+              />
+            </BulkFieldRow>
+
+            {/* Organisation / Issuer */}
+            <BulkFieldRow
+              label="Organisation / Issuer"
+              isMixed={bulkAnalysis.sender_or_issuer?.isMixed}
+              uniqueCount={bulkAnalysis.sender_or_issuer?.uniqueValues.length}
+              applied={bulkForm.sender_or_issuer.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  sender_or_issuer: { ...bulkForm.sender_or_issuer, apply },
+                })
+              }
+            >
+              <Input
+                disabled={!bulkForm.sender_or_issuer.apply}
+                value={bulkForm.sender_or_issuer.value}
+                onChange={(e) =>
+                  setBulkForm({
+                    ...bulkForm,
+                    sender_or_issuer: { ...bulkForm.sender_or_issuer, value: e.target.value },
+                  })
+                }
+                placeholder="e.g. Deutsche Telekom, Stadtwerke"
+                className="h-8 text-xs"
+              />
+            </BulkFieldRow>
+
+            {/* Primary Domain */}
+            <BulkFieldRow
+              label="Primary Domain"
+              isMixed={bulkAnalysis.primary_domain?.isMixed}
+              uniqueCount={bulkAnalysis.primary_domain?.uniqueValues.length}
+              applied={bulkForm.primary_domain.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  primary_domain: { ...bulkForm.primary_domain, apply },
+                })
+              }
+            >
+              <Input
+                disabled={!bulkForm.primary_domain.apply}
+                value={bulkForm.primary_domain.value}
+                onChange={(e) =>
+                  setBulkForm({
+                    ...bulkForm,
+                    primary_domain: { ...bulkForm.primary_domain, value: e.target.value },
+                  })
+                }
+                placeholder="Finance, RealEstate, Infrastructure"
+                className="h-8 text-xs"
+              />
+            </BulkFieldRow>
+
+            {/* Document Date */}
+            <BulkFieldRow
+              label="Document Date (YYYY-MM-DD)"
+              isMixed={bulkAnalysis.document_date?.isMixed}
+              uniqueCount={bulkAnalysis.document_date?.uniqueValues.length}
+              applied={bulkForm.document_date.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  document_date: { ...bulkForm.document_date, apply },
+                })
+              }
+            >
+              <Input
+                disabled={!bulkForm.document_date.apply}
+                value={bulkForm.document_date.value}
+                onChange={(e) =>
+                  setBulkForm({
+                    ...bulkForm,
+                    document_date: { ...bulkForm.document_date, value: e.target.value },
+                  })
+                }
+                placeholder="YYYY-MM-DD"
+                className="h-8 text-xs font-mono"
+              />
+            </BulkFieldRow>
+
+            {/* Proposed PARA Target Folder */}
+            <BulkFieldRow
+              label="PARA Target Folder"
+              isMixed={bulkAnalysis.proposed_folder_path?.isMixed}
+              uniqueCount={bulkAnalysis.proposed_folder_path?.uniqueValues.length}
+              applied={bulkForm.proposed_folder_path.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  proposed_folder_path: { ...bulkForm.proposed_folder_path, apply },
+                })
+              }
+            >
+              <div className="space-y-1.5">
+                <Select
+                  disabled={!bulkForm.proposed_folder_path.apply}
+                  value={bulkForm.proposed_folder_path.value.split("/")[0]}
+                  onValueChange={(root) => {
+                    const sub = bulkForm.proposed_folder_path.value.split("/").slice(1).join("/");
+                    setBulkForm({
+                      ...bulkForm,
+                      proposed_folder_path: {
+                        ...bulkForm.proposed_folder_path,
+                        value: sub ? `${root}/${sub}` : root,
+                      },
+                    });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="PARA Root" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CANONICAL_PARA_ROOTS.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  disabled={!bulkForm.proposed_folder_path.apply}
+                  value={bulkForm.proposed_folder_path.value}
+                  onChange={(e) =>
+                    setBulkForm({
+                      ...bulkForm,
+                      proposed_folder_path: {
+                        ...bulkForm.proposed_folder_path,
+                        value: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder="02_Areas/Finanzen/Telekommunikation"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+            </BulkFieldRow>
+
+            {/* Topics */}
+            <BulkFieldRow
+              label="Topics"
+              isMixed={bulkAnalysis.topics?.isMixed}
+              uniqueCount={bulkAnalysis.topics?.uniqueValues.length}
+              applied={bulkForm.topics.apply}
+              onToggleApply={(apply) =>
+                setBulkForm({
+                  ...bulkForm,
+                  topics: { ...bulkForm.topics, apply },
+                })
+              }
+            >
+              <div className="space-y-1.5">
+                <Select
+                  disabled={!bulkForm.topics.apply}
+                  value={bulkForm.topics.mode}
+                  onValueChange={(mode: "add" | "remove" | "replace") =>
+                    setBulkForm({
+                      ...bulkForm,
+                      topics: { ...bulkForm.topics, mode },
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="add">Add topics to existing</SelectItem>
+                    <SelectItem value="remove">Remove topics from existing</SelectItem>
+                    <SelectItem value="replace">Replace all topics</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  disabled={!bulkForm.topics.apply}
+                  value={bulkForm.topics.valuesString}
+                  onChange={(e) =>
+                    setBulkForm({
+                      ...bulkForm,
+                      topics: { ...bulkForm.topics, valuesString: e.target.value },
+                    })
+                  }
+                  placeholder="telecom, billing, monthly (comma-separated)"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </BulkFieldRow>
+          </div>
+
+          <DialogFooter className="mt-4 pt-3 border-t flex flex-row justify-between items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkSaving}
+              onClick={() => setBulkDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={bulkSaving || selectedIds.size === 0}
+              onClick={handleSaveBulk}
+              className="gap-1.5"
+            >
+              <Save className="h-4 w-4" />
+              {bulkSaving ? "Applying…" : `Apply to ${selectedIds.size} items`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function BulkFieldRow({
+  label,
+  isMixed,
+  uniqueCount,
+  applied,
+  onToggleApply,
+  children,
+}: {
+  label: string;
+  isMixed?: boolean;
+  uniqueCount?: number;
+  applied: boolean;
+  onToggleApply: (apply: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`p-2.5 rounded border transition-colors ${
+        applied ? "bg-card border-primary/40" : "bg-muted/20 border-border/40"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-medium">
+          <Checkbox
+            checked={applied}
+            onCheckedChange={(checked) => onToggleApply(Boolean(checked))}
+          />
+          <span>{label}</span>
+        </label>
+        {!applied && isMixed && (
+          <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/40">
+            Mixed ({uniqueCount} values)
+          </Badge>
+        )}
+        {!applied && !isMixed && (
+          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+            Not applied
+          </Badge>
+        )}
+        {applied && (
+          <Badge variant="default" className="text-[10px] bg-primary">
+            Will apply
+          </Badge>
+        )}
+      </div>
+      <div className={applied ? "opacity-100" : "opacity-40 pointer-events-none"}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -367,7 +955,9 @@ function KpiCard({ label, value, tone }: { label: string; value: number; tone?: 
     <Card className="p-3">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
-        className={`text-2xl font-semibold tabular-nums ${tone === "warn" && value > 0 ? "text-red-500" : ""}`}
+        className={`text-2xl font-semibold tabular-nums ${
+          tone === "warn" && value > 0 ? "text-red-500" : ""
+        }`}
       >
         {value}
       </p>
