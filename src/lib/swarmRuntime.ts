@@ -213,6 +213,13 @@ export type SwarmNodeData = {
   }[];
   // condition
   conditionPrompt?: string; // a question whose YES/NO answer chooses the edge
+  // conditionMode: "llm" (default, unset) judges conditionPrompt via the model;
+  // "boolean_equals" is deterministic — no model call. It reads ctx[inputs[0]]
+  // and compares it (trimmed, case-insensitive) to conditionEqualsValue
+  // (default "yes"). Use this for security/approval gates — see
+  // evaluateBooleanEqualsCondition() and DMS-D1-0002 §9.
+  conditionMode?: "llm" | "boolean_equals";
+  conditionEqualsValue?: string; // expected value for "boolean_equals"; default "yes"
   // router — N-way intelligent router. The LLM picks one of the outgoing
   // edge labels; matching branch runs, others are skipped via deadEdges.
   routerPrompt?: string;
@@ -504,6 +511,35 @@ export function decideYesNo(reply: string): "YES" | "NO" | null {
   if (hasYes && !hasNo) return "YES";
   if (hasNo && !hasYes) return "NO";
   return null;
+}
+
+/**
+ * Deterministic (non-LLM) evaluation for a condition node.
+ *
+ * DMS-D1-0002 §9: an approval boolean must never be re-interpreted by an LLM
+ * — that turned a human "no" into a "yes" whenever the judge misread the
+ * approval summary text (see the `approval` node's `ctx[`${v}_approved`]`
+ * comment above). `conditionMode: "boolean_equals"` reads a named context
+ * variable directly and compares it, byte-for-byte after trim/casefold, to an
+ * expected value — no model call, no ambiguity, no retry-on-misread.
+ *
+ * Returns null when the referenced variable is missing so callers can fail
+ * closed (treat as undecided) instead of guessing.
+ */
+export function evaluateBooleanEqualsCondition(
+  node: { data: SwarmNodeData },
+  ctx: Record<string, unknown>,
+): "YES" | "NO" | null {
+  const varName = node.data.inputs?.[0];
+  if (!varName) return null;
+  if (!(varName in ctx)) return null;
+  const actual = String(ctx[varName] ?? "")
+    .trim()
+    .toLowerCase();
+  const expected = String(node.data.conditionEqualsValue ?? "yes")
+    .trim()
+    .toLowerCase();
+  return actual === expected ? "YES" : "NO";
 }
 
 // Pulls a string output from the upstream context — falls back to the latest
@@ -1249,40 +1285,51 @@ export async function runSwarm(
         }
 
         if (node.data.kind === "condition") {
-          const judgeInput = gatherInputs(node, ctx, lastOutput);
-          const prompt =
-            (node.data.conditionPrompt || "Should we proceed?") +
-            `\n\nINPUT:\n${judgeInput}\n\nAnswer with a single word: YES or NO.`;
-          const judgement = await callAgent(
-            {
-              ...node,
-              data: {
-                ...node.data,
-                systemPrompt: "You are a strict binary classifier. Reply only YES or NO.",
+          let decision: "YES" | "NO" | null;
+          if (node.data.conditionMode === "boolean_equals") {
+            decision = evaluateBooleanEqualsCondition(node, ctx);
+            if (!decision) {
+              throw new Error(
+                `Deterministic condition could not read variable "${node.data.inputs?.[0] ?? "(none configured)"}" from context — no LLM fallback is used for boolean_equals.`,
+              );
+            }
+            onEvent({ type: "node_done", nodeId: node.id, output: decision });
+          } else {
+            const judgeInput = gatherInputs(node, ctx, lastOutput);
+            const prompt =
+              (node.data.conditionPrompt || "Should we proceed?") +
+              `\n\nINPUT:\n${judgeInput}\n\nAnswer with a single word: YES or NO.`;
+            const judgement = await callAgent(
+              {
+                ...node,
+                data: {
+                  ...node.data,
+                  systemPrompt: "You are a strict binary classifier. Reply only YES or NO.",
+                },
               },
-            },
-            prompt,
-            (tok) => onEvent({ type: "node_token", nodeId: node.id, token: tok }),
-            signal,
-            swarmRunId,
-            captureUsage(node.id),
-            captureMeta(node.id),
-            captureThinking(node.id),
-          );
-          const decision = decideYesNo(judgement);
-          if (!decision) {
-            // Undecided rather than guessed: like the router, a branch taken on
-            // a coin-flip looks like a successful run. Throwing lets retryCount
-            // re-ask the judge.
-            throw new Error(
-              `Condition judge gave no clear YES/NO answer: ` +
-                `${String(judgement).trim().slice(0, 200) || "(empty)"}`,
+              prompt,
+              (tok) => onEvent({ type: "node_token", nodeId: node.id, token: tok }),
+              signal,
+              swarmRunId,
+              captureUsage(node.id),
+              captureMeta(node.id),
+              captureThinking(node.id),
             );
+            decision = decideYesNo(judgement);
+            if (!decision) {
+              // Undecided rather than guessed: like the router, a branch taken on
+              // a coin-flip looks like a successful run. Throwing lets retryCount
+              // re-ask the judge.
+              throw new Error(
+                `Condition judge gave no clear YES/NO answer: ` +
+                  `${String(judgement).trim().slice(0, 200) || "(empty)"}`,
+              );
+            }
+            onEvent({ type: "node_done", nodeId: node.id, output: decision });
           }
           const v = node.data.outputVar || `cond_${node.id}`;
           ctx[v] = decision;
           lastOutput = decision;
-          onEvent({ type: "node_done", nodeId: node.id, output: decision });
 
           const condOutEdges = outgoingEdges.get(node.id) || [];
           const unlabeled = condOutEdges.filter((e) => !e.label);

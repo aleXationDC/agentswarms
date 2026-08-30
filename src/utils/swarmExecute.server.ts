@@ -28,6 +28,7 @@ import {
   topoLevels,
   hasDoneSignal,
   decideYesNo,
+  evaluateBooleanEqualsCondition,
   type SwarmNodeData,
 } from "@/lib/swarmRuntime";
 // Graph semantics live in ONE place, shared with the canvas runtime, so the
@@ -843,22 +844,32 @@ export async function executeSwarmServer(opts: {
             return;
           }
           if (kind === "condition") {
-            const judgeInput = gatherInputs(node, ctx, lastOutput);
-            const out = await chat({
-              origin: opts.origin,
-              userId: opts.userId,
-              node,
-              systemPrompt: "You are a strict binary classifier. Reply only YES or NO.",
-              userMessage: `${d.conditionPrompt || "Should we proceed?"}\n\nINPUT:\n${judgeInput}\n\nAnswer with a single word: YES or NO.`,
-            });
-            const decision = decideYesNo(out);
-            if (!decision) {
-              // Undecided rather than guessed — see decideYesNo. Throwing lets
-              // retryCount re-ask instead of silently taking a branch.
-              throw new Error(
-                `Condition judge gave no clear YES/NO answer: ` +
-                  `${out.trim().slice(0, 200) || "(empty)"}`,
-              );
+            let decision: "YES" | "NO" | null;
+            if (d.conditionMode === "boolean_equals") {
+              decision = evaluateBooleanEqualsCondition(node, ctx);
+              if (!decision) {
+                throw new Error(
+                  `Deterministic condition could not read variable "${d.inputs?.[0] ?? "(none configured)"}" from context — no LLM fallback is used for boolean_equals.`,
+                );
+              }
+            } else {
+              const judgeInput = gatherInputs(node, ctx, lastOutput);
+              const out = await chat({
+                origin: opts.origin,
+                userId: opts.userId,
+                node,
+                systemPrompt: "You are a strict binary classifier. Reply only YES or NO.",
+                userMessage: `${d.conditionPrompt || "Should we proceed?"}\n\nINPUT:\n${judgeInput}\n\nAnswer with a single word: YES or NO.`,
+              });
+              decision = decideYesNo(out);
+              if (!decision) {
+                // Undecided rather than guessed — see decideYesNo. Throwing lets
+                // retryCount re-ask instead of silently taking a branch.
+                throw new Error(
+                  `Condition judge gave no clear YES/NO answer: ` +
+                    `${out.trim().slice(0, 200) || "(empty)"}`,
+                );
+              }
             }
             write(decision);
             const deadTargets: string[] = [];

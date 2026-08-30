@@ -138,6 +138,8 @@
                     "y": 220
                 },
                 "outputVar": "decision",
+                "conditionMode": "boolean_equals",
+                "conditionEqualsValue": "yes",
                 "conditionPrompt": "Is reviewed_proposal_approved equal to yes?"
             },
             "type": "condition",
