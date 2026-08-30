@@ -108,8 +108,13 @@ export const REGISTRY_COLUMNS: { name: string; type: "string" | "number" | "date
   // Privacy Vault, addressed by document_id/entity_key, not here) ----
   // standard | personal | confidential | restricted
   { name: "privacy_class", type: "string" },
-  // not_run | pending | passed | failed — whether the local Privacy Firewall
-  // has evaluated this document at all.
+  // not_run | passed | redacted | blocked | error — truthful outcome of the
+  // local Privacy Firewall for this document (see derivePiiProcessingStatus
+  // in sensitivityPolicy.ts): not_run = extraction never produced text to
+  // scan; passed = scanned, nothing found; redacted = findings were
+  // pseudonymised and external processing is allowed; blocked = detection
+  // succeeded but the tier forbids external processing; error = the sanitizer
+  // itself failed/timed out (fails closed, but distinctly from "blocked").
   { name: "pii_processing_status", type: "string" },
   // sanitized_allowed | blocked — whether the pseudonymised representation may
   // ever be sent to an external provider (embeddings, LLM classification).

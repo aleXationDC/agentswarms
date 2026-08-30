@@ -4,7 +4,11 @@
 // off-by-one bug, without any DB/network dependency.
 import { describe, expect, it } from "vitest";
 
-import { applyReplacements, mapPresidioLabelToEntityType } from "@/lib/privacy/pseudonymize.server";
+import {
+  applyReplacements,
+  mapPresidioLabelToEntityType,
+  normalizeOverlappingFindings,
+} from "@/lib/privacy/pseudonymize.server";
 
 describe("mapPresidioLabelToEntityType", () => {
   it("maps known Presidio labels to their entity domain", () => {
@@ -52,5 +56,72 @@ describe("applyReplacements", () => {
 
   it("throws on an inverted span", () => {
     expect(() => applyReplacements("short", [{ start: 4, end: 1, token: "X" }])).toThrow();
+  });
+});
+
+describe("normalizeOverlappingFindings", () => {
+  it("keeps disjoint findings untouched", () => {
+    const findings = [
+      { label: "PERSON", score: 0.6, start: 0, end: 3 },
+      { label: "EMAIL_ADDRESS", score: 0.9, start: 10, end: 20 },
+    ];
+    expect(normalizeOverlappingFindings(findings)).toEqual(findings);
+  });
+
+  it("resolves an overlap in favour of the higher-confidence finding", () => {
+    const findings = [
+      { label: "LOCATION", score: 0.5, start: 5, end: 15 },
+      { label: "PERSON", score: 0.9, start: 8, end: 12 },
+    ];
+    const result = normalizeOverlappingFindings(findings);
+    expect(result).toEqual([{ label: "PERSON", score: 0.9, start: 8, end: 12 }]);
+  });
+
+  it("breaks a tied score by the longer span", () => {
+    const findings = [
+      { label: "LOCATION", score: 0.7, start: 0, end: 20 },
+      { label: "PERSON", score: 0.7, start: 5, end: 10 },
+    ];
+    const result = normalizeOverlappingFindings(findings);
+    expect(result).toEqual([{ label: "LOCATION", score: 0.7, start: 0, end: 20 }]);
+  });
+
+  it("is deterministic regardless of input array order", () => {
+    const a = { label: "PERSON", score: 0.8, start: 0, end: 10 };
+    const b = { label: "LOCATION", score: 0.5, start: 5, end: 8 };
+    const forward = normalizeOverlappingFindings([a, b]);
+    const reversed = normalizeOverlappingFindings([b, a]);
+    expect(forward).toEqual(reversed);
+    expect(forward).toEqual([a]);
+  });
+
+  it("drops a degenerate (inverted or zero-length) span", () => {
+    const findings = [
+      { label: "PERSON", score: 0.8, start: 5, end: 5 },
+      { label: "EMAIL_ADDRESS", score: 0.6, start: 0, end: 3 },
+    ];
+    expect(normalizeOverlappingFindings(findings)).toEqual([
+      { label: "EMAIL_ADDRESS", score: 0.6, start: 0, end: 3 },
+    ]);
+  });
+
+  it("never lets the normalized set contain any overlapping pair, on a fuzz of random spans", () => {
+    let seed = 42;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const findings = Array.from({ length: 40 }, (_, i) => {
+      const start = Math.floor(rand() * 100);
+      const end = start + 1 + Math.floor(rand() * 10);
+      return { label: `L${i % 5}`, score: Math.round(rand() * 100) / 100, start, end };
+    });
+    const result = normalizeOverlappingFindings(findings);
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const overlaps = result[i].start < result[j].end && result[j].start < result[i].end;
+        expect(overlaps).toBe(false);
+      }
+    }
   });
 });

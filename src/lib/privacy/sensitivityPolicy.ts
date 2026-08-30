@@ -126,3 +126,46 @@ export function classifySensitivity(input: SensitivityInput): SensitivityDecisio
     reason: "No personal data detected above threshold.",
   };
 }
+
+// ── DMS-D1-0002R Phase A3 ────────────────────────────────────────────────────
+// The registry's `pii_processing_status` column used to be hardcoded to
+// `"passed"` for every readable document regardless of outcome — truthful for
+// none of the interesting cases (nothing found vs. found-and-redacted vs.
+// sanitizer error). These five values are each reachable from a distinct,
+// disjoint combination of inputs, so a registry row's status always reflects
+// what actually happened, not what the happy path assumes happened.
+export type PiiProcessingStatus = "not_run" | "passed" | "redacted" | "blocked" | "error";
+
+/**
+ * Truthful `pii_processing_status` for a registry row, given only facts the
+ * caller already has in hand (no re-detection, no I/O) — pure and unit
+ * testable without a live Presidio instance.
+ */
+export function derivePiiProcessingStatus(input: {
+  /** Local extraction succeeded (there is text to scan at all). */
+  extractionOk: boolean;
+  /** The Presidio call itself returned a usable result (not an error/timeout). */
+  detectionOk: boolean;
+  /** The sensitivity tier this document was classified into. */
+  tier: SensitivityTier;
+  /** At least one PII finding scored above MIN_SCORE. */
+  hasFindings: boolean;
+}): PiiProcessingStatus {
+  if (!input.extractionOk) {
+    // Unreadable/image-only content never reached the sanitizer at all.
+    return "not_run";
+  }
+  if (!input.detectionOk) {
+    // The sanitizer ran but errored/timed out — classifySensitivity already
+    // fails this closed to "restricted"; the registry must say WHY, not just
+    // report the safe tier as if detection had actually succeeded.
+    return "error";
+  }
+  if (input.tier === "restricted") {
+    // Detection succeeded but found something (or content policy) that
+    // blocks external processing outright — distinct from "redacted", where
+    // pseudonymisation made external processing safe to allow.
+    return "blocked";
+  }
+  return input.hasFindings ? "redacted" : "passed";
+}

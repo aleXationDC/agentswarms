@@ -201,6 +201,16 @@ export const Route = createFileRoute("/api/dms/intake")({
               reason: result.reason,
             });
           }
+          if (result.status === "privacy_error") {
+            return json(
+              {
+                documentId: result.documentId,
+                status: "privacy_error",
+                reason: result.reason,
+              },
+              502,
+            );
+          }
           if (result.runResult.status === "error") {
             return json(
               {

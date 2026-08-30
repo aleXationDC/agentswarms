@@ -25,6 +25,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { EntityType } from "@/lib/privacy/privacyVault.server";
+import { deriveEntityLookupKey } from "@/lib/privacy/vaultCrypto.server";
 
 export const ENTITY_RESOLUTION_DATASET = "entity_resolution";
 
@@ -55,20 +56,17 @@ export function normalizeEntityValue(raw: string): string {
  * Same input always yields the same key so repeated sightings of the same
  * real-world entity resolve to the same row — without ever storing the clear
  * value here.
+ *
+ * DMS-D1-0002R Phase A5: keyed by the Privacy Vault secret (HMAC-SHA256, via
+ * deriveEntityLookupKey) rather than a bare SHA-256 digest of the clear value
+ * — a normalised name/email/phone is low-entropy enough that an unkeyed hash
+ * is dictionary-attackable by anyone who can read this dataset's rows.
  */
 export async function deriveEntityKey(
   entityType: EntityType,
   normalizedValue: string,
 ): Promise<string> {
-  const enc = new TextEncoder();
-  const h = await crypto.subtle.digest(
-    "SHA-256",
-    enc.encode(`agentswarms/entity-key/v1|${entityType}|${normalizedValue}`),
-  );
-  const bytes = new Uint8Array(h);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0");
-  return hex.slice(0, 24);
+  return deriveEntityLookupKey(entityType, normalizedValue);
 }
 
 function shortSuffix(entityKey: string): string {

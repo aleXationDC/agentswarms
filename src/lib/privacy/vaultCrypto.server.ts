@@ -55,6 +55,62 @@ async function deriveKid(secret: string): Promise<string> {
   return bytesToHex(new Uint8Array(h)).slice(0, 12);
 }
 
+// DMS-D1-0002R Phase A5. `deriveEntityKey` (entityResolution.server.ts) used
+// to hash `type|normalizedValue` with a bare, unkeyed SHA-256 — over a
+// low-entropy clear value (an email address, a phone number, a name), that is
+// dictionary/rainbow-table breakable by anyone who can read the entity_key
+// column, defeating the whole point of keeping the clear value Vault-only.
+// HMAC-SHA256, keyed by the SAME rotating secret as every other Privacy Vault
+// value, closes that: recovering a value from its key now requires the vault
+// secret, not just the dataset row.
+const ENTITY_KEY_DOMAIN = "agentswarms/entity-key/v2|";
+
+async function importHmacKey(secret: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  return crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+}
+
+const hmacKeyCache = new Map<string, Promise<CryptoKey>>();
+function hmacKeyFor(secret: string): Promise<CryptoKey> {
+  let k = hmacKeyCache.get(secret);
+  if (!k) {
+    k = importHmacKey(secret);
+    hmacKeyCache.set(secret, k);
+  }
+  return k;
+}
+
+/**
+ * HMAC-SHA256(current vault secret, domainTag|normalizedValue), truncated to
+ * 24 hex chars (same shape as the previous bare-digest key, so existing
+ * entity_resolution rows stay the right length). Always keyed by the
+ * CURRENT secret only — unlike token decryption, entity keys are never
+ * decrypted, so there is nothing to try under old keys; a rotation simply
+ * means entities re-resolve as new candidates going forward, which is safe
+ * (native "unknown stays reviewable" behaviour), never silently wrong.
+ */
+export async function deriveEntityLookupKey(
+  domainTag: string,
+  normalizedValue: string,
+): Promise<string> {
+  const { current } = readKeyring();
+  const key = await hmacKeyFor(current);
+  const enc = new TextEncoder();
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    enc.encode(`${ENTITY_KEY_DOMAIN}${domainTag}|${normalizedValue}`),
+  );
+  return bytesToHex(new Uint8Array(sig)).slice(0, 24);
+}
+
+
 const keyCache = new Map<string, { key: Promise<CryptoKey>; kid: Promise<string> }>();
 function keyFor(secret: string) {
   let e = keyCache.get(secret);

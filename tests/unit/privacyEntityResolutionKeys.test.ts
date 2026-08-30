@@ -2,9 +2,20 @@
 // dataset read/write paths need a Supabase client and are exercised via the
 // native-dataset conventions already covered by documentRegistry tests; this
 // file covers the part that must never silently link two different values.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 
 import { deriveEntityKey, normalizeEntityValue } from "@/lib/privacy/entityResolution.server";
+
+// deriveEntityKey is now HMAC-keyed by PRIVACY_VAULT_SECRET (DMS-D1-0002R
+// Phase A5) — same env-var convention as tests/unit/privacyVaultCrypto.test.ts.
+const ORIGINAL_SECRET = process.env.PRIVACY_VAULT_SECRET;
+beforeEach(() => {
+  process.env.PRIVACY_VAULT_SECRET = "test-vault-secret-for-entity-keys";
+});
+afterEach(() => {
+  if (ORIGINAL_SECRET === undefined) delete process.env.PRIVACY_VAULT_SECRET;
+  else process.env.PRIVACY_VAULT_SECRET = ORIGINAL_SECRET;
+});
 
 describe("normalizeEntityValue", () => {
   it("trims, lowercases and collapses whitespace", () => {
@@ -35,5 +46,13 @@ describe("deriveEntityKey", () => {
     const key = await deriveEntityKey("person", "Max Mustermann");
     expect(key).not.toContain("Max");
     expect(key.toLowerCase()).not.toContain("mustermann");
+  });
+
+  it("is keyed by PRIVACY_VAULT_SECRET, not a bare hash of the value", async () => {
+    const normalized = normalizeEntityValue("Max Mustermann");
+    const under1 = await deriveEntityKey("person", normalized);
+    process.env.PRIVACY_VAULT_SECRET = "a-different-vault-secret";
+    const under2 = await deriveEntityKey("person", normalized);
+    expect(under1).not.toBe(under2);
   });
 });

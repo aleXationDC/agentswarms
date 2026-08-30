@@ -240,9 +240,12 @@ services:
   # (see tests/unit/composeProfiles.test.ts): `--profile all` is an explicit,
   # human-run convenience command, not automatic activation. Bring it up with
   # `docker compose --profile privacy up -d` (or `--profile all`) once the
-  # German recognizers (DE_TAX_ID, DE_TAX_NUMBER, DE_ID_CARD, DE_PASSPORT —
-  # see src/lib/privacy/piiDetection.server.ts) are registered and the
-  # fixtures in tests/unit/privacy* pass against a real instance.
+  # fixtures in tests/unit/privacy* pass against a real instance. German
+  # recognizer coverage (DE_TAX_ID, DE_TAX_NUMBER, DE_ID_CARD, DE_PASSPORT)
+  # does NOT require rebuilding this image or a custom recognizer registry
+  # file: src/lib/privacy/piiDetection.server.ts sends them per-request as
+  # Presidio `ad_hoc_recognizers` (a stock Analyzer REST feature), so the
+  # stock image above is sufficient once brought up.
   presidio-analyzer:
     # Pin to an explicit release, never `:latest` — this is a security
     # component. Bump deliberately, not via a floating tag.

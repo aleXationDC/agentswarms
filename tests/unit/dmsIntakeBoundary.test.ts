@@ -4,7 +4,13 @@
 // guarantees the rest of the pipeline depends on.
 import { describe, expect, it } from "vitest";
 
-import { buildIntakeEnvelope, decideIntakeRoute, documentIdFor } from "@/lib/dmsIntake.server";
+import {
+  buildIntakeEnvelope,
+  buildProviderSafeInput,
+  decideIntakeRoute,
+  documentIdFor,
+} from "@/lib/dmsIntake.server";
+import { derivePiiProcessingStatus } from "@/lib/privacy/sensitivityPolicy";
 
 describe("documentIdFor", () => {
   it("mints the authoritative drive:<id> document_id", () => {
@@ -31,6 +37,7 @@ describe("buildIntakeEnvelope", () => {
       extraction: { status: "ok", error: null },
       pseudonymizedText: "Hello PERSON-abc123.",
       sensitivity: { tier: "personal", externalProcessingAllowed: true },
+      piiProcessingStatus: "redacted",
     });
     expect(env.document_id).toBe("drive:abc123");
     expect(env.content_hash).toBe("deadbeef");
@@ -46,6 +53,7 @@ describe("buildIntakeEnvelope", () => {
       extraction: { status: "ok", error: null },
       pseudonymizedText: "",
       sensitivity: { tier: "restricted", externalProcessingAllowed: false },
+      piiProcessingStatus: "blocked",
     });
     expect(env.external_processing_policy).toBe("blocked");
   });
@@ -57,6 +65,7 @@ describe("buildIntakeEnvelope", () => {
       extraction: { status: "extraction_failed", error: "corrupt PDF" },
       pseudonymizedText: "",
       sensitivity: { tier: "restricted", externalProcessingAllowed: false },
+      piiProcessingStatus: "not_run",
     });
     expect(env.extraction_status).toBe("extraction_failed");
     expect(env.extraction_error).toBe("corrupt PDF");
@@ -117,5 +126,123 @@ describe("decideIntakeRoute", () => {
       externalProcessingAllowed: false,
     });
     expect(route.path).toBe("manual_review");
+  });
+});
+
+// DMS-D1-0002R Phase A3: pii_processing_status must be reachable, disjoint,
+// and truthful — not the previous hardcoded "passed".
+describe("derivePiiProcessingStatus", () => {
+  it("is not_run when extraction never produced text to scan", () => {
+    expect(
+      derivePiiProcessingStatus({
+        extractionOk: false,
+        detectionOk: false,
+        tier: "restricted",
+        hasFindings: false,
+      }),
+    ).toBe("not_run");
+  });
+
+  it("is error when the sanitizer itself failed, even if the tier fell back to restricted", () => {
+    expect(
+      derivePiiProcessingStatus({
+        extractionOk: true,
+        detectionOk: false,
+        tier: "restricted",
+        hasFindings: false,
+      }),
+    ).toBe("error");
+  });
+
+  it("is blocked when detection succeeded but the tier forbids external processing", () => {
+    expect(
+      derivePiiProcessingStatus({
+        extractionOk: true,
+        detectionOk: true,
+        tier: "restricted",
+        hasFindings: true,
+      }),
+    ).toBe("blocked");
+  });
+
+  it("is redacted when detection succeeded, findings exist, and the tier allows external processing", () => {
+    expect(
+      derivePiiProcessingStatus({
+        extractionOk: true,
+        detectionOk: true,
+        tier: "personal",
+        hasFindings: true,
+      }),
+    ).toBe("redacted");
+  });
+
+  it("is passed when detection succeeded and found nothing", () => {
+    expect(
+      derivePiiProcessingStatus({
+        extractionOk: true,
+        detectionOk: true,
+        tier: "standard",
+        hasFindings: false,
+      }),
+    ).toBe("passed");
+  });
+});
+
+// DMS-D1-0002R Phase A1: the provider-safe projection must never leak Drive
+// identity or raw envelope metadata into the agent-visible channel.
+describe("buildProviderSafeInput", () => {
+  const envelope = buildIntakeEnvelope({
+    drive,
+    contentHash: "deadbeef",
+    extraction: { status: "ok", error: null },
+    pseudonymizedText: "Hello PERSON-abc123.",
+    sensitivity: { tier: "personal", externalProcessingAllowed: true },
+    piiProcessingStatus: "redacted",
+  });
+
+  it("excludes every Drive-identifying / raw-metadata field", () => {
+    const projected = JSON.parse(buildProviderSafeInput(envelope));
+    for (const forbidden of [
+      "document_id",
+      "drive_file_id",
+      "drive_url",
+      "filename",
+      "source_filename",
+      "parent_folders",
+      "created_time",
+      "modified_time",
+      "content_hash",
+      "file_size",
+      "ingested_at",
+    ]) {
+      expect(projected).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it("keeps exactly the allow-listed operational/content fields", () => {
+    const projected = JSON.parse(buildProviderSafeInput(envelope));
+    expect(projected).toEqual({
+      mime_type: "application/pdf",
+      extraction_status: "ok",
+      extraction_error: null,
+      text: "Hello PERSON-abc123.",
+      privacy_class: "personal",
+      pii_processing_status: "redacted",
+      external_processing_policy: "sanitized_allowed",
+      privacy_policy_version: envelope.privacy_policy_version,
+    });
+  });
+
+  it("never contains the Drive file id as a substring anywhere in the serialized output", () => {
+    const distinctEnvelope = buildIntakeEnvelope({
+      drive: { ...drive, driveFileId: "drive-id-should-never-leak-9f8e7d" },
+      contentHash: "deadbeef",
+      extraction: { status: "ok", error: null },
+      pseudonymizedText: "Hello PERSON-abc123.",
+      sensitivity: { tier: "personal", externalProcessingAllowed: true },
+      piiProcessingStatus: "redacted",
+    });
+    const serialized = buildProviderSafeInput(distinctEnvelope);
+    expect(serialized).not.toContain("drive-id-should-never-leak-9f8e7d");
   });
 });

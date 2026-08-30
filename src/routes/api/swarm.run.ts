@@ -327,9 +327,15 @@ export const Route = createFileRoute("/api/swarm/run")({
             void (async () => {
               try {
                 const result = await runSwarm();
+                // "proposal" is a `proposalOnly` outcome (DMS-D1-0002R Phase
+                // D); this route never sets that option, so it is
+                // unreachable here in practice. Mapped to "success" rather
+                // than widening the public webhook contract to a status its
+                // receivers have no way to act on.
+                const status = result.status === "proposal" ? "success" : result.status;
                 const body = {
                   runId: result.runId,
-                  status: result.status,
+                  status,
                   output: result.output,
                   error: result.error,
                   swarmId: swarm.id,

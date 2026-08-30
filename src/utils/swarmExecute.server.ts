@@ -81,8 +81,11 @@ export type ExecuteResult = {
   /**
    * "suspended" = parked at a human-approval node with a checkpoint. The run is
    * neither done nor failed; resumeSwarmRun continues it once a decision lands.
+   * "proposal" = a `proposalOnly` run reached its first approval node and
+   * stopped there (Phase D): `output` is the proposal text, nothing was
+   * persisted for a human to act on, and there is nothing to resume.
    */
-  status: "success" | "error" | "suspended";
+  status: "success" | "error" | "suspended" | "proposal";
   output: string;
   error: string | null;
   runId: string | null;
@@ -438,6 +441,34 @@ export async function executeSwarmServer(opts: {
   userId: string;
   origin: string;
   input: string;
+  /**
+   * DMS-D1-0002R Phase A1: the explicit, allow-listed provider-safe
+   * projection of `input`. When present, THIS is what seeds `ctx.input`
+   * (and therefore every "kind: input" node, agent-node prompt via
+   * `gatherInputs`, and the recorded step trace) — never `input` itself.
+   * `input` remains the full local/authoritative envelope, still used
+   * unchanged for identity reconciliation (`applyAuthoritativeIdentity`),
+   * the approved filing plan (`buildApprovedFilingPlan`), and the human
+   * approval card (`createApprovalRequest`'s `runInput`), all of which
+   * read `opts.input` directly rather than `ctx.input`. Omitted for every
+   * caller that has no local/provider-safe split (plain chat swarms,
+   * schedules, etc.) so behaviour there is unchanged.
+   */
+  providerSafeInput?: string;
+  /**
+   * DMS-D1-0002R Phase D: run the classification/agent nodes exactly as
+   * normal, but treat the FIRST "approval" node reached as a terminal stop
+   * rather than a checkpoint — no `createApprovalRequest` row, no approver
+   * notification, no persisted checkpoint to resume later, and the run never
+   * continues past it. That makes "no Human Approval object, no Drive
+   * mutation, no Archive Knowledge write, no final filing-state transition"
+   * a structural guarantee (there is nothing after this point to reach and
+   * nothing to resume into), not a policy one callers must remember to
+   * respect. Independent calls with `proposalOnly` are side-effect-free
+   * beyond the run's own trace row, so N attachments can each get their own
+   * proposal without creating N pending human-review objects.
+   */
+  proposalOnly?: boolean;
   initialState?: Record<string, string>;
   // Chat mode (API): prior conversation turns replayed into every agent node.
   history?: { role: "user" | "assistant"; content: string }[];
@@ -546,7 +577,7 @@ export async function executeSwarmServer(opts: {
   const runId: string | null = tracer?.runId ?? null;
 
   const finish = async (
-    status: "success" | "error" | "suspended",
+    status: "success" | "error" | "suspended" | "proposal",
     output: string,
     error: string | null,
   ) => {
@@ -559,7 +590,11 @@ export async function executeSwarmServer(opts: {
           .update({ status: "suspended", updated_at: new Date().toISOString() })
           .eq("id", runId!);
       } else {
-        await tracer.finish({ status, finalOutput: output || null, errorMessage: error });
+        // "proposal" genuinely completed (it reached its intended stop, not a
+        // failure or a cancellation) — recorded as "success" in the shared
+        // trace store, which only knows success/error/cancelled.
+        const tracerStatus = status === "proposal" ? "success" : status;
+        await tracer.finish({ status: tracerStatus, finalOutput: output || null, errorMessage: error });
       }
     }
     // A TERMINAL run keeps no checkpoint — leaving one behind would let a
@@ -572,10 +607,17 @@ export async function executeSwarmServer(opts: {
   try {
     // A resumed run starts from where it stopped, not from the top.
     const resumed = opts.resume?.checkpoint ?? null;
+    // DMS-D1-0002R Phase A1: everything agent-visible (ctx.input, the
+    // "kind: input" node's output, gatherInputs fallback, and the recorded
+    // step trace) is seeded from the provider-safe projection when the
+    // caller supplied one. `opts.input` itself stays the full local
+    // envelope and is read directly (not via ctx) by identity
+    // reconciliation, the approved filing plan and the approval card.
+    const agentVisibleInput = opts.providerSafeInput ?? opts.input;
     const ctx: Ctx = resumed
       ? { ...resumed.ctx }
-      : { input: opts.input, ...(opts.initialState ?? {}) };
-    let lastOutput = resumed ? resumed.lastOutput : opts.input;
+      : { input: agentVisibleInput, ...(opts.initialState ?? {}) };
+    let lastOutput = resumed ? resumed.lastOutput : agentVisibleInput;
     // Nodes already executed, so a resume never re-runs one. Re-running an
     // agent call or an HTTP POST is not free and not idempotent.
     const completed = new Set<string>(resumed?.completedNodeIds ?? []);
@@ -653,7 +695,10 @@ export async function executeSwarmServer(opts: {
         // Open a trace step and record the live incoming edges feeding it.
         const stepStartedAt = Date.now();
         if (tracer) {
-          const stepInput = kind === "input" ? opts.input : gatherInputs(node, ctx, lastOutput);
+          // DMS-D1-0002R Phase C3: the ordinary step trace must only ever
+          // see the provider-safe projection, never the full local envelope
+          // — even for the "input" node itself.
+          const stepInput = kind === "input" ? agentVisibleInput : gatherInputs(node, ctx, lastOutput);
           await tracer.startStep({
             nodeId: node.id,
             nodeLabel: d.label,
@@ -674,7 +719,7 @@ export async function executeSwarmServer(opts: {
         let stepError: string | null = null;
         try {
           if (kind === "input") {
-            write(opts.input);
+            write(agentVisibleInput);
             return;
           }
           if (kind === "output") {
@@ -980,6 +1025,16 @@ export async function executeSwarmServer(opts: {
             return;
           }
           if (kind === "approval") {
+            if (opts.proposalOnly) {
+              // DMS-D1-0002R Phase D: stop here, ephemeral. No approval
+              // request, no notification, no checkpoint — so there is
+              // structurally nothing for a later call to resume into, and
+              // nothing downstream of this node (Drive mutation, Archive
+              // Knowledge indexing, final filing state) can ever run for a
+              // proposal-only call.
+              const proposalPending = gatherInputs(node, ctx, lastOutput);
+              return await finish("proposal", proposalPending, null);
+            }
             if (opts.rejectApprovals) {
               // Fail closed stays the default for unattended callers: an API
               // key or schedule with nobody watching must not park a run

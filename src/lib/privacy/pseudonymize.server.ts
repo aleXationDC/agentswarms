@@ -37,6 +37,49 @@ export function mapPresidioLabelToEntityType(label: string): EntityType {
 
 export type Span = { start: number; end: number };
 
+// DMS-D1-0002R Phase A2/C4. `applyReplacements`'s own doc comment always said
+// overlapping spans are the caller's job to resolve — but no caller ever did:
+// `pseudonymizeDocumentText` passed every Presidio finding straight through,
+// so two recognizers firing on the same substring (e.g. PERSON and LOCATION
+// both matching a German street-name-that-is-also-a-surname) would throw at
+// `applyReplacements`'s overlap-adjacent bounds check, or silently corrupt the
+// text if one span's start fell inside another's already-replaced range. This
+// makes overlap resolution deterministic and total, so the same findings
+// always normalise to the same accepted spans:
+//   1. Highest confidence score wins the region.
+//   2. Tied score → the LONGER span wins (covers strictly more of the
+//      ambiguous text with a token, the fail-safer direction for a redaction
+//      boundary).
+//   3. Still tied → earliest `start`, then lexicographic `label`, breaks the
+//      tie so ordering never depends on input array order or a sort's
+//      stability across engines.
+export function normalizeOverlappingFindings<T extends Span & { label: string; score: number }>(
+  findings: T[],
+): T[] {
+  const priority = findings
+    .map((f, index) => ({ f, index }))
+    .sort((a, b) => {
+      if (a.f.score !== b.f.score) return b.f.score - a.f.score;
+      const lenA = a.f.end - a.f.start;
+      const lenB = b.f.end - b.f.start;
+      if (lenA !== lenB) return lenB - lenA;
+      if (a.f.start !== b.f.start) return a.f.start - b.f.start;
+      if (a.f.label !== b.f.label) return a.f.label < b.f.label ? -1 : 1;
+      return a.index - b.index;
+    });
+
+  // Accepted spans — "does this overlap anything already accepted" is a
+  // simple linear scan since the accepted set stays small per document.
+  const accepted: T[] = [];
+  for (const { f } of priority) {
+    if (f.start >= f.end) continue; // degenerate span — never a valid redaction target.
+    const overlaps = accepted.some((a) => f.start < a.end && a.start < f.end);
+    if (!overlaps) accepted.push(f);
+  }
+  accepted.sort((a, b) => a.start - b.start);
+  return accepted;
+}
+
 /**
  * Replace each `[start, end)` span in `text` with its token. Spans MUST NOT
  * overlap (Presidio findings on the same text can overlap when multiple
@@ -80,7 +123,12 @@ export async function pseudonymizeDocumentText(
   const canonicalIds = new Set<string>();
   const spans: (Span & { token: string })[] = [];
 
-  for (const f of findings) {
+  // Phase A2: resolve overlaps BEFORE touching the entity resolver/Vault, so
+  // a finding that loses its region never registers a candidate entity or
+  // mints a pseudonym token nobody's output will reference.
+  const normalizedFindings = normalizeOverlappingFindings(findings);
+
+  for (const f of normalizedFindings) {
     const rawValue = text.slice(f.start, f.end);
     if (!rawValue.trim()) continue;
     const entityType = mapPresidioLabelToEntityType(f.label);

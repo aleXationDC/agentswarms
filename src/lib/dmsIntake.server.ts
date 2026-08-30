@@ -18,7 +18,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { extractDocumentText } from "@/lib/fileParsers.server";
 import { detectPii } from "@/lib/privacy/piiDetection.server";
 import { pseudonymizeDocumentText } from "@/lib/privacy/pseudonymize.server";
-import { classifySensitivity } from "@/lib/privacy/sensitivityPolicy";
+import { classifySensitivity, derivePiiProcessingStatus, type PiiProcessingStatus } from "@/lib/privacy/sensitivityPolicy";
 import {
   buildRegistryRow,
   ensureRegistryDataset,
@@ -67,7 +67,7 @@ export type IntakeEnvelope = {
   text: string;
   // privacy (§5/§7)
   privacy_class: string;
-  pii_processing_status: string;
+  pii_processing_status: PiiProcessingStatus;
   external_processing_policy: "sanitized_allowed" | "blocked";
   privacy_policy_version: string;
 };
@@ -84,6 +84,12 @@ export function buildIntakeEnvelope(args: {
   extraction: { status: string; error: string | null };
   pseudonymizedText: string;
   sensitivity: { tier: string; externalProcessingAllowed: boolean };
+  // DMS-D1-0002R Phase A3: the caller (processIntake) already knows exactly
+  // what happened to the Privacy Firewall for this document — passed in
+  // rather than re-derived here so buildIntakeEnvelope stays a pure, total
+  // function of its inputs (no hidden "passed" default that quietly hides a
+  // sanitizer error or a never-run detector).
+  piiProcessingStatus: PiiProcessingStatus;
 }): IntakeEnvelope {
   const { drive, contentHash, extraction, pseudonymizedText, sensitivity } = args;
   return {
@@ -103,12 +109,40 @@ export function buildIntakeEnvelope(args: {
     extraction_error: extraction.error,
     text: pseudonymizedText,
     privacy_class: sensitivity.tier,
-    pii_processing_status: "passed",
+    pii_processing_status: args.piiProcessingStatus,
     external_processing_policy: sensitivity.externalProcessingAllowed
       ? "sanitized_allowed"
       : "blocked",
     privacy_policy_version: PRIVACY_POLICY_VERSION,
   };
+}
+
+// DMS-D1-0002R Phase A1. `input: JSON.stringify(envelope)` used to be the
+// swarm's ONLY input channel, so every agent/LLM node saw Drive identity
+// (drive_file_id, drive_url, filename, parent_folders, content_hash,
+// timestamps) alongside the pseudonymised text — none of that is provider-
+// safe, all of it is either Drive-identifying or purely local-operational.
+// This allow-list is the one place that draws the line: everything the
+// agent-visible channel is permitted to see, and nothing else. `opts.input`
+// (the full envelope) still goes to executeSwarmServer unchanged, for
+// identity reconciliation / the approval card / archival — see
+// swarmExecute.server.ts's `providerSafeInput` doc comment.
+const PROVIDER_SAFE_ENVELOPE_FIELDS = [
+  "mime_type",
+  "extraction_status",
+  "extraction_error",
+  "text",
+  "privacy_class",
+  "pii_processing_status",
+  "external_processing_policy",
+  "privacy_policy_version",
+] as const satisfies readonly (keyof IntakeEnvelope)[];
+
+/** The explicit, allow-listed projection of `envelope` that may reach an agent/LLM node. */
+export function buildProviderSafeInput(envelope: IntakeEnvelope): string {
+  const projected: Record<string, unknown> = {};
+  for (const key of PROVIDER_SAFE_ENVELOPE_FIELDS) projected[key] = envelope[key];
+  return JSON.stringify(projected);
 }
 
 export type IntakeRoute =
@@ -144,7 +178,13 @@ export function decideIntakeRoute(args: {
 export type IntakeResult =
   | { status: "swarm_invoked"; documentId: string; route: "swarm"; runResult: ExecuteResult }
   | { status: "manual_review"; documentId: string; route: "manual_review"; reason: string }
-  | { status: "duplicate"; documentId: string; reason: string };
+  | { status: "duplicate"; documentId: string; reason: string }
+  // DMS-D1-0002R Phase A4: the Privacy Firewall itself failed (Vault
+  // lookup/insert error, sanitizer error) — distinct from "manual_review",
+  // which means detection/pseudonymization succeeded but the content is
+  // restricted/unreadable. A human seeing "privacy_error" knows the pipeline
+  // itself broke, not merely that this document needs a human's eyes.
+  | { status: "privacy_error"; documentId: string; reason: string };
 
 /**
  * The full pipeline. `documentIntakeSwarm` is the already-resolved graph to
@@ -204,16 +244,45 @@ export async function processIntake(
   const rawText = (extraction.status === "ok" ? extraction.text : "") ?? "";
 
   const detection = extraction.status === "ok" ? await detectPii(rawText) : null;
+
+  // DMS-D1-0002R Phase A4: the Privacy Vault call inside
+  // pseudonymizeDocumentText throws on lookup/insert/config failure (by
+  // design — privacyVault.server.ts fails closed). Left unguarded, that
+  // exception propagated straight out of processIntake with NOTHING
+  // registered: no truthful row, no record the document was ever seen. It
+  // never reached an external call either way (the throw happens before
+  // executeSwarmServer), but "no external call" is not the same as
+  // "governed" — this makes the failure visible and terminal instead of a
+  // silent gap in the registry.
+  let pseudonymizedText = "";
+  let privacyFirewallError: string | null = null;
+  if (extraction.status === "ok" && detection?.ok) {
+    try {
+      ({ pseudonymizedText } = await pseudonymizeDocumentText(
+        sb,
+        userId,
+        rawText,
+        detection.findings,
+      ));
+    } catch (e) {
+      privacyFirewallError =
+        e instanceof Error ? e.message : "Privacy Vault pseudonymization failed";
+    }
+  }
+
+  const detectionOk = extraction.status === "ok" && (detection?.ok ?? false) && !privacyFirewallError;
   const sensitivity = classifySensitivity({
     findings: detection?.ok ? detection.findings : [],
     contentUnknown: extraction.status !== "ok",
-    sanitizerFailed: extraction.status === "ok" && detection !== null && !detection.ok,
+    sanitizerFailed: extraction.status === "ok" && !detectionOk,
   });
 
-  const { pseudonymizedText } =
-    extraction.status === "ok" && detection?.ok
-      ? await pseudonymizeDocumentText(sb, userId, rawText, detection.findings)
-      : { pseudonymizedText: "" };
+  const piiProcessingStatus: PiiProcessingStatus = derivePiiProcessingStatus({
+    extractionOk: extraction.status === "ok",
+    detectionOk,
+    tier: sensitivity.tier,
+    hasFindings: (detection?.ok ? detection.findings.length : 0) > 0,
+  });
 
   const envelope = buildIntakeEnvelope({
     drive,
@@ -221,6 +290,7 @@ export async function processIntake(
     extraction: { status: extraction.status, error: extraction.error ?? null },
     pseudonymizedText,
     sensitivity,
+    piiProcessingStatus,
   });
 
   const route = decideIntakeRoute({
@@ -234,6 +304,11 @@ export async function processIntake(
     // nothing calls buildRegistryRow/upsertRegistryRow for it automatically
     // (that only happens inside the Approval-suspension path in
     // swarmExecute.server.ts). Register it here, directly, as discovered.
+    //
+    // A privacy-firewall failure (Vault/sanitizer error) is registered with
+    // its OWN classification_status ("error") rather than "discovered" — a
+    // human reviewing "discovered" rows should never have to guess whether a
+    // document is merely unreadable/restricted, or actively broken.
     await upsertRegistryRow(
       sb,
       userId,
@@ -241,7 +316,7 @@ export async function processIntake(
         envelope: envelope as unknown as Record<string, unknown>,
         proposal: {},
         humanReviewStatus: "manual",
-        classificationStatus: "discovered",
+        classificationStatus: privacyFirewallError ? "error" : "discovered",
         extraction: { status: envelope.extraction_status, error: envelope.extraction_error },
         privacy: {
           privacyClass: envelope.privacy_class,
@@ -251,6 +326,13 @@ export async function processIntake(
         },
       }),
     );
+    if (privacyFirewallError) {
+      return {
+        status: "privacy_error",
+        documentId,
+        reason: `Privacy Firewall failed closed: ${privacyFirewallError}`,
+      };
+    }
     return { status: "manual_review", documentId, route: "manual_review", reason: route.reason };
   }
 
@@ -262,16 +344,45 @@ export async function processIntake(
   // persisted input_prompt (the tracer already stores the full envelope
   // there — no extra plumbing needed).
 
-  // Readable + privacy-allowed: invoke the Document Intake Swarm synchronously
-  // with the SANITIZED envelope as input. Registry upsert-on-proposal already
-  // happens inside executeSwarmServer's Approval-suspension handling (see
-  // swarmExecute.server.ts) once the swarm reaches its Approval node — this
-  // function must not duplicate that write.
+  // DMS-D1-0002R Phase B: register the physical object BEFORE the Swarm call,
+  // not only afterward inside the Approval-suspension path. A run that dies,
+  // times out, or is killed between here and the Approval node used to leave
+  // NO registry row at all for a document that was nonetheless read and sent
+  // out for classification — "every disposition gets a row" (§3) did not
+  // actually hold for the one path that reaches an external provider. The
+  // later Approval-suspension write (swarmExecute.server.ts) still runs and
+  // upserts this same document_id with the real proposal once the swarm gets
+  // there; this is a native dataset upsert, never a duplicate insert.
+  await upsertRegistryRow(
+    sb,
+    userId,
+    buildRegistryRow({
+      envelope: envelope as unknown as Record<string, unknown>,
+      proposal: {},
+      humanReviewStatus: "pending",
+      classificationStatus: "processing",
+      extraction: { status: envelope.extraction_status, error: envelope.extraction_error },
+      privacy: {
+        privacyClass: envelope.privacy_class,
+        piiProcessingStatus: envelope.pii_processing_status,
+        externalProcessingPolicy: envelope.external_processing_policy,
+        policyVersion: envelope.privacy_policy_version,
+      },
+    }),
+  );
+
+  // Readable + privacy-allowed: invoke the Document Intake Swarm synchronously.
+  // Every agent/LLM node only ever sees the explicit provider-safe projection
+  // (Phase A1) — never Drive identity, never raw envelope metadata. `input`
+  // stays the full envelope for identity reconciliation / the approval card /
+  // archival, which read it directly rather than through the agent-visible
+  // channel; see swarmExecute.server.ts's `providerSafeInput` doc comment.
   const runResult = await executeSwarmServer({
     swarm: args.documentIntakeSwarm,
     userId,
     origin: args.origin,
     input: JSON.stringify(envelope),
+    providerSafeInput: buildProviderSafeInput(envelope),
     rejectApprovals: false,
     source: "api",
   });
