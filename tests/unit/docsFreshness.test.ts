@@ -137,6 +137,8 @@ const UNDOCUMENTED_ON_PURPOSE = new Map<string, string>([
   ["BENCH_PG_DB", "scripts/bench-pool.ts"],
   ["BENCH_PG_USER", "scripts/bench-pool.ts"],
   ["BENCH_PG_PASSWORD", "scripts/bench-pool.ts"],
+  ["SYSTEM_MONITOR_URL", "src/utils/systemExtensions.functions.ts optional extension URL"],
+  ["RENOVATE_URL", "src/utils/systemExtensions.functions.ts optional extension URL"],
 ]);
 
 describe("every env var the code reads is discoverable", () => {

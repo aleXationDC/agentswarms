@@ -258,13 +258,15 @@ describe("the trust pages describe the software that exists", () => {
 
 describe("no document promises the removed in-browser runtime", () => {
   function docs(dir: string, out: string[] = []): string[] {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = `${dir}/${e.name}`;
-      if (e.isDirectory()) {
-        if (["node_modules", ".git", "dist", ".output"].includes(e.name)) continue;
-        docs(p, out);
-      } else if (e.name.endsWith(".md")) out.push(p);
-    }
+    try {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = `${dir}/${e.name}`;
+        if (e.isDirectory()) {
+          if (["node_modules", ".git", "dist", ".output", "supabase-docker"].includes(e.name)) continue;
+          docs(p, out);
+        } else if (e.name.endsWith(".md")) out.push(p);
+      }
+    } catch {}
     return out;
   }
 

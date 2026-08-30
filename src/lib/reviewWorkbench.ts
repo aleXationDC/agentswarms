@@ -29,6 +29,319 @@ import {
 } from "@/lib/clarificationLoop";
 import { REGISTRY_DATASET, type RegistryRow } from "@/lib/documentRegistry";
 import { MAIL_REGISTRY_DATASET, type MailRegistryRow } from "@/lib/mailRegistry";
+import { buildCanonicalFilename } from "@/lib/canonicalFilename";
+
+export const CANONICAL_PARA_ROOTS = [
+  "01_Projects",
+  "02_Areas",
+  "03_Resources",
+  "04_Archive",
+] as const;
+
+export const EDITABLE_PROPOSAL_FIELDS = new Set([
+  "document_type",
+  "document_family",
+  "primary_domain",
+  "sender_or_issuer",
+  "organization_id",
+  "document_date",
+  "document_date_source",
+  "proposed_folder_path",
+  "proposed_folder_id",
+  "canonical_filename",
+  "topics",
+  "summary",
+  "duplicate_decision",
+  "target_canonical_document_id",
+]);
+
+export const IMMUTABLE_IDENTITY_FIELDS = new Set([
+  "document_id",
+  "mail_id",
+  "drive_file_id",
+  "drive_eml_file_id",
+  "content_hash",
+  "raw_sha256",
+  "mime_type",
+  "original_filename",
+  "file_size",
+  "source_mailbox_path",
+  "provider_message_id",
+  "provider_type",
+]);
+
+/**
+ * Validate that a relative folder path resides under one of the 4 canonical PARA roots.
+ * Rejects 00_Inbox, empty strings, and foreign paths.
+ */
+export function validateParaFolderPath(folderPath: unknown): { valid: boolean; error?: string; cleanPath?: string } {
+  if (typeof folderPath !== "string" || !folderPath.trim()) {
+    return { valid: false, error: "Target folder path is required" };
+  }
+  const clean = folderPath.trim().replace(/^\/+|\/+$/g, "");
+  const root = clean.split("/")[0];
+  if (!CANONICAL_PARA_ROOTS.includes(root as any)) {
+    return {
+      valid: false,
+      error: `Folder path root "${root}" is not allowed. Must start with one of: ${CANONICAL_PARA_ROOTS.join(", ")}`,
+    };
+  }
+  return { valid: true, cleanPath: clean };
+}
+
+export type ProposalOverrideEdits = {
+  document_type?: string;
+  document_family?: string;
+  primary_domain?: string;
+  sender_or_issuer?: string;
+  organization_id?: string;
+  document_date?: string;
+  document_date_source?: string;
+  proposed_folder_path?: string;
+  proposed_folder_id?: string;
+  canonical_filename?: string;
+  topics?: string[];
+  summary?: string;
+  duplicate_decision?: "separate" | "duplicate" | "new_version" | "related_successor";
+  target_canonical_document_id?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * Apply direct Human Override to the current native approval proposal (DMS-D1-0003-REVIEW §7.7).
+ * - Modifies approvals.payload.proposal with zero LLM calls.
+ * - Rejects any attempt to mutate immutable identity/source fields.
+ * - Validates PARA folder roots and canonical filename.
+ * - Preserves prior proposal history in clarification_cases if present.
+ */
+export async function applyHumanProposalOverride(
+  sb: SupabaseClient,
+  userId: string,
+  approvalId: string,
+  edits: ProposalOverrideEdits,
+): Promise<{ ok: boolean; error?: string; proposal?: Record<string, unknown> }> {
+  // Check for immutable field modification attempts
+  for (const key of Object.keys(edits)) {
+    if (IMMUTABLE_IDENTITY_FIELDS.has(key)) {
+      return {
+        ok: false,
+        error: `Field "${key}" is an immutable identity/source field and cannot be modified by human override.`,
+      };
+    }
+  }
+
+  // Fetch current approval
+  const { data: approval, error: fetchErr } = await sb
+    .from("approvals")
+    .select("*")
+    .eq("id", approvalId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (fetchErr || !approval) {
+    return { ok: false, error: fetchErr?.message || "Approval not found" };
+  }
+
+  if (approval.status !== "pending") {
+    return { ok: false, error: `Cannot override an approval in "${approval.status}" state` };
+  }
+
+  const payload = (approval.payload || {}) as Record<string, any>;
+  const currentProposal = (payload.proposal || {}) as Record<string, any>;
+  const envelope = (payload.envelope || {}) as Record<string, any>;
+
+  // Validate proposed folder path if edited
+  let finalFolderPath = currentProposal.proposed_folder_path || "04_Archive";
+  if (edits.proposed_folder_path) {
+    const val = validateParaFolderPath(edits.proposed_folder_path);
+    if (!val.valid) {
+      return { ok: false, error: val.error };
+    }
+    finalFolderPath = val.cleanPath!;
+  }
+
+  // Build / validate canonical filename if edited or date changed
+  const originalFilename =
+    envelope.source_filename || currentProposal.source_filename || envelope.original_filename || "document.pdf";
+  const docDate = edits.document_date ?? currentProposal.document_date ?? envelope.message_date;
+  const docDateSource = edits.document_date_source ?? currentProposal.document_date_source ?? "explicit_document";
+
+  let canonicalName = currentProposal.canonical_eml_filename || currentProposal.canonical_filename;
+  if (edits.canonical_filename) {
+    const built = buildCanonicalFilename({
+      originalFilename: edits.canonical_filename,
+      documentDate: docDate,
+      documentDateSource: docDateSource,
+    });
+    canonicalName = built.canonicalFilename;
+  } else if (edits.document_date || !canonicalName) {
+    const built = buildCanonicalFilename({
+      originalFilename,
+      documentDate: docDate,
+      documentDateSource: docDateSource,
+    });
+    canonicalName = built.canonicalFilename;
+  }
+
+  const updatedProposal: Record<string, any> = {
+    ...currentProposal,
+    ...Object.fromEntries(
+      Object.entries(edits).filter(([k]) => EDITABLE_PROPOSAL_FIELDS.has(k)),
+    ),
+    proposed_folder_path: finalFolderPath,
+    canonical_filename: canonicalName,
+    document_date: docDate,
+    document_date_source: docDateSource,
+    human_overridden: true,
+    overridden_at: new Date().toISOString(),
+  };
+
+  const updatedPayload = {
+    ...payload,
+    proposal: updatedProposal,
+  };
+
+  const { error: updateErr } = await sb
+    .from("approvals")
+    .update({ payload: updatedPayload })
+    .eq("id", approvalId)
+    .eq("user_id", userId);
+
+  if (updateErr) {
+    return { ok: false, error: updateErr.message };
+  }
+
+  // If a clarification case exists, append proposal history
+  const docId = docIdFromPayload(updatedPayload);
+  const kase = await findCaseForApproval(sb, userId, approvalId, docId);
+  if (kase) {
+    const history = Array.isArray(kase.proposals) ? [...kase.proposals] : [];
+    history.push({
+      cycle: (kase.cycle_count || 1) + 1,
+      proposal: updatedProposal,
+      approval_id: approvalId,
+      decision: null,
+      rejection_note: "Direct Human Override applied",
+    });
+    await sb
+      .from("clarification_cases")
+      .update({
+        proposals: history,
+        cycle_count: (kase.cycle_count || 1) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", kase.id);
+  }
+
+  return { ok: true, proposal: updatedProposal };
+}
+
+export type DuplicateCandidate = {
+  documentId: string;
+  driveFileId?: string;
+  canonicalFilename?: string;
+  originalFilename?: string;
+  documentDate?: string;
+  documentType?: string;
+  organization?: string;
+  proposedPath?: string;
+  matchType: "exact_hash" | "semantic_candidate";
+  matchReason: string;
+};
+
+/**
+ * Find exact duplicates and candidate matches in document_registry (DMS-D1-0003-REVIEW §9).
+ * Zero LLM calls for exact hash match.
+ */
+export async function findDuplicateCandidates(
+  sb: SupabaseClient,
+  userId: string,
+  criteria: {
+    currentDocumentId?: string;
+    contentHash?: string;
+    senderOrIssuer?: string;
+    documentType?: string;
+    documentDate?: string;
+  },
+): Promise<DuplicateCandidate[]> {
+  const { currentDocumentId, contentHash, senderOrIssuer, documentType, documentDate } = criteria;
+  const results: DuplicateCandidate[] = [];
+
+  const { data: docTable } = await sb
+    .from("user_data_tables")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("name", REGISTRY_DATASET)
+    .maybeSingle();
+
+  if (!docTable?.id) return [];
+
+  const { data: rows } = await sb
+    .from("user_data_rows")
+    .select("row")
+    .eq("table_id", docTable.id)
+    .limit(1000);
+
+  for (const r of rows ?? []) {
+    const row = r.row as RegistryRow;
+    if (!row || row.document_id === currentDocumentId) continue;
+
+    // Exact byte hash match
+    if (contentHash && row.content_hash && String(row.content_hash) === contentHash) {
+      results.push({
+        documentId: String(row.document_id),
+        driveFileId: row.drive_file_id ? String(row.drive_file_id) : undefined,
+        canonicalFilename: row.canonical_filename ? String(row.canonical_filename) : undefined,
+        originalFilename: row.original_filename ? String(row.original_filename) : undefined,
+        documentDate: row.document_date ? String(row.document_date) : undefined,
+        documentType: row.document_type ? String(row.document_type) : undefined,
+        organization: row.organization ? String(row.organization) : undefined,
+        proposedPath: (row.proposed_path || row.approved_path) ? String(row.proposed_path || row.approved_path) : undefined,
+        matchType: "exact_hash",
+        matchReason: `Exact byte content match (SHA-256: ${contentHash.slice(0, 12)}…)`,
+      });
+      continue;
+    }
+
+    // Semantic candidate match: same sender/issuer + same date or same doc type
+    let matches = 0;
+    const reasons: string[] = [];
+
+    const rowOrg = row.organization != null ? String(row.organization) : "";
+    const rowDocType = row.document_type != null ? String(row.document_type) : "";
+    const rowDocDate = row.document_date != null ? String(row.document_date) : "";
+
+    if (senderOrIssuer && rowOrg && rowOrg.toLowerCase() === senderOrIssuer.toLowerCase()) {
+      matches += 1;
+      reasons.push("same issuer");
+    }
+    if (documentType && rowDocType && rowDocType === documentType) {
+      matches += 1;
+      reasons.push("same document type");
+    }
+    if (documentDate && rowDocDate && rowDocDate === documentDate) {
+      matches += 1;
+      reasons.push("same document date");
+    }
+
+    if (matches >= 2) {
+      results.push({
+        documentId: String(row.document_id),
+        driveFileId: row.drive_file_id ? String(row.drive_file_id) : undefined,
+        canonicalFilename: row.canonical_filename ? String(row.canonical_filename) : undefined,
+        originalFilename: row.original_filename ? String(row.original_filename) : undefined,
+        documentDate: row.document_date ? String(row.document_date) : undefined,
+        documentType: row.document_type ? String(row.document_type) : undefined,
+        organization: row.organization ? String(row.organization) : undefined,
+        proposedPath: (row.proposed_path || row.approved_path) ? String(row.proposed_path || row.approved_path) : undefined,
+        matchType: "semantic_candidate",
+        matchReason: `Candidate match (${reasons.join(", ")})`,
+      });
+    }
+  }
+
+  return results;
+}
 
 export type ApprovalRow = {
   id: string;

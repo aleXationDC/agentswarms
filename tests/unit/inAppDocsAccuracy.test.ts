@@ -51,6 +51,21 @@ function envVarsInCode(): Set<string> {
   walk("src");
   walk("scripts");
   walk("services");
+  // Check root config files as well
+  for (const rootFile of ["vite.config.ts", "vitest.config.ts"]) {
+    try {
+      const src = readFileSync(rootFile, "utf8");
+      for (const re of [
+        /process\.env\.([A-Z][A-Z0-9_]{2,})/g,
+        /process\.env\[["']([A-Z][A-Z0-9_]{2,})["']\]/g,
+        /import\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g,
+        /env(?:Int|Bool|Num|Str)\(\s*["']([A-Z][A-Z0-9_]{2,})["']/g,
+        /\benv\.([A-Z][A-Z0-9_]{2,})/g,
+      ]) {
+        for (const m of src.matchAll(re)) out.add(m[1]);
+      }
+    } catch {}
+  }
   return out;
 }
 

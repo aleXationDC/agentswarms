@@ -63,23 +63,36 @@ const STATUS_BADGE: Record<ReviewStatus, string> = {
 
 function fieldFromItem(item: ReviewQueueItem) {
   const proposal = (item.approval.payload as { proposal?: Record<string, unknown> })?.proposal;
+  const envelope = (item.approval.payload as { envelope?: Record<string, unknown> })?.envelope;
   const registry = item.registryRow;
+  const isMail =
+    Boolean(item.documentId?.startsWith("mail:")) ||
+    Boolean(envelope?.mail_id) ||
+    Boolean(proposal?.mail_id) ||
+    item.approval.action_type?.includes("mail");
+
+  const reg = registry as any;
+
   return {
+    isMail,
+    subjectKind: isMail ? "mail" : "document",
     filename:
-      (registry?.canonical_filename as string) ??
-      (registry?.original_filename as string) ??
+      (reg?.canonical_filename as string) ??
+      (reg?.canonical_eml_filename as string) ??
+      (reg?.original_filename as string) ??
       (proposal?.source_filename as string) ??
+      (proposal?.canonical_eml_filename as string) ??
       (proposal?.subject as string) ??
       item.approval.action_title,
     documentType:
-      (registry?.document_type as string) ?? (proposal?.document_type as string) ?? null,
+      (reg?.document_type as string) ?? (proposal?.document_type as string) ?? (isMail ? "Email" : null),
     documentFamily:
-      (registry?.document_family as string) ?? (proposal?.document_family as string) ?? null,
+      (reg?.document_family as string) ?? (proposal?.document_family as string) ?? null,
     primaryDomain:
-      (registry?.primary_domain as string) ?? (proposal?.primary_domain as string) ?? null,
+      (reg?.primary_domain as string) ?? (proposal?.primary_domain as string) ?? null,
     proposedPath:
-      (registry?.proposed_path as string) ?? (proposal?.proposed_folder_path as string) ?? null,
-    confidence: (registry?.confidence as number) ?? (proposal?.confidence as number) ?? null,
+      (reg?.proposed_path as string) ?? (proposal?.proposed_folder_path as string) ?? null,
+    confidence: (reg?.confidence as number) ?? (proposal?.confidence as number) ?? null,
   };
 }
 
@@ -88,6 +101,7 @@ function ReviewQueuePage() {
   const [items, setItems] = useState<ReviewQueueItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | "all">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "document" | "mail">("all");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "confidence">("newest");
 
@@ -117,8 +131,9 @@ function ReviewQueuePage() {
     const q = search.trim().toLowerCase();
     let list = items.filter((item) => {
       if (statusFilter !== "all" && item.reviewStatus !== statusFilter) return false;
-      if (!q) return true;
       const f = fieldFromItem(item);
+      if (typeFilter !== "all" && f.subjectKind !== typeFilter) return false;
+      if (!q) return true;
       return [f.filename, f.documentType, f.documentFamily, f.primaryDomain, f.proposedPath]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
@@ -134,7 +149,7 @@ function ReviewQueuePage() {
       return sort === "oldest" ? ta - tb : tb - ta;
     });
     return list;
-  }, [items, statusFilter, search, sort]);
+  }, [items, statusFilter, typeFilter, search, sort]);
 
   const claim = listClaim({
     loaded: items !== null,
@@ -156,9 +171,9 @@ function ReviewQueuePage() {
     <div className="p-4 md:p-6 space-y-4">
       <div>
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-          Document Intake
+          Intake & Filing
         </p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Review</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Review Workbench</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           {claim.message === "error" ? UNKNOWN_COUNT : items.length} item
           {items.length === 1 ? "" : "s"} in the last 60 days · click a row for the full review
@@ -183,6 +198,16 @@ function ReviewQueuePage() {
             className="pl-8 h-8 text-sm"
           />
         </div>
+        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as any)}>
+          <SelectTrigger className="w-full sm:w-36 h-8 text-sm">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sources</SelectItem>
+            <SelectItem value="document">Documents</SelectItem>
+            <SelectItem value="mail">Emails</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
           <SelectTrigger className="w-full sm:w-44 h-8 text-sm">
             <SelectValue placeholder="Status" />
@@ -212,7 +237,7 @@ function ReviewQueuePage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Document</TableHead>
+              <TableHead>Item / Source</TableHead>
               <TableHead className="hidden md:table-cell">Type / Family</TableHead>
               <TableHead className="hidden lg:table-cell">Domain</TableHead>
               <TableHead className="hidden lg:table-cell">Proposed path</TableHead>
@@ -235,7 +260,7 @@ function ReviewQueuePage() {
               <TableRow>
                 <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
                   <ClipboardList className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
-                  Nothing to review. Documents needing a decision will appear here.
+                  Nothing to review. Items needing a decision will appear here.
                 </TableCell>
               </TableRow>
             )}
@@ -256,7 +281,12 @@ function ReviewQueuePage() {
                       params={{ approvalId: item.approvalId }}
                       className="block p-2"
                     >
-                      <p className="text-sm font-medium truncate">{f.filename}</p>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                          {f.isMail ? "Mail" : "Doc"}
+                        </Badge>
+                        <p className="text-sm font-medium truncate">{f.filename}</p>
+                      </div>
                       <p className="text-[11px] text-muted-foreground truncate md:hidden">
                         {f.documentType ?? "—"}
                         {f.documentFamily ? ` · ${f.documentFamily}` : ""}

@@ -1,21 +1,10 @@
 /**
- * Canonical document filenames: `YYYY-MM-DD_<meaningful name>.<ext>`.
+ * Canonical document filenames: `YYYY-MM-DD_<meaningful name>.<ext>` (DMS-D1-0003-REVIEW §7.6).
  *
- * WHY THIS IS CODE AND NOT A PROMPT RULE
- * The folder hierarchy is deliberately shallow, so chronological sorting in an
- * ordinary file browser is what makes a folder navigable without AgentSwarms.
- * That makes the name a load-bearing convention rather than a stylistic one,
- * and a convention that must hold for every document cannot be left to a model
- * that reformats dates differently on a bad day.
- *
- * The split of responsibility is therefore:
- *   - the MODEL decides WHICH date is authoritative and how it knows (semantic)
- *   - this module decides WHAT THE NAME LOOKS LIKE (deterministic)
- *
- * The skill still documents the convention, because the model has to surface
- * the date and its source for the human to check — but the string itself is
- * assembled here, so the same result holds for any agent the skill is attached
- * to, including ones that never read the skill at all.
+ * Allowed characters in canonical basename: `A-Z a-z 0-9 _ -`
+ * Exactly ONE dot directly before the real file extension.
+ * German transliteration: `ä`/`Ä` -> `ae`/`Ae`, `ö`/`Ö` -> `oe`/`Oe`, `ü`/`Ü` -> `ue`/`Ue`, `ß` -> `ss`.
+ * No internal dots, spaces, or filesystem-sensitive punctuation.
  */
 
 /** How we came to believe the document date. Ordered most to least trusted. */
@@ -41,10 +30,7 @@ export function describeDateSource(v: unknown): string {
 const CANONICAL_PREFIX = /^(\d{4}-\d{2}-\d{2})_/;
 
 /**
- * Other date-ish prefixes people actually use, which we must RECOGNISE but not
- * silently keep: `2026-04-01 `, `20260401_`, `2026_04_01-`. Recognising them is
- * what lets us report "this file already claims a different date" instead of
- * producing `2026-04-01_2026_04_01-foo.pdf`.
+ * Other date-ish prefixes people actually use: `2026-04-01 `, `20260401_`, `2026_04_01-`.
  */
 const LOOSE_DATE_PREFIX = /^(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})\s*[-_. ]\s*/;
 
@@ -76,14 +62,122 @@ function validOrNull(y: string, m: string, d: string): string | null {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Transliterate German umlauts, eszett and other diacritics to safe ASCII.
+ */
+export function transliterateToAscii(str: string): string {
+  if (!str) return "";
+  let s = str
+    .replace(/ä/g, "ae")
+    .replace(/Ä/g, "Ae")
+    .replace(/ö/g, "oe")
+    .replace(/Ö/g, "Oe")
+    .replace(/ü/g, "ue")
+    .replace(/Ü/g, "Ue")
+    .replace(/ß/g, "ss");
+
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return s;
+}
+
 /** Split `name.ext`, tolerating dotless names and multi-dot names. */
 function splitExtension(filename: string): { stem: string; ext: string } {
   const i = filename.lastIndexOf(".");
-  // A leading dot is a hidden file, not an extension; a dot in the last 6 chars
-  // is the only thing we treat as one, so "ToS Claude Code 1.3.pdf" keeps its
-  // version number in the stem instead of losing ".3.pdf".
   if (i <= 0 || filename.length - i > 6) return { stem: filename, ext: "" };
-  return { stem: filename.slice(0, i), ext: filename.slice(i) };
+  return { stem: filename.slice(0, i), ext: filename.slice(i).toLowerCase() };
+}
+
+// Known canonical document type prefixes for block separation when input is space-delimited
+const KNOWN_TYPE_PREFIXES = new Set([
+  "tos", "terms", "rechnung", "invoice", "bill", "mietvertrag", "vertrag", "contract",
+  "kontoauszug", "statement", "gehaltsabrechnung", "payslip", "bescheid", "police",
+  "anschreiben", "protokoll", "angebot", "quote", "quittung", "receipt", "mail", "email",
+  "bestaetigung", "kuendigung", "mahnung", "gutschrift", "lieferschein", "zertifikat",
+]);
+
+// Known status / version suffixes for block separation
+const KNOWN_STATUS_SUFFIXES = new Set([
+  "unterschrieben", "signed", "final", "draft", "entwurf", "kopie", "copy",
+  "bezahlt", "paid", "storniert", "cancelled", "scan",
+]);
+
+/**
+ * Sanitize a filename stem according to DMS-D1-0003-REVIEW §7.6:
+ * - Basename allowed chars: [A-Z a-z 0-9 _ -]
+ * - Separators: `_` separates semantic blocks, `-` separates words/components within a block.
+ * - Version/decimal numbers like 1.3 or v1.3 encoded as v1-3 (no internal dots).
+ */
+export function sanitizeCanonicalStem(stem: string): string {
+  if (!stem) return "";
+  let s = transliterateToAscii(stem.trim());
+
+  // Version numbers: convert " 1.3" or "v1.3" to "_v1-3"
+  s = s.replace(/(?:^|[\s_])v?(\d+)\.(\d+)(?:[\s_]|$)/gi, (match, p1, p2) => {
+    return `_v${p1}-${p2}_`;
+  });
+  s = s.replace(/(\d+)\.(\d+)/g, "$1-$2");
+
+  // If explicit underscores already exist, sanitize each block independently
+  if (s.includes("_")) {
+    const rawBlocks = s.split("_").filter(Boolean);
+    const blocks: string[] = [];
+    for (const b of rawBlocks) {
+      const words = b.trim().split(/[\s\t]+/).filter(Boolean);
+      if (words.length >= 2 && (KNOWN_TYPE_PREFIXES.has(words[0].toLowerCase()) || /^[A-Z]{2,5}$/.test(words[0]))) {
+        const typePart = words[0].replace(/[^A-Za-z0-9_-]+/g, "-");
+        const restPart = words.slice(1).join("-").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-");
+        blocks.push(`${typePart}_${restPart}`);
+      } else {
+        let cleaned = b.trim().replace(/[\s\t]+/g, "-").replace(/[^A-Za-z0-9_-]+/g, "-");
+        cleaned = cleaned.replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, "");
+        if (cleaned) blocks.push(cleaned);
+      }
+    }
+    return blocks.join("_");
+  }
+
+  // If the stem has no underscores, detect semantic blocks:
+  // e.g. "Mietvertrag Dorfstraße 22a unterschrieben" -> ["Mietvertrag", "Dorfstrasse-22a", "unterschrieben"]
+  // e.g. "ToS Claude Code" -> ["ToS", "Claude-Code"]
+  const rawWords = s.split(/[\s\t]+/).filter(Boolean);
+  if (rawWords.length <= 1) {
+    let single = s.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, "");
+    return single;
+  }
+
+  const firstLower = rawWords[0].toLowerCase();
+  const lastLower = rawWords[rawWords.length - 1].toLowerCase();
+
+  let hasTypePrefix = KNOWN_TYPE_PREFIXES.has(firstLower) || /^[A-Z]{2,5}$/.test(rawWords[0]);
+  let hasStatusSuffix = KNOWN_STATUS_SUFFIXES.has(lastLower) || /^v?\d+(-\d+)?$/i.test(rawWords[rawWords.length - 1]);
+
+  if (hasTypePrefix && hasStatusSuffix && rawWords.length >= 3) {
+    const typeBlock = rawWords[0];
+    const statusBlock = rawWords[rawWords.length - 1];
+    const middleBlock = rawWords.slice(1, -1).join("-");
+    const clean = [typeBlock, middleBlock, statusBlock]
+      .map(b => b.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, ""))
+      .filter(Boolean);
+    return clean.join("_");
+  } else if (hasTypePrefix && rawWords.length >= 2) {
+    const typeBlock = rawWords[0];
+    const restBlock = rawWords.slice(1).join("-");
+    const clean = [typeBlock, restBlock]
+      .map(b => b.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, ""))
+      .filter(Boolean);
+    return clean.join("_");
+  } else if (hasStatusSuffix && rawWords.length >= 2) {
+    const mainBlock = rawWords.slice(0, -1).join("-");
+    const statusBlock = rawWords[rawWords.length - 1];
+    const clean = [mainBlock, statusBlock]
+      .map(b => b.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, ""))
+      .filter(Boolean);
+    return clean.join("_");
+  }
+
+  // Default fallback: join words with hyphens
+  let joined = rawWords.join("-").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-]+|[-]+$/g, "");
+  return joined;
 }
 
 export type CanonicalNameResult = {
@@ -98,18 +192,13 @@ export type CanonicalNameResult = {
   wouldRename: boolean;
   /**
    * Set when the original already carried a date prefix that disagrees with the
-   * authoritative document date. This is the case a human must look at, because
-   * one of the two dates is wrong and we cannot tell which.
+   * authoritative document date.
    */
   conflictingExistingDate: string | null;
 };
 
 /**
- * Build the canonical filename.
- *
- * Deliberately conservative: the human-readable part of a good existing name is
- * preserved verbatim. We do not re-title documents for stylistic consistency —
- * an AI-invented title is harder to recognise than the name the issuer chose.
+ * Build the canonical filename conforming to DMS-D1-0003-REVIEW §7.6.
  */
 export function buildCanonicalFilename(args: {
   originalFilename: string;
@@ -133,12 +222,8 @@ export function buildCanonicalFilename(args: {
     source =
       claimed === "explicit_document" || claimed === "inferred_document"
         ? claimed
-        : // A date with no stated provenance is treated as inferred, not
-          // explicit. Never upgrade a claim the model did not make.
-          "inferred_document";
+        : "inferred_document";
   } else if (arrival) {
-    // Falling back to arrival is legitimate and must be visible as such — this
-    // is the difference between "dated 1 April" and "showed up on 1 April".
     date = arrival;
     source = "source_arrival";
   }
@@ -154,14 +239,19 @@ export function buildCanonicalFilename(args: {
     };
   }
 
-  // No usable date at all: never invent one, and never mangle the name.
+  const { stem: rawStem, ext: rawExt } = splitExtension(original);
+  const ext = rawExt.toLowerCase();
+
+  // No usable date at all: sanitize stem and keep extension
   if (!date) {
+    const sanitized = sanitizeCanonicalStem(rawStem);
+    const canonical = sanitized ? `${sanitized}${ext}` : original;
     return {
-      canonicalFilename: original,
+      canonicalFilename: canonical,
       originalFilename: original,
       documentDate: null,
       documentDateSource: "unknown",
-      wouldRename: false,
+      wouldRename: canonical !== original,
       conflictingExistingDate: null,
     };
   }
@@ -169,35 +259,25 @@ export function buildCanonicalFilename(args: {
   const exact = original.match(CANONICAL_PREFIX);
   if (exact) {
     const existing = exact[1];
-    if (existing === date) {
-      // Already canonical and already correct. Leave it completely alone.
-      return {
-        canonicalFilename: original,
-        originalFilename: original,
-        documentDate: date,
-        documentDateSource: source,
-        wouldRename: false,
-        conflictingExistingDate: null,
-      };
-    }
-    const rest = original.slice(exact[0].length);
-    const canonical = `${date}_${rest}`;
+    const rest = rawStem.slice(exact[0].length);
+    const sanitizedRest = sanitizeCanonicalStem(rest);
+    const canonical = `${date}_${sanitizedRest}${ext}`;
     return {
       canonicalFilename: canonical,
       originalFilename: original,
       documentDate: date,
       documentDateSource: source,
       wouldRename: canonical !== original,
-      conflictingExistingDate: existing,
+      conflictingExistingDate: existing !== date ? existing : null,
     };
   }
 
   const loose = original.match(LOOSE_DATE_PREFIX);
   if (loose) {
     const existing = validOrNull(loose[1], loose[2], loose[3]);
-    const rest = original.slice(loose[0].length);
-    const { stem, ext } = splitExtension(rest);
-    const canonical = `${date}_${stem}${ext}`;
+    const rest = rawStem.slice(loose[0].length);
+    const sanitizedRest = sanitizeCanonicalStem(rest);
+    const canonical = `${date}_${sanitizedRest}${ext}`;
     return {
       canonicalFilename: canonical,
       originalFilename: original,
@@ -208,8 +288,8 @@ export function buildCanonicalFilename(args: {
     };
   }
 
-  const { stem, ext } = splitExtension(original);
-  const canonical = `${date}_${stem}${ext}`;
+  const sanitizedStem = sanitizeCanonicalStem(rawStem);
+  const canonical = `${date}_${sanitizedStem}${ext}`;
   return {
     canonicalFilename: canonical,
     originalFilename: original,
