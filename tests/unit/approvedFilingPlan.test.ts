@@ -56,4 +56,39 @@ describe("buildApprovedFilingPlan", () => {
     expect(plan.document_type).toBe("invoice");
     expect(plan.confidence).toBe(0.9);
   });
+
+  // DMS-D1-0005-DOCUMENTS-v2 §6: Resume execution precedence
+  it("applies human-overridden PARA target and date to downstream filing plan", () => {
+    const humanOverrideProposal = {
+      document_id: "drive:abc123",
+      proposed_folder_path: "01_Projects/Alpha/Contracts",
+      document_date: "2026-08-30",
+      document_date_source: "explicit_document",
+      human_overridden: true,
+      duplicate_decision: "related_successor",
+      target_canonical_document_id: "drive:orig456",
+    };
+    const envelope = {
+      source_filename: "Contract_Amendment.pdf",
+      created_time: "2026-08-20T00:00:00.000Z",
+    };
+    const plan = buildApprovedFilingPlan(humanOverrideProposal, envelope);
+    expect(plan.approved_target_folder).toBe("01_Projects/Alpha/Contracts");
+    expect(plan.approved_filename).toBe("2026-08-30_Contract_Amendment.pdf");
+    expect(plan.duplicate_decision).toBe("related_successor");
+    expect(plan.target_canonical_document_id).toBe("drive:orig456");
+  });
+
+  it("preserves duplicate/version decision in filing plan", () => {
+    const duplicateProposal = {
+      document_id: "drive:dup123",
+      proposed_folder_path: "04_Archive",
+      duplicate_decision: "duplicate",
+      target_canonical_document_id: "drive:canon999",
+    };
+    const envelope = { source_filename: "statement.pdf" };
+    const plan = buildApprovedFilingPlan(duplicateProposal, envelope);
+    expect(plan.duplicate_decision).toBe("duplicate");
+    expect(plan.target_canonical_document_id).toBe("drive:canon999");
+  });
 });

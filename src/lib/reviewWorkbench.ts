@@ -530,6 +530,7 @@ export async function applyHumanProposalOverride(
 export type DuplicateCandidate = {
   documentId: string;
   driveFileId?: string;
+  driveUrl?: string;
   canonicalFilename?: string;
   originalFilename?: string;
   documentDate?: string;
@@ -579,9 +580,16 @@ export async function findDuplicateCandidates(
 
     // Exact byte hash match
     if (contentHash && row.content_hash && String(row.content_hash) === contentHash) {
+      const driveFileId = row.drive_file_id ? String(row.drive_file_id) : undefined;
+      const driveUrl = row.drive_url
+        ? String(row.drive_url)
+        : driveFileId
+          ? `https://drive.google.com/file/d/${driveFileId}/view`
+          : undefined;
       results.push({
         documentId: String(row.document_id),
-        driveFileId: row.drive_file_id ? String(row.drive_file_id) : undefined,
+        driveFileId,
+        driveUrl,
         canonicalFilename: row.canonical_filename ? String(row.canonical_filename) : undefined,
         originalFilename: row.original_filename ? String(row.original_filename) : undefined,
         documentDate: row.document_date ? String(row.document_date) : undefined,
@@ -616,9 +624,16 @@ export async function findDuplicateCandidates(
     }
 
     if (matches >= 2) {
+      const driveFileId = row.drive_file_id ? String(row.drive_file_id) : undefined;
+      const driveUrl = row.drive_url
+        ? String(row.drive_url)
+        : driveFileId
+          ? `https://drive.google.com/file/d/${driveFileId}/view`
+          : undefined;
       results.push({
         documentId: String(row.document_id),
-        driveFileId: row.drive_file_id ? String(row.drive_file_id) : undefined,
+        driveFileId,
+        driveUrl,
         canonicalFilename: row.canonical_filename ? String(row.canonical_filename) : undefined,
         originalFilename: row.original_filename ? String(row.original_filename) : undefined,
         documentDate: row.document_date ? String(row.document_date) : undefined,

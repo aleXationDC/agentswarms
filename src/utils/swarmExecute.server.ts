@@ -489,7 +489,13 @@ export async function executeSwarmServer(opts: {
     runId: string;
     checkpoint: SwarmCheckpoint;
     /** The human's answer to the approval this run parked at. */
-    decision?: { approved: boolean; note?: string; approvalId?: string };
+    decision?: {
+      approved: boolean;
+      note?: string;
+      approvalId?: string;
+      proposal?: Record<string, unknown>;
+      duplicateDecision?: Record<string, unknown>;
+    };
   };
 }): Promise<ExecuteResult> {
   const nodes = (Array.isArray(opts.swarm.nodes) ? opts.swarm.nodes : []) as Node<SwarmNodeData>[];
@@ -1060,11 +1066,14 @@ export async function executeSwarmServer(opts: {
                 // downstream must be a fact, not a model's transcription of
                 // one — see documentIdentity.ts's buildApprovedFilingPlan.
                 let toWrite = pending;
-                const proposal = parseJsonObject(pending);
+                // DMS-D1-0005-DOCUMENTS-v2 §6: Latest persisted proposal takes
+                // precedence over stale checkpoint pending on resume.
+                const proposal = decision.proposal ?? parseJsonObject(pending);
                 const envelope = parseJsonObject(opts.input);
                 if (proposal && envelope) {
                   const plan = buildApprovedFilingPlan(proposal, envelope);
                   if (decision.approvalId) plan.approval_id = decision.approvalId;
+                  if (decision.duplicateDecision) plan.duplicate_decision = decision.duplicateDecision;
                   toWrite = JSON.stringify(plan, null, 2);
                 }
                 write(toWrite);
@@ -1366,7 +1375,13 @@ export async function resumeSwarmRun(args: {
   origin: string;
   rejectApprovals?: boolean;
   /** The approver's answer, when resuming a run parked at an approval node. */
-  decision?: { approved: boolean; note?: string; approvalId?: string };
+  decision?: {
+    approved: boolean;
+    note?: string;
+    approvalId?: string;
+    proposal?: Record<string, unknown>;
+    duplicateDecision?: Record<string, unknown>;
+  };
 }): Promise<ExecuteResult | null> {
   const { data: run } = await supabaseAdmin
     .from("swarm_runs")

@@ -74,19 +74,25 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           return { ok: true, status: run.status, runId: run.id, output: "" };
         }
 
-        // An approval decided here is the only signal the registry gets for the
-        // approve path (rejection travels through the clarification loop), so
-        // reflect it before resuming. Best-effort, for the same reason as
-        // everywhere else: bookkeeping must not be able to block a run.
+        // Fetch full approval payload to extract latest proposal & duplicate decision
+        const { data: full } = await supabaseAdmin
+          .from("approvals")
+          .select("payload")
+          .eq("id", approval.id)
+          .maybeSingle();
+        const payloadObj = (full?.payload ?? {}) as Record<string, unknown>;
+        const proposal = (payloadObj.proposal ?? {}) as Record<string, unknown>;
+        const duplicateDecision = (payloadObj.duplicate_decision ?? proposal.duplicate_decision) as
+          | string
+          | undefined;
+        const targetCanonicalDocumentId = (payloadObj.target_canonical_document_id ??
+          proposal.target_canonical_document_id) as string | undefined;
+
+        // Archive Knowledge indexing only if approved and not marked as redundant duplicate (§7.2)
+        const shouldIndexArchive = approval.status === "approved" && duplicateDecision !== "duplicate";
+
         try {
           const { setReviewStatus } = await import("@/lib/documentRegistry");
-          const { data: full } = await supabaseAdmin
-            .from("approvals")
-            .select("payload")
-            .eq("id", approval.id)
-            .maybeSingle();
-          const payloadObj = (full?.payload ?? {}) as Record<string, unknown>;
-          const proposal = (payloadObj.proposal ?? {}) as Record<string, unknown>;
           const documentId =
             typeof proposal?.document_id === "string" ? proposal.document_id : null;
           const mailId =
@@ -123,69 +129,72 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           // index the pseudonymised text ONLY once keep/approval semantics permit it —
           // i.e. only on an actual approve, never on reject and never earlier at intake time.
           if (approval.status === "approved" && documentId) {
-            try {
-              const { data: runRow } = await supabaseAdmin
-                .from("swarm_runs")
-                .select("input_prompt")
-                .eq("id", run.id)
-                .maybeSingle();
-              const envelope = runRow?.input_prompt
-                ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
-                : null;
-              const pseudonymizedText =
-                envelope && typeof envelope.text === "string" ? envelope.text : "";
-              const driveFileId =
-                envelope && typeof envelope.drive_file_id === "string"
-                  ? envelope.drive_file_id
-                  : "";
-              const contentHash =
-                envelope && typeof envelope.content_hash === "string" ? envelope.content_hash : "";
-              const sourceFilename =
-                envelope && typeof envelope.filename === "string" ? envelope.filename : documentId;
-              if (pseudonymizedText.trim() && contentHash) {
-                const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
-                await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
-                  documentId,
-                  driveFileId,
-                  contentHash,
-                  sourceFilename,
-                  pseudonymizedText,
-                  provenance: { approvalId: approval.id, swarmRunId: run.id },
-                });
+            if (duplicateDecision !== "duplicate") {
+              try {
+                const { data: runRow } = await supabaseAdmin
+                  .from("swarm_runs")
+                  .select("input_prompt")
+                  .eq("id", run.id)
+                  .maybeSingle();
+                const envelope = runRow?.input_prompt
+                  ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
+                  : null;
+                const pseudonymizedText =
+                  envelope && typeof envelope.text === "string" ? envelope.text : "";
+                const driveFileId =
+                  envelope && typeof envelope.drive_file_id === "string"
+                    ? envelope.drive_file_id
+                    : "";
+                const contentHash =
+                  envelope && typeof envelope.content_hash === "string" ? envelope.content_hash : "";
+                const sourceFilename =
+                  envelope && typeof envelope.filename === "string" ? envelope.filename : documentId;
+                if (pseudonymizedText.trim() && contentHash) {
+                  const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
+                  await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
+                    documentId,
+                    driveFileId,
+                    contentHash,
+                    sourceFilename,
+                    pseudonymizedText,
+                    provenance: { approvalId: approval.id, swarmRunId: run.id },
+                  });
+                }
+              } catch (e) {
+                console.warn("[resume] Archive Knowledge indexing failed:", (e as Error).message);
               }
-            } catch (e) {
-              console.warn("[resume] Archive Knowledge indexing failed:", (e as Error).message);
             }
           }
 
           if (approval.status === "approved" && mailId) {
-            try {
-              const { data: runRow } = await supabaseAdmin
-                .from("swarm_runs")
-                .select("input_prompt")
-                .eq("id", run.id)
-                .maybeSingle();
-              const envelope = runRow?.input_prompt
-                ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
-                : null;
-              const pseudonymizedText =
-                envelope && typeof envelope.body_text === "string"
-                  ? envelope.body_text
-                  : envelope && typeof envelope.text === "string"
-                    ? envelope.text
+            if (duplicateDecision !== "duplicate") {
+              try {
+                const { data: runRow } = await supabaseAdmin
+                  .from("swarm_runs")
+                  .select("input_prompt")
+                  .eq("id", run.id)
+                  .maybeSingle();
+                const envelope = runRow?.input_prompt
+                  ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
+                  : null;
+                const pseudonymizedText =
+                  envelope && typeof envelope.body_text === "string"
+                    ? envelope.body_text
+                    : envelope && typeof envelope.text === "string"
+                      ? envelope.text
+                      : "";
+                const driveFileId =
+                  envelope && typeof envelope.drive_eml_file_id === "string"
+                    ? envelope.drive_eml_file_id
                     : "";
-              const driveFileId =
-                envelope && typeof envelope.drive_eml_file_id === "string"
-                  ? envelope.drive_eml_file_id
-                  : "";
-              const contentHash =
-                envelope && typeof envelope.raw_sha256 === "string"
-                  ? envelope.raw_sha256
-                  : "";
-              const sourceFilename =
-                envelope && typeof envelope.canonical_eml_filename === "string"
-                  ? envelope.canonical_eml_filename
-                  : mailId;
+                const contentHash =
+                  envelope && typeof envelope.raw_sha256 === "string"
+                    ? envelope.raw_sha256
+                    : "";
+                const sourceFilename =
+                  envelope && typeof envelope.canonical_eml_filename === "string"
+                    ? envelope.canonical_eml_filename
+                    : mailId;
 
               if (pseudonymizedText.trim() && contentHash) {
                 const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
@@ -213,6 +222,10 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           decision: {
             approved: approval.status === "approved",
             approvalId: approval.id,
+            proposal: Object.keys(proposal).length > 0 ? proposal : undefined,
+            duplicateDecision: duplicateDecision
+              ? { decision: duplicateDecision, targetDocId: targetCanonicalDocumentId }
+              : undefined,
           },
         });
         if (!result) return { ok: false, error: "This run can no longer be resumed" };

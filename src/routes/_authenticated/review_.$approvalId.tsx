@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { format } from "date-fns";
+import { clickable } from "@/lib/clickable";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   Layers,
   Save,
   Send,
+  Trash2,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -31,6 +33,14 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -91,6 +101,12 @@ function ReviewDetailPage() {
     "separate" | "duplicate" | "new_version" | "related_successor"
   >("separate");
   const [selectedTargetDocId, setSelectedTargetDocId] = useState<string>("");
+
+  // Discard / Trash Modal State (DMS-D1-0005 §9)
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discardReason, setDiscardReason] = useState<"spam" | "phishing" | "irrelevant" | "test" | "other">("irrelevant");
+  const [discardNote, setDiscardNote] = useState("");
+  const [discarding, setDiscarding] = useState(false);
 
   // Direct Human Override State
   const [isEditing, setIsEditing] = useState(false);
@@ -243,6 +259,11 @@ function ReviewDetailPage() {
     if (isEditing) {
       const saved = await onSaveOverride();
       if (!saved) return;
+    } else if (user && (duplicateDecision !== "separate" || selectedTargetDocId)) {
+      await applyHumanProposalOverride(supabase, user.id, approvalId, {
+        duplicate_decision: duplicateDecision,
+        target_canonical_document_id: selectedTargetDocId || undefined,
+      });
     }
     await decide(
       {
@@ -251,12 +272,52 @@ function ReviewDetailPage() {
         agent_name: approval.agent_name,
         action_type: approval.action_type,
         action_title: approval.action_title,
-        payload: approval.payload,
+        payload: {
+          ...approval.payload,
+          duplicate_decision: duplicateDecision,
+          target_canonical_document_id: selectedTargetDocId || undefined,
+        },
         swarm_run_id: approval.swarm_run_id,
       },
       "approved",
     );
     if (user) void load(user.id);
+  };
+
+  const onDiscardTrash = async () => {
+    if (!user) return;
+    setDiscarding(true);
+    try {
+      await rejectWithReason(
+        {
+          id: approval.id,
+          user_id: approval.user_id,
+          agent_name: approval.agent_name,
+          action_type: approval.action_type,
+          action_title: approval.action_title,
+          payload: {
+            ...approval.payload,
+            discard: {
+              reason: discardReason,
+              note: discardNote,
+              discarded_at: new Date().toISOString(),
+            },
+          },
+          swarm_run_id: approval.swarm_run_id,
+        },
+        `Discarded to Trash (${discardReason}): ${discardNote || "No note"}`,
+      );
+      if (detail.documentId) {
+        const { setReviewStatus } = await import("@/lib/documentRegistry");
+        await setReviewStatus(supabase as never, user.id, detail.documentId, {
+          review: "rejected",
+        });
+      }
+      setDiscardOpen(false);
+      await load(user.id);
+    } finally {
+      setDiscarding(false);
+    }
   };
 
   const onRejectPlain = async () => {
@@ -570,22 +631,56 @@ function ReviewDetailPage() {
         <Section title="4. Duplicate / Version Matches">
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Potential matching documents were detected in the canonical archive. Select how this document should be filed:
+              Potential matching documents were detected in the canonical archive. Select target document and handling action:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <Card className="p-3 border-primary/20 bg-primary/5">
-                <p className="text-[11px] font-semibold text-primary uppercase">Current Intake</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-primary uppercase">Current Intake</p>
+                  {driveUrl && (
+                    <a
+                      href={driveUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                    >
+                      Open in Drive <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
                 <p className="text-sm font-medium mt-1">{filename}</p>
                 <p className="text-xs text-muted-foreground">Date: {proposal.document_date || "—"}</p>
                 <p className="text-xs text-muted-foreground font-mono truncate">Path: {proposal.proposed_folder_path || "—"}</p>
               </Card>
-              {duplicates.slice(0, 1).map((cand) => (
-                <Card key={cand.documentId} className="p-3">
+              {duplicates.map((cand) => (
+                <Card
+                  key={cand.documentId}
+                  className={`p-3 transition-colors cursor-pointer ${
+                    selectedTargetDocId === cand.documentId ? "border-primary ring-1 ring-primary" : ""
+                  }`}
+                  {...clickable(
+                    () => setSelectedTargetDocId(cand.documentId),
+                    `Select candidate ${cand.canonicalFilename || cand.originalFilename}`,
+                  )}
+                >
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] font-semibold uppercase text-muted-foreground">Existing Archive Match</p>
-                    <Badge variant="outline" className="text-[10px]">
-                      {cand.matchType === "exact_hash" ? "Exact Byte Duplicate" : "Semantic Candidate"}
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-[10px]">
+                        {cand.matchType === "exact_hash" ? "Exact Byte Duplicate" : "Semantic Candidate"}
+                      </Badge>
+                      {cand.driveUrl && (
+                        <a
+                          href={cand.driveUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:underline ml-1"
+                        >
+                          Open in Drive <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                   <p className="text-sm font-medium mt-1">{cand.canonicalFilename || cand.originalFilename}</p>
                   <p className="text-xs text-muted-foreground">Date: {cand.documentDate || "—"}</p>
@@ -595,22 +690,44 @@ function ReviewDetailPage() {
               ))}
             </div>
 
-            <div className="pt-2">
-              <label className="text-xs text-muted-foreground block mb-1">Human Decision</label>
-              <Select
-                value={duplicateDecision}
-                onValueChange={(v: any) => setDuplicateDecision(v)}
-              >
-                <SelectTrigger className="h-8 text-sm w-full sm:w-80">
-                  <SelectValue placeholder="Select duplicate handling" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="separate">1. Separate document (file independently)</SelectItem>
-                  <SelectItem value="duplicate">2. Duplicate of existing (keep provenance, skip 2nd file)</SelectItem>
-                  <SelectItem value="new_version">3. New version of same logical document (Drive revision)</SelectItem>
-                  <SelectItem value="related_successor">4. Related successor / follow-on document</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="pt-2 flex flex-wrap items-center gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Human Decision</label>
+                <Select
+                  value={duplicateDecision}
+                  onValueChange={(v: any) => setDuplicateDecision(v)}
+                >
+                  <SelectTrigger className="h-8 text-sm w-full sm:w-80">
+                    <SelectValue placeholder="Select duplicate handling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="separate">1. Separate document (file independently)</SelectItem>
+                    <SelectItem value="duplicate">2. Duplicate of existing (keep provenance, skip 2nd file)</SelectItem>
+                    <SelectItem value="new_version">3. New version of same logical document (Drive revision)</SelectItem>
+                    <SelectItem value="related_successor">4. Related successor / follow-on document</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {duplicates.length > 1 && (
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Target Document</label>
+                  <Select
+                    value={selectedTargetDocId}
+                    onValueChange={(v) => setSelectedTargetDocId(v)}
+                  >
+                    <SelectTrigger className="h-8 text-sm w-full sm:w-64">
+                      <SelectValue placeholder="Select target document" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {duplicates.map((c) => (
+                        <SelectItem key={c.documentId} value={c.documentId}>
+                          {c.canonicalFilename || c.originalFilename || c.documentId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
         </Section>
@@ -713,19 +830,84 @@ function ReviewDetailPage() {
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button
-              variant="outline"
-              className="gap-1.5 text-destructive hover:text-destructive"
-              onClick={() => (canDiscuss ? setRejecting(true) : onRejectPlain())}
-            >
-              <XCircle className="h-4 w-4" /> {canDiscuss ? "Reject / Discuss" : "Reject"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="gap-1.5 text-destructive hover:text-destructive"
+                onClick={() => (canDiscuss ? setRejecting(true) : onRejectPlain())}
+              >
+                <XCircle className="h-4 w-4" /> {canDiscuss ? "Reject / Discuss" : "Reject"}
+              </Button>
+              <Button
+                variant="ghost"
+                className="gap-1.5 text-muted-foreground hover:text-destructive"
+                onClick={() => setDiscardOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" /> Discard / Trash
+              </Button>
+            </div>
             <Button className="gap-1.5" onClick={onApproveWithEdits}>
               <CheckCircle2 className="h-4 w-4" /> {isEditing ? "Save Edits & Approve" : "Approve & File"}
             </Button>
           </div>
         )}
       </Card>
+
+      {/* DISCARD / TRASH DIALOG (DMS-D1-0005 §9) */}
+      <Dialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard to Trash</DialogTitle>
+            <DialogDescription>
+              Discard this document to provider Trash. Normal filing and Archive Knowledge indexing will be stopped.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Reason for Discard</label>
+              <Select
+                value={discardReason}
+                onValueChange={(v: any) => setDiscardReason(v)}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="spam">Spam</SelectItem>
+                  <SelectItem value="phishing">Phishing</SelectItem>
+                  <SelectItem value="irrelevant">Irrelevant</SelectItem>
+                  <SelectItem value="test">Test</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Note (Optional)</label>
+              <Input
+                value={discardNote}
+                onChange={(e) => setDiscardNote(e.target.value)}
+                placeholder="Optional explanation for audit…"
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setDiscardOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={discarding}
+              onClick={onDiscardTrash}
+              className="gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {discarding ? "Discarding…" : "Confirm Discard"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
