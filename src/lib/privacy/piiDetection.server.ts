@@ -49,6 +49,7 @@ export function presidioAnalyzerUrl(): string | null {
 export type AdHocPatternRecognizer = {
   name: string;
   supported_entity: string;
+  supported_language?: string;
   patterns: { name: string; regex: string; score: number }[];
   context?: string[];
 };
@@ -116,7 +117,7 @@ export type PiiDetectionResult =
  * Analyze `text` for PII. Returns `{ ok: false }` on any failure — the caller
  * must fail closed, never treat a failed call as "no PII found".
  */
-export async function detectPii(text: string, language = "de"): Promise<PiiDetectionResult> {
+export async function detectPii(text: string, language = "en"): Promise<PiiDetectionResult> {
   const base = presidioAnalyzerUrl();
   if (!base) {
     return { ok: false, error: "PRESIDIO_ANALYZER_URL is not configured" };
@@ -129,7 +130,7 @@ export async function detectPii(text: string, language = "de"): Promise<PiiDetec
         text,
         language,
         entities: MIN_ENTITIES,
-        ad_hoc_recognizers: GERMAN_AD_HOC_RECOGNIZERS,
+        ad_hoc_recognizers: GERMAN_AD_HOC_RECOGNIZERS.map((r) => ({ ...r, supported_language: language })),
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
