@@ -123,6 +123,7 @@ import { Route as ApiDocgenXlsxRouteImport } from './routes/api/docgen.xlsx'
 import { Route as ApiDocgenStatusRouteImport } from './routes/api/docgen.status'
 import { Route as ApiDocgenPptxRouteImport } from './routes/api/docgen.pptx'
 import { Route as ApiDocgenDocxRouteImport } from './routes/api/docgen.docx'
+import { Route as ApiDmsIntakeRouteImport } from './routes/api/dms.intake'
 import { Route as ApiDataUploadRouteImport } from './routes/api/data.upload'
 import { Route as ApiBiDirectQueryRouteImport } from './routes/api/bi.direct-query'
 import { Route as ApiBiCronRouteImport } from './routes/api/bi.cron'
@@ -725,6 +726,11 @@ const ApiDocgenDocxRoute = ApiDocgenDocxRouteImport.update({
   path: '/api/docgen/docx',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDmsIntakeRoute = ApiDmsIntakeRouteImport.update({
+  id: '/api/dms/intake',
+  path: '/api/dms/intake',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDataUploadRoute = ApiDataUploadRouteImport.update({
   id: '/api/data/upload',
   path: '/api/data/upload',
@@ -936,6 +942,7 @@ export interface FileRoutesByFullPath {
   '/api/bi/cron': typeof ApiBiCronRoute
   '/api/bi/direct-query': typeof ApiBiDirectQueryRoute
   '/api/data/upload': typeof ApiDataUploadRoute
+  '/api/dms/intake': typeof ApiDmsIntakeRoute
   '/api/docgen/docx': typeof ApiDocgenDocxRoute
   '/api/docgen/pptx': typeof ApiDocgenPptxRoute
   '/api/docgen/status': typeof ApiDocgenStatusRoute
@@ -1071,6 +1078,7 @@ export interface FileRoutesByTo {
   '/api/bi/cron': typeof ApiBiCronRoute
   '/api/bi/direct-query': typeof ApiBiDirectQueryRoute
   '/api/data/upload': typeof ApiDataUploadRoute
+  '/api/dms/intake': typeof ApiDmsIntakeRoute
   '/api/docgen/docx': typeof ApiDocgenDocxRoute
   '/api/docgen/pptx': typeof ApiDocgenPptxRoute
   '/api/docgen/status': typeof ApiDocgenStatusRoute
@@ -1209,6 +1217,7 @@ export interface FileRoutesById {
   '/api/bi/cron': typeof ApiBiCronRoute
   '/api/bi/direct-query': typeof ApiBiDirectQueryRoute
   '/api/data/upload': typeof ApiDataUploadRoute
+  '/api/dms/intake': typeof ApiDmsIntakeRoute
   '/api/docgen/docx': typeof ApiDocgenDocxRoute
   '/api/docgen/pptx': typeof ApiDocgenPptxRoute
   '/api/docgen/status': typeof ApiDocgenStatusRoute
@@ -1347,6 +1356,7 @@ export interface FileRouteTypes {
     | '/api/bi/cron'
     | '/api/bi/direct-query'
     | '/api/data/upload'
+    | '/api/dms/intake'
     | '/api/docgen/docx'
     | '/api/docgen/pptx'
     | '/api/docgen/status'
@@ -1482,6 +1492,7 @@ export interface FileRouteTypes {
     | '/api/bi/cron'
     | '/api/bi/direct-query'
     | '/api/data/upload'
+    | '/api/dms/intake'
     | '/api/docgen/docx'
     | '/api/docgen/pptx'
     | '/api/docgen/status'
@@ -1619,6 +1630,7 @@ export interface FileRouteTypes {
     | '/api/bi/cron'
     | '/api/bi/direct-query'
     | '/api/data/upload'
+    | '/api/dms/intake'
     | '/api/docgen/docx'
     | '/api/docgen/pptx'
     | '/api/docgen/status'
@@ -1692,6 +1704,7 @@ export interface RootRouteChildren {
   ApiAuditExportRoute: typeof ApiAuditExportRoute
   ApiAuthSsoConfigRoute: typeof ApiAuthSsoConfigRoute
   ApiDataUploadRoute: typeof ApiDataUploadRoute
+  ApiDmsIntakeRoute: typeof ApiDmsIntakeRoute
   ApiDocgenDocxRoute: typeof ApiDocgenDocxRoute
   ApiDocgenPptxRoute: typeof ApiDocgenPptxRoute
   ApiDocgenStatusRoute: typeof ApiDocgenStatusRoute
@@ -2524,6 +2537,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDocgenDocxRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/dms/intake': {
+      id: '/api/dms/intake'
+      path: '/api/dms/intake'
+      fullPath: '/api/dms/intake'
+      preLoaderRoute: typeof ApiDmsIntakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/data/upload': {
       id: '/api/data/upload'
       path: '/api/data/upload'
@@ -2959,6 +2979,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuditExportRoute: ApiAuditExportRoute,
   ApiAuthSsoConfigRoute: ApiAuthSsoConfigRoute,
   ApiDataUploadRoute: ApiDataUploadRoute,
+  ApiDmsIntakeRoute: ApiDmsIntakeRoute,
   ApiDocgenDocxRoute: ApiDocgenDocxRoute,
   ApiDocgenPptxRoute: ApiDocgenPptxRoute,
   ApiDocgenStatusRoute: ApiDocgenStatusRoute,
@@ -2997,13 +3018,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

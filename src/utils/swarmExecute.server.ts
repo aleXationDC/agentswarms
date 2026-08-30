@@ -347,6 +347,16 @@ async function createApprovalRequest(args: {
           console.warn("[swarmExecute] domain resolution failed:", (e as Error).message);
         }
 
+        // Extraction/privacy facts (DMS-D1-0002 §4/§5/§7) travel INSIDE the
+        // envelope — the deterministic intake boundary (dmsIntake.server.ts)
+        // put them there — never re-derived here from model output, so this
+        // read-through is identity-safe the same way document_id/content_hash
+        // already are.
+        const extractionStatus =
+          typeof envelope.extraction_status === "string" ? envelope.extraction_status : null;
+        const privacyClass =
+          typeof envelope.privacy_class === "string" ? envelope.privacy_class : null;
+
         await upsertRegistryRow(
           supabaseAdmin as never,
           args.userId,
@@ -355,6 +365,32 @@ async function createApprovalRequest(args: {
             proposal,
             humanReviewStatus: "pending",
             domain,
+            extraction: extractionStatus
+              ? {
+                  status: extractionStatus,
+                  error:
+                    typeof envelope.extraction_error === "string"
+                      ? envelope.extraction_error
+                      : null,
+                }
+              : null,
+            privacy: privacyClass
+              ? {
+                  privacyClass,
+                  piiProcessingStatus:
+                    typeof envelope.pii_processing_status === "string"
+                      ? envelope.pii_processing_status
+                      : "passed",
+                  externalProcessingPolicy:
+                    envelope.external_processing_policy === "blocked"
+                      ? "blocked"
+                      : "sanitized_allowed",
+                  policyVersion:
+                    typeof envelope.privacy_policy_version === "string"
+                      ? envelope.privacy_policy_version
+                      : undefined,
+                }
+              : null,
             provenance: {
               approval_id: (inserted as { id?: string } | null)?.id ?? null,
               swarm_run_id: args.runId,
