@@ -12,7 +12,7 @@ describe("buildApprovedFilingPlan", () => {
   it("maps the human-approved folder path to approved_target_folder", () => {
     const proposal = {
       document_id: "drive:abc123",
-      proposed_folder_path: "03_Ressources/Insurance",
+      proposed_folder_path: "03_Resources/Insurance",
       proposed_filename: "some model title.pdf",
       document_date: "2026-04-01",
     };
@@ -21,7 +21,7 @@ describe("buildApprovedFilingPlan", () => {
       ingested_at: "2026-04-02T00:00:00.000Z",
     };
     const plan = buildApprovedFilingPlan(proposal, envelope);
-    expect(plan.approved_target_folder).toBe("03_Ressources/Insurance");
+    expect(plan.approved_target_folder).toBe("03_Resources/Insurance");
   });
 
   it("uses the deterministic canonical filename, not the model's proposed_filename", () => {
