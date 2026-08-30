@@ -4453,6 +4453,48 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Manually added ahead of `supabase gen types` (no live DB access in this
+      // change). Shape mirrors supabase/migrations/20260841000000_privacy_vault_tokens.sql
+      // exactly — regenerate this block for real once that migration is applied.
+      privacy_vault_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          pseudonym_token: string;
+          entity_key: string;
+          entity_type: string;
+          ciphertext: string;
+          iv: string;
+          key_id: string | null;
+          created_at: string;
+          last_used_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          pseudonym_token: string;
+          entity_key: string;
+          entity_type: string;
+          ciphertext: string;
+          iv: string;
+          key_id?: string | null;
+          created_at?: string;
+          last_used_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          pseudonym_token?: string;
+          entity_key?: string;
+          entity_type?: string;
+          ciphertext?: string;
+          iv?: string;
+          key_id?: string | null;
+          created_at?: string;
+          last_used_at?: string;
+        };
+        Relationships: [];
+      };
       notebook_runtime_secrets: {
         Row: {
           created_at: string;

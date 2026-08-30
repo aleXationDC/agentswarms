@@ -62,7 +62,7 @@ services:
       - "host.docker.internal:host-gateway"
     # nb-internal lets notebook kernels call back for governed model/KB access;
     # js-internal lets the app reach the (optional) JS sandbox by service name.
-    networks: [default, nb-internal, js-internal, n8n-internal]
+    networks: [default, nb-internal, js-internal, n8n-internal, privacy-internal]
     restart: unless-stopped
 
   # ── Developer-workspace server runtime (opt-in: --profile notebooks) ─────────
@@ -229,6 +229,36 @@ services:
       - /tmp:size=16m,mode=1777
     restart: unless-stopped
 
+  # ── Local PII detection sidecar (DMS-D1-0002 §5: Privacy Firewall) ──────────
+  #
+  # Declared here so the endpoint the app expects (PRESIDIO_ANALYZER_URL,
+  # default http://presidio-analyzer:3000) is documented and reproducible, but
+  # NOT part of the default/`all` profile: this change does not activate the
+  # Privacy Firewall in production, per the task's explicit "no production
+  # activation until the Privacy Firewall passes" constraint. Bring it up
+  # explicitly with `docker compose --profile privacy up -d` once the German
+  # recognizers (DE_TAX_ID, DE_TAX_NUMBER, DE_ID_CARD, DE_PASSPORT — see
+  # src/lib/privacy/piiDetection.server.ts) are registered and the fixtures in
+  # tests/unit/privacy* pass against a real instance.
+  presidio-analyzer:
+    # Pin to an explicit release, never `:latest` — this is a security
+    # component. Bump deliberately, not via a floating tag.
+    image: mcr.microsoft.com/presidio-analyzer:2.2.360
+    profiles: [privacy]
+    expose:
+      - "3000"
+    networks: [privacy-internal]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 1024m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    restart: unless-stopped
+
 # Network topology for the runtime (egress control):
 #   nb-internal — internal:true, so kernels have NO direct internet. Members:
 #                 app, gateway, egress proxy, and the per-session kernels.
@@ -254,3 +284,10 @@ networks:
   n8n-internal:
     external: true
     name: n8n_internal
+  # Presidio Analyzer sits here alone, internal:true means no internet — this
+  # is a detection-only sidecar and must never phone home or reach any
+  # external AI provider. The app joins this network too (see above) so it
+  # can reach it by service name; the sidecar itself can initiate nothing.
+  privacy-internal:
+    name: agentswarms_privacy-internal
+    internal: true
