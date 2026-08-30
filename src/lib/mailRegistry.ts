@@ -26,6 +26,12 @@ export const MAIL_REGISTRY_COLUMNS: { name: string; type: "string" | "number" | 
   { name: "mail_account_id", type: "string" },
   { name: "raw_sha256", type: "string" },
   { name: "raw_size", type: "number" },
+  // ---- provider & operational locators ----
+  { name: "provider_type", type: "string" }, // imap | gmail
+  { name: "provider_message_id", type: "string" },
+  { name: "provider_thread_id", type: "string" },
+  { name: "provider_locator_json", type: "string" },
+  { name: "provider_labels_json", type: "string" },
   // ---- source & imap locators ----
   { name: "source_mailbox_path", type: "string" },
   { name: "source_context_path", type: "string" },
@@ -119,11 +125,16 @@ export type MailRegistryRow = {
   mail_account_id: string;
   raw_sha256: string;
   raw_size: number;
-  source_mailbox_path: string;
-  source_context_path: string;
-  current_mailbox_path: string;
-  current_uid: string;
-  current_uidvalidity: string;
+  provider_type?: "imap" | "gmail" | string;
+  provider_message_id?: string | null;
+  provider_thread_id?: string | null;
+  provider_locator_json?: string | null;
+  provider_labels_json?: string | null;
+  source_mailbox_path?: string;
+  source_context_path?: string;
+  current_mailbox_path?: string;
+  current_uid?: string;
+  current_uidvalidity?: string;
   message_id: string | null;
   in_reply_to: string | null;
   references_json: string;

@@ -145,13 +145,30 @@ export async function processMailDiscovery(
     userId: string;
     bytes: Uint8Array;
     mailAccountId: string;
-    sourceMailboxPath: string;
+    sourceMailboxPath?: string;
     sourceUid?: string;
     sourceUidValidity?: string;
+    providerType?: "imap" | "gmail" | string;
+    providerMessageId?: string | null;
+    providerThreadId?: string | null;
+    providerLocatorJson?: string | null;
+    providerLabelsJson?: string | null;
     ingestedAt?: string;
   },
 ): Promise<MailDiscoveryResult> {
-  const { userId, bytes, mailAccountId, sourceMailboxPath, sourceUid = "0", sourceUidValidity = "0" } = args;
+  const {
+    userId,
+    bytes,
+    mailAccountId,
+    sourceMailboxPath = "00_aleXation/00_Import",
+    sourceUid = "0",
+    sourceUidValidity = "0",
+    providerType = "imap",
+    providerMessageId = null,
+    providerThreadId = null,
+    providerLocatorJson = null,
+    providerLabelsJson = null,
+  } = args;
   const ingestedAt = args.ingestedAt || new Date().toISOString();
 
   const rawSha256 = await computeSha256Hex(bytes);
@@ -182,6 +199,11 @@ export async function processMailDiscovery(
     mail_account_id: mailAccountId,
     raw_sha256: rawSha256,
     raw_size: bytes.byteLength,
+    provider_type: providerType,
+    provider_message_id: providerMessageId,
+    provider_thread_id: providerThreadId,
+    provider_locator_json: providerLocatorJson,
+    provider_labels_json: providerLabelsJson,
     source_mailbox_path: sourceMailboxPath,
     source_context_path: sourceContextPath,
     current_mailbox_path: sourceMailboxPath,
@@ -317,8 +339,8 @@ export async function processMailStagingReadback(
 }
 
 /**
- * Step 3: IMAP Review Move Readback.
- * Records the new IMAP locator under `00_aleXation/00_Review`.
+ * Step 3: Review Move Readback (IMAP or Gmail).
+ * Records the new IMAP locator under `00_aleXation/00_Review` or Gmail review label state.
  */
 export async function processMailReviewReadback(
   sb: SupabaseClient<Database>,
@@ -326,8 +348,11 @@ export async function processMailReviewReadback(
     userId: string;
     mailId: string;
     reviewMailboxPath?: string;
-    reviewUid: string;
+    reviewUid?: string;
     reviewUidValidity?: string;
+    providerType?: string;
+    providerLabelsJson?: string;
+    providerLocatorJson?: string;
   },
 ): Promise<{ status: "review_recorded"; mailId: string }> {
   const {
@@ -336,18 +361,29 @@ export async function processMailReviewReadback(
     reviewMailboxPath = "00_aleXation/00_Review",
     reviewUid,
     reviewUidValidity = "0",
+    providerType,
+    providerLabelsJson,
+    providerLocatorJson,
   } = args;
   const nowIso = new Date().toISOString();
 
-  await upsertMailRegistryRow(sb, userId, {
+  const updates: Partial<MailRegistryRow> & { mail_id: string } = {
     mail_id: mailId,
-    current_mailbox_path: reviewMailboxPath,
-    current_uid: reviewUid,
-    current_uidvalidity: reviewUidValidity,
     drive_staging_status: "verified",
     reviewed_at: nowIso,
     last_verified_at: nowIso,
-  });
+  };
+
+  if (reviewUid) {
+    updates.current_mailbox_path = reviewMailboxPath;
+    updates.current_uid = reviewUid;
+    updates.current_uidvalidity = reviewUidValidity;
+  }
+  if (providerType) updates.provider_type = providerType;
+  if (providerLabelsJson) updates.provider_labels_json = providerLabelsJson;
+  if (providerLocatorJson) updates.provider_locator_json = providerLocatorJson;
+
+  await upsertMailRegistryRow(sb, userId, updates);
 
   return { status: "review_recorded", mailId };
 }

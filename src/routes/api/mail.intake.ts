@@ -134,11 +134,18 @@ export const Route = createFileRoute("/api/mail/intake")({
             const bodyJson = await request.json() as {
               mail_id: string;
               review_mailbox_path?: string;
-              review_uid: string;
+              review_uid?: string;
               review_uidvalidity?: string;
+              provider_type?: string;
+              provider_labels_json?: string;
+              provider_locator_json?: string;
+              review_label?: string;
             };
-            if (!bodyJson?.mail_id || !bodyJson?.review_uid) {
-              return json({ error: "Missing mail_id or review_uid in review_readback" }, 400);
+            if (!bodyJson?.mail_id) {
+              return json({ error: "Missing mail_id in review_readback" }, 400);
+            }
+            if (!bodyJson.review_uid && !bodyJson.provider_labels_json && !bodyJson.review_label && bodyJson.provider_type !== "gmail") {
+              return json({ error: "Missing review locator (review_uid or provider_labels) in review_readback" }, 400);
             }
             const res = await processMailReviewReadback(supabaseAdmin, {
               userId: key.user_id,
@@ -146,6 +153,9 @@ export const Route = createFileRoute("/api/mail/intake")({
               reviewMailboxPath: bodyJson.review_mailbox_path,
               reviewUid: bodyJson.review_uid,
               reviewUidValidity: bodyJson.review_uidvalidity,
+              providerType: bodyJson.provider_type,
+              providerLabelsJson: bodyJson.provider_labels_json || (bodyJson.review_label ? JSON.stringify([bodyJson.review_label]) : undefined),
+              providerLocatorJson: bodyJson.provider_locator_json,
             });
             return json(res);
           }
@@ -200,6 +210,11 @@ export const Route = createFileRoute("/api/mail/intake")({
           const sourceMailboxPath = q("source_mailbox_path") || "00_aleXation/00_Import";
           const sourceUid = q("source_uid") || "0";
           const sourceUidValidity = q("source_uidvalidity") || "0";
+          const providerType = q("provider_type") || "imap";
+          const providerMessageId = q("provider_message_id") || null;
+          const providerThreadId = q("provider_thread_id") || null;
+          const providerLocatorJson = q("provider_locator_json") || null;
+          const providerLabelsJson = q("provider_labels_json") || null;
 
           const declared = Number(request.headers.get("Content-Length") ?? "");
           if (Number.isFinite(declared) && declared > uploadMaxBytes()) {
@@ -229,6 +244,11 @@ export const Route = createFileRoute("/api/mail/intake")({
             sourceMailboxPath,
             sourceUid,
             sourceUidValidity,
+            providerType,
+            providerMessageId,
+            providerThreadId,
+            providerLocatorJson,
+            providerLabelsJson,
           });
 
           auditEvent({
