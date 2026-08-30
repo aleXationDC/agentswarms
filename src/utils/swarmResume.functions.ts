@@ -149,7 +149,10 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           runId: run.id,
           userId: run.user_id,
           origin: resolveInternalOrigin(),
-          decision: { approved: approval.status === "approved" },
+          decision: {
+            approved: approval.status === "approved",
+            approvalId: approval.id,
+          },
         });
         if (!result) return { ok: false, error: "This run can no longer be resumed" };
         return { ok: true, status: result.status, runId: result.runId, output: result.output };

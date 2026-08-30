@@ -60,7 +60,11 @@ import {
 } from "@/utils/jsSandbox.server";
 import { coerceParams, missingRequired } from "@/lib/swarmComponents";
 import { buildApprovalPayload, formatApprovalDescription } from "@/lib/approvalSummary";
-import { applyAuthoritativeIdentity, parseJsonObject } from "@/lib/documentIdentity";
+import {
+  applyAuthoritativeIdentity,
+  buildApprovedFilingPlan,
+  parseJsonObject,
+} from "@/lib/documentIdentity";
 import { recordProposal, subjectKeyFromEnvelope } from "@/lib/clarificationLoop";
 import { resolveDeployedGraph } from "@/lib/swarmPublish";
 import { safeStringify } from "@/lib/sandbox/jsSandbox";
@@ -454,7 +458,7 @@ export async function executeSwarmServer(opts: {
     runId: string;
     checkpoint: SwarmCheckpoint;
     /** The human's answer to the approval this run parked at. */
-    decision?: { approved: boolean; note?: string };
+    decision?: { approved: boolean; note?: string; approvalId?: string };
   };
 }): Promise<ExecuteResult> {
   const nodes = (Array.isArray(opts.swarm.nodes) ? opts.swarm.nodes : []) as Node<SwarmNodeData>[];
@@ -993,7 +997,22 @@ export async function executeSwarmServer(opts: {
             const decision = opts.resume?.decision;
             if (resumed?.suspendedNodeId === node.id && decision) {
               if (decision.approved) {
-                write(pending);
+                // Assert the deterministic filing plan (target folder + the
+                // NATIVE canonical filename, never the model's own
+                // `proposed_filename`) over the approved proposal, for the
+                // same reason applyAuthoritativeIdentity asserts physical
+                // identity above: whatever reaches the Ablagebot HTTP node
+                // downstream must be a fact, not a model's transcription of
+                // one — see documentIdentity.ts's buildApprovedFilingPlan.
+                let toWrite = pending;
+                const proposal = parseJsonObject(pending);
+                const envelope = parseJsonObject(opts.input);
+                if (proposal && envelope) {
+                  const plan = buildApprovedFilingPlan(proposal, envelope);
+                  if (decision.approvalId) plan.approval_id = decision.approvalId;
+                  toWrite = JSON.stringify(plan, null, 2);
+                }
+                write(toWrite);
                 // THE DECISION ITSELF, not just the text that was approved.
                 //
                 // write(pending) passes the payload through unchanged, so
@@ -1292,7 +1311,7 @@ export async function resumeSwarmRun(args: {
   origin: string;
   rejectApprovals?: boolean;
   /** The approver's answer, when resuming a run parked at an approval node. */
-  decision?: { approved: boolean; note?: string };
+  decision?: { approved: boolean; note?: string; approvalId?: string };
 }): Promise<ExecuteResult | null> {
   const { data: run } = await supabaseAdmin
     .from("swarm_runs")

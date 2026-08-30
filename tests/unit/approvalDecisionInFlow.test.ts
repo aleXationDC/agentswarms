@@ -36,13 +36,13 @@ const clientRuntime = readFileSync(resolve("src/lib/swarmRuntime.ts"), "utf8");
 function approvedBranch(): string {
   const i = executor.indexOf("if (decision.approved) {");
   expect(i, "the approval branch moved; this test needs re-anchoring").toBeGreaterThan(0);
-  return executor.slice(i, i + 1200);
+  return executor.slice(i, i + 2400);
 }
 
 describe("the approval decision reaches flow state", () => {
   it("records that it was approved, not just the payload", () => {
     const branch = approvedBranch();
-    expect(branch).toContain("write(pending)");
+    expect(branch).toContain("write(toWrite)");
     expect(branch).toMatch(/_approved`?,\s*"yes"/);
   });
 

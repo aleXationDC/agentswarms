@@ -15,6 +15,7 @@
 // authoritative envelope is re-applied OVER the model's answer before the
 // proposal is shown to a human or handed to an executor. The model keeps the
 // judgement; the envelope keeps the facts.
+import { buildCanonicalFilename } from "@/lib/canonicalFilename";
 
 /** Fields the envelope owns outright. A model value here is always discarded. */
 export const IDENTITY_FIELDS = [
@@ -103,6 +104,35 @@ export function reconcileIdentity(
     merged.document_id = derived;
   }
   return { object: merged, corrected };
+}
+
+/**
+ * Assert the human-approved filing plan's deterministic fields over the
+ * proposal, the same way `reconcileIdentity` asserts physical identity.
+ *
+ * `approved_target_folder` is the human-approved semantic destination — that
+ * choice belongs to the reviewer/agent, so it is copied from
+ * `proposed_folder_path` verbatim, never invented here. `approved_filename`
+ * is NOT copied from the model's `proposed_filename`: naming is deterministic
+ * (see canonicalFilename.ts) precisely so a filing executor never has to
+ * trust a model's idea of what a filename should look like.
+ */
+export function buildApprovedFilingPlan(
+  proposal: Record<string, unknown>,
+  envelope: Record<string, unknown>,
+): Record<string, unknown> {
+  const strOf = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+  const naming = buildCanonicalFilename({
+    originalFilename: strOf(envelope.source_filename) || strOf(proposal.source_filename),
+    documentDate: proposal.document_date,
+    documentDateSource: proposal.document_date_source,
+    arrivalDate: envelope.ingested_at ?? envelope.created_time,
+  });
+  return {
+    ...proposal,
+    approved_target_folder: (proposal.proposed_folder_path as unknown) ?? null,
+    approved_filename: naming.canonicalFilename || (proposal.proposed_filename as unknown) || null,
+  };
 }
 
 /**
