@@ -12,7 +12,8 @@ export type ServiceId =
   | "js-sandbox"
   | "notebook-gateway"
   | "notebook-egress"
-  | "notebook-docker-proxy";
+  | "notebook-docker-proxy"
+  | "presidio-analyzer";
 
 export type ServiceStatus =
   /** Answered, and answered correctly. */
@@ -140,6 +141,22 @@ export const SERVICE_CATALOGUE: {
     candidates: ["http://notebook-docker-proxy:2375", "http://127.0.0.1:2375"],
     path: "/_ping",
     expect: "docker-ping",
+  },
+  {
+    id: "presidio-analyzer",
+    // No host port is published (`expose: ["3000"]` only, see
+    // docker-compose.yml) — only an app running INSIDE the Compose network
+    // can reach it, same as the notebook egress proxy above.
+    hostPublished: false,
+    label: "Local PII detection (Presidio Analyzer)",
+    purpose:
+      "DMS-D1-0002 §5 Privacy Firewall's local entity/PII engine. Without it, document intake " +
+      "fails closed rather than send unreviewed text to any external provider.",
+    profile: "privacy",
+    optional: true,
+    candidates: ["http://presidio-analyzer:3000", "http://127.0.0.1:3000"],
+    path: "/health",
+    expect: "any-2xx",
   },
 ];
 

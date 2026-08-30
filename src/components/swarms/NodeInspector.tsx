@@ -765,6 +765,50 @@ export function NodeInspector({
               </Section>
             )}
 
+            {data.kind === "condition" && (
+              <Section label="Evaluation mode">
+                <Select
+                  value={data.conditionMode || "llm"}
+                  onValueChange={(v) => onChange({ conditionMode: v as "llm" | "boolean_equals" })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="llm">LLM judges the prompt above</SelectItem>
+                    <SelectItem value="boolean_equals">
+                      Deterministic — read a variable, no model call
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {data.conditionMode === "boolean_equals" ? (
+                  <>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Reads this node's first input variable (see Inputs below) and compares it,
+                      trimmed and case-insensitive, to the expected value — no model call, so an
+                      explicit boolean (e.g. an approval's <code>..._approved</code> flag) can never
+                      be misread. Use this whenever the condition is deciding on a fact the graph
+                      already knows, not judging free text.
+                    </p>
+                    <div className="mt-2">
+                      <Label className="text-xs">Expected value</Label>
+                      <Input
+                        value={data.conditionEqualsValue ?? "yes"}
+                        onChange={(e) => onChange({ conditionEqualsValue: e.target.value })}
+                        placeholder="yes"
+                        className="mt-1 font-mono text-xs"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    Default. Use this when the condition genuinely requires judgement (interpreting
+                    free text) rather than reading an explicit decision the graph already made.
+                  </p>
+                )}
+              </Section>
+            )}
+
             {data.kind !== "condition" &&
               data.kind !== "router" &&
               data.kind !== "evaluate" &&

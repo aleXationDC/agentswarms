@@ -270,6 +270,19 @@ Per API key, enforced server-side on `/api/swarm/run`:
 The run timeout is also what decides synchronous versus asynchronous calls —
 a swarm with a human-approval node in any branch must be called async, because
 a parked run can outlive any HTTP connection. See the API guide in the app at
+
+### The DMS intake boundary
+
+Per `dms_intake`-scoped API key, enforced server-side on `/api/dms/intake`
+(DMS-D1-0002 §3 — same generic global rate limiter/concurrency guard as the
+swarm API above, just its own bucket so one boundary's traffic can never
+starve the other's):
+
+| Variable                          | Default | What it bounds                                    |
+| ---------------------------------- | ------- | -------------------------------------------------- |
+| `DMS_INTAKE_RATE_LIMIT_PER_MIN`    | `20`    | Requests per key per minute → 429                  |
+| `DMS_INTAKE_MAX_CONCURRENT`        | `3`     | Raw-document intake requests in flight per key      |
+
 `/docs/api`.
 
 ### Knowledge bases (RAG)

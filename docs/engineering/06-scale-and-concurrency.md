@@ -71,6 +71,7 @@ Where the global limiter is used today, and what each protects:
 | Endpoint               | Bucket        | Default                             |
 | ---------------------- | ------------- | ----------------------------------- |
 | `/api/swarm/run`       | per key       | `SWARM_RUN_RATE_LIMIT_PER_MIN` (30) |
+| `/api/dms/intake`      | per key       | `DMS_INTAKE_RATE_LIMIT_PER_MIN` (20) |
 | `/api/mcp/s/<slug>`    | per API key   | `MCP_RATE_LIMIT_PER_MIN` (120)      |
 | `/api/data/upload`     | per user      | `UPLOAD_PER_MINUTE` (10)            |
 | `/api/embed/chat`      | per embed key | 30                                  |
@@ -91,6 +92,7 @@ flight. They fail differently, so they are configured separately.
 | ------------------------------- | ---------- | ------------------------------------------- |
 | `SWARM_LEVEL_CONCURRENCY`       | 4          | Nodes run in parallel per graph level       |
 | `SWARM_RUN_MAX_CONCURRENT`      | configured | Simultaneous swarm runs                     |
+| `DMS_INTAKE_MAX_CONCURRENT`     | 3          | Simultaneous `/api/dms/intake` requests per key |
 | `MCP_MAX_CONCURRENT_PER_SERVER` | 8          | In-flight calls to one published MCP server |
 | `JS_SANDBOX_MAX_CONCURRENT`     | 4          | Simultaneous sandbox executions             |
 

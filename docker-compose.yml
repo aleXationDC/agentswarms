@@ -233,18 +233,21 @@ services:
   #
   # Declared here so the endpoint the app expects (PRESIDIO_ANALYZER_URL,
   # default http://presidio-analyzer:3000) is documented and reproducible, but
-  # NOT part of the default/`all` profile: this change does not activate the
-  # Privacy Firewall in production, per the task's explicit "no production
-  # activation until the Privacy Firewall passes" constraint. Bring it up
-  # explicitly with `docker compose --profile privacy up -d` once the German
-  # recognizers (DE_TAX_ID, DE_TAX_NUMBER, DE_ID_CARD, DE_PASSPORT — see
-  # src/lib/privacy/piiDetection.server.ts) are registered and the fixtures in
-  # tests/unit/privacy* pass against a real instance.
+  # NOT part of the default (unprofiled) `docker compose up` — this change does
+  # not activate the Privacy Firewall in production, per the task's explicit
+  # "no production activation until the Privacy Firewall passes" constraint.
+  # It DOES carry the `all` profile, same as every other profiled service here
+  # (see tests/unit/composeProfiles.test.ts): `--profile all` is an explicit,
+  # human-run convenience command, not automatic activation. Bring it up with
+  # `docker compose --profile privacy up -d` (or `--profile all`) once the
+  # German recognizers (DE_TAX_ID, DE_TAX_NUMBER, DE_ID_CARD, DE_PASSPORT —
+  # see src/lib/privacy/piiDetection.server.ts) are registered and the
+  # fixtures in tests/unit/privacy* pass against a real instance.
   presidio-analyzer:
     # Pin to an explicit release, never `:latest` — this is a security
     # component. Bump deliberately, not via a floating tag.
     image: mcr.microsoft.com/presidio-analyzer:2.2.360
-    profiles: [privacy]
+    profiles: [privacy, all]
     expose:
       - "3000"
     networks: [privacy-internal]
