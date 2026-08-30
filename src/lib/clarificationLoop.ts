@@ -113,11 +113,13 @@ export type ClarificationCase = {
  * limit cannot bite.
  */
 export function subjectKeyFromEnvelope(envelope: Record<string, unknown>): string | null {
+  const mailId = envelope.mail_id;
+  if (typeof mailId === "string" && mailId.trim()) return mailId.trim();
   const docId = envelope.document_id;
   if (typeof docId === "string" && docId.trim()) return docId.trim();
   const driveId = envelope.drive_file_id;
   if (typeof driveId === "string" && driveId.trim()) return `drive:${driveId.trim()}`;
-  const hash = envelope.content_hash;
+  const hash = envelope.content_hash ?? envelope.raw_sha256;
   if (typeof hash === "string" && hash.trim()) return `sha256:${hash.trim()}`;
   return null;
 }

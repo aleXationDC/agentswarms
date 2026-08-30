@@ -33,6 +33,23 @@ export const IDENTITY_FIELDS = [
   "extraction_status",
   "extraction_error",
   "source",
+  // Mail identity fields (DMS-D1-0003 §6)
+  "mail_id",
+  "mail_account_id",
+  "raw_sha256",
+  "source_mailbox_path",
+  "source_context_path",
+  "current_mailbox_path",
+  "current_uid",
+  "current_uidvalidity",
+  "message_id",
+  "in_reply_to",
+  "references",
+  "drive_eml_file_id",
+  "drive_eml_path",
+  "drive_eml_hash",
+  "attachment_count",
+  "canonical_eml_filename",
 ] as const;
 
 export type IdentityField = (typeof IDENTITY_FIELDS)[number];
@@ -122,6 +139,24 @@ export function buildApprovedFilingPlan(
   envelope: Record<string, unknown>,
 ): Record<string, unknown> {
   const strOf = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
+  const targetFolder = (typeof proposal.proposed_folder_path === "string" ? proposal.proposed_folder_path.trim() : "") || "04_Archive";
+
+  // If mail envelope:
+  if (typeof envelope.mail_id === "string" && envelope.mail_id.trim()) {
+    const emlFilename =
+      strOf(envelope.canonical_eml_filename) ||
+      strOf(proposal.canonical_eml_filename) ||
+      `${strOf(envelope.message_date) || "2026-08-30"}_MAIL_${envelope.mail_id.slice(0, 16)}.eml`;
+
+    return {
+      ...proposal,
+      approved_target_folder: targetFolder,
+      approved_eml_filename: emlFilename,
+      approved_filename: emlFilename,
+      imap_target_folder: `00_aleXation/${targetFolder.replace(/^\/+|\/+$/g, "")}`,
+    };
+  }
+
   const naming = buildCanonicalFilename({
     originalFilename: strOf(envelope.source_filename) || strOf(proposal.source_filename),
     documentDate: proposal.document_date,

@@ -111,6 +111,7 @@ import { Route as ApiSkillsGenerateRouteImport } from './routes/api/skills.gener
 import { Route as ApiObjectstoreQueryRouteImport } from './routes/api/objectstore/query'
 import { Route as ApiNotebookRuntimeRouteImport } from './routes/api/notebook.runtime'
 import { Route as ApiNotebookRunRouteImport } from './routes/api/notebook.run'
+import { Route as ApiMailIntakeRouteImport } from './routes/api/mail.intake'
 import { Route as ApiKbSourcesRouteImport } from './routes/api/kb/sources'
 import { Route as ApiKbIngestUrlRouteImport } from './routes/api/kb/ingest-url'
 import { Route as ApiKbIngestGithubRouteImport } from './routes/api/kb/ingest-github'
@@ -666,6 +667,11 @@ const ApiNotebookRunRoute = ApiNotebookRunRouteImport.update({
   path: '/api/notebook/run',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMailIntakeRoute = ApiMailIntakeRouteImport.update({
+  id: '/api/mail/intake',
+  path: '/api/mail/intake',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiKbSourcesRoute = ApiKbSourcesRouteImport.update({
   id: '/api/kb/sources',
   path: '/api/kb/sources',
@@ -955,6 +961,7 @@ export interface FileRoutesByFullPath {
   '/api/kb/ingest-github': typeof ApiKbIngestGithubRoute
   '/api/kb/ingest-url': typeof ApiKbIngestUrlRoute
   '/api/kb/sources': typeof ApiKbSourcesRouteWithChildren
+  '/api/mail/intake': typeof ApiMailIntakeRoute
   '/api/notebook/run': typeof ApiNotebookRunRouteWithChildren
   '/api/notebook/runtime': typeof ApiNotebookRuntimeRouteWithChildren
   '/api/objectstore/query': typeof ApiObjectstoreQueryRoute
@@ -1091,6 +1098,7 @@ export interface FileRoutesByTo {
   '/api/kb/ingest-github': typeof ApiKbIngestGithubRoute
   '/api/kb/ingest-url': typeof ApiKbIngestUrlRoute
   '/api/kb/sources': typeof ApiKbSourcesRouteWithChildren
+  '/api/mail/intake': typeof ApiMailIntakeRoute
   '/api/notebook/run': typeof ApiNotebookRunRouteWithChildren
   '/api/notebook/runtime': typeof ApiNotebookRuntimeRouteWithChildren
   '/api/objectstore/query': typeof ApiObjectstoreQueryRoute
@@ -1230,6 +1238,7 @@ export interface FileRoutesById {
   '/api/kb/ingest-github': typeof ApiKbIngestGithubRoute
   '/api/kb/ingest-url': typeof ApiKbIngestUrlRoute
   '/api/kb/sources': typeof ApiKbSourcesRouteWithChildren
+  '/api/mail/intake': typeof ApiMailIntakeRoute
   '/api/notebook/run': typeof ApiNotebookRunRouteWithChildren
   '/api/notebook/runtime': typeof ApiNotebookRuntimeRouteWithChildren
   '/api/objectstore/query': typeof ApiObjectstoreQueryRoute
@@ -1369,6 +1378,7 @@ export interface FileRouteTypes {
     | '/api/kb/ingest-github'
     | '/api/kb/ingest-url'
     | '/api/kb/sources'
+    | '/api/mail/intake'
     | '/api/notebook/run'
     | '/api/notebook/runtime'
     | '/api/objectstore/query'
@@ -1505,6 +1515,7 @@ export interface FileRouteTypes {
     | '/api/kb/ingest-github'
     | '/api/kb/ingest-url'
     | '/api/kb/sources'
+    | '/api/mail/intake'
     | '/api/notebook/run'
     | '/api/notebook/runtime'
     | '/api/objectstore/query'
@@ -1643,6 +1654,7 @@ export interface FileRouteTypes {
     | '/api/kb/ingest-github'
     | '/api/kb/ingest-url'
     | '/api/kb/sources'
+    | '/api/mail/intake'
     | '/api/notebook/run'
     | '/api/notebook/runtime'
     | '/api/objectstore/query'
@@ -1714,6 +1726,7 @@ export interface RootRouteChildren {
   ApiKbIngestGithubRoute: typeof ApiKbIngestGithubRoute
   ApiKbIngestUrlRoute: typeof ApiKbIngestUrlRoute
   ApiKbSourcesRoute: typeof ApiKbSourcesRouteWithChildren
+  ApiMailIntakeRoute: typeof ApiMailIntakeRoute
   ApiNotebookRunRoute: typeof ApiNotebookRunRouteWithChildren
   ApiNotebookRuntimeRoute: typeof ApiNotebookRuntimeRouteWithChildren
   ApiObjectstoreQueryRoute: typeof ApiObjectstoreQueryRoute
@@ -2453,6 +2466,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiNotebookRunRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mail/intake': {
+      id: '/api/mail/intake'
+      path: '/api/mail/intake'
+      fullPath: '/api/mail/intake'
+      preLoaderRoute: typeof ApiMailIntakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/kb/sources': {
       id: '/api/kb/sources'
       path: '/api/kb/sources'
@@ -2989,6 +3009,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiKbIngestGithubRoute: ApiKbIngestGithubRoute,
   ApiKbIngestUrlRoute: ApiKbIngestUrlRoute,
   ApiKbSourcesRoute: ApiKbSourcesRouteWithChildren,
+  ApiMailIntakeRoute: ApiMailIntakeRoute,
   ApiNotebookRunRoute: ApiNotebookRunRouteWithChildren,
   ApiNotebookRuntimeRoute: ApiNotebookRuntimeRouteWithChildren,
   ApiObjectstoreQueryRoute: ApiObjectstoreQueryRoute,
@@ -3018,3 +3039,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

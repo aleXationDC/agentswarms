@@ -28,6 +28,7 @@ import {
   type ClarificationCase,
 } from "@/lib/clarificationLoop";
 import { REGISTRY_DATASET, type RegistryRow } from "@/lib/documentRegistry";
+import { MAIL_REGISTRY_DATASET, type MailRegistryRow } from "@/lib/mailRegistry";
 
 export type ApprovalRow = {
   id: string;
@@ -47,7 +48,7 @@ export type ApprovalRow = {
   swarm_run_id: string | null;
 };
 
-/** What a human is being asked to do about this document right now. */
+/** What a human is being asked to do about this document or mail right now. */
 export type ReviewStatus =
   | "pending"
   | "clarifying"
@@ -60,19 +61,33 @@ export type ReviewQueueItem = {
   /** The approval id the /review/$approvalId route resolves. */
   approvalId: string;
   documentId: string | null;
+  subjectKind?: string;
   reviewStatus: ReviewStatus;
   approval: ApprovalRow;
   caseId: string | null;
   cycleCount: number | null;
-  registryRow: RegistryRow | null;
+  registryRow: RegistryRow | MailRegistryRow | null;
   createdAt: string;
   decidedAt: string | null;
 };
 
 function docIdFromPayload(payload: unknown): string | null {
-  const proposal = (payload as { proposal?: Record<string, unknown> } | null | undefined)?.proposal;
-  if (!proposal) return null;
-  return subjectKeyFromEnvelope(proposal);
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  const proposal = p.proposal as Record<string, unknown> | undefined;
+  if (proposal) {
+    const key = subjectKeyFromEnvelope(proposal);
+    if (key) return key;
+  }
+  const envelope = p.envelope as Record<string, unknown> | undefined;
+  if (envelope) {
+    const key = subjectKeyFromEnvelope(envelope);
+    if (key) return key;
+  }
+  if (typeof p.mail_id === "string" && p.mail_id.trim()) return p.mail_id.trim();
+  if (typeof p.document_id === "string" && p.document_id.trim()) return p.document_id.trim();
+  if (typeof p.subject_key === "string" && p.subject_key.trim()) return p.subject_key.trim();
+  return null;
 }
 
 /** Maps a clarification_cases.status onto the human-facing review status. */
@@ -167,26 +182,43 @@ export async function fetchReviewQueue(
     groups.set(key, list);
   }
 
-  // Registry rows, fetched once and matched by document id — the dataset
-  // engine has no bulk multi-key lookup, so filtering client-side over one
-  // table read is simpler and cheaper than N lookups.
-  const registryByDocId = new Map<string, RegistryRow>();
-  const { data: table } = await sb
+  // Registry rows, fetched once and matched by document id / mail id
+  const registryByDocId = new Map<string, RegistryRow | MailRegistryRow>();
+  const { data: docTable } = await sb
     .from("user_data_tables")
     .select("id")
     .eq("user_id", userId)
     .eq("name", REGISTRY_DATASET)
     .maybeSingle();
-  if (table?.id) {
+  if (docTable?.id) {
     const { data: rows } = await sb
       .from("user_data_rows")
       .select("row")
-      .eq("table_id", table.id)
+      .eq("table_id", docTable.id)
       .limit(1000);
     for (const r of rows ?? []) {
       const row = r.row as RegistryRow;
       const docId = row?.document_id;
       if (typeof docId === "string") registryByDocId.set(docId, row);
+    }
+  }
+
+  const { data: mailTable } = await sb
+    .from("user_data_tables")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("name", MAIL_REGISTRY_DATASET)
+    .maybeSingle();
+  if (mailTable?.id) {
+    const { data: rows } = await sb
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", mailTable.id)
+      .limit(1000);
+    for (const r of rows ?? []) {
+      const row = r.row as MailRegistryRow;
+      const mailId = row?.mail_id;
+      if (typeof mailId === "string") registryByDocId.set(mailId, row);
     }
   }
 
@@ -261,22 +293,40 @@ export async function fetchReviewDetail(
     history = historyIds.map((id) => byId.get(id)).filter((r): r is ApprovalRow => Boolean(r));
   }
 
-  let registryRow: RegistryRow | null = null;
+  let registryRow: RegistryRow | MailRegistryRow | null = null;
   if (docId) {
-    const { data: table } = await sb
-      .from("user_data_tables")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("name", REGISTRY_DATASET)
-      .maybeSingle();
-    if (table?.id) {
-      const { data: row } = await sb
-        .from("user_data_rows")
-        .select("row")
-        .eq("table_id", table.id)
-        .eq("row->>document_id", docId)
+    if (docId.startsWith("mail:")) {
+      const { data: table } = await sb
+        .from("user_data_tables")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("name", MAIL_REGISTRY_DATASET)
         .maybeSingle();
-      registryRow = (row?.row as RegistryRow) ?? null;
+      if (table?.id) {
+        const { data: row } = await sb
+          .from("user_data_rows")
+          .select("row")
+          .eq("table_id", table.id)
+          .eq("row->>mail_id", docId)
+          .maybeSingle();
+        registryRow = (row?.row as MailRegistryRow) ?? null;
+      }
+    } else {
+      const { data: table } = await sb
+        .from("user_data_tables")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("name", REGISTRY_DATASET)
+        .maybeSingle();
+      if (table?.id) {
+        const { data: row } = await sb
+          .from("user_data_rows")
+          .select("row")
+          .eq("table_id", table.id)
+          .eq("row->>document_id", docId)
+          .maybeSingle();
+        registryRow = (row?.row as RegistryRow) ?? null;
+      }
     }
   }
 

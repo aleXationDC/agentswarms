@@ -85,10 +85,17 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
             .select("payload")
             .eq("id", approval.id)
             .maybeSingle();
-          const proposal = ((full?.payload ?? {}) as { proposal?: Record<string, unknown> })
-            .proposal;
+          const payloadObj = (full?.payload ?? {}) as Record<string, unknown>;
+          const proposal = (payloadObj.proposal ?? {}) as Record<string, unknown>;
           const documentId =
             typeof proposal?.document_id === "string" ? proposal.document_id : null;
+          const mailId =
+            typeof proposal?.mail_id === "string"
+              ? proposal.mail_id
+              : typeof payloadObj?.mail_id === "string"
+                ? (payloadObj.mail_id as string)
+                : null;
+
           if (documentId) {
             await setReviewStatus(supabaseAdmin as never, run.user_id, documentId, {
               review: approval.status === "approved" ? "approved" : "rejected",
@@ -99,13 +106,22 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
             });
           }
 
-          // Archive Knowledge (DMS-D1-0002 §10 / execution contract): index
-          // the pseudonymised text ONLY once keep/approval semantics permit
-          // it — i.e. only on an actual approve, never on reject and never
-          // earlier at intake time. The pseudonymised text isn't re-derived
-          // here; it travels inside the envelope the deterministic intake
-          // boundary built, which the tracer already persisted verbatim as
-          // this run's input_prompt.
+          if (mailId) {
+            const { upsertMailRegistryRow } = await import("@/lib/mailRegistry");
+            await upsertMailRegistryRow(supabaseAdmin as never, run.user_id, {
+              mail_id: mailId,
+              human_review_status: approval.status === "approved" ? "approved" : "rejected",
+              classification_status: approval.status === "approved" ? "approved" : "rejected",
+              approved_path:
+                approval.status === "approved" && typeof proposal?.proposed_folder_path === "string"
+                  ? proposal.proposed_folder_path
+                  : null,
+            });
+          }
+
+          // Archive Knowledge (DMS-D1-0002 §10 / DMS-D1-0003 §16 / execution contract):
+          // index the pseudonymised text ONLY once keep/approval semantics permit it —
+          // i.e. only on an actual approve, never on reject and never earlier at intake time.
           if (approval.status === "approved" && documentId) {
             try {
               const { data: runRow } = await supabaseAdmin
@@ -139,6 +155,51 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
               }
             } catch (e) {
               console.warn("[resume] Archive Knowledge indexing failed:", (e as Error).message);
+            }
+          }
+
+          if (approval.status === "approved" && mailId) {
+            try {
+              const { data: runRow } = await supabaseAdmin
+                .from("swarm_runs")
+                .select("input_prompt")
+                .eq("id", run.id)
+                .maybeSingle();
+              const envelope = runRow?.input_prompt
+                ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
+                : null;
+              const pseudonymizedText =
+                envelope && typeof envelope.body_text === "string"
+                  ? envelope.body_text
+                  : envelope && typeof envelope.text === "string"
+                    ? envelope.text
+                    : "";
+              const driveFileId =
+                envelope && typeof envelope.drive_eml_file_id === "string"
+                  ? envelope.drive_eml_file_id
+                  : "";
+              const contentHash =
+                envelope && typeof envelope.raw_sha256 === "string"
+                  ? envelope.raw_sha256
+                  : "";
+              const sourceFilename =
+                envelope && typeof envelope.canonical_eml_filename === "string"
+                  ? envelope.canonical_eml_filename
+                  : mailId;
+
+              if (pseudonymizedText.trim() && contentHash) {
+                const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
+                await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
+                  documentId: mailId,
+                  driveFileId,
+                  contentHash,
+                  sourceFilename,
+                  pseudonymizedText,
+                  provenance: { approvalId: approval.id, swarmRunId: run.id },
+                });
+              }
+            } catch (e) {
+              console.warn("[resume] Mail Archive Knowledge indexing failed:", (e as Error).message);
             }
           }
         } catch (e) {
