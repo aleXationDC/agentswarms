@@ -196,19 +196,20 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
                     ? envelope.canonical_eml_filename
                     : mailId;
 
-              if (pseudonymizedText.trim() && contentHash) {
-                const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
-                await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
-                  documentId: mailId,
-                  driveFileId,
-                  contentHash,
-                  sourceFilename,
-                  pseudonymizedText,
-                  provenance: { approvalId: approval.id, swarmRunId: run.id },
-                });
+                if (pseudonymizedText.trim() && contentHash) {
+                  const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
+                  await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
+                    documentId: mailId,
+                    driveFileId,
+                    contentHash,
+                    sourceFilename,
+                    pseudonymizedText,
+                    provenance: { approvalId: approval.id, swarmRunId: run.id },
+                  });
+                }
+              } catch (e) {
+                console.warn("[resume] Mail Archive Knowledge indexing failed:", (e as Error).message);
               }
-            } catch (e) {
-              console.warn("[resume] Mail Archive Knowledge indexing failed:", (e as Error).message);
             }
           }
         } catch (e) {
