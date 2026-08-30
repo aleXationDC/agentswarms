@@ -187,6 +187,86 @@ export type IntakeResult =
   | { status: "privacy_error"; documentId: string; reason: string };
 
 /**
+ * The local pipeline shared by every intake entry point: extraction -> local
+ * PII detection -> Privacy Firewall (entity resolution + Vault
+ * pseudonymisation, fail-closed and governed) -> deterministic envelope ->
+ * route decision. Pure of any registry/swarm side effects so it can be
+ * reused by both the full `processIntake` orchestration and Phase D's
+ * standalone `analyzeDocumentProposal`, without duplicating the fail-closed
+ * logic in two places that could drift apart.
+ */
+async function runLocalPrivacyPipeline(
+  sb: SupabaseClient<Database>,
+  userId: string,
+  args: { bytes: Uint8Array; drive: DriveMetadata; contentHash: string },
+): Promise<{ envelope: IntakeEnvelope; route: IntakeRoute; privacyFirewallError: string | null }> {
+  const { bytes, drive, contentHash } = args;
+  const extraction = await extractDocumentText({
+    bytes,
+    mimeType: drive.mimeType,
+    filename: drive.filename,
+  });
+  const rawText = (extraction.status === "ok" ? extraction.text : "") ?? "";
+
+  const detection = extraction.status === "ok" ? await detectPii(rawText) : null;
+
+  // DMS-D1-0002R Phase A4: the Privacy Vault call inside
+  // pseudonymizeDocumentText throws on lookup/insert/config failure (by
+  // design — privacyVault.server.ts fails closed). Left unguarded, that
+  // exception propagated straight out with NOTHING registered: no truthful
+  // row, no record the document was ever seen. It never reached an external
+  // call either way (the throw happens before executeSwarmServer), but "no
+  // external call" is not the same as "governed" — this makes the failure
+  // visible and terminal instead of a silent gap in the registry.
+  let pseudonymizedText = "";
+  let privacyFirewallError: string | null = null;
+  if (extraction.status === "ok" && detection?.ok) {
+    try {
+      ({ pseudonymizedText } = await pseudonymizeDocumentText(
+        sb,
+        userId,
+        rawText,
+        detection.findings,
+      ));
+    } catch (e) {
+      privacyFirewallError =
+        e instanceof Error ? e.message : "Privacy Vault pseudonymization failed";
+    }
+  }
+
+  const detectionOk = extraction.status === "ok" && (detection?.ok ?? false) && !privacyFirewallError;
+  const sensitivity = classifySensitivity({
+    findings: detection?.ok ? detection.findings : [],
+    contentUnknown: extraction.status !== "ok",
+    sanitizerFailed: extraction.status === "ok" && !detectionOk,
+  });
+
+  const piiProcessingStatus: PiiProcessingStatus = derivePiiProcessingStatus({
+    extractionOk: extraction.status === "ok",
+    detectionOk,
+    tier: sensitivity.tier,
+    hasFindings: (detection?.ok ? detection.findings.length : 0) > 0,
+  });
+
+  const envelope = buildIntakeEnvelope({
+    drive,
+    contentHash,
+    extraction: { status: extraction.status, error: extraction.error ?? null },
+    pseudonymizedText,
+    sensitivity,
+    piiProcessingStatus,
+  });
+
+  const route = decideIntakeRoute({
+    extractionStatus: extraction.status,
+    sensitivityTier: sensitivity.tier,
+    externalProcessingAllowed: sensitivity.externalProcessingAllowed,
+  });
+
+  return { envelope, route, privacyFirewallError };
+}
+
+/**
  * The full pipeline. `documentIntakeSwarm` is the already-resolved graph to
  * run (the caller — the route handler — looks it up via the API key's
  * swarm_id, exactly like /api/swarm/run does) so this function stays testable
@@ -236,67 +316,10 @@ export async function processIntake(
     }
   }
 
-  const extraction = await extractDocumentText({
+  const { envelope, route, privacyFirewallError } = await runLocalPrivacyPipeline(sb, userId, {
     bytes,
-    mimeType: drive.mimeType,
-    filename: drive.filename,
-  });
-  const rawText = (extraction.status === "ok" ? extraction.text : "") ?? "";
-
-  const detection = extraction.status === "ok" ? await detectPii(rawText) : null;
-
-  // DMS-D1-0002R Phase A4: the Privacy Vault call inside
-  // pseudonymizeDocumentText throws on lookup/insert/config failure (by
-  // design — privacyVault.server.ts fails closed). Left unguarded, that
-  // exception propagated straight out of processIntake with NOTHING
-  // registered: no truthful row, no record the document was ever seen. It
-  // never reached an external call either way (the throw happens before
-  // executeSwarmServer), but "no external call" is not the same as
-  // "governed" — this makes the failure visible and terminal instead of a
-  // silent gap in the registry.
-  let pseudonymizedText = "";
-  let privacyFirewallError: string | null = null;
-  if (extraction.status === "ok" && detection?.ok) {
-    try {
-      ({ pseudonymizedText } = await pseudonymizeDocumentText(
-        sb,
-        userId,
-        rawText,
-        detection.findings,
-      ));
-    } catch (e) {
-      privacyFirewallError =
-        e instanceof Error ? e.message : "Privacy Vault pseudonymization failed";
-    }
-  }
-
-  const detectionOk = extraction.status === "ok" && (detection?.ok ?? false) && !privacyFirewallError;
-  const sensitivity = classifySensitivity({
-    findings: detection?.ok ? detection.findings : [],
-    contentUnknown: extraction.status !== "ok",
-    sanitizerFailed: extraction.status === "ok" && !detectionOk,
-  });
-
-  const piiProcessingStatus: PiiProcessingStatus = derivePiiProcessingStatus({
-    extractionOk: extraction.status === "ok",
-    detectionOk,
-    tier: sensitivity.tier,
-    hasFindings: (detection?.ok ? detection.findings.length : 0) > 0,
-  });
-
-  const envelope = buildIntakeEnvelope({
     drive,
     contentHash,
-    extraction: { status: extraction.status, error: extraction.error ?? null },
-    pseudonymizedText,
-    sensitivity,
-    piiProcessingStatus,
-  });
-
-  const route = decideIntakeRoute({
-    extractionStatus: extraction.status,
-    sensitivityTier: sensitivity.tier,
-    externalProcessingAllowed: sensitivity.externalProcessingAllowed,
   });
 
   if (route.path === "manual_review") {
@@ -388,4 +411,94 @@ export async function processIntake(
   });
 
   return { status: "swarm_invoked", documentId, route: "swarm", runResult };
+}
+
+// ── DMS-D1-0002R Phase D ─────────────────────────────────────────────────────
+export type ProposalAnalysisResult =
+  | { status: "proposal"; documentId: string; proposal: string; runId: string | null }
+  | { status: "manual_review"; documentId: string; reason: string }
+  | { status: "privacy_error"; documentId: string; reason: string }
+  | { status: "error"; documentId: string; error: string; runId: string | null };
+
+/**
+ * A genuinely standalone, independently-callable "proposal-only Document
+ * Analysis": runs the SAME local privacy pipeline and the SAME classification
+ * swarm as `processIntake`, but never creates a Human Approval object, never
+ * writes to the document_registry, never touches Archive Knowledge, and can
+ * never reach a final filing-state transition — reaching the swarm's
+ * Approval node stops the run immediately (executeSwarmServer's
+ * `proposalOnly` mode) rather than parking a checkpoint. That makes this safe
+ * to call independently, any number of times, for N attachments (a future
+ * Mail Intake use) without leaving N pending reviews or N orphaned parked
+ * runs behind — the whole point of "reusable, no Approval, no mutation".
+ *
+ * Deliberately NOT exported from processIntake's own call path: Document
+ * Intake's one top-level flow keeps using processIntake (which DOES register
+ * and DOES let the swarm reach a real Approval). This function is the seam a
+ * caller who wants classification WITHOUT any of that reaches for instead.
+ */
+export async function analyzeDocumentProposal(
+  sb: SupabaseClient<Database>,
+  args: {
+    userId: string;
+    bytes: Uint8Array;
+    drive: DriveMetadata;
+    origin: string;
+    documentIntakeSwarm: { id: string; name: string; nodes: unknown; edges: unknown };
+  },
+): Promise<ProposalAnalysisResult> {
+  const { userId, bytes, drive } = args;
+  const documentId = documentIdFor(drive.driveFileId);
+
+  const contentHashBuf = await crypto.subtle.digest(
+    "SHA-256",
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  );
+  const contentHash = [...new Uint8Array(contentHashBuf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const { envelope, route, privacyFirewallError } = await runLocalPrivacyPipeline(sb, userId, {
+    bytes,
+    drive,
+    contentHash,
+  });
+
+  if (privacyFirewallError) {
+    return {
+      status: "privacy_error",
+      documentId,
+      reason: `Privacy Firewall failed closed: ${privacyFirewallError}`,
+    };
+  }
+  if (route.path === "manual_review") {
+    return { status: "manual_review", documentId, reason: route.reason };
+  }
+
+  const runResult = await executeSwarmServer({
+    swarm: args.documentIntakeSwarm,
+    userId,
+    origin: args.origin,
+    input: JSON.stringify(envelope),
+    providerSafeInput: buildProviderSafeInput(envelope),
+    rejectApprovals: false,
+    proposalOnly: true,
+    source: "api",
+  });
+
+  if (runResult.status === "proposal") {
+    return { status: "proposal", documentId, proposal: runResult.output, runId: runResult.runId };
+  }
+  if (runResult.status === "error") {
+    return {
+      status: "error",
+      documentId,
+      error: runResult.error ?? "Document analysis run failed",
+      runId: runResult.runId,
+    };
+  }
+  // "success" (no approval node in this swarm at all) or "suspended" (should
+  // be unreachable under proposalOnly, since that mode never creates a
+  // checkpoint) — both surfaced as a proposal so callers have one happy path.
+  return { status: "proposal", documentId, proposal: runResult.output, runId: runResult.runId };
 }
