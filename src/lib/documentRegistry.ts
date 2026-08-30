@@ -98,12 +98,34 @@ export const REGISTRY_COLUMNS: { name: string; type: "string" | "number" | "date
   { name: "classification_status", type: "string" },
   { name: "human_review_status", type: "string" },
   { name: "confidence", type: "number" },
+  // ---- extraction (DMS-D1-0002 §4): explicit status/reason for every
+  // document, including unreadable/unsupported ones, so a physical object is
+  // always registered even when its text could not be recovered ----
+  { name: "extraction_status", type: "string" },
+  { name: "extraction_error", type: "string" },
+  // ---- privacy metadata (DMS-D1-0002 §5/§7). Operational facts ONLY — never
+  // clear PII, never a pseudonym mapping (that lives exclusively in the
+  // Privacy Vault, addressed by document_id/entity_key, not here) ----
+  // standard | personal | confidential | restricted
+  { name: "privacy_class", type: "string" },
+  // not_run | pending | passed | failed — whether the local Privacy Firewall
+  // has evaluated this document at all.
+  { name: "pii_processing_status", type: "string" },
+  // sanitized_allowed | blocked — whether the pseudonymised representation may
+  // ever be sent to an external provider (embeddings, LLM classification).
+  { name: "external_processing_policy", type: "string" },
+  // Version tag of the sensitivity-policy logic that produced the decision
+  // above, so a later policy change can be told apart from a stale evaluation.
+  { name: "privacy_policy_version", type: "string" },
   // ---- provenance: how this row came to say what it says ----
   { name: "source_conversation_id", type: "string" },
   { name: "source_approval_id", type: "string" },
   { name: "source_swarm_run_id", type: "string" },
   { name: "classified_by", type: "string" },
 ];
+
+/** Bumped whenever the sensitivity-policy logic materially changes. */
+export const PRIVACY_POLICY_VERSION = "dms-d1-0002-v1";
 
 export type RegistryRow = Record<string, string | number | null>;
 
@@ -148,8 +170,27 @@ function yearOf(v: unknown): number | null {
 export function buildRegistryRow(args: {
   envelope: Record<string, unknown>;
   proposal: Record<string, unknown>;
-  humanReviewStatus: "pending" | "approved" | "rejected" | "clarifying";
+  // "manual" is the unreadable/restricted-content path (§3 step 11, §7): no
+  // external LLM ran, so there is no proposal to approve/reject/clarify —
+  // it just waits for a human to review the physical object directly.
+  humanReviewStatus: "pending" | "approved" | "rejected" | "clarifying" | "manual";
   classificationStatus?: string;
+  /**
+   * Extraction outcome (§4). Always present — even a fully unreadable object
+   * is registered, with its extraction status/reason recorded rather than
+   * fabricated content.
+   */
+  extraction?: { status: string; error?: string | null } | null;
+  /**
+   * Privacy Firewall outcome (§5/§7). Absent means the firewall has not run
+   * yet for this document — never assume "not_run" implies "safe".
+   */
+  privacy?: {
+    privacyClass: string;
+    piiProcessingStatus: string;
+    externalProcessingPolicy: "sanitized_allowed" | "blocked";
+    policyVersion?: string;
+  } | null;
   /**
    * Outcome of domain resolution, when it ran. Passed in rather than resolved
    * here so this function stays synchronous and pure — resolution needs the
@@ -234,6 +275,16 @@ export function buildRegistryRow(args: {
     classification_status: args.classificationStatus ?? "classified",
     human_review_status: args.humanReviewStatus,
     confidence: num(p.confidence),
+    // extraction
+    extraction_status: str(args.extraction?.status) ?? null,
+    extraction_error: str(args.extraction?.error) ?? null,
+    // privacy — never write clear PII or a pseudonym mapping here
+    privacy_class: str(args.privacy?.privacyClass) ?? null,
+    pii_processing_status: str(args.privacy?.piiProcessingStatus) ?? "not_run",
+    external_processing_policy: args.privacy?.externalProcessingPolicy ?? null,
+    privacy_policy_version: args.privacy
+      ? (args.privacy.policyVersion ?? PRIVACY_POLICY_VERSION)
+      : null,
     // provenance
     source_conversation_id: prov?.conversation_id ?? null,
     source_approval_id: prov?.approval_id ?? null,
