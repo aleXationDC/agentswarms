@@ -98,6 +98,49 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
                   : null,
             });
           }
+
+          // Archive Knowledge (DMS-D1-0002 §10 / execution contract): index
+          // the pseudonymised text ONLY once keep/approval semantics permit
+          // it — i.e. only on an actual approve, never on reject and never
+          // earlier at intake time. The pseudonymised text isn't re-derived
+          // here; it travels inside the envelope the deterministic intake
+          // boundary built, which the tracer already persisted verbatim as
+          // this run's input_prompt.
+          if (approval.status === "approved" && documentId) {
+            try {
+              const { data: runRow } = await supabaseAdmin
+                .from("swarm_runs")
+                .select("input_prompt")
+                .eq("id", run.id)
+                .maybeSingle();
+              const envelope = runRow?.input_prompt
+                ? (JSON.parse(runRow.input_prompt) as Record<string, unknown>)
+                : null;
+              const pseudonymizedText =
+                envelope && typeof envelope.text === "string" ? envelope.text : "";
+              const driveFileId =
+                envelope && typeof envelope.drive_file_id === "string"
+                  ? envelope.drive_file_id
+                  : "";
+              const contentHash =
+                envelope && typeof envelope.content_hash === "string" ? envelope.content_hash : "";
+              const sourceFilename =
+                envelope && typeof envelope.filename === "string" ? envelope.filename : documentId;
+              if (pseudonymizedText.trim() && contentHash) {
+                const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
+                await indexArchiveDocument(supabaseAdmin as never, run.user_id, {
+                  documentId,
+                  driveFileId,
+                  contentHash,
+                  sourceFilename,
+                  pseudonymizedText,
+                  provenance: { approvalId: approval.id, swarmRunId: run.id },
+                });
+              }
+            } catch (e) {
+              console.warn("[resume] Archive Knowledge indexing failed:", (e as Error).message);
+            }
+          }
         } catch (e) {
           console.warn("[resume] registry review status not updated:", (e as Error).message);
         }

@@ -254,22 +254,13 @@ export async function processIntake(
     return { status: "manual_review", documentId, route: "manual_review", reason: route.reason };
   }
 
-  // Archive Knowledge (§10): index the pseudonymised text as soon as it's
-  // usable, independent of the (still-pending) approval decision — this is a
-  // semantic search index, not the governance/filing gate. Best-effort: a
-  // failure here must never block intake or the swarm run that follows.
-  try {
-    const { indexArchiveDocument } = await import("@/lib/archiveKnowledge.server");
-    await indexArchiveDocument(sb, userId, {
-      documentId,
-      driveFileId: drive.driveFileId,
-      contentHash,
-      sourceFilename: drive.filename,
-      pseudonymizedText,
-    });
-  } catch (e) {
-    console.warn("[dmsIntake] Archive Knowledge indexing failed:", (e as Error).message);
-  }
+  // Archive Knowledge (§10 / execution contract) is deliberately NOT indexed
+  // here: the contract requires ingestion "only after keep/approval semantics
+  // permit it". Indexing happens in resumeApprovedSwarmRun
+  // (swarmResume.functions.ts) once a human has actually approved the
+  // proposal, reading the pseudonymised text back out of the swarm run's
+  // persisted input_prompt (the tracer already stores the full envelope
+  // there — no extra plumbing needed).
 
   // Readable + privacy-allowed: invoke the Document Intake Swarm synchronously
   // with the SANITIZED envelope as input. Registry upsert-on-proposal already

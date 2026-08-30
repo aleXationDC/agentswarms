@@ -9,9 +9,13 @@
 // purely a semantic index over PSEUDONYMISED text, so it can be searched by
 // the classification agent and later features without ever holding raw PII.
 //
-// Only ever called with the pseudonymised representation
-// (dmsIntake.server.ts only calls this on the readable+privacy-allowed
-// route) — never with `restricted`-tier or extraction-failed content, since
+// Only ever called with the pseudonymised representation, and only after
+// keep/approval semantics permit it (per the binding execution contract):
+// resumeApprovedSwarmRun (swarmResume.functions.ts) calls this exactly once,
+// only on an actual human approve, never on reject and never earlier at
+// intake time — reading the pseudonymised text back out of the swarm run's
+// persisted input_prompt (the tracer stores the full envelope verbatim
+// there). Never with `restricted`-tier or extraction-failed content, since
 // there is no "usable pseudonymised extracted text" for either of those.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
