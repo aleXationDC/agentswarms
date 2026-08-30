@@ -15,6 +15,7 @@ import { pseudonymizeDocumentText } from "@/lib/privacy/pseudonymize.server";
 import {
   classifySensitivity,
   derivePiiProcessingStatus,
+  type PiiFinding,
   type PiiProcessingStatus,
 } from "@/lib/privacy/sensitivityPolicy";
 import { PRIVACY_POLICY_VERSION } from "@/lib/documentRegistry";
@@ -111,33 +112,55 @@ export async function runMailPrivacyPipeline(
   // Step 1: Entity Resolution before pseudonymization
   const { senderCanonicalId, recipientCanonicalIds } = await resolveMailEntities(sb, userId, mail);
 
-  // Step 2: PII Detection on text and subject
-  const fullTextToScan = `Subject: ${mail.subject}\n\n${mail.body_text}`;
-  const detection = await detectPii(fullTextToScan);
-
+  // Step 2: Independent PII Detection and Pseudonymization on subject and body
   let pseudonymizedSubject = mail.subject;
   let pseudonymizedBody = mail.body_text;
   let privacyFirewallError: string | null = null;
+  const allFindings: PiiFinding[] = [];
+  let subjectDetectionOk = true;
+  let bodyDetectionOk = true;
 
-  if (detection?.ok) {
-    try {
-      if (mail.body_text.trim()) {
-        const resBody = await pseudonymizeDocumentText(sb, userId, mail.body_text, detection.findings);
-        pseudonymizedBody = resBody.pseudonymizedText;
+  if (mail.subject && mail.subject.trim()) {
+    const subjectDetection = await detectPii(mail.subject);
+    if (!subjectDetection?.ok) {
+      subjectDetectionOk = false;
+      privacyFirewallError = subjectDetection?.error || "PII detection failed for subject";
+    } else {
+      allFindings.push(...subjectDetection.findings);
+      if (subjectDetection.findings.length > 0) {
+        try {
+          const resSub = await pseudonymizeDocumentText(sb, userId, mail.subject, subjectDetection.findings);
+          pseudonymizedSubject = resSub.pseudonymizedText;
+        } catch (e) {
+          privacyFirewallError =
+            e instanceof Error ? e.message : "Privacy Vault pseudonymization failed for subject";
+        }
       }
-      if (mail.subject.trim()) {
-        const resSub = await pseudonymizeDocumentText(sb, userId, mail.subject, detection.findings);
-        pseudonymizedSubject = resSub.pseudonymizedText;
-      }
-    } catch (e) {
-      privacyFirewallError =
-        e instanceof Error ? e.message : "Privacy Vault pseudonymization failed";
     }
   }
 
-  const detectionOk = (detection?.ok ?? false) && !privacyFirewallError;
+  if (mail.body_text && mail.body_text.trim() && !privacyFirewallError) {
+    const bodyDetection = await detectPii(mail.body_text);
+    if (!bodyDetection?.ok) {
+      bodyDetectionOk = false;
+      privacyFirewallError = bodyDetection?.error || "PII detection failed for body";
+    } else {
+      allFindings.push(...bodyDetection.findings);
+      if (bodyDetection.findings.length > 0) {
+        try {
+          const resBody = await pseudonymizeDocumentText(sb, userId, mail.body_text, bodyDetection.findings);
+          pseudonymizedBody = resBody.pseudonymizedText;
+        } catch (e) {
+          privacyFirewallError =
+            e instanceof Error ? e.message : "Privacy Vault pseudonymization failed for body";
+        }
+      }
+    }
+  }
+
+  const detectionOk = subjectDetectionOk && bodyDetectionOk && !privacyFirewallError;
   const sensitivity = classifySensitivity({
-    findings: detection?.ok ? detection.findings : [],
+    findings: allFindings,
     contentUnknown: false,
     sanitizerFailed: !detectionOk,
   });
@@ -146,7 +169,7 @@ export async function runMailPrivacyPipeline(
     extractionOk: true,
     detectionOk,
     tier: sensitivity.tier,
-    hasFindings: (detection?.ok ? detection.findings.length : 0) > 0,
+    hasFindings: allFindings.length > 0,
   });
 
   return {
