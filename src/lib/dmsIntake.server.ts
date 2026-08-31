@@ -18,7 +18,12 @@ import type { Database } from "@/integrations/supabase/types";
 import { extractDocumentText } from "@/lib/fileParsers.server";
 import { detectPii } from "@/lib/privacy/piiDetection.server";
 import { pseudonymizeDocumentText } from "@/lib/privacy/pseudonymize.server";
-import { classifySensitivity, derivePiiProcessingStatus, type PiiProcessingStatus } from "@/lib/privacy/sensitivityPolicy";
+import {
+  classifySensitivity,
+  derivePiiProcessingStatus,
+  hasNoAiMarker,
+  type PiiProcessingStatus,
+} from "@/lib/privacy/sensitivityPolicy";
 import {
   buildRegistryRow,
   ensureRegistryDataset,
@@ -27,6 +32,8 @@ import {
   type RegistryRow,
 } from "@/lib/documentRegistry";
 import { executeSwarmServer, type ExecuteResult } from "@/utils/swarmExecute.server";
+import { geminiChatStream } from "@/utils/providers/adapters/gemini.server";
+import { resolveIntegrationConfig } from "@/utils/providers/integrationConfig.server";
 
 export type DriveMetadata = {
   driveFileId: string;
@@ -146,8 +153,8 @@ export function buildProviderSafeInput(envelope: IntakeEnvelope): string {
 }
 
 export type IntakeRoute =
-  | { path: "swarm"; reason: string }
-  | { path: "manual_review"; reason: string };
+  | { path: "swarm"; reason: string; stage?: "stage1_triage" | "stage2_semantics" }
+  | { path: "manual_review"; reason: string; stage: "stage0_only" | "stage1_triage" };
 
 /**
  * Decide whether the readable+privacy-allowed path (invoke the Document
@@ -159,48 +166,174 @@ export function decideIntakeRoute(args: {
   extractionStatus: string;
   sensitivityTier: string;
   externalProcessingAllowed: boolean;
+  isNoAi?: boolean;
 }): IntakeRoute {
+  if (args.isNoAi) {
+    return {
+      path: "manual_review",
+      stage: "stage0_only",
+      reason: "Excluded from AI/ML processing via NO AI: policy marker (DMS-D1-0005-DOCUMENTS-v3 §4).",
+    };
+  }
   if (args.extractionStatus !== "ok") {
     return {
       path: "manual_review",
+      stage: "stage0_only",
       reason: `Extraction status "${args.extractionStatus}" — content is unreadable/unsupported.`,
     };
   }
   if (!args.externalProcessingAllowed || args.sensitivityTier === "restricted") {
     return {
       path: "manual_review",
+      stage: "stage0_only",
       reason: `Sensitivity tier "${args.sensitivityTier}" does not allow external processing.`,
     };
   }
-  return { path: "swarm", reason: "Readable and privacy-allowed." };
+  return { path: "swarm", stage: "stage2_semantics", reason: "Readable and privacy-allowed." };
+}
+
+export type Stage1TriageResult = {
+  documentFamily?: string;
+  primaryDomain?: string;
+  needsStage2: boolean;
+  reason?: string;
+  provider: "gemini";
+  model: "gemini-3.5-flash-lite";
+};
+
+export async function runStage1Triage(args: {
+  apiKey: string;
+  providerSafeText: string;
+  mimeType: string;
+}): Promise<Stage1TriageResult> {
+  const { apiKey, providerSafeText, mimeType } = args;
+  try {
+    const stream = await geminiChatStream({
+      apiKey,
+      modelId: "gemini-3.5-flash-lite",
+      systemPrompt:
+        "You are DMS Triage Stage 1 for aleXation One. Triage the supplied provider-safe document text excerpt. Return ONLY valid JSON with fields: document_family (string or null), primary_domain (string or null), needs_stage2 (boolean - true if full semantic analysis/proposal is required), reason (string).",
+      messages: [
+        {
+          role: "user",
+          content: `MIME: ${mimeType}\nProvider-Safe Content Excerpt:\n${providerSafeText.slice(0, 4000)}`,
+        },
+      ],
+      temperature: 0.1,
+      maxTokens: 500,
+    });
+    const reader = stream.body?.getReader();
+    if (!reader) {
+      return { needsStage2: true, provider: "gemini", model: "gemini-3.5-flash-lite", reason: "Stream unavailable" };
+    }
+    const decoder = new TextDecoder();
+    let accumulated = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      accumulated += decoder.decode(value, { stream: true });
+    }
+    let jsonText = "";
+    for (const line of accumulated.split("\n")) {
+      if (line.startsWith("data: ")) {
+        const payload = line.slice(6).trim();
+        if (payload && payload !== "[DONE]") {
+          try {
+            const parsed = JSON.parse(payload);
+            jsonText += parsed.choices?.[0]?.delta?.content || "";
+          } catch {}
+        }
+      }
+    }
+    if (!jsonText) jsonText = accumulated;
+    const match = jsonText.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      return {
+        documentFamily: parsed.document_family ?? undefined,
+        primaryDomain: parsed.primary_domain ?? undefined,
+        needsStage2: typeof parsed.needs_stage2 === "boolean" ? parsed.needs_stage2 : true,
+        reason: parsed.reason ?? "Stage 1 triage complete",
+        provider: "gemini",
+        model: "gemini-3.5-flash-lite",
+      };
+    }
+    return { needsStage2: true, provider: "gemini", model: "gemini-3.5-flash-lite", reason: "Fallback to Stage 2" };
+  } catch (err: any) {
+    return { needsStage2: true, provider: "gemini", model: "gemini-3.5-flash-lite", reason: `Stage 1 error: ${err.message}` };
+  }
 }
 
 export type IntakeResult =
-  | { status: "swarm_invoked"; documentId: string; route: "swarm"; runResult: ExecuteResult }
-  | { status: "manual_review"; documentId: string; route: "manual_review"; reason: string }
-  | { status: "duplicate"; documentId: string; reason: string }
+  | {
+      status: "swarm_invoked";
+      documentId: string;
+      route: "swarm";
+      runResult: ExecuteResult;
+      stage: "stage2_semantics";
+      triage?: Stage1TriageResult;
+    }
+  | {
+      status: "manual_review";
+      documentId: string;
+      route: "manual_review";
+      reason: string;
+      stage: "stage0_only" | "stage1_triage";
+    }
+  | { status: "duplicate"; documentId: string; reason: string; stage: "stage0_only" }
   // DMS-D1-0002R Phase A4: the Privacy Firewall itself failed (Vault
   // lookup/insert error, sanitizer error) — distinct from "manual_review",
   // which means detection/pseudonymization succeeded but the content is
   // restricted/unreadable. A human seeing "privacy_error" knows the pipeline
   // itself broke, not merely that this document needs a human's eyes.
-  | { status: "privacy_error"; documentId: string; reason: string };
+  | { status: "privacy_error"; documentId: string; reason: string; stage: "stage0_only" };
 
 /**
- * The local pipeline shared by every intake entry point: extraction -> local
- * PII detection -> Privacy Firewall (entity resolution + Vault
- * pseudonymisation, fail-closed and governed) -> deterministic envelope ->
- * route decision. Pure of any registry/swarm side effects so it can be
- * reused by both the full `processIntake` orchestration and Phase D's
- * standalone `analyzeDocumentProposal`, without duplicating the fail-closed
- * logic in two places that could drift apart.
+ * The local pipeline shared by every intake entry point: Stage 0 deterministic
+ * checks + NO-AI marker check -> extraction (if AI allowed) -> local PII detection
+ * -> Privacy Firewall (entity resolution + Vault pseudonymisation, fail-closed
+ * and governed) -> deterministic envelope -> route decision.
  */
 async function runLocalPrivacyPipeline(
   sb: SupabaseClient<Database>,
   userId: string,
   args: { bytes: Uint8Array; drive: DriveMetadata; contentHash: string },
-): Promise<{ envelope: IntakeEnvelope; route: IntakeRoute; privacyFirewallError: string | null }> {
+): Promise<{
+  envelope: IntakeEnvelope;
+  route: IntakeRoute;
+  privacyFirewallError: string | null;
+  isNoAi: boolean;
+}> {
   const { bytes, drive, contentHash } = args;
+
+  // ── Stage 0: NO AI Deterministic Policy Check ─────────────────────────────
+  const isNoAi = hasNoAiMarker(drive.filename);
+
+  if (isNoAi) {
+    const sensitivity = classifySensitivity({
+      findings: [],
+      isNoAi: true,
+    });
+    const envelope = buildIntakeEnvelope({
+      drive,
+      contentHash,
+      extraction: {
+        status: "no_ai_excluded",
+        error: "Excluded from AI/ML processing via NO AI: policy marker (DMS-D1-0005-DOCUMENTS-v3 §4).",
+      },
+      pseudonymizedText: "",
+      sensitivity,
+      piiProcessingStatus: "not_run",
+    });
+    const route = decideIntakeRoute({
+      extractionStatus: "no_ai_excluded",
+      sensitivityTier: sensitivity.tier,
+      externalProcessingAllowed: false,
+      isNoAi: true,
+    });
+    return { envelope, route, privacyFirewallError: null, isNoAi: true };
+  }
+
   const extraction = await extractDocumentText({
     bytes,
     mimeType: drive.mimeType,
@@ -263,7 +396,7 @@ async function runLocalPrivacyPipeline(
     externalProcessingAllowed: sensitivity.externalProcessingAllowed,
   });
 
-  return { envelope, route, privacyFirewallError };
+  return { envelope, route, privacyFirewallError, isNoAi: false };
 }
 
 /**
@@ -312,6 +445,7 @@ export async function processIntake(
         status: "duplicate",
         documentId,
         reason: "Identical document_id + content_hash already registered.",
+        stage: "stage0_only",
       };
     }
   }
@@ -354,9 +488,46 @@ export async function processIntake(
         status: "privacy_error",
         documentId,
         reason: `Privacy Firewall failed closed: ${privacyFirewallError}`,
+        stage: "stage0_only",
       };
     }
-    return { status: "manual_review", documentId, route: "manual_review", reason: route.reason };
+    return {
+      status: "manual_review",
+      documentId,
+      route: "manual_review",
+      reason: route.reason,
+      stage: route.stage,
+    };
+  }
+
+  // ── Stage 1: Native Flash-Lite Triage ────────────────────────────────────
+  let triageResult: Stage1TriageResult | undefined;
+  try {
+    const { data: rows } = await sb
+      .from("integrations")
+      .select("config, is_active")
+      .eq("user_id", userId)
+      .eq("provider", "gemini")
+      .eq("type", "llm_provider")
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false });
+    if (rows && rows.length > 0) {
+      const cfg = await resolveIntegrationConfig(
+        userId,
+        "llm_provider",
+        (rows[0].config ?? {}) as Record<string, unknown>,
+      );
+      const geminiApiKey = (cfg.api_key as string) || (cfg.apiKey as string) || "";
+      if (geminiApiKey) {
+        triageResult = await runStage1Triage({
+          apiKey: geminiApiKey,
+          providerSafeText: envelope.text,
+          mimeType: envelope.mime_type,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[Stage1Triage] error during Stage 1 triage:", err);
   }
 
   // Archive Knowledge (§10 / execution contract) is deliberately NOT indexed
@@ -394,7 +565,7 @@ export async function processIntake(
     }),
   );
 
-  // Readable + privacy-allowed: invoke the Document Intake Swarm synchronously.
+  // Readable + privacy-allowed: invoke Stage 2 (Document Intake Swarm with Google gemini-3.7-flash) synchronously.
   // Every agent/LLM node only ever sees the explicit provider-safe projection
   // (Phase A1) — never Drive identity, never raw envelope metadata. `input`
   // stays the full envelope for identity reconciliation / the approval card /
@@ -410,7 +581,14 @@ export async function processIntake(
     source: "api",
   });
 
-  return { status: "swarm_invoked", documentId, route: "swarm", runResult };
+  return {
+    status: "swarm_invoked",
+    documentId,
+    route: "swarm",
+    runResult,
+    stage: "stage2_semantics",
+    triage: triageResult,
+  };
 }
 
 // ── DMS-D1-0002R Phase D ─────────────────────────────────────────────────────

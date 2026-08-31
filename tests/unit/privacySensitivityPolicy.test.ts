@@ -1,9 +1,35 @@
 // Sensitivity policy (DMS-D1-0002 §5). Pure logic — no network/DB.
 import { describe, expect, it } from "vitest";
 
-import { classifySensitivity } from "@/lib/privacy/sensitivityPolicy";
+import { classifySensitivity, hasNoAiMarker } from "@/lib/privacy/sensitivityPolicy";
+
+describe("hasNoAiMarker", () => {
+  it("detects NO AI: prefix case-insensitively", () => {
+    expect(hasNoAiMarker("NO AI: invoice.pdf")).toBe(true);
+    expect(hasNoAiMarker("no ai: tax_return.pdf")).toBe(true);
+    expect(hasNoAiMarker("No Ai: confidential.pdf")).toBe(true);
+    expect(hasNoAiMarker("NO AI - contract.pdf")).toBe(true);
+    expect(hasNoAiMarker("[NO AI] secret.docx")).toBe(true);
+    expect(hasNoAiMarker("NO AI")).toBe(true);
+  });
+
+  it("returns false for regular filenames without marker", () => {
+    expect(hasNoAiMarker("invoice_2025.pdf")).toBe(false);
+    expect(hasNoAiMarker("normal_document.docx")).toBe(false);
+    expect(hasNoAiMarker(null)).toBe(false);
+    expect(hasNoAiMarker(undefined)).toBe(false);
+    expect(hasNoAiMarker("")).toBe(false);
+  });
+});
 
 describe("classifySensitivity", () => {
+  it("classifies isNoAi as restricted with no external processing", () => {
+    const d = classifySensitivity({ findings: [], isNoAi: true });
+    expect(d.tier).toBe("restricted");
+    expect(d.externalProcessingAllowed).toBe(false);
+    expect(d.requiresPseudonymization).toBe(false);
+    expect(d.reason).toContain("NO AI:");
+  });
   it("classifies empty findings as standard, external processing allowed", () => {
     const d = classifySensitivity({ findings: [] });
     expect(d.tier).toBe("standard");

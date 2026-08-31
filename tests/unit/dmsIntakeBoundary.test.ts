@@ -119,6 +119,18 @@ describe("decideIntakeRoute", () => {
     expect(route.path).toBe("manual_review");
   });
 
+  it("routes NO AI items to manual review with stage0_only", () => {
+    const route = decideIntakeRoute({
+      extractionStatus: "no_ai_excluded",
+      sensitivityTier: "restricted",
+      externalProcessingAllowed: false,
+      isNoAi: true,
+    });
+    expect(route.path).toBe("manual_review");
+    expect(route.stage).toBe("stage0_only");
+    expect(route.reason).toContain("NO AI:");
+  });
+
   it("never routes to the swarm when externalProcessingAllowed is false, regardless of tier label", () => {
     const route = decideIntakeRoute({
       extractionStatus: "ok",

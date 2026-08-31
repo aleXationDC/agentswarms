@@ -252,4 +252,16 @@ describe("runMailPrivacyPipeline — Independent Subject and Body PII Handling",
     expect(res.externalProcessingPolicy).toBe("blocked");
     expect(res.privacyClass).toBe("restricted");
   });
+
+  it("6. NO AI: subject bypasses PII detection and blocks external processing", async () => {
+    const mail = makeMail("NO AI: Vertrauliche Unterlagen", "Hier ist der Inhalt.");
+    const detectSpy = vi.spyOn(piiDetection, "detectPii");
+
+    const res = await runMailPrivacyPipeline(dummySb, dummyUserId, mail);
+    expect(detectSpy).not.toHaveBeenCalled();
+    expect(res.privacyFirewallError).toBeNull();
+    expect(res.externalProcessingPolicy).toBe("blocked");
+    expect(res.privacyClass).toBe("restricted");
+    expect(res.piiProcessingStatus).toBe("not_run");
+  });
 });

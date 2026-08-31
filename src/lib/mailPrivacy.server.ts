@@ -15,6 +15,7 @@ import { pseudonymizeDocumentText } from "@/lib/privacy/pseudonymize.server";
 import {
   classifySensitivity,
   derivePiiProcessingStatus,
+  hasNoAiMarker,
   type PiiFinding,
   type PiiProcessingStatus,
 } from "@/lib/privacy/sensitivityPolicy";
@@ -109,6 +110,27 @@ export async function runMailPrivacyPipeline(
   userId: string,
   mail: ParsedMailEnvelope,
 ): Promise<MailPrivacyResult> {
+  // Step 0: NO AI Deterministic Policy Check
+  const isNoAi = hasNoAiMarker(mail.subject);
+  if (isNoAi) {
+    const { senderCanonicalId, recipientCanonicalIds } = await resolveMailEntities(sb, userId, mail);
+    const sensitivity = classifySensitivity({
+      findings: [],
+      isNoAi: true,
+    });
+    return {
+      pseudonymizedSubject: mail.subject,
+      pseudonymizedBody: mail.body_text,
+      senderCanonicalId,
+      recipientCanonicalIds,
+      privacyClass: sensitivity.tier,
+      piiProcessingStatus: "not_run",
+      externalProcessingPolicy: "blocked",
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      privacyFirewallError: null,
+    };
+  }
+
   // Step 1: Entity Resolution before pseudonymization
   const { senderCanonicalId, recipientCanonicalIds } = await resolveMailEntities(sb, userId, mail);
 

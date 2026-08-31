@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { resolveEmbedArgs } from "@/utils/tools/embedTarget.server";
 import { embedAndStoreDocuments } from "@/utils/tools/embedding.server";
+import { hasNoAiMarker } from "@/lib/privacy/sensitivityPolicy";
 
 export const ARCHIVE_KNOWLEDGE_BASE_NAME = "aleXation Archive Knowledge";
 
@@ -78,7 +79,13 @@ export async function indexArchiveDocument(
     provenance?: { approvalId?: string | null; swarmRunId?: string | null };
   },
 ): Promise<ArchiveIndexResult> {
-  const { documentId, contentHash, pseudonymizedText } = args;
+  const { documentId, contentHash, pseudonymizedText, sourceFilename } = args;
+
+  // NO AI policy check (§4.3): items marked NO AI must never enter Archive Knowledge
+  if (hasNoAiMarker(sourceFilename)) {
+    return { action: "skipped_unchanged", documentId };
+  }
+
   if (!pseudonymizedText.trim()) {
     // Nothing usable to index — this must never happen for the swarm route
     // (extraction already succeeded there), but fail safe rather than write

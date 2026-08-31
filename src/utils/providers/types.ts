@@ -89,6 +89,7 @@ export const PROVIDER_MODELS: Record<ProviderId, ProviderModel[]> = {
   ],
   gemini: [
     { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash" },
+    { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite" },
     { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview)" },
     { id: "gemini-3-flash-preview", label: "Gemini 3 Flash (preview)" },
     { id: "gemini-3.1-flash-image-preview", label: "Gemini 3.1 Flash Image (preview)" },

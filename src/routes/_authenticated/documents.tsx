@@ -274,7 +274,7 @@ function DocumentsPage() {
                 <TableRow key={item.documentId} className="text-xs">
                   <TableCell className="font-medium max-w-[280px]">
                     <Link
-                      to={`/documents/${encodeURIComponent(item.documentId)}`}
+                      to={`/documents/${encodeURIComponent(item.documentId)}` as any}
                       className="hover:text-primary transition-colors block truncate"
                       title={item.canonicalFilename || item.originalFilename || item.documentId}
                     >
@@ -320,7 +320,7 @@ function DocumentsPage() {
                         </a>
                       )}
                       <Link
-                        to={`/documents/${encodeURIComponent(item.documentId)}`}
+                        to={`/documents/${encodeURIComponent(item.documentId)}` as any}
                         className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted"
                       >
                         Details <ChevronRight className="h-3 w-3" />

@@ -27,6 +27,7 @@ export type { ChunkOptions, ChunkStrategy };
 import { chunkParentChild, isChunkMode, type ChunkMode, DEFAULT_PARENT_TOKENS } from "@/lib/kbRag";
 import { generateQaPairs } from "./kbQa.server";
 import { getOpenRouterApiKey } from "@/utils/providers/openrouterDefault.server";
+import { hasNoAiMarker } from "@/lib/privacy/sensitivityPolicy";
 
 export const DEFAULT_EMBED_MODEL = "text-embedding-3-small";
 export const SUPPORTED_EMBED_MODELS = new Set<string>([
@@ -233,6 +234,13 @@ export async function embedAndStoreDocuments(opts: {
   const warnings: string[] = [];
 
   for (const d of docs) {
+    // NO AI Policy Check (§4.3): exclude docs marked with NO AI: marker from embedding
+    const sourceFilename = (d.metadata?.source_filename || d.metadata?.name || "") as string;
+    if (hasNoAiMarker(sourceFilename)) {
+      docIdsToReplace.push(d.id);
+      continue;
+    }
+
     const text = (d.content || "").trim();
     // Always queue the doc for chunk replacement — even when content is now
     // empty (e.g. URL re-sync returned nothing). Otherwise stale chunks from

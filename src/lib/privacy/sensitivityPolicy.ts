@@ -32,8 +32,30 @@ export type PiiLabel =
 
 export type PiiFinding = { label: PiiLabel; score: number };
 
+export const RESTRICTED_LABELS = new Set(["DE_ID_CARD", "DE_PASSPORT"]);
+export const CONFIDENTIAL_LABELS = new Set(["IBAN_CODE", "CREDIT_CARD", "DE_TAX_ID", "DE_TAX_NUMBER"]);
+export const PERSONAL_LABELS = new Set(["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"]);
+
+/** Minimum recognizer confidence to count a finding at all; below this, ignore. */
+export const MIN_SCORE = 0.4;
+
+/**
+ * Deterministic case-insensitive check for the NO AI: policy marker (DMS-D1-0005-DOCUMENTS-v3 §4).
+ * Matches "NO AI:" as a prefix or isolated token in filename, subject, or initial deterministic metadata.
+ */
+export function hasNoAiMarker(text: string | null | undefined): boolean {
+  if (!text || typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return /(?:^|[\s_\[\(-])no\s*ai\s*[:\]\)-]/i.test(trimmed) || /^no\s*ai\b/i.test(trimmed);
+}
+
 export type SensitivityInput = {
   findings: PiiFinding[];
+  /**
+   * Content explicitly excluded from AI/ML processing via the NO AI: marker (DMS-D1-0005-DOCUMENTS-v3 §4).
+   */
+  isNoAi?: boolean;
   /**
    * Content whose readability/coverage is not established at all — e.g.
    * image-only/unreadable objects in D1, or the sanitizer could not run.
@@ -47,19 +69,20 @@ export type SensitivityInput = {
   sanitizerFailed?: boolean;
 };
 
-const RESTRICTED_LABELS = new Set(["DE_ID_CARD", "DE_PASSPORT"]);
-const CONFIDENTIAL_LABELS = new Set(["IBAN_CODE", "CREDIT_CARD", "DE_TAX_ID", "DE_TAX_NUMBER"]);
-const PERSONAL_LABELS = new Set(["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION"]);
-
-/** Minimum recognizer confidence to count a finding at all; below this, ignore. */
-const MIN_SCORE = 0.4;
-
 /**
  * Classify local PII-detection output into a sensitivity decision. Fails
  * closed: any ambiguity (sanitizer failure, unknown content, restricted
  * category) always wins over a lower tier, never the reverse.
  */
 export function classifySensitivity(input: SensitivityInput): SensitivityDecision {
+  if (input.isNoAi) {
+    return {
+      tier: "restricted",
+      externalProcessingAllowed: false,
+      requiresPseudonymization: false,
+      reason: "Excluded from AI/ML processing via NO AI: policy marker (DMS-D1-0005-DOCUMENTS-v3 §4).",
+    };
+  }
   if (input.sanitizerFailed) {
     return {
       tier: "restricted",

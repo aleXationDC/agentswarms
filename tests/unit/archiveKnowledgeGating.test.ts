@@ -19,7 +19,16 @@ const DMS_SRC = readFileSync(
   "utf-8",
 ).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
 
+const ARCHIVE_SRC = readFileSync(
+  resolve(import.meta.dirname, "../../src/lib/archiveKnowledge.server.ts"),
+  "utf-8",
+).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+
 describe("Archive Knowledge write gating (Phase E)", () => {
+  it("excludes NO AI: items from entering Archive Knowledge", () => {
+    expect(ARCHIVE_SRC).toMatch(/hasNoAiMarker\(/);
+  });
+
   it("gates the only indexArchiveDocument call site on an actual approved decision", () => {
     expect(RESUME_SRC).toMatch(
       /if \(approval\.status === "approved" && documentId\) \{[\s\S]{0,2000}indexArchiveDocument/,
