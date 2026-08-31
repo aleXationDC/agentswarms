@@ -284,12 +284,12 @@ is documented inline in the file. In short:
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` —
   from step 3.1. These are read by server-side code (API routes, server
   functions).
-- `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` — **the same two
-  public values again**, just `VITE_`-prefixed. Vite only inlines
-  `VITE_`-prefixed vars into the browser bundle, so the client-side Supabase
-  client needs its own copy. (Never put the service role key behind a
-  `VITE_` prefix — that would ship a database-bypassing secret to every
-  visitor's browser.)
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` — the browser-facing
+  Supabase API URL and public key. Vite only inlines `VITE_`-prefixed vars, so
+  the client needs its own copy. The URL may differ from the server URL in
+  self-hosted Docker deployments and must never be a Docker-only hostname.
+  (Never put the service role key behind a `VITE_` prefix — that would ship a
+  database-bypassing secret to every visitor's browser.)
 
   > The **Project ID** from step 3.1 is not an environment variable. It is
   > passed straight to the CLI as `supabase link --project-ref <id>` in step
