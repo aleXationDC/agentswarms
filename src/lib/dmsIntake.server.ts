@@ -21,7 +21,9 @@ import { pseudonymizeDocumentText } from "@/lib/privacy/pseudonymize.server";
 import {
   classifySensitivity,
   derivePiiProcessingStatus,
+  evaluateNoAiPolicy,
   hasNoAiMarker,
+  type NoAiPolicyEvaluation,
   type PiiProcessingStatus,
 } from "@/lib/privacy/sensitivityPolicy";
 import {
@@ -67,6 +69,10 @@ export type IntakeEnvelope = {
   // extraction (§4)
   extraction_status: string;
   extraction_error: string | null;
+  // canonical NO AI policy (§4)
+  no_ai_detected: boolean;
+  no_ai_source: string | null;
+  ai_processing_allowed: boolean;
   // Text is ALWAYS the pseudonymised representation once the Privacy Firewall
   // has run — never raw extracted text — so nothing downstream (swarm nodes,
   // KB embedding) can accidentally see clear PII just because it read the
@@ -89,6 +95,7 @@ export function buildIntakeEnvelope(args: {
   drive: DriveMetadata;
   contentHash: string;
   extraction: { status: string; error: string | null };
+  noAi?: { noAiDetected: boolean; noAiSource: string | null; aiProcessingAllowed: boolean };
   pseudonymizedText: string;
   sensitivity: { tier: string; externalProcessingAllowed: boolean };
   // DMS-D1-0002R Phase A3: the caller (processIntake) already knows exactly
@@ -98,7 +105,7 @@ export function buildIntakeEnvelope(args: {
   // sanitizer error or a never-run detector).
   piiProcessingStatus: PiiProcessingStatus;
 }): IntakeEnvelope {
-  const { drive, contentHash, extraction, pseudonymizedText, sensitivity } = args;
+  const { drive, contentHash, extraction, pseudonymizedText, sensitivity, noAi } = args;
   return {
     document_id: documentIdFor(drive.driveFileId),
     drive_file_id: drive.driveFileId,
@@ -114,6 +121,9 @@ export function buildIntakeEnvelope(args: {
     ingested_at: new Date().toISOString(),
     extraction_status: extraction.status,
     extraction_error: extraction.error,
+    no_ai_detected: noAi?.noAiDetected ?? false,
+    no_ai_source: noAi?.noAiSource ?? null,
+    ai_processing_allowed: noAi?.aiProcessingAllowed ?? true,
     text: pseudonymizedText,
     privacy_class: sensitivity.tier,
     pii_processing_status: args.piiProcessingStatus,
@@ -307,9 +317,13 @@ async function runLocalPrivacyPipeline(
   const { bytes, drive, contentHash } = args;
 
   // ── Stage 0: NO AI Deterministic Policy Check ─────────────────────────────
-  const isNoAi = hasNoAiMarker(drive.filename);
+  const noAiEvaluation = evaluateNoAiPolicy({
+    filename: drive.filename,
+    subject: null,
+    manualFlag: false,
+  });
 
-  if (isNoAi) {
+  if (!noAiEvaluation.ai_processing_allowed) {
     const sensitivity = classifySensitivity({
       findings: [],
       isNoAi: true,
@@ -320,6 +334,11 @@ async function runLocalPrivacyPipeline(
       extraction: {
         status: "no_ai_excluded",
         error: "Excluded from AI/ML processing via NO AI: policy marker (DMS-D1-0005-DOCUMENTS-v3 §4).",
+      },
+      noAi: {
+        noAiDetected: noAiEvaluation.no_ai_detected,
+        noAiSource: noAiEvaluation.no_ai_source,
+        aiProcessingAllowed: noAiEvaluation.ai_processing_allowed,
       },
       pseudonymizedText: "",
       sensitivity,
@@ -385,6 +404,11 @@ async function runLocalPrivacyPipeline(
     drive,
     contentHash,
     extraction: { status: extraction.status, error: extraction.error ?? null },
+    noAi: {
+      noAiDetected: false,
+      noAiSource: null,
+      aiProcessingAllowed: true,
+    },
     pseudonymizedText,
     sensitivity,
     piiProcessingStatus,
@@ -474,6 +498,11 @@ export async function processIntake(
         proposal: {},
         humanReviewStatus: "manual",
         classificationStatus: privacyFirewallError ? "error" : "discovered",
+        noAi: {
+          noAiDetected: envelope.no_ai_detected,
+          noAiSource: envelope.no_ai_source,
+          aiProcessingAllowed: envelope.ai_processing_allowed,
+        },
         extraction: { status: envelope.extraction_status, error: envelope.extraction_error },
         privacy: {
           privacyClass: envelope.privacy_class,
@@ -555,6 +584,11 @@ export async function processIntake(
       proposal: {},
       humanReviewStatus: "pending",
       classificationStatus: "processing",
+      noAi: {
+        noAiDetected: envelope.no_ai_detected,
+        noAiSource: envelope.no_ai_source,
+        aiProcessingAllowed: envelope.ai_processing_allowed,
+      },
       extraction: { status: envelope.extraction_status, error: envelope.extraction_error },
       privacy: {
         privacyClass: envelope.privacy_class,

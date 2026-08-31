@@ -66,6 +66,50 @@ export function useApprovalActions() {
    * decision, exactly as the original ApprovalInbox card does.
    */
   const decide = async (approval: ApprovalLike, status: "approved" | "rejected") => {
+    if (approval.id.startsWith("manual:")) {
+      const docId = approval.id.replace(/^manual:/, "");
+      if (user) {
+        try {
+          const { data: table } = await supabase
+            .from("user_data_tables")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("name", "document_registry")
+            .maybeSingle();
+          if (table?.id) {
+            const { data: hit } = await supabase
+              .from("user_data_rows")
+              .select("id, row")
+              .eq("table_id", table.id)
+              .eq("row->>document_id", docId)
+              .maybeSingle();
+            if (hit?.id) {
+              const current = (hit.row ?? {}) as Record<string, any>;
+              const updated = {
+                ...current,
+                human_review_status: status,
+                classification_status: status === "approved" ? "classified" : "rejected",
+                last_verified_at: new Date().toISOString(),
+              };
+              await supabase.from("user_data_rows").update({ row: updated }).eq("id", hit.id);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to update manual review document:", err);
+        }
+      }
+      if (status === "approved") {
+        toast.success(`Approved: ${approval.action_title}`, {
+          description: "Manual review document marked approved.",
+        });
+      } else {
+        toast.error(`Rejected: ${approval.action_title}`, {
+          description: "Manual review document marked rejected.",
+        });
+      }
+      return { ok: true as const };
+    }
+
     const { error } = await supabase
       .from("approvals")
       .update({ status, decided_at: new Date().toISOString(), decided_by: user?.id ?? null })

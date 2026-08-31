@@ -364,6 +364,10 @@ async function createApprovalRequest(args: {
         const privacyClass =
           typeof envelope.privacy_class === "string" ? envelope.privacy_class : null;
 
+        const noAiDetected = envelope.no_ai_detected === true || envelope.no_ai_detected === "true";
+        const noAiSource = typeof envelope.no_ai_source === "string" ? envelope.no_ai_source : null;
+        const aiProcessingAllowed = envelope.ai_processing_allowed !== false && envelope.ai_processing_allowed !== "false";
+
         await upsertRegistryRow(
           supabaseAdmin as never,
           args.userId,
@@ -372,6 +376,11 @@ async function createApprovalRequest(args: {
             proposal,
             humanReviewStatus: "pending",
             domain,
+            noAi: {
+              noAiDetected,
+              noAiSource,
+              aiProcessingAllowed,
+            },
             extraction: extractionStatus
               ? {
                   status: extractionStatus,

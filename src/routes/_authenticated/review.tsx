@@ -83,28 +83,33 @@ const STATUS_BADGE: Record<ReviewStatus, string> = {
 };
 
 function fieldFromItem(item: ReviewQueueItem) {
-  const proposal = (item.approval.payload as { proposal?: Record<string, unknown> })?.proposal;
-  const envelope = (item.approval.payload as { envelope?: Record<string, unknown> })?.envelope;
+  const proposal = (item.approval?.payload as { proposal?: Record<string, unknown> })?.proposal;
+  const envelope = (item.approval?.payload as { envelope?: Record<string, unknown> })?.envelope;
   const registry = item.registryRow;
   const isMail =
     Boolean(item.documentId?.startsWith("mail:")) ||
     Boolean(envelope?.mail_id) ||
     Boolean(proposal?.mail_id) ||
-    item.approval.action_type?.includes("mail");
+    Boolean(item.approval?.action_type?.includes("mail"));
 
   const reg = registry as any;
 
   return {
     isMail,
     subjectKind: isMail ? "mail" : "document",
+    itemKind: item.itemKind ?? "approval_item",
+    manualReason: item.manualReason,
     filename:
       (reg?.canonical_filename as string) ??
       (reg?.canonical_eml_filename as string) ??
       (reg?.original_filename as string) ??
+      (reg?.filename as string) ??
       (proposal?.source_filename as string) ??
       (proposal?.canonical_eml_filename as string) ??
       (proposal?.subject as string) ??
-      item.approval.action_title,
+      item.approval?.action_title ??
+      item.documentId ??
+      "Document",
     documentType:
       (reg?.document_type as string) ?? (proposal?.document_type as string) ?? (isMail ? "Email" : null),
     documentFamily:
@@ -519,6 +524,11 @@ function ReviewQueuePage() {
                         <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
                           {f.isMail ? "Mail" : "Doc"}
                         </Badge>
+                        {f.itemKind === "manual_document_item" && (
+                          <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 border-amber-500/30 text-amber-500">
+                            Manual{f.manualReason ? ` · ${f.manualReason}` : ""}
+                          </Badge>
+                        )}
                         <p className="text-sm font-medium truncate">{f.filename}</p>
                       </div>
                       <p className="text-[11px] text-muted-foreground truncate md:hidden">

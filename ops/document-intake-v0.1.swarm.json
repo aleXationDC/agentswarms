@@ -1,13 +1,40 @@
 {
     "edges": [
         {
-            "id": "e-input-agent",
+            "id": "e-input-triage",
             "source": "document-input",
+            "target": "dms-triage"
+        },
+        {
+            "id": "e-triage-parse",
+            "source": "dms-triage",
+            "target": "parse-stage1"
+        },
+        {
+            "id": "e-parse-cond",
+            "source": "parse-stage1",
+            "target": "stage2-condition"
+        },
+        {
+            "id": "e-cond-yes",
+            "label": "yes",
+            "source": "stage2-condition",
             "target": "understand-and-propose"
         },
         {
-            "id": "e-agent-approval",
+            "id": "e-cond-no",
+            "label": "no",
+            "source": "stage2-condition",
+            "target": "merge-proposals"
+        },
+        {
+            "id": "e-stage2-merge",
             "source": "understand-and-propose",
+            "target": "merge-proposals"
+        },
+        {
+            "id": "e-merge-approval",
+            "source": "merge-proposals",
             "target": "human-approval"
         },
         {
@@ -53,26 +80,124 @@
             }
         },
         {
+            "id": "dms-triage",
+            "data": {
+                "id": "dms-triage",
+                "kind": "agent",
+                "label": "DMS Triage",
+                "model": "gemini-3.5-flash-lite",
+                "avatar": "⚡",
+                "inputs": [
+                    "document"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 240,
+                    "y": 220
+                },
+                "provider": "gemini",
+                "outputVar": "triage_raw",
+                "temperature": 0.1,
+                "systemPrompt": "You are DMS Triage Stage 1 for aleXation One. Triage the supplied provider-safe document text excerpt. Return ONLY valid JSON with fields: needs_stage2 (boolean - true if full semantic analysis/proposal is required, false if simple enough to propose classification directly), reason (string), proposal (object with complete filing proposal if needs_stage2 is false, or null if needs_stage2 is true). If needs_stage2 is false, proposal must contain: document_type, document_family, primary_domain, primary_context, sender_or_issuer, subject, summary, topics, para_class, proposed_container, proposed_folder_path, proposed_filename, confidence, reason_for_classification, requires_human_review, document_date, document_date_source."
+            },
+            "type": "agent",
+            "measured": {
+                "width": 220,
+                "height": 106
+            },
+            "position": {
+                "x": 240,
+                "y": 220
+            }
+        },
+        {
+            "id": "parse-stage1",
+            "data": {
+                "id": "parse-stage1",
+                "kind": "set_var",
+                "label": "Parse Stage 1 Output",
+                "avatar": "⚙️",
+                "inputs": [
+                    "triage_raw"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 500,
+                    "y": 220
+                },
+                "outputVar": "stage1_output",
+                "stateAssignments": [
+                    {
+                        "key": "needs_stage2",
+                        "value": "{{triage_raw.needs_stage2}}"
+                    },
+                    {
+                        "key": "stage1_proposal",
+                        "value": "{{triage_raw.proposal}}"
+                    }
+                ]
+            },
+            "type": "set_var",
+            "measured": {
+                "width": 180,
+                "height": 91
+            },
+            "position": {
+                "x": 500,
+                "y": 220
+            }
+        },
+        {
+            "id": "stage2-condition",
+            "data": {
+                "id": "stage2-condition",
+                "kind": "condition",
+                "label": "Needs Stage 2?",
+                "avatar": "❓",
+                "inputs": [
+                    "needs_stage2"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 720,
+                    "y": 220
+                },
+                "outputVar": "stage2_decision",
+                "conditionMode": "boolean_equals",
+                "conditionEqualsValue": "true",
+                "conditionPrompt": "Is needs_stage2 equal to true?"
+            },
+            "type": "condition",
+            "measured": {
+                "width": 180,
+                "height": 91
+            },
+            "position": {
+                "x": 720,
+                "y": 220
+            }
+        },
+        {
             "id": "understand-and-propose",
             "data": {
                 "id": "understand-and-propose",
                 "kind": "agent",
                 "label": "Understand & propose filing",
-                "model": "google/gemini-2.5-flash",
+                "model": "gemini-3.7-flash",
                 "avatar": "🧠",
                 "inputs": [
                     "document"
                 ],
                 "status": "idle",
                 "position": {
-                    "x": 360,
-                    "y": 220
+                    "x": 960,
+                    "y": 140
                 },
-                "provider": "openrouter",
+                "provider": "gemini",
                 "skillIds": [
                     "8a8a0161-b5cb-46f8-8bee-56a774ab65a8"
                 ],
-                "outputVar": "proposal",
+                "outputVar": "stage2_proposal",
                 "temperature": 0.2,
                 "enabledTools": [
                     "kb_search"
@@ -86,10 +211,38 @@
                 "height": 106
             },
             "position": {
-                "x": 360,
-                "y": 220
+                "x": 960,
+                "y": 140
+            }
+        },
+        {
+            "id": "merge-proposals",
+            "data": {
+                "id": "merge-proposals",
+                "kind": "merge",
+                "label": "Select Active Proposal",
+                "avatar": "🔀",
+                "inputs": [
+                    "stage2_proposal",
+                    "stage1_proposal"
+                ],
+                "status": "idle",
+                "position": {
+                    "x": 1260,
+                    "y": 220
+                },
+                "outputVar": "proposal",
+                "mergeMode": "first"
             },
-            "selected": true
+            "type": "merge",
+            "measured": {
+                "width": 180,
+                "height": 91
+            },
+            "position": {
+                "x": 1260,
+                "y": 220
+            }
         },
         {
             "id": "human-approval",
@@ -103,7 +256,7 @@
                 ],
                 "status": "idle",
                 "position": {
-                    "x": 760,
+                    "x": 1500,
                     "y": 220
                 },
                 "outputVar": "reviewed_proposal",
@@ -116,10 +269,9 @@
                 "height": 106
             },
             "position": {
-                "x": 760,
+                "x": 1500,
                 "y": 220
-            },
-            "selected": false
+            }
         },
         {
             "id": "approval-check",
@@ -134,7 +286,7 @@
                 ],
                 "status": "idle",
                 "position": {
-                    "x": 1080,
+                    "x": 1780,
                     "y": 220
                 },
                 "outputVar": "decision",
@@ -148,7 +300,7 @@
                 "height": 91
             },
             "position": {
-                "x": 1080,
+                "x": 1780,
                 "y": 220
             }
         },
@@ -164,7 +316,7 @@
                 ],
                 "status": "idle",
                 "position": {
-                    "x": 1720,
+                    "x": 2420,
                     "y": 220
                 },
                 "outputVar": "final"
@@ -175,7 +327,7 @@
                 "height": 113
             },
             "position": {
-                "x": 1720,
+                "x": 2420,
                 "y": 220
             }
         },
@@ -193,7 +345,7 @@
                 "httpUrl": "http://n8n:5678/api/v1/workflows/Y1s3xo9rw3LIvpwc/execute",
                 "httpBody": "{{reviewed_proposal}}",
                 "position": {
-                    "x": 1400,
+                    "x": 2100,
                     "y": 220
                 },
                 "outputVar": "filing_result",
@@ -216,7 +368,7 @@
                 "height": 91
             },
             "position": {
-                "x": 1400,
+                "x": 2100,
                 "y": 220
             }
         }

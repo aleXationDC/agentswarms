@@ -421,6 +421,69 @@ export async function applyHumanProposalOverride(
     }
   }
 
+  // Handle manual document items (no approval row in database)
+  if (approvalId.startsWith("manual:")) {
+    const docId = approvalId.replace(/^manual:/, "");
+    const { data: table } = await sb
+      .from("user_data_tables")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", REGISTRY_DATASET)
+      .maybeSingle();
+    if (!table?.id) return { ok: false, error: "Registry table not found" };
+    const { data: hit } = await sb
+      .from("user_data_rows")
+      .select("id, row")
+      .eq("table_id", table.id)
+      .eq("row->>document_id", docId)
+      .maybeSingle();
+    if (!hit?.id) return { ok: false, error: "Document not found" };
+    const current = (hit.row ?? {}) as RegistryRow;
+
+    let finalFolderPath = edits.proposed_folder_path || current.proposed_path || "04_Archive";
+    if (edits.proposed_folder_path) {
+      const val = validateParaFolderPath(edits.proposed_folder_path);
+      if (!val.valid) return { ok: false, error: val.error };
+      finalFolderPath = val.cleanPath!;
+    }
+
+    const originalFilename = String(current.original_filename || current.filename || "document.pdf");
+    const docDate = edits.document_date ?? (current.document_date ? String(current.document_date) : null);
+    const docDateSource = edits.document_date_source ?? (current.document_date_source ? String(current.document_date_source) : "explicit_document");
+    let canonicalName = current.canonical_filename ? String(current.canonical_filename) : null;
+    if (edits.canonical_filename) {
+      const built = buildCanonicalFilename({
+        originalFilename: edits.canonical_filename,
+        documentDate: docDate,
+        documentDateSource: docDateSource,
+      });
+      canonicalName = built.canonicalFilename;
+    } else if (edits.document_date || !canonicalName) {
+      const built = buildCanonicalFilename({
+        originalFilename,
+        documentDate: docDate,
+        documentDateSource: docDateSource,
+      });
+      canonicalName = built.canonicalFilename;
+    }
+
+    const updatedRow: RegistryRow = {
+      ...current,
+      document_type: edits.document_type !== undefined ? edits.document_type : (current.document_type ? String(current.document_type) : null),
+      document_family: edits.document_family !== undefined ? edits.document_family : (current.document_family ? String(current.document_family) : null),
+      organization: edits.sender_or_issuer !== undefined ? edits.sender_or_issuer : (current.organization ? String(current.organization) : null),
+      primary_domain: edits.primary_domain !== undefined ? edits.primary_domain : (current.primary_domain ? String(current.primary_domain) : null),
+      document_date: docDate,
+      document_date_source: docDateSource,
+      canonical_filename: canonicalName,
+      proposed_path: finalFolderPath,
+      last_verified_at: new Date().toISOString(),
+    };
+
+    await sb.from("user_data_rows").update({ row: updatedRow as any }).eq("id", hit.id);
+    return { ok: true, proposal: updatedRow as any };
+  }
+
   // Fetch current approval
   const { data: approval, error: fetchErr } = await sb
     .from("approvals")
@@ -676,10 +739,14 @@ export type ReviewStatus =
   | "rejected"
   | "abandoned";
 
+export type ReviewItemKind = "approval_item" | "manual_document_item";
+
 export type ReviewQueueItem = {
   /** The approval id the /review/$approvalId route resolves. */
   approvalId: string;
+  itemKind?: ReviewItemKind;
   documentId: string | null;
+  manualReason?: string;
   subjectKind?: string;
   reviewStatus: ReviewStatus;
   approval: ApprovalRow;
@@ -842,17 +909,21 @@ export async function fetchReviewQueue(
   }
 
   const items: ReviewQueueItem[] = [];
+  const coveredDocIds = new Set<string>();
+
   for (const [key, list] of groups) {
     // Most recent approval in the group is the current representative.
     const representative = list.reduce((a, b) =>
       new Date(a.created_at) > new Date(b.created_at) ? a : b,
     );
     const docId = key.startsWith("approval:") ? null : key;
+    if (docId) coveredDocIds.add(docId);
     const kase =
       caseByApprovalId.get(representative.id) ??
       (docId ? (caseBySubjectKey.get(docId) ?? null) : null);
     items.push({
       approvalId: representative.id,
+      itemKind: "approval_item",
       documentId: docId,
       reviewStatus: statusFromCase(representative.status, kase?.status ?? null),
       approval: representative,
@@ -864,16 +935,93 @@ export async function fetchReviewQueue(
     });
   }
 
+  // Include registry-only human_review_status=manual documents (DMS-D1-0005-DOCUMENTS-v3R §6)
+  for (const [docId, row] of registryByDocId) {
+    if (!coveredDocIds.has(docId)) {
+      const reg = row as RegistryRow;
+      if (reg.human_review_status === "manual") {
+        const manualReason =
+          reg.no_ai_detected === "true"
+            ? "NO_AI_POLICY"
+            : reg.classification_status === "error"
+              ? "PRIVACY_ERROR"
+              : reg.extraction_status && reg.extraction_status !== "ok"
+                ? "EXTRACTION_FAILED"
+                : reg.privacy_class === "restricted" || reg.external_processing_policy === "blocked"
+                  ? "PRIVACY_RESTRICTED"
+                  : "MANUAL_REVIEW";
+
+        const envelope = {
+          document_id: reg.document_id,
+          drive_file_id: reg.drive_file_id,
+          drive_url: reg.drive_url,
+          filename: reg.original_filename || reg.filename,
+          source_filename: reg.original_filename || reg.filename,
+          mime_type: reg.mime_type,
+          file_size: reg.file_size,
+          created_time: reg.created_time,
+          modified_time: reg.modified_time,
+          no_ai_detected: reg.no_ai_detected,
+          ai_processing_allowed: reg.ai_processing_allowed,
+        };
+        const proposal = {
+          document_id: reg.document_id,
+          document_type: reg.document_type,
+          document_family: reg.document_family,
+          primary_domain: reg.primary_domain,
+          proposed_folder_path: reg.proposed_path || "04_Archive",
+          canonical_filename: reg.canonical_filename,
+          document_date: reg.document_date,
+          confidence: reg.confidence,
+          summary: reg.organization ? `Document from ${reg.organization}` : null,
+        };
+        const syntheticApproval: ApprovalRow = {
+          id: `manual:${reg.document_id}`,
+          user_id: userId,
+          agent_name: "Manual Review",
+          agent_avatar: "📋",
+          action_type: "manual_document_review",
+          action_title: (reg.original_filename || reg.filename || "Manual Document") as string,
+          description: `Manual review required (${manualReason})`,
+          payload: { envelope, proposal },
+          risk_level: "low",
+          status: "pending",
+          decided_at: null,
+          decided_by: null,
+          decision_note: null,
+          created_at: (reg.ingested_at || reg.created_time || new Date().toISOString()) as string,
+          swarm_run_id: null,
+        };
+
+        items.push({
+          approvalId: `manual:${reg.document_id}`,
+          itemKind: "manual_document_item",
+          documentId: reg.document_id ? String(reg.document_id) : null,
+          manualReason,
+          reviewStatus: "pending",
+          approval: syntheticApproval,
+          caseId: null,
+          cycleCount: null,
+          registryRow: reg,
+          createdAt: (reg.ingested_at || reg.created_time || new Date().toISOString()) as string,
+          decidedAt: null,
+        });
+      }
+    }
+  }
+
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return { items, error: null };
 }
 
 export type ReviewDetail = {
+  itemKind?: ReviewItemKind;
+  manualReason?: string;
   approval: ApprovalRow;
   documentId: string | null;
   reviewStatus: ReviewStatus;
   case: ClarificationCase | null;
-  registryRow: RegistryRow | null;
+  registryRow: RegistryRow | MailRegistryRow | null;
   /** Every approval belonging to this document's clarification case, oldest first — the cycle history. */
   history: ApprovalRow[];
 };
@@ -884,6 +1032,91 @@ export async function fetchReviewDetail(
   userId: string,
   approvalId: string,
 ): Promise<{ detail: ReviewDetail | null; error: string | null }> {
+  if (approvalId.startsWith("manual:")) {
+    const docId = approvalId.replace(/^manual:/, "");
+    const { data: table } = await sb
+      .from("user_data_tables")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", REGISTRY_DATASET)
+      .maybeSingle();
+    if (!table?.id) return { detail: null, error: "Registry not found" };
+    const { data: row } = await sb
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", table.id)
+      .eq("row->>document_id", docId)
+      .maybeSingle();
+    if (!row?.row) return { detail: null, error: "Document not found" };
+    const reg = row.row as RegistryRow;
+    const manualReason =
+      reg.no_ai_detected === "true"
+        ? "NO_AI_POLICY"
+        : reg.classification_status === "error"
+          ? "PRIVACY_ERROR"
+          : reg.extraction_status && reg.extraction_status !== "ok"
+            ? "EXTRACTION_FAILED"
+            : reg.privacy_class === "restricted" || reg.external_processing_policy === "blocked"
+              ? "PRIVACY_RESTRICTED"
+              : "MANUAL_REVIEW";
+
+    const envelope = {
+      document_id: reg.document_id,
+      drive_file_id: reg.drive_file_id,
+      drive_url: reg.drive_url,
+      filename: reg.original_filename || reg.filename,
+      source_filename: reg.original_filename || reg.filename,
+      mime_type: reg.mime_type,
+      file_size: reg.file_size,
+      created_time: reg.created_time,
+      modified_time: reg.modified_time,
+      no_ai_detected: reg.no_ai_detected,
+      ai_processing_allowed: reg.ai_processing_allowed,
+    };
+    const proposal = {
+      document_id: reg.document_id,
+      document_type: reg.document_type,
+      document_family: reg.document_family,
+      primary_domain: reg.primary_domain,
+      proposed_folder_path: reg.proposed_path || "04_Archive",
+      canonical_filename: reg.canonical_filename,
+      document_date: reg.document_date,
+      confidence: reg.confidence,
+      summary: reg.organization ? `Document from ${reg.organization}` : null,
+    };
+    const syntheticApproval: ApprovalRow = {
+      id: approvalId,
+      user_id: userId,
+      agent_name: "Manual Review",
+      agent_avatar: "📋",
+      action_type: "manual_document_review",
+      action_title: (reg.original_filename || reg.filename || "Manual Document") as string,
+      description: `Manual review required (${manualReason})`,
+      payload: { envelope, proposal },
+      risk_level: "low",
+      status: reg.human_review_status === "manual" ? "pending" : "approved",
+      decided_at: null,
+      decided_by: null,
+      decision_note: null,
+      created_at: (reg.ingested_at || reg.created_time || new Date().toISOString()) as string,
+      swarm_run_id: null,
+    };
+
+    return {
+      detail: {
+        itemKind: "manual_document_item",
+        manualReason,
+        approval: syntheticApproval,
+        documentId: docId,
+        reviewStatus: reg.human_review_status === "manual" ? "pending" : "approved",
+        case: null,
+        registryRow: reg,
+        history: [],
+      },
+      error: null,
+    };
+  }
+
   const { data: approval, error } = await sb
     .from("approvals")
     .select(

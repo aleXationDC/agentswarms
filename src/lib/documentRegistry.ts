@@ -103,6 +103,10 @@ export const REGISTRY_COLUMNS: { name: string; type: "string" | "number" | "date
   // always registered even when its text could not be recovered ----
   { name: "extraction_status", type: "string" },
   { name: "extraction_error", type: "string" },
+  // ---- canonical NO AI policy (DMS-D1-0005-DOCUMENTS-v3R §4) ----
+  { name: "no_ai_detected", type: "string" },
+  { name: "no_ai_source", type: "string" },
+  { name: "ai_processing_allowed", type: "string" },
   // ---- privacy metadata (DMS-D1-0002 §5/§7). Operational facts ONLY — never
   // clear PII, never a pseudonym mapping (that lives exclusively in the
   // Privacy Vault, addressed by document_id/entity_key, not here) ----
@@ -208,6 +212,11 @@ export function buildRegistryRow(args: {
     status: string;
     proposedName: string;
   } | null;
+  noAi?: {
+    noAiDetected: boolean;
+    noAiSource: string | null;
+    aiProcessingAllowed: boolean;
+  } | null;
   provenance?: {
     conversation_id?: string | null;
     approval_id?: string | null;
@@ -232,6 +241,10 @@ export function buildRegistryRow(args: {
     // enough to arrival to be the best available proxy.
     arrivalDate: e.ingested_at ?? e.arrival_date ?? e.created_time,
   });
+
+  const noAiDetected = args.noAi?.noAiDetected ?? (e.no_ai_detected === true || e.no_ai_detected === "true");
+  const noAiSource = args.noAi?.noAiSource ?? str(e.no_ai_source);
+  const aiProcessingAllowed = args.noAi?.aiProcessingAllowed ?? (e.ai_processing_allowed === false || e.ai_processing_allowed === "false" ? false : true);
 
   return {
     // identity — envelope only
@@ -283,6 +296,10 @@ export function buildRegistryRow(args: {
     // extraction
     extraction_status: str(args.extraction?.status) ?? null,
     extraction_error: str(args.extraction?.error) ?? null,
+    // canonical NO AI policy
+    no_ai_detected: noAiDetected ? "true" : "false",
+    no_ai_source: noAiSource ?? null,
+    ai_processing_allowed: aiProcessingAllowed ? "true" : "false",
     // privacy — never write clear PII or a pseudonym mapping here
     privacy_class: str(args.privacy?.privacyClass) ?? null,
     pii_processing_status: str(args.privacy?.piiProcessingStatus) ?? "not_run",

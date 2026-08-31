@@ -50,6 +50,81 @@ export function hasNoAiMarker(text: string | null | undefined): boolean {
   return /(?:^|[\s_\[\(-])no\s*ai\s*[:\]\)-]/i.test(trimmed) || /^no\s*ai\b/i.test(trimmed);
 }
 
+export type NoAiSource = "filename_marker" | "mail_subject" | "manual_flag" | null;
+
+export type NoAiPolicyEvaluation = {
+  no_ai_detected: boolean;
+  no_ai_source: NoAiSource;
+  ai_processing_allowed: boolean;
+  reason: string | null;
+};
+
+/**
+ * Reusable canonical AgentSwarms guard/policy evaluator (DMS-D1-0005-DOCUMENTS-v3R §4).
+ * Kept separate from privacy_class and external_processing_policy.
+ */
+export function evaluateNoAiPolicy(args: {
+  filename?: string | null;
+  subject?: string | null;
+  manualFlag?: boolean | null;
+  existingNoAiDetected?: boolean | null;
+  existingNoAiSource?: NoAiSource;
+}): NoAiPolicyEvaluation {
+  if (args.manualFlag === true || args.existingNoAiDetected === true) {
+    return {
+      no_ai_detected: true,
+      no_ai_source: args.existingNoAiSource || "manual_flag",
+      ai_processing_allowed: false,
+      reason: "Manual NO AI policy flag set.",
+    };
+  }
+  if (args.subject && hasNoAiMarker(args.subject)) {
+    return {
+      no_ai_detected: true,
+      no_ai_source: "mail_subject",
+      ai_processing_allowed: false,
+      reason: "NO AI marker detected in mail subject.",
+    };
+  }
+  if (args.filename && hasNoAiMarker(args.filename)) {
+    return {
+      no_ai_detected: true,
+      no_ai_source: "filename_marker",
+      ai_processing_allowed: false,
+      reason: "NO AI marker detected in filename.",
+    };
+  }
+  return {
+    no_ai_detected: false,
+    no_ai_source: null,
+    ai_processing_allowed: true,
+    reason: null,
+  };
+}
+
+/**
+ * Universal gate check: returns false if an item is excluded from any AI/ML processing
+ * (LLM, Stage 1, Stage 2, OCR, embeddings, KB indexing, Analyst content access).
+ */
+export function isAiProcessingAllowed(item?: {
+  no_ai_detected?: boolean | string | null;
+  ai_processing_allowed?: boolean | string | null;
+  filename?: string | null;
+  subject?: string | null;
+  manual_no_ai?: boolean | null;
+} | null): boolean {
+  if (!item) return true;
+  if (item.ai_processing_allowed === false || item.ai_processing_allowed === "false") {
+    return false;
+  }
+  if (item.no_ai_detected === true || item.no_ai_detected === "true" || item.manual_no_ai === true) {
+    return false;
+  }
+  if (item.filename && hasNoAiMarker(item.filename)) return false;
+  if (item.subject && hasNoAiMarker(item.subject)) return false;
+  return true;
+}
+
 export type SensitivityInput = {
   findings: PiiFinding[];
   /**

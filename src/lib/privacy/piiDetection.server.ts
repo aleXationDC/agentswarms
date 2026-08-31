@@ -118,7 +118,7 @@ export type PiiDetectionResult =
  */
 export async function detectPii(text: string, language = "en"): Promise<PiiDetectionResult> {
   const primary = presidioAnalyzerUrl();
-  const candidates = [primary, "http://presidio-analyzer:3000", "http://172.29.0.2:3000", "http://127.0.0.1:5002"].filter(
+  const candidates = [primary, "http://presidio-analyzer:3000", "http://127.0.0.1:5002"].filter(
     (u): u is string => typeof u === "string" && u.length > 0,
   );
   const uniqueCandidates = [...new Set(candidates)];

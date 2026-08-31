@@ -454,7 +454,11 @@ export function resolveStatePath(ctx: Record<string, string>, expr: string): str
   if (!rest) return typeof val === "string" ? val : JSON.stringify(val);
   if (typeof val === "string") {
     try {
-      val = JSON.parse(val);
+      const trimmed = val.trim();
+      const stripped = trimmed.startsWith("```")
+        ? trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
+        : trimmed;
+      val = JSON.parse(stripped);
     } catch {
       return undefined;
     }

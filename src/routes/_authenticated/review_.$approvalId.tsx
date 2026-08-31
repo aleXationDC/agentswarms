@@ -225,9 +225,15 @@ function ReviewDetailPage() {
 
   const { approval, reviewStatus, case: kase } = detail;
 
+  const reg = registry as any;
   const filename =
-    registry?.canonical_filename ?? registry?.original_filename ?? proposal.source_filename ?? null;
-  const driveUrl = proposal.drive_url ?? (registry as any)?.drive_url ?? null;
+    reg?.canonical_filename ??
+    reg?.canonical_eml_filename ??
+    reg?.original_filename ??
+    reg?.filename ??
+    proposal.source_filename ??
+    null;
+  const driveUrl = proposal.drive_url ?? reg?.drive_url ?? null;
 
   const isActionable = reviewStatus === "pending";
   const isInDialogue = reviewStatus === "clarifying" || reviewStatus === "consensus";
@@ -241,7 +247,7 @@ function ReviewDetailPage() {
     const res = await applyHumanProposalOverride(supabase, user.id, approvalId, {
       ...overrideForm,
       duplicate_decision: duplicateDecision,
-      target_canonical_document_id: selectedTargetDocId || undefined,
+      target_canonical_document_id: duplicateDecision === "separate" ? undefined : (selectedTargetDocId || undefined),
     });
 
     setSavingOverride(false);
@@ -259,11 +265,15 @@ function ReviewDetailPage() {
     if (isEditing) {
       const saved = await onSaveOverride();
       if (!saved) return;
-    } else if (user && (duplicateDecision !== "separate" || selectedTargetDocId)) {
-      await applyHumanProposalOverride(supabase, user.id, approvalId, {
+    } else if (user) {
+      const saveRes = await applyHumanProposalOverride(supabase, user.id, approvalId, {
         duplicate_decision: duplicateDecision,
-        target_canonical_document_id: selectedTargetDocId || undefined,
+        target_canonical_document_id: duplicateDecision === "separate" ? undefined : (selectedTargetDocId || undefined),
       });
+      if (!saveRes.ok) {
+        setOverrideError(saveRes.error || "Failed to persist duplicate/version decision");
+        return;
+      }
     }
     await decide(
       {
@@ -275,7 +285,7 @@ function ReviewDetailPage() {
         payload: {
           ...approval.payload,
           duplicate_decision: duplicateDecision,
-          target_canonical_document_id: selectedTargetDocId || undefined,
+          target_canonical_document_id: duplicateDecision === "separate" ? undefined : (selectedTargetDocId || undefined),
         },
         swarm_run_id: approval.swarm_run_id,
       },
@@ -389,15 +399,16 @@ function ReviewDetailPage() {
           { role: "assistant" as const, text: data.reply || "Understood. I will take this into account.", time: new Date().toLocaleTimeString() },
         ]);
       } else {
+        const errData = await response.json().catch(() => ({}));
         setChatMessages([
           ...newMsgs,
-          { role: "assistant" as const, text: "Noted your feedback: " + text, time: new Date().toLocaleTimeString() },
+          { role: "assistant" as const, text: `Failed to process feedback: ${errData.error || response.statusText || "Request failed"}`, time: new Date().toLocaleTimeString() },
         ]);
       }
-    } catch {
+    } catch (err: any) {
       setChatMessages([
         ...newMsgs,
-        { role: "assistant" as const, text: "Noted your instruction: " + text, time: new Date().toLocaleTimeString() },
+        { role: "assistant" as const, text: `Error sending clarification: ${err.message || "Network error"}`, time: new Date().toLocaleTimeString() },
       ]);
     } finally {
       setSendingChat(false);
