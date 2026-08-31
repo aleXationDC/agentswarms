@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "id": "axtn-documents",
+  "name": "aXtn Documents",
+  "version": "0.1.0",
+  "category": "operations",
+  "description": "Document inventory and detail surface over the optional declared axtn_documents dataset.",
+  "routes": ["/documents", "/documents/$documentId"],
+  "navigation": { "group": "Overview", "label": "aXtn Documents" },
+  "permissions": ["authenticated user subject to native dataset RLS"],
+  "tested_agentswarms_upstream_sha": "7c6e48bca030675dbb47d4309e3a12d958e3e8f2",
+  "axtn_base_sha": "36482f210de8b3e153831b56f1dc26187862c3d3",
+  "native_capabilities_consumed": ["user_data_tables", "user_data_rows"],
+  "axtn_dependencies": [],
+  "data_contracts": [
+    "optional user-owned dataset named axtn_documents; each row may provide id or document_id, name or filename, type or document_type, source_url or url, and updated_at or modified_at"
+  ],
+  "database_migrations": [],
+  "source_paths": [
+    "src/axtn/workbenches/documents/",
+    "src/routes/_authenticated/documents.tsx",
+    "src/routes/_authenticated/documents_.$documentId.tsx"
+  ],
+  "implementation_commits": [],
+  "release_tag": "workbench/axtn-documents/v0.1.0",
+  "portable": true,
+  "known_limitations": [
+    "No persistence is introduced. Without a declared dataset, the Workbench renders an empty Greenfield inventory.",
+    "AI analysis, parsing, and filing are outside this inventory workbench."
+  ]
+}

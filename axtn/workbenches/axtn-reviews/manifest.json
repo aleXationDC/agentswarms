@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "id": "axtn-reviews",
+  "name": "aXtn Reviews",
+  "version": "0.1.0",
+  "category": "operations",
+  "description": "Searchable operational review surface over native AgentSwarms approvals.",
+  "routes": ["/review", "/review/$approvalId"],
+  "navigation": { "group": "Overview", "label": "aXtn Reviews" },
+  "permissions": ["authenticated user subject to native approval RLS"],
+  "tested_agentswarms_upstream_sha": "7c6e48bca030675dbb47d4309e3a12d958e3e8f2",
+  "axtn_base_sha": "36482f210de8b3e153831b56f1dc26187862c3d3",
+  "native_capabilities_consumed": [
+    "approvals table",
+    "native approve/reject state",
+    "native approval RLS"
+  ],
+  "axtn_dependencies": [],
+  "data_contracts": ["native approvals rows"],
+  "database_migrations": [],
+  "source_paths": [
+    "src/axtn/workbenches/reviews/",
+    "src/routes/_authenticated/review.tsx",
+    "src/routes/_authenticated/review_.$approvalId.tsx"
+  ],
+  "implementation_commits": [],
+  "release_tag": "workbench/axtn-reviews/v0.1.0",
+  "portable": true,
+  "known_limitations": [
+    "The initial workbench intentionally supports the current native approval decision contract only."
+  ]
+}

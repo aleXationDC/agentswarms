@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "workbenches": [
+    {
+      "id": "axtn-system-extensions",
+      "manifest": "axtn-system-extensions/manifest.json"
+    },
+    {
+      "id": "axtn-reviews",
+      "manifest": "axtn-reviews/manifest.json"
+    },
+    {
+      "id": "axtn-documents",
+      "manifest": "axtn-documents/manifest.json"
+    }
+  ]
+}
