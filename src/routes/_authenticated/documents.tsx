@@ -3,12 +3,22 @@ import { ExternalLink, FileText, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  filterAndSortWorkbenchDocuments,
   listWorkbenchDocuments,
   type WorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -17,12 +27,21 @@ export const Route = createFileRoute("/_authenticated/documents")({
   component: DocumentsPage,
 });
 
+const display = (value: string | number | null) => value ?? "—";
+const options = (values: Array<string | null>) =>
+  Array.from(new Set(values.filter((value): value is string => !!value))).sort();
+
 function DocumentsPage() {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<WorkbenchDocument[]>([]);
   const [search, setSearch] = useState("");
-  const [type, setType] = useState("all");
-  const [sort, setSort] = useState<"name" | "updated">("updated");
+  const [type, setType] = useState("");
+  const [domain, setDomain] = useState("");
+  const [para, setPara] = useState("");
+  const [status, setStatus] = useState("");
+  const [sort, setSort] = useState<"document-date" | "name" | "organization" | "updated">(
+    "document-date",
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,40 +49,29 @@ function DocumentsPage() {
     if (!user) return;
     let cancelled = false;
     void listWorkbenchDocuments(supabase, user.id)
-      .then((items) => {
-        if (!cancelled) setDocuments(items);
-      })
+      .then((items) => !cancelled && setDocuments(items))
       .catch((cause: unknown) => {
         if (!cancelled)
           setError(cause instanceof Error ? cause.message : "Could not load documents.");
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
   }, [user]);
 
-  const visibleDocuments = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const result = documents.filter(
-      (document) =>
-        [document.name, document.type, ...Object.values(document.metadata)]
-          .filter((value): value is string => typeof value === "string")
-          .join(" ")
-          .toLowerCase()
-          .includes(query) &&
-        (type === "all" || document.type === type),
-    );
-    return result.sort((left, right) => {
-      if (sort === "name") return left.name.localeCompare(right.name);
-      return (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "");
-    });
-  }, [documents, search, sort, type]);
-  const types = Array.from(
-    new Set(documents.map((document) => document.type).filter((value): value is string => !!value)),
-  ).sort();
+  const visible = useMemo(
+    () =>
+      filterAndSortWorkbenchDocuments(documents, {
+        search,
+        documentType: type || undefined,
+        primaryDomain: domain || undefined,
+        paraClass: para || undefined,
+        status: status || undefined,
+        sort,
+      }),
+    [documents, domain, para, search, sort, status, type],
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -73,99 +81,172 @@ function DocumentsPage() {
         </p>
         <h1 className="font-display text-2xl font-semibold tracking-tight">aXtn Documents</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A reusable inventory surface for the declared document dataset. Document intake is not
-          part of this workbench.
+          Inventory and inspect declared document metadata.
         </p>
       </div>
       <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-3">
-            <div className="relative min-w-64 flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search documents"
-                value={search}
-              />
-            </div>
-            <select
-              aria-label="Document type"
-              className="rounded-md border bg-background px-3 text-sm"
-              onChange={(event) => setType(event.target.value)}
-              value={type}
-            >
-              <option value="all">All types</option>
-              {types.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Document sort order"
-              className="rounded-md border bg-background px-3 text-sm"
-              onChange={(event) => setSort(event.target.value as "name" | "updated")}
-              value={sort}
-            >
-              <option value="updated">Last updated</option>
-              <option value="name">Name</option>
-            </select>
+        <CardContent className="grid gap-3 p-4 md:grid-cols-3 xl:grid-cols-6">
+          <div className="relative md:col-span-2 xl:col-span-2">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search filename, issuer, domain, topics..."
+              value={search}
+            />
           </div>
+          <Filter
+            label="Type"
+            onChange={setType}
+            value={type}
+            values={options(documents.map((item) => item.documentType))}
+          />
+          <Filter
+            label="Domain"
+            onChange={setDomain}
+            value={domain}
+            values={options(documents.map((item) => item.primaryDomain))}
+          />
+          <Filter
+            label="PARA"
+            onChange={setPara}
+            value={para}
+            values={options(documents.map((item) => item.paraClass))}
+          />
+          <Filter
+            label="Status"
+            onChange={setStatus}
+            value={status}
+            values={options(documents.map((item) => item.status))}
+          />
+          <select
+            aria-label="Document sort order"
+            className="rounded-md border bg-background px-3 text-sm"
+            onChange={(event) => setSort(event.target.value as typeof sort)}
+            value={sort}
+          >
+            <option value="document-date">Document date</option>
+            <option value="updated">Last modified</option>
+            <option value="name">Filename</option>
+            <option value="organization">Organisation</option>
+          </select>
         </CardContent>
       </Card>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Document inventory</CardTitle>
           <CardDescription>
-            {visibleDocuments.length} document{visibleDocuments.length === 1 ? "" : "s"} available
+            {visible.length} document{visible.length === 1 ? "" : "s"} available
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="overflow-x-auto p-0">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading documents...</p>
-          ) : visibleDocuments.length === 0 ? (
-            <div className="py-10 text-center">
+            <p className="p-6 text-sm text-muted-foreground">Loading documents...</p>
+          ) : visible.length === 0 ? (
+            <div className="p-10 text-center">
               <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
               <p className="font-medium">No documents available</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                The Greenfield document dataset is currently empty.
+                The declared document dataset is currently empty.
               </p>
             </div>
           ) : (
-            visibleDocuments.map((document) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
-                key={document.id}
-              >
-                <div>
-                  <Link
-                    className="font-medium hover:underline"
-                    params={{ documentId: document.id }}
-                    to="/documents/$documentId"
-                  >
-                    {document.name}
-                  </Link>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {document.type ?? "Unclassified"}
-                    {document.updatedAt
-                      ? ` · ${new Date(document.updatedAt).toLocaleString()}`
-                      : ""}
-                  </p>
-                </div>
-                {document.sourceUrl && (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={document.sourceUrl} rel="noreferrer" target="_blank">
-                      Source <ExternalLink className="ml-1 h-4 w-4" />
-                    </a>
-                  </Button>
-                )}
-              </div>
-            ))
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Filename</TableHead>
+                  <TableHead>Type / Family</TableHead>
+                  <TableHead>Organisation / Issuer</TableHead>
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Document date</TableHead>
+                  <TableHead>PARA location</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Confidence</TableHead>
+                  <TableHead className="text-right">Source</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((document) => (
+                  <TableRow key={document.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        className="hover:underline"
+                        params={{ documentId: document.id }}
+                        to="/documents/$documentId"
+                      >
+                        {display(document.canonicalFilename ?? document.originalFilename)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {display(document.documentType)}{" "}
+                      <span className="text-muted-foreground">
+                        / {display(document.documentFamily)}
+                      </span>
+                    </TableCell>
+                    <TableCell>{display(document.organization)}</TableCell>
+                    <TableCell>{display(document.primaryDomain)}</TableCell>
+                    <TableCell>{display(document.documentDate)}</TableCell>
+                    <TableCell
+                      className="max-w-48 truncate"
+                      title={document.proposedPath ?? document.currentPath ?? undefined}
+                    >
+                      {display(document.proposedPath ?? document.currentPath)}
+                    </TableCell>
+                    <TableCell>
+                      {document.status ? <Badge variant="outline">{document.status}</Badge> : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {document.confidence === null
+                        ? "—"
+                        : `${Math.round(document.confidence * 100)}%`}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {document.sourceUrl && (
+                        <Button asChild size="sm" variant="ghost">
+                          <a href={document.sourceUrl} rel="noreferrer" target="_blank">
+                            <ExternalLink className="h-4 w-4" />
+                            <span className="sr-only">Open source</span>
+                          </a>
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function Filter({
+  label,
+  onChange,
+  value,
+  values,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+  values: string[];
+}) {
+  return (
+    <select
+      aria-label={`Document ${label}`}
+      className="rounded-md border bg-background px-3 text-sm"
+      disabled={values.length === 0}
+      onChange={(event) => onChange(event.target.value)}
+      value={value}
+    >
+      <option value="">All {label.toLowerCase()}s</option>
+      {values.map((item) => (
+        <option key={item} value={item}>
+          {item}
+        </option>
+      ))}
+    </select>
   );
 }

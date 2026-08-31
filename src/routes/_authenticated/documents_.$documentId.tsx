@@ -15,22 +15,29 @@ export const Route = createFileRoute("/_authenticated/documents_/$documentId")({
   component: DocumentDetailPage,
 });
 
+const value = (entry: string | number | null) => entry ?? "—";
+
 function DocumentDetailPage() {
   const { documentId } = Route.useParams();
   const { user } = useAuth();
   const [document, setDocument] = useState<WorkbenchDocument | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     void listWorkbenchDocuments(supabase, user.id)
-      .then((documents) => {
-        if (!cancelled) setDocument(documents.find((item) => item.id === documentId) ?? null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .then(
+        (documents) =>
+          !cancelled && setDocument(documents.find((item) => item.id === documentId) ?? null),
+      )
+      .catch(
+        (cause: unknown) =>
+          !cancelled &&
+          setError(cause instanceof Error ? cause.message : "Could not load document."),
+      )
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
@@ -46,6 +53,8 @@ function DocumentDetailPage() {
       </Link>
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading document...</p>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
       ) : !document ? (
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
@@ -53,38 +62,104 @@ function DocumentDetailPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="max-w-4xl">
-          <CardHeader>
-            <CardTitle>{document.name}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <dl className="grid gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-muted-foreground">Type</dt>
-                <dd>{document.type ?? "Unclassified"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Last updated</dt>
-                <dd>
-                  {document.updatedAt
-                    ? new Date(document.updatedAt).toLocaleString()
-                    : "Not recorded"}
-                </dd>
-              </div>
-            </dl>
+        <div className="max-w-5xl space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Document</p>
+              <h1 className="font-display text-2xl font-semibold tracking-tight">
+                {value(document.canonicalFilename ?? document.originalFilename)}
+              </h1>
+            </div>
             {document.sourceUrl && (
               <Button asChild variant="outline">
                 <a href={document.sourceUrl} rel="noreferrer" target="_blank">
-                  Open source document <ExternalLink className="ml-1 h-4 w-4" />
+                  Open source <ExternalLink className="ml-1 h-4 w-4" />
                 </a>
               </Button>
             )}
-            <pre className="overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+          </div>
+          <Section
+            title="Document"
+            fields={[
+              ["Canonical filename", document.canonicalFilename],
+              ["Original filename", document.originalFilename],
+              ["Type", document.documentType],
+              ["Family", document.documentFamily],
+              ["Organisation / Issuer", document.organization],
+              ["Document date", document.documentDate],
+              ["Topics", document.topics],
+            ]}
+          />
+          <Section
+            title="Classification"
+            fields={[
+              ["Primary domain", document.primaryDomain],
+              ["PARA class", document.paraClass],
+              ["Current location", document.currentPath],
+              ["Proposed location", document.proposedPath],
+              ["Status", document.status],
+              [
+                "Confidence",
+                document.confidence === null ? null : `${Math.round(document.confidence * 100)}%`,
+              ],
+            ]}
+          />
+          <Section
+            title="Source"
+            fields={[
+              ["Source / Drive link", document.sourceUrl],
+              ["MIME type", document.mimeType],
+              [
+                "File size",
+                document.fileSize === null ? null : `${document.fileSize.toLocaleString()} bytes`,
+              ],
+              ["Modified", document.modifiedAt],
+              ["Ingested", document.ingestedAt],
+              ["Privacy class", document.privacyClass],
+            ]}
+          />
+          <Card>
+            <CardHeader>
+              <CardTitle>History / Related</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              Not provided by the declared document dataset.
+            </CardContent>
+          </Card>
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer text-sm font-medium">Technical metadata</summary>
+            <pre className="mt-3 overflow-auto rounded-md bg-muted/30 p-3 text-xs">
               {JSON.stringify(document.metadata, null, 2)}
             </pre>
-          </CardContent>
-        </Card>
+          </details>
+        </div>
       )}
     </div>
+  );
+}
+
+function Section({
+  title,
+  fields,
+}: {
+  title: string;
+  fields: Array<[string, string | number | null]>;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-4 text-sm sm:grid-cols-2">
+          {fields.map(([label, field]) => (
+            <div key={label}>
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="mt-1 break-words">{value(field)}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }

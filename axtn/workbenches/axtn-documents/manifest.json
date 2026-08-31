@@ -13,7 +13,7 @@
   "native_capabilities_consumed": ["user_data_tables", "user_data_rows"],
   "axtn_dependencies": [],
   "data_contracts": [
-    "optional user-owned dataset named axtn_documents; each row may provide id or document_id, name or filename, type or document_type, source_url or url, and updated_at or modified_at"
+    "optional user-owned dataset named axtn_documents; rows may provide canonical/original filename, type/family, organisation or issuer, domain, date, paths, PARA class, status, confidence, topics, source URL, MIME type, file size, modified/ingested time, and privacy class using the documented adapter aliases"
   ],
   "database_migrations": [],
   "source_paths": [
