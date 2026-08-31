@@ -5,7 +5,8 @@ source_dir=/home/alex/aXtn-agentswarms/deploy/axtn
 
 install -m 0644 \
   "$source_dir/caddy.extension-access.v1.caddy" \
-  /etc/caddy/conf.d/axtn-extension-access-v1.caddy
+  /etc/caddy/conf.d/00-axtn-extension-access-v1.caddy
+rm -f /etc/caddy/conf.d/axtn-extension-access-v1.caddy
 install -m 0644 \
   "$source_dir/caddy.git.extension-access.caddy" \
   /etc/caddy/conf.d/axtn-git.caddy
