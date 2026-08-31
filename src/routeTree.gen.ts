@@ -70,6 +70,7 @@ import { Route as AuthenticatedSwarmsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedSemanticsRouteImport } from './routes/_authenticated/semantics'
 import { Route as AuthenticatedSecretsRouteImport } from './routes/_authenticated/secrets'
+import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
 import { Route as AuthenticatedPromptsRouteImport } from './routes/_authenticated/prompts'
 import { Route as AuthenticatedPromptCompareRouteImport } from './routes/_authenticated/prompt-compare'
 import { Route as AuthenticatedPlaygroundRouteImport } from './routes/_authenticated/playground'
@@ -86,6 +87,7 @@ import { Route as AuthenticatedImagePlaygroundRouteImport } from './routes/_auth
 import { Route as AuthenticatedEvaluationsRouteImport } from './routes/_authenticated/evaluations'
 import { Route as AuthenticatedEtlRouteImport } from './routes/_authenticated/etl'
 import { Route as AuthenticatedEmbedsRouteImport } from './routes/_authenticated/embeds'
+import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedDataSqlRouteImport } from './routes/_authenticated/data-sql'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBudgetsRouteImport } from './routes/_authenticated/budgets'
@@ -130,7 +132,9 @@ import { Route as ApiBiDirectQueryRouteImport } from './routes/api/bi.direct-que
 import { Route as ApiBiCronRouteImport } from './routes/api/bi.cron'
 import { Route as ApiAuthSsoConfigRouteImport } from './routes/api/auth/sso-config'
 import { Route as ApiAuditExportRouteImport } from './routes/api/audit.export'
+import { Route as AuthenticatedReviewApprovalIdRouteImport } from './routes/_authenticated/review_.$approvalId'
 import { Route as AuthenticatedMcpBuilderAppIdRouteImport } from './routes/_authenticated/mcp-builder_.$appId'
+import { Route as AuthenticatedDocumentsDocumentIdRouteImport } from './routes/_authenticated/documents_.$documentId'
 import { Route as AuthenticatedBiDashboardIdRouteImport } from './routes/_authenticated/bi_.$dashboardId'
 import { Route as AuthenticatedAnalyticsObservabilityRouteImport } from './routes/_authenticated/analytics_.observability'
 import { Route as AuthenticatedAdminRuntimeRouteImport } from './routes/_authenticated/admin.runtime'
@@ -454,6 +458,11 @@ const AuthenticatedSecretsRoute = AuthenticatedSecretsRouteImport.update({
   path: '/secrets',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedPromptsRoute = AuthenticatedPromptsRouteImport.update({
   id: '/prompts',
   path: '/prompts',
@@ -537,6 +546,11 @@ const AuthenticatedEtlRoute = AuthenticatedEtlRouteImport.update({
 const AuthenticatedEmbedsRoute = AuthenticatedEmbedsRouteImport.update({
   id: '/embeds',
   path: '/embeds',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDataSqlRoute = AuthenticatedDataSqlRouteImport.update({
@@ -759,10 +773,22 @@ const ApiAuditExportRoute = ApiAuditExportRouteImport.update({
   path: '/api/audit/export',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedReviewApprovalIdRoute =
+  AuthenticatedReviewApprovalIdRouteImport.update({
+    id: '/review_/$approvalId',
+    path: '/review/$approvalId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedMcpBuilderAppIdRoute =
   AuthenticatedMcpBuilderAppIdRouteImport.update({
     id: '/mcp-builder_/$appId',
     path: '/mcp-builder/$appId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedDocumentsDocumentIdRoute =
+  AuthenticatedDocumentsDocumentIdRouteImport.update({
+    id: '/documents_/$documentId',
+    path: '/documents/$documentId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedBiDashboardIdRoute =
@@ -887,6 +913,7 @@ export interface FileRoutesByFullPath {
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/data-sql': typeof AuthenticatedDataSqlRoute
+  '/documents': typeof AuthenticatedDocumentsRoute
   '/embeds': typeof AuthenticatedEmbedsRoute
   '/etl': typeof AuthenticatedEtlRoute
   '/evaluations': typeof AuthenticatedEvaluationsRoute
@@ -903,6 +930,7 @@ export interface FileRoutesByFullPath {
   '/playground': typeof AuthenticatedPlaygroundRoute
   '/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/prompts': typeof AuthenticatedPromptsRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/secrets': typeof AuthenticatedSecretsRoute
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
@@ -953,7 +981,9 @@ export interface FileRoutesByFullPath {
   '/admin/runtime': typeof AuthenticatedAdminRuntimeRoute
   '/analytics/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/bi/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
+  '/documents/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/mcp-builder/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/review/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -1026,6 +1056,7 @@ export interface FileRoutesByTo {
   '/budgets': typeof AuthenticatedBudgetsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/data-sql': typeof AuthenticatedDataSqlRoute
+  '/documents': typeof AuthenticatedDocumentsRoute
   '/embeds': typeof AuthenticatedEmbedsRoute
   '/etl': typeof AuthenticatedEtlRoute
   '/evaluations': typeof AuthenticatedEvaluationsRoute
@@ -1042,6 +1073,7 @@ export interface FileRoutesByTo {
   '/playground': typeof AuthenticatedPlaygroundRoute
   '/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/prompts': typeof AuthenticatedPromptsRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/secrets': typeof AuthenticatedSecretsRoute
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
@@ -1092,7 +1124,9 @@ export interface FileRoutesByTo {
   '/admin/runtime': typeof AuthenticatedAdminRuntimeRoute
   '/analytics/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/bi/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
+  '/documents/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/mcp-builder/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/review/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -1168,6 +1202,7 @@ export interface FileRoutesById {
   '/_authenticated/budgets': typeof AuthenticatedBudgetsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/data-sql': typeof AuthenticatedDataSqlRoute
+  '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
   '/_authenticated/embeds': typeof AuthenticatedEmbedsRoute
   '/_authenticated/etl': typeof AuthenticatedEtlRoute
   '/_authenticated/evaluations': typeof AuthenticatedEvaluationsRoute
@@ -1184,6 +1219,7 @@ export interface FileRoutesById {
   '/_authenticated/playground': typeof AuthenticatedPlaygroundRoute
   '/_authenticated/prompt-compare': typeof AuthenticatedPromptCompareRoute
   '/_authenticated/prompts': typeof AuthenticatedPromptsRoute
+  '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/secrets': typeof AuthenticatedSecretsRoute
   '/_authenticated/semantics': typeof AuthenticatedSemanticsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
@@ -1234,7 +1270,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/runtime': typeof AuthenticatedAdminRuntimeRoute
   '/_authenticated/analytics_/observability': typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   '/_authenticated/bi_/$dashboardId': typeof AuthenticatedBiDashboardIdRoute
+  '/_authenticated/documents_/$documentId': typeof AuthenticatedDocumentsDocumentIdRoute
   '/_authenticated/mcp-builder_/$appId': typeof AuthenticatedMcpBuilderAppIdRoute
+  '/_authenticated/review_/$approvalId': typeof AuthenticatedReviewApprovalIdRoute
   '/api/audit/export': typeof ApiAuditExportRoute
   '/api/auth/sso-config': typeof ApiAuthSsoConfigRoute
   '/api/bi/cron': typeof ApiBiCronRoute
@@ -1310,6 +1348,7 @@ export interface FileRouteTypes {
     | '/budgets'
     | '/dashboard'
     | '/data-sql'
+    | '/documents'
     | '/embeds'
     | '/etl'
     | '/evaluations'
@@ -1326,6 +1365,7 @@ export interface FileRouteTypes {
     | '/playground'
     | '/prompt-compare'
     | '/prompts'
+    | '/review'
     | '/secrets'
     | '/semantics'
     | '/skills'
@@ -1376,7 +1416,9 @@ export interface FileRouteTypes {
     | '/admin/runtime'
     | '/analytics/observability'
     | '/bi/$dashboardId'
+    | '/documents/$documentId'
     | '/mcp-builder/$appId'
+    | '/review/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -1449,6 +1491,7 @@ export interface FileRouteTypes {
     | '/budgets'
     | '/dashboard'
     | '/data-sql'
+    | '/documents'
     | '/embeds'
     | '/etl'
     | '/evaluations'
@@ -1465,6 +1508,7 @@ export interface FileRouteTypes {
     | '/playground'
     | '/prompt-compare'
     | '/prompts'
+    | '/review'
     | '/secrets'
     | '/semantics'
     | '/skills'
@@ -1515,7 +1559,9 @@ export interface FileRouteTypes {
     | '/admin/runtime'
     | '/analytics/observability'
     | '/bi/$dashboardId'
+    | '/documents/$documentId'
     | '/mcp-builder/$appId'
+    | '/review/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -1590,6 +1636,7 @@ export interface FileRouteTypes {
     | '/_authenticated/budgets'
     | '/_authenticated/dashboard'
     | '/_authenticated/data-sql'
+    | '/_authenticated/documents'
     | '/_authenticated/embeds'
     | '/_authenticated/etl'
     | '/_authenticated/evaluations'
@@ -1606,6 +1653,7 @@ export interface FileRouteTypes {
     | '/_authenticated/playground'
     | '/_authenticated/prompt-compare'
     | '/_authenticated/prompts'
+    | '/_authenticated/review'
     | '/_authenticated/secrets'
     | '/_authenticated/semantics'
     | '/_authenticated/skills'
@@ -1656,7 +1704,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/runtime'
     | '/_authenticated/analytics_/observability'
     | '/_authenticated/bi_/$dashboardId'
+    | '/_authenticated/documents_/$documentId'
     | '/_authenticated/mcp-builder_/$appId'
+    | '/_authenticated/review_/$approvalId'
     | '/api/audit/export'
     | '/api/auth/sso-config'
     | '/api/bi/cron'
@@ -2200,6 +2250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSecretsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/review': {
+      id: '/_authenticated/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthenticatedReviewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/prompts': {
       id: '/_authenticated/prompts'
       path: '/prompts'
@@ -2310,6 +2367,13 @@ declare module '@tanstack/react-router' {
       path: '/embeds'
       fullPath: '/embeds'
       preLoaderRoute: typeof AuthenticatedEmbedsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/documents': {
+      id: '/_authenticated/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof AuthenticatedDocumentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/data-sql': {
@@ -2620,11 +2684,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuditExportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/review_/$approvalId': {
+      id: '/_authenticated/review_/$approvalId'
+      path: '/review/$approvalId'
+      fullPath: '/review/$approvalId'
+      preLoaderRoute: typeof AuthenticatedReviewApprovalIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/mcp-builder_/$appId': {
       id: '/_authenticated/mcp-builder_/$appId'
       path: '/mcp-builder/$appId'
       fullPath: '/mcp-builder/$appId'
       preLoaderRoute: typeof AuthenticatedMcpBuilderAppIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/documents_/$documentId': {
+      id: '/_authenticated/documents_/$documentId'
+      path: '/documents/$documentId'
+      fullPath: '/documents/$documentId'
+      preLoaderRoute: typeof AuthenticatedDocumentsDocumentIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/bi_/$dashboardId': {
@@ -2792,6 +2870,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedBudgetsRoute: typeof AuthenticatedBudgetsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDataSqlRoute: typeof AuthenticatedDataSqlRoute
+  AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
   AuthenticatedEmbedsRoute: typeof AuthenticatedEmbedsRoute
   AuthenticatedEtlRoute: typeof AuthenticatedEtlRoute
   AuthenticatedEvaluationsRoute: typeof AuthenticatedEvaluationsRoute
@@ -2808,6 +2887,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedPlaygroundRoute: typeof AuthenticatedPlaygroundRoute
   AuthenticatedPromptCompareRoute: typeof AuthenticatedPromptCompareRoute
   AuthenticatedPromptsRoute: typeof AuthenticatedPromptsRoute
+  AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
   AuthenticatedSecretsRoute: typeof AuthenticatedSecretsRoute
   AuthenticatedSemanticsRoute: typeof AuthenticatedSemanticsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
@@ -2818,7 +2898,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminRuntimeRoute: typeof AuthenticatedAdminRuntimeRoute
   AuthenticatedAnalyticsObservabilityRoute: typeof AuthenticatedAnalyticsObservabilityRouteWithChildren
   AuthenticatedBiDashboardIdRoute: typeof AuthenticatedBiDashboardIdRoute
+  AuthenticatedDocumentsDocumentIdRoute: typeof AuthenticatedDocumentsDocumentIdRoute
   AuthenticatedMcpBuilderAppIdRoute: typeof AuthenticatedMcpBuilderAppIdRoute
+  AuthenticatedReviewApprovalIdRoute: typeof AuthenticatedReviewApprovalIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -2831,6 +2913,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedBudgetsRoute: AuthenticatedBudgetsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDataSqlRoute: AuthenticatedDataSqlRoute,
+  AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
   AuthenticatedEmbedsRoute: AuthenticatedEmbedsRoute,
   AuthenticatedEtlRoute: AuthenticatedEtlRoute,
   AuthenticatedEvaluationsRoute: AuthenticatedEvaluationsRoute,
@@ -2847,6 +2930,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedPlaygroundRoute: AuthenticatedPlaygroundRoute,
   AuthenticatedPromptCompareRoute: AuthenticatedPromptCompareRoute,
   AuthenticatedPromptsRoute: AuthenticatedPromptsRoute,
+  AuthenticatedReviewRoute: AuthenticatedReviewRoute,
   AuthenticatedSecretsRoute: AuthenticatedSecretsRoute,
   AuthenticatedSemanticsRoute: AuthenticatedSemanticsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
@@ -2858,7 +2942,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAnalyticsObservabilityRoute:
     AuthenticatedAnalyticsObservabilityRouteWithChildren,
   AuthenticatedBiDashboardIdRoute: AuthenticatedBiDashboardIdRoute,
+  AuthenticatedDocumentsDocumentIdRoute: AuthenticatedDocumentsDocumentIdRoute,
   AuthenticatedMcpBuilderAppIdRoute: AuthenticatedMcpBuilderAppIdRoute,
+  AuthenticatedReviewApprovalIdRoute: AuthenticatedReviewApprovalIdRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

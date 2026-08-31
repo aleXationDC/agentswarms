@@ -31,6 +31,8 @@ import {
   Code2,
   LifeBuoy,
   Wrench,
+  ClipboardCheck,
+  Files,
   type LucideIcon,
 } from "lucide-react";
 
@@ -42,6 +44,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+      { title: "aXtn Reviews", url: "/review", icon: ClipboardCheck },
+      { title: "aXtn Documents", url: "/documents", icon: Files },
       // The handbook was reachable from the marketing site only, which is the
       // one place you are NOT standing when you get stuck using the product.
       { title: "Documentation", url: "/docs", icon: LifeBuoy },
