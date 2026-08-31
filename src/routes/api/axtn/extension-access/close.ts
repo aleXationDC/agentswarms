@@ -43,14 +43,17 @@ function handle(request: Request): Response {
     const edge = validateAxtnEdgeRequest(request, extension);
     if (!edge.ok) return refuse(edge.status, edge.error);
 
-    return new Response(null, {
-      status: 303,
-      headers: {
-        ...SECURITY_HEADERS,
-        Location: extension.url,
-        "Set-Cookie": clearAccessCookie(),
+    return new Response(
+      "<!doctype html><title>Maintenance access closed</title><p>Maintenance access has been closed. You can close this tab.</p>",
+      {
+        status: 200,
+        headers: {
+          ...SECURITY_HEADERS,
+          "Content-Type": "text/html; charset=utf-8",
+          "Set-Cookie": clearAccessCookie(),
+        },
       },
-    });
+    );
   } catch (error) {
     console.error(
       "[axtn-extension-access] close route failed:",

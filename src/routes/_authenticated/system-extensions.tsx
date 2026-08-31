@@ -179,7 +179,8 @@ function SystemExtensionsPage() {
       const closed = await closeAccess({
         data: { access_token: authToken, extension_id: extension.id },
       });
-      window.location.assign(closed.close_url);
+      window.open(closed.close_url, "_blank", "noopener,noreferrer");
+      toast.success("Maintenance access closed.");
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Could not close maintenance access.";

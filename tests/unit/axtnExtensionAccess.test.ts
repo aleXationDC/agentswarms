@@ -202,7 +202,8 @@ describe("aXtn server and deployment guards", () => {
     );
     expect(migration).toMatch(/s\.expires_at > now\(\)/);
     expect(closeRoute).toMatch(/"Set-Cookie": clearAccessCookie\(\)/);
-    expect(closeRoute).toMatch(/Location: extension\.url/);
+    expect(closeRoute).toMatch(/Maintenance access has been closed/);
+    expect(closeRoute).not.toMatch(/Location: extension\.url/);
   });
 
   it("uses Caddy only as a network gate and preserves target authentication", () => {
