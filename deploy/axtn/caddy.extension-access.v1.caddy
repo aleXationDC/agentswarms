@@ -23,6 +23,18 @@
 # supplies no identity headers and never sets or replaces Authorization.
 
 (axtn_extension_access_v1) {
+	@axtn_extension_close path /_axtn/extension-access/close
+	handle @axtn_extension_close {
+		rewrite * /api/axtn/extension-access/close
+		reverse_proxy {args[2]} {
+			header_up Host {host}
+			header_up X-Axtn-Extension-ID {args[0]}
+			header_up X-Axtn-Target {args[1]}
+			header_up X-Axtn-Request-Host {host}
+			header_up X-Axtn-Request-Proto https
+		}
+	}
+
 	@axtn_extension_redeem path /_axtn/extension-access/redeem
 	handle @axtn_extension_redeem {
 		rewrite * /api/axtn/extension-access/redeem

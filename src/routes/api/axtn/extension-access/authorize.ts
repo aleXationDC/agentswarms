@@ -43,7 +43,7 @@ async function handle(request: Request): Promise<Response> {
     const token = readCookie(request, AXTN_EXTENSION_ACCESS_COOKIE);
     if (!token || !(await authorizeAxtnExtensionSession(extension, token))) {
       return new Response("Maintenance access required.", {
-        status: 401,
+        status: 403,
         headers: NO_STORE_HEADERS,
       });
     }

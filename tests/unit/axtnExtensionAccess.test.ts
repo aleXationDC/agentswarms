@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   AXTN_EDGE_HEADERS,
   AXTN_EXTENSION_ACCESS_COOKIE,
+  AXTN_EXTENSION_CLOSE_PATH,
   AXTN_EXTENSION_REDEEM_PATH,
+  buildAxtnExtensionCloseUrl,
   buildAxtnExtensionRedeemUrl,
   parseAxtnSystemExtensions,
   readCookie,
@@ -80,6 +82,15 @@ describe("aXtn extension configuration", () => {
     expect(redeem.searchParams.get("ticket_id")).toBe("bd704c4b-6d5e-4a8a-bf2f-11887532e71f");
     expect(redeem.searchParams.get("ticket")).toMatch(/^axtn_t_/);
   });
+
+  it("builds a host-local explicit close URL", () => {
+    const extension = parseAxtnSystemExtensions(CONFIG)[0];
+    const close = new URL(buildAxtnExtensionCloseUrl(extension));
+    expect(close.origin).toBe("https://maintenance.example.com");
+    expect(close.pathname).toBe(AXTN_EXTENSION_CLOSE_PATH);
+    expect(close.searchParams.get("id")).toBe(extension.id);
+    expect(close.searchParams.get("target")).toBe(extension.url);
+  });
 });
 
 describe("aXtn edge binding", () => {
@@ -137,10 +148,22 @@ describe("aXtn server and deployment guards", () => {
     "supabase/migrations/20260899990002_axtn_extension_access_redeem.sql",
     "utf8",
   );
+  const closeMigration = readFileSync(
+    "supabase/migrations/20260899990003_axtn_extension_access_close.sql",
+    "utf8",
+  );
   const caddy = readFileSync("deploy/axtn/caddy.extension-access.v1.caddy", "utf8");
+  const authorizeRoute = readFileSync("src/routes/api/axtn/extension-access/authorize.ts", "utf8");
+  const closeRoute = readFileSync("src/routes/api/axtn/extension-access/close.ts", "utf8");
+  const redeemRoute = readFileSync("src/routes/api/axtn/extension-access/redeem.ts", "utf8");
+  const concreteCaddySites = [
+    "deploy/axtn/caddy.git.extension-access.caddy",
+    "deploy/axtn/caddy.n8n.extension-access.caddy",
+    "deploy/axtn/caddy.matrix-admin.extension-access.caddy",
+  ].map((path) => readFileSync(path, "utf8"));
 
-  it("requires a verified AAL2 superadmin for listing and ticket issuance", () => {
-    expect(functionsSource.match(/requireSuperadminAal2\(/g)).toHaveLength(2);
+  it("requires a verified AAL2 superadmin for listing, opening, and closing", () => {
+    expect(functionsSource.match(/requireSuperadminAal2\(/g)).toHaveLength(3);
     expect(iamSource).toMatch(/supabaseAdmin\.auth\.getClaims\(accessToken\)/);
     expect(iamSource).toMatch(/claims\.aal !== "aal2"/);
   });
@@ -158,12 +181,41 @@ describe("aXtn server and deployment guards", () => {
     expect(migration).toMatch(/FROM PUBLIC, anon, authenticated/);
   });
 
+  it("revokes active sessions and outstanding tickets on explicit close", () => {
+    expect(closeMigration).toMatch(/UPDATE axtn\.extension_access_tickets AS t/);
+    expect(closeMigration).toMatch(/SET used_at = now\(\)/);
+    expect(closeMigration).toMatch(/UPDATE axtn\.extension_access_sessions AS s/);
+    expect(closeMigration).toMatch(/SET revoked_at = now\(\)/);
+    expect(closeMigration).toMatch(/t\.created_by = _created_by/);
+    expect(closeMigration).toMatch(/s\.created_by = _created_by/);
+    expect(closeMigration).toMatch(/TO service_role/);
+  });
+
+  it("returns public 403 after close or automatic expiry", () => {
+    expect(authorizeRoute).toMatch(
+      /if \(!token \|\| !\(await authorizeAxtnExtensionSession\(extension, token\)\)\)[\s\S]+status: 403/,
+    );
+    expect(authorizeRoute).not.toMatch(/status: 401/);
+    expect(redeemRoute).not.toMatch(/refuse\(401/);
+    expect(redeemRoute).toMatch(
+      /refuse\(403, "Extension access link is invalid, expired, or already used\."\)/,
+    );
+    expect(migration).toMatch(/s\.expires_at > now\(\)/);
+    expect(closeRoute).toMatch(/"Set-Cookie": clearAccessCookie\(\)/);
+    expect(closeRoute).toMatch(/Location: extension\.url/);
+  });
+
   it("uses Caddy only as a network gate and preserves target authentication", () => {
+    expect(caddy).toMatch(/path \/_axtn\/extension-access\/close/);
+    expect(caddy).toMatch(/rewrite \* \/api\/axtn\/extension-access\/close/);
     expect(caddy).toMatch(/forward_auth \{args\[2\]\}/);
     expect(caddy).toMatch(/uri \/api\/axtn\/extension-access\/authorize/);
     expect(caddy).toMatch(/header_up X-Axtn-Target \{args\[1\]\}/);
     expect(caddy).toMatch(/reverse_proxy \{args\[3\]\}/);
     expect(caddy).not.toMatch(/^\s*copy_headers\b/m);
     expect(caddy).not.toMatch(/^\s*header_up (?:Authorization|X-(?:User|Email|Remote-User))\b/m);
+    for (const site of concreteCaddySites) {
+      expect(site).toMatch(/not path \/_axtn\/extension-access\/\*/);
+    }
   });
 });

@@ -71,7 +71,7 @@ async function handle(request: Request): Promise<Response> {
       ticketToken,
     });
     if (!redeemed) {
-      return refuse(401, "Extension access link is invalid, expired, or already used.");
+      return refuse(403, "Extension access link is invalid, expired, or already used.");
     }
 
     auditEvent({

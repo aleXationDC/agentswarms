@@ -143,6 +143,7 @@ import { Route as ApiNotebookRunStatusRouteImport } from './routes/api/notebook.
 import { Route as ApiMcpSSlugRouteImport } from './routes/api/mcp.s.$slug'
 import { Route as ApiKbSourcesSyncRouteImport } from './routes/api/kb/sources.sync'
 import { Route as ApiAxtnExtensionAccessRedeemRouteImport } from './routes/api/axtn/extension-access/redeem'
+import { Route as ApiAxtnExtensionAccessCloseRouteImport } from './routes/api/axtn/extension-access/close'
 import { Route as ApiAxtnExtensionAccessAuthorizeRouteImport } from './routes/api/axtn/extension-access/authorize'
 import { Route as AuthenticatedNotebooksSampleSampleSlugRouteImport } from './routes/_authenticated/notebooks.sample.$sampleSlug'
 import { Route as AuthenticatedNotebooksPyPyNotebookIdRouteImport } from './routes/_authenticated/notebooks.py.$pyNotebookId'
@@ -831,6 +832,12 @@ const ApiAxtnExtensionAccessRedeemRoute =
     path: '/api/axtn/extension-access/redeem',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAxtnExtensionAccessCloseRoute =
+  ApiAxtnExtensionAccessCloseRouteImport.update({
+    id: '/api/axtn/extension-access/close',
+    path: '/api/axtn/extension-access/close',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAxtnExtensionAccessAuthorizeRoute =
   ApiAxtnExtensionAccessAuthorizeRouteImport.update({
     id: '/api/axtn/extension-access/authorize',
@@ -986,6 +993,7 @@ export interface FileRoutesByFullPath {
   '/notebooks/py/$pyNotebookId': typeof AuthenticatedNotebooksPyPyNotebookIdRoute
   '/notebooks/sample/$sampleSlug': typeof AuthenticatedNotebooksSampleSampleSlugRoute
   '/api/axtn/extension-access/authorize': typeof ApiAxtnExtensionAccessAuthorizeRoute
+  '/api/axtn/extension-access/close': typeof ApiAxtnExtensionAccessCloseRoute
   '/api/axtn/extension-access/redeem': typeof ApiAxtnExtensionAccessRedeemRoute
   '/api/kb/sources/sync': typeof ApiKbSourcesSyncRoute
   '/api/mcp/s/$slug': typeof ApiMcpSSlugRoute
@@ -1124,6 +1132,7 @@ export interface FileRoutesByTo {
   '/notebooks/py/$pyNotebookId': typeof AuthenticatedNotebooksPyPyNotebookIdRoute
   '/notebooks/sample/$sampleSlug': typeof AuthenticatedNotebooksSampleSampleSlugRoute
   '/api/axtn/extension-access/authorize': typeof ApiAxtnExtensionAccessAuthorizeRoute
+  '/api/axtn/extension-access/close': typeof ApiAxtnExtensionAccessCloseRoute
   '/api/axtn/extension-access/redeem': typeof ApiAxtnExtensionAccessRedeemRoute
   '/api/kb/sources/sync': typeof ApiKbSourcesSyncRoute
   '/api/mcp/s/$slug': typeof ApiMcpSSlugRoute
@@ -1265,6 +1274,7 @@ export interface FileRoutesById {
   '/_authenticated/notebooks/py/$pyNotebookId': typeof AuthenticatedNotebooksPyPyNotebookIdRoute
   '/_authenticated/notebooks/sample/$sampleSlug': typeof AuthenticatedNotebooksSampleSampleSlugRoute
   '/api/axtn/extension-access/authorize': typeof ApiAxtnExtensionAccessAuthorizeRoute
+  '/api/axtn/extension-access/close': typeof ApiAxtnExtensionAccessCloseRoute
   '/api/axtn/extension-access/redeem': typeof ApiAxtnExtensionAccessRedeemRoute
   '/api/kb/sources/sync': typeof ApiKbSourcesSyncRoute
   '/api/mcp/s/$slug': typeof ApiMcpSSlugRoute
@@ -1406,6 +1416,7 @@ export interface FileRouteTypes {
     | '/notebooks/py/$pyNotebookId'
     | '/notebooks/sample/$sampleSlug'
     | '/api/axtn/extension-access/authorize'
+    | '/api/axtn/extension-access/close'
     | '/api/axtn/extension-access/redeem'
     | '/api/kb/sources/sync'
     | '/api/mcp/s/$slug'
@@ -1544,6 +1555,7 @@ export interface FileRouteTypes {
     | '/notebooks/py/$pyNotebookId'
     | '/notebooks/sample/$sampleSlug'
     | '/api/axtn/extension-access/authorize'
+    | '/api/axtn/extension-access/close'
     | '/api/axtn/extension-access/redeem'
     | '/api/kb/sources/sync'
     | '/api/mcp/s/$slug'
@@ -1684,6 +1696,7 @@ export interface FileRouteTypes {
     | '/_authenticated/notebooks/py/$pyNotebookId'
     | '/_authenticated/notebooks/sample/$sampleSlug'
     | '/api/axtn/extension-access/authorize'
+    | '/api/axtn/extension-access/close'
     | '/api/axtn/extension-access/redeem'
     | '/api/kb/sources/sync'
     | '/api/mcp/s/$slug'
@@ -1752,6 +1765,7 @@ export interface RootRouteChildren {
   EmbedSwarmKeyRoute: typeof EmbedSwarmKeyRoute
   ShareBiSlugRoute: typeof ShareBiSlugRoute
   ApiAxtnExtensionAccessAuthorizeRoute: typeof ApiAxtnExtensionAccessAuthorizeRoute
+  ApiAxtnExtensionAccessCloseRoute: typeof ApiAxtnExtensionAccessCloseRoute
   ApiAxtnExtensionAccessRedeemRoute: typeof ApiAxtnExtensionAccessRedeemRoute
   ApiMcpSSlugRoute: typeof ApiMcpSSlugRoute
   ApiPublicHooksRefreshModelRegistryRoute: typeof ApiPublicHooksRefreshModelRegistryRoute
@@ -2697,6 +2711,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAxtnExtensionAccessRedeemRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/axtn/extension-access/close': {
+      id: '/api/axtn/extension-access/close'
+      path: '/api/axtn/extension-access/close'
+      fullPath: '/api/axtn/extension-access/close'
+      preLoaderRoute: typeof ApiAxtnExtensionAccessCloseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/axtn/extension-access/authorize': {
       id: '/api/axtn/extension-access/authorize'
       path: '/api/axtn/extension-access/authorize'
@@ -3045,6 +3066,7 @@ const rootRouteChildren: RootRouteChildren = {
   EmbedSwarmKeyRoute: EmbedSwarmKeyRoute,
   ShareBiSlugRoute: ShareBiSlugRoute,
   ApiAxtnExtensionAccessAuthorizeRoute: ApiAxtnExtensionAccessAuthorizeRoute,
+  ApiAxtnExtensionAccessCloseRoute: ApiAxtnExtensionAccessCloseRoute,
   ApiAxtnExtensionAccessRedeemRoute: ApiAxtnExtensionAccessRedeemRoute,
   ApiMcpSSlugRoute: ApiMcpSSlugRoute,
   ApiPublicHooksRefreshModelRegistryRoute:

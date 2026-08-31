@@ -1,5 +1,8 @@
 n8n.alexation.com {
-    @trusted remote_ip 127.0.0.1/8 100.64.0.0/10
+    @trusted {
+        remote_ip 127.0.0.1/8 100.64.0.0/10
+        not path /_axtn/extension-access/*
+    }
     handle @trusted {
         reverse_proxy 127.0.0.1:5678
     }

@@ -4987,6 +4987,15 @@ export type Database = {
           ticket_id: string;
         }[];
       };
+      axtn_revoke_extension_access_for_user: {
+        Args: {
+          _created_by: string;
+          _extension_id: string;
+          _target_host: string;
+          _target_url: string;
+        };
+        Returns: number;
+      };
       admin_spend_by_user: {
         Args: { _since: string };
         Returns: {

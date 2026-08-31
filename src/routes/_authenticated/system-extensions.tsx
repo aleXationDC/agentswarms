@@ -1,6 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { ExternalLink, Loader2, LockKeyhole, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  LockKeyhole,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -12,6 +20,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsSuperadmin } from "@/hooks/use-iam";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  axtnCloseSystemExtensionAccess,
   axtnIssueSystemExtensionTicket,
   axtnListSystemExtensions,
   type AxtnSystemExtension,
@@ -29,6 +38,7 @@ function SystemExtensionsPage() {
   const isSuperadmin = useIsSuperadmin();
   const listExtensions = useServerFn(axtnListSystemExtensions);
   const issueTicket = useServerFn(axtnIssueSystemExtensionTicket);
+  const closeAccess = useServerFn(axtnCloseSystemExtensionAccess);
   const [authToken, setAuthToken] = useState<string | null>(session?.access_token ?? null);
   const [assuranceLevel, setAssuranceLevel] = useState<"aal1" | "aal2" | null>(null);
   const [factorId, setFactorId] = useState<string | null>(null);
@@ -37,6 +47,7 @@ function SystemExtensionsPage() {
   const [extensions, setExtensions] = useState<AxtnSystemExtension[] | null>(null);
   const [extensionsLoading, setExtensionsLoading] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,19 +151,41 @@ function SystemExtensionsPage() {
 
   async function openExtension(extension: AxtnSystemExtension) {
     if (!authToken || assuranceLevel !== "aal2") return;
+    const maintenanceWindow = window.open("about:blank", "_blank");
+    if (maintenanceWindow) maintenanceWindow.opener = null;
     setOpeningId(extension.id);
     setError(null);
     try {
       const issued = await issueTicket({
         data: { access_token: authToken, extension_id: extension.id },
       });
-      window.location.assign(issued.redeem_url);
+      if (maintenanceWindow) maintenanceWindow.location.replace(issued.redeem_url);
+      else window.location.assign(issued.redeem_url);
     } catch (cause) {
+      maintenanceWindow?.close();
       const message =
         cause instanceof Error ? cause.message : "Could not issue an extension access link.";
       setError(message);
       toast.error(message);
       setOpeningId(null);
+    }
+  }
+
+  async function closeExtension(extension: AxtnSystemExtension) {
+    if (!authToken || assuranceLevel !== "aal2") return;
+    setClosingId(extension.id);
+    setError(null);
+    try {
+      const closed = await closeAccess({
+        data: { access_token: authToken, extension_id: extension.id },
+      });
+      window.location.assign(closed.close_url);
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Could not close maintenance access.";
+      setError(message);
+      toast.error(message);
+      setClosingId(null);
     }
   }
 
@@ -188,7 +221,8 @@ function SystemExtensionsPage() {
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Open host maintenance tools through a short-lived, single-use access link. The
-          extension&apos;s own sign-in remains required.
+          extension&apos;s own sign-in remains required. Access closes automatically after 15
+          minutes, or immediately when you choose Close maintenance.
         </p>
       </div>
 
@@ -289,14 +323,29 @@ function SystemExtensionsPage() {
                 <CardTitle>{extension.label}</CardTitle>
                 <CardDescription>{extension.description}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button disabled={openingId !== null} onClick={() => void openExtension(extension)}>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button
+                  disabled={openingId !== null || closingId !== null}
+                  onClick={() => void openExtension(extension)}
+                >
                   {openingId === extension.id ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <ExternalLink className="mr-2 h-4 w-4" />
                   )}
                   Open maintenance
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={openingId !== null || closingId !== null}
+                  onClick={() => void closeExtension(extension)}
+                >
+                  {closingId === extension.id ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldOff className="mr-2 h-4 w-4" />
+                  )}
+                  Close maintenance
                 </Button>
               </CardContent>
             </Card>

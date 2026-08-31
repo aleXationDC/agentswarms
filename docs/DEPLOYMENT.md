@@ -475,6 +475,10 @@ native edge-access flow:
    role before creating a 15-minute host-bound access session.
 4. Caddy checks that session before proxying each request. It sends no identity
    or `Authorization` header, so the target's own login remains mandatory.
+5. **Close maintenance** revokes the user's active sessions and outstanding
+   tickets for that extension, clears the host cookie, and redirects to the
+   now-denied target. Missing, revoked, invalid, or automatically expired
+   access always receives public HTTP `403`.
 
 Deploy the pieces in this order:
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const AXTN_EXTENSION_REDEEM_PATH = "/_axtn/extension-access/redeem";
+export const AXTN_EXTENSION_CLOSE_PATH = "/_axtn/extension-access/close";
 export const AXTN_EXTENSION_ACCESS_COOKIE = "__Host-axtn_extension_access";
 export const AXTN_TICKET_TTL_SECONDS = 90;
 export const AXTN_ACCESS_SESSION_TTL_SECONDS = 15 * 60;
@@ -43,8 +44,8 @@ function canonicalizeTarget(rawUrl: string): { url: string; host: string } {
   if (target.hash) {
     throw new Error("System extension URLs must not contain fragments.");
   }
-  if (target.pathname === AXTN_EXTENSION_REDEEM_PATH) {
-    throw new Error(`System extension URLs must not use ${AXTN_EXTENSION_REDEEM_PATH}.`);
+  if ([AXTN_EXTENSION_REDEEM_PATH, AXTN_EXTENSION_CLOSE_PATH].includes(target.pathname)) {
+    throw new Error("System extension URLs must not use a reserved extension-access path.");
   }
 
   return { url: target.toString(), host: target.host.toLowerCase() };
@@ -98,6 +99,16 @@ export function buildAxtnExtensionRedeemUrl(
   redeem.searchParams.set("ticket_id", ticketId);
   redeem.searchParams.set("ticket", ticketToken);
   return redeem.toString();
+}
+
+export function buildAxtnExtensionCloseUrl(extension: AxtnSystemExtension): string {
+  const close = new URL(extension.url);
+  close.pathname = AXTN_EXTENSION_CLOSE_PATH;
+  close.search = "";
+  close.hash = "";
+  close.searchParams.set("id", extension.id);
+  close.searchParams.set("target", extension.url);
+  return close.toString();
 }
 
 function canonicalizeRequestHost(rawHost: string | null): string | null {

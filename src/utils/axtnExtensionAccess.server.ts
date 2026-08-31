@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   AXTN_ACCESS_SESSION_TTL_SECONDS,
   AXTN_TICKET_TTL_SECONDS,
+  buildAxtnExtensionCloseUrl,
   buildAxtnExtensionRedeemUrl,
   parseAxtnSystemExtensions,
   type AxtnSystemExtension,
@@ -129,4 +130,23 @@ export async function authorizeAxtnExtensionSession(
     throw new Error("Could not validate extension access session.");
   }
   return data === true;
+}
+
+export async function closeAxtnExtensionAccess(
+  extension: AxtnSystemExtension,
+  userId: string,
+): Promise<{ closeUrl: string; revokedCount: number }> {
+  const { data, error } = await supabaseAdmin.rpc("axtn_revoke_extension_access_for_user", {
+    _extension_id: extension.id,
+    _target_url: extension.url,
+    _target_host: extension.targetHost,
+    _created_by: userId,
+  });
+  if (error) {
+    throw new Error(error.message || "Could not close extension access.");
+  }
+  return {
+    closeUrl: buildAxtnExtensionCloseUrl(extension),
+    revokedCount: data ?? 0,
+  };
 }
