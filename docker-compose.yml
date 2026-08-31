@@ -254,10 +254,10 @@ networks:
   # app reaches it because the app joins this network too (see below). The
   # sandbox itself can initiate nothing — it only answers.
   js-internal:
-    name: agentswarms_js-internal
+    name: axtn_agentswarms_js_internal
     internal: true
   nb-internal:
-    name: agentswarms_nb-internal
+    name: axtn_agentswarms_nb_internal
     internal: true
   # Used only when the app runs on the HOST (npm run dev): kernels need a route
   # back to the host, which an `internal` network cannot provide. Same DNS and
