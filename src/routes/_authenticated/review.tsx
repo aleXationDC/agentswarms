@@ -26,6 +26,7 @@ function ReviewsPage() {
   const [items, setItems] = useState<NativeApproval[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ReviewStatus | "all">("pending");
+  const [sort, setSort] = useState<"newest" | "oldest" | "risk">("newest");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,15 +48,25 @@ function ReviewsPage() {
     };
   }, [user]);
 
-  const filtered = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          (status === "all" || item.status === status) &&
-          reviewSearchText(item).includes(search.trim().toLowerCase()),
-      ),
-    [items, search, status],
-  );
+  const filtered = useMemo(() => {
+    const result = items.filter(
+      (item) =>
+        (status === "all" || item.status === status) &&
+        reviewSearchText(item).includes(search.trim().toLowerCase()),
+    );
+    const riskOrder = { critical: 4, high: 3, medium: 2, low: 1 };
+    return result.sort((left, right) => {
+      if (sort === "risk") {
+        return (
+          (riskOrder[right.risk_level as keyof typeof riskOrder] ?? 0) -
+          (riskOrder[left.risk_level as keyof typeof riskOrder] ?? 0)
+        );
+      }
+      const chronological =
+        new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+      return sort === "newest" ? chronological : -chronological;
+    });
+  }, [items, search, sort, status]);
   const pendingCount = items.filter((item) => item.status === "pending").length;
 
   async function decide(item: NativeApproval, decision: "approved" | "rejected") {
@@ -117,6 +128,16 @@ function ReviewsPage() {
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="all">All</option>
+          </select>
+          <select
+            aria-label="Review sort order"
+            className="rounded-md border bg-background px-3 text-sm"
+            onChange={(event) => setSort(event.target.value as "newest" | "oldest" | "risk")}
+            value={sort}
+          >
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="risk">Highest risk</option>
           </select>
         </CardContent>
       </Card>
