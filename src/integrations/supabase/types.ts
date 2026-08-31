@@ -4951,6 +4951,42 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      axtn_authorize_extension_access_session: {
+        Args: {
+          _extension_id: string;
+          _session_token_hash: string;
+          _target_host: string;
+          _target_url: string;
+        };
+        Returns: boolean;
+      };
+      axtn_issue_extension_access_ticket: {
+        Args: {
+          _created_by: string;
+          _expires_at: string;
+          _extension_id: string;
+          _target_host: string;
+          _target_url: string;
+          _token_hash: string;
+        };
+        Returns: string;
+      };
+      axtn_redeem_extension_access_ticket: {
+        Args: {
+          _extension_id: string;
+          _session_expires_at: string;
+          _session_token_hash: string;
+          _target_host: string;
+          _target_url: string;
+          _ticket_id: string;
+          _ticket_token_hash: string;
+        };
+        Returns: {
+          created_by: string;
+          session_expires_at: string;
+          ticket_id: string;
+        }[];
+      };
       admin_spend_by_user: {
         Args: { _since: string };
         Returns: {

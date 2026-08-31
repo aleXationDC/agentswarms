@@ -2,6 +2,9 @@
 #
 # Keep AgentSwarms reachable only through the local reverse proxy. The public
 # hostnames are supplied by ALLOWED_HOSTS in the deployment environment.
+# System-extension target services must follow the same rule: publish their
+# upstream ports on 127.0.0.1 only, then point the versioned Caddy extension
+# gate at that loopback address. Never expose a gated target on 0.0.0.0.
 services:
   agentswarms:
     ports: !override

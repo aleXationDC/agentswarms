@@ -16,6 +16,10 @@ export type SuperadminGuard =
   | { ok: true; userId: string; email: string }
   | { ok: false; error: string };
 
+export type SuperadminAal2Guard =
+  | { ok: true; userId: string; email: string; assuranceLevel: "aal2" }
+  | { ok: false; error: string };
+
 function bootstrapAdminEmail(): string {
   return (process.env.ADMIN_EMAIL || import.meta.env.ADMIN_EMAIL || "").toLowerCase();
 }
@@ -110,6 +114,42 @@ export async function requireSuperadmin(accessToken: string | undefined): Promis
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to validate session",
+    };
+  }
+}
+
+/**
+ * Superadmin guard for capabilities that cross the application's normal trust
+ * boundary (for example, opening a host-level maintenance extension).
+ *
+ * Role membership is not enough: the exact JWT presented for this operation
+ * must be a currently valid Supabase AAL2 token. Enrollment alone does not
+ * count, and an older AAL1 token remains insufficient after a factor is added.
+ */
+export async function requireSuperadminAal2(
+  accessToken: string | undefined,
+): Promise<SuperadminAal2Guard> {
+  const guard = await requireSuperadmin(accessToken);
+  if (!guard.ok) return guard;
+  if (!accessToken) return { ok: false, error: "Missing access token" };
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.getClaims(accessToken);
+    const claims = data?.claims as Record<string, unknown> | undefined;
+    if (error || !claims || claims.sub !== guard.userId) {
+      return { ok: false, error: error?.message ?? "Invalid session claims" };
+    }
+    if (claims.aal !== "aal2") {
+      return {
+        ok: false,
+        error: "AAL2 required: verify your authenticator app before opening maintenance.",
+      };
+    }
+    return { ...guard, assuranceLevel: "aal2" };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to validate session assurance",
     };
   }
 }

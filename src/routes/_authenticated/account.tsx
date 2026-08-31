@@ -78,7 +78,9 @@ function AccountPage() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaLevel, setMfaLevel] = useState<"aal1" | "aal2" | null>(null);
-  const [totpFactor, setTotpFactor] = useState<{ id: string; friendlyName: string | null } | null>(null);
+  const [totpFactor, setTotpFactor] = useState<{ id: string; friendlyName: string | null } | null>(
+    null,
+  );
   const [enrollment, setEnrollment] = useState<{
     id: string;
     qrCode: string;
@@ -103,9 +105,15 @@ function AccountPage() {
       toast.error(assuranceError?.message ?? factorsError?.message ?? "Could not load MFA status");
       return;
     }
-    setMfaLevel(assurance.currentLevel);
+    setMfaLevel(
+      assurance.currentLevel === "aal2"
+        ? "aal2"
+        : assurance.currentLevel === "aal1"
+          ? "aal1"
+          : null,
+    );
     const factor = factors.totp.find((item) => item.status === "verified");
-    setTotpFactor(factor ? { id: factor.id, friendlyName: factor.friendly_name } : null);
+    setTotpFactor(factor ? { id: factor.id, friendlyName: factor.friendly_name ?? null } : null);
   }
 
   async function beginTotpEnrollment() {
@@ -527,8 +535,8 @@ function AccountPage() {
           {totpFactor && !enrollment && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
               <span>
-                Authenticator app{totpFactor.friendlyName ? `: ${totpFactor.friendlyName}` : ""}{" "}
-                is enrolled.
+                Authenticator app{totpFactor.friendlyName ? `: ${totpFactor.friendlyName}` : ""} is
+                enrolled.
               </span>
               <Button variant="outline" size="sm" disabled={mfaLoading} onClick={removeTotpFactor}>
                 Remove
@@ -569,7 +577,10 @@ function AccountPage() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button disabled={mfaLoading || verificationCode.length !== 6} onClick={verifyTotpEnrollment}>
+                <Button
+                  disabled={mfaLoading || verificationCode.length !== 6}
+                  onClick={verifyTotpEnrollment}
+                >
                   {mfaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Verify
                 </Button>

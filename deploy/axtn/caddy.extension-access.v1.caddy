@@ -1,0 +1,52 @@
+# aXtn native extension-access gate, Caddyfile API v1.
+#
+# This file is a VERSIONED TEMPLATE, not an active site. Import the snippet
+# from a separately managed site block only after the database migration and
+# application configuration are deployed. Do not replace a working/root Caddy
+# configuration without validating the assembled file first.
+#
+# Arguments:
+#   0: extension id (must match AXTN_SYSTEM_EXTENSIONS)
+#   1: canonical public HTTPS target (including its trailing slash/path)
+#   2: AgentSwarms loopback upstream
+#   3: protected extension loopback upstream
+#
+# Example:
+#   https://maintenance.example.com {
+#       import axtn_extension_access_v1 maintenance \
+#           "https://maintenance.example.com/" \
+#           "127.0.0.1:18080" \
+#           "127.0.0.1:9000"
+#   }
+#
+# The target upstream still performs its OWN login/authentication. This gate
+# supplies no identity headers and never sets or replaces Authorization.
+
+(axtn_extension_access_v1) {
+	@axtn_extension_redeem path /_axtn/extension-access/redeem
+	handle @axtn_extension_redeem {
+		rewrite * /api/axtn/extension-access/redeem
+		reverse_proxy {args[2]} {
+			header_up Host {host}
+			header_up X-Axtn-Extension-ID {args[0]}
+			header_up X-Axtn-Target {args[1]}
+			header_up X-Axtn-Request-Host {host}
+			header_up X-Axtn-Request-Proto https
+		}
+	}
+
+	handle {
+		forward_auth {args[2]} {
+			uri /api/axtn/extension-access/authorize
+			header_up Host {host}
+			header_up X-Axtn-Extension-ID {args[0]}
+			header_up X-Axtn-Target {args[1]}
+			header_up X-Axtn-Request-Host {host}
+			header_up X-Axtn-Request-Proto https
+		}
+
+		# No copy_headers: the access check is a network gate, not an
+		# authentication provider for the protected target.
+		reverse_proxy {args[3]}
+	}
+}

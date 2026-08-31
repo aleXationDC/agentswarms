@@ -458,6 +458,63 @@ won't resolve.
 If you are deploying somewhere publicly reachable before step 2, set
 `allow_public_signup = false` in `iam_settings` first and invite yourself.
 
+### Private maintenance and system extensions
+
+Host-level tools (Supabase Studio, Portainer, dashboards, and similar) must not
+be linked directly from the UI or exposed on a public port. AgentSwarms has a
+native edge-access flow:
+
+1. The signed-in user must be a DB-backed **superadmin** and present a current
+   Supabase **AAL2** access token. Enroll/verify TOTP under **Account →
+   Authenticator App**.
+2. **Admin → System Extensions** issues a random 90-second ticket. Only its
+   SHA-256 hash is stored.
+3. The extension host redeems that ticket exactly once. One atomic database
+   operation checks its UUID, extension id, exact configured HTTPS target,
+   target host, AAL2 issuance, expiry, unused state, and current superadmin
+   role before creating a 15-minute host-bound access session.
+4. Caddy checks that session before proxying each request. It sends no identity
+   or `Authorization` header, so the target's own login remains mandatory.
+
+Deploy the pieces in this order:
+
+```bash
+npx supabase db push
+```
+
+Configure the application (canonical URLs normally include the trailing slash):
+
+```dotenv
+ALLOWED_HOSTS="app.example.com,maintenance.example.com"
+AXTN_SYSTEM_EXTENSIONS='[{"id":"maintenance","label":"Maintenance","url":"https://maintenance.example.com/","description":"Host administration"}]'
+```
+
+Keep both AgentSwarms and every target on loopback. The supplied
+`deploy/axtn/compose.loopback.yml` binds AgentSwarms to `127.0.0.1:18080`; bind
+the protected tool similarly, never to `0.0.0.0`.
+
+Import the versioned snippet from
+`deploy/axtn/caddy.extension-access.v1.caddy` into the separately managed Caddy
+configuration, then add one site per extension:
+
+```caddyfile
+https://maintenance.example.com {
+	import axtn_extension_access_v1 maintenance "https://maintenance.example.com/" "127.0.0.1:18080" "127.0.0.1:9000"
+}
+```
+
+The id and target argument must exactly match `AXTN_SYSTEM_EXTENSIONS`. Validate
+the assembled configuration before reloading Caddy:
+
+```bash
+caddy fmt --diff /path/to/Caddyfile
+caddy validate --config /path/to/Caddyfile --adapter caddyfile
+```
+
+The older `deploy/axtn/caddy.ops.fail-closed.caddy` remains the safe initial
+state; do not replace or reload a live root configuration until the migration,
+application restart, target loopback binding, and validation all succeed.
+
 ### Scheduling & background jobs
 
 `/api/bi/cron` runs one pass of all scheduled work. It's safe to call from
