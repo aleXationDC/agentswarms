@@ -30,7 +30,7 @@
     "src/routes/api/axtn/extension-access/",
     "deploy/axtn/caddy.extension-access.v1.caddy"
   ],
-  "implementation_commits": ["eadeb19", "1602ef7", "f00afc0", "67e6fe2", "36482f2"],
+  "implementation_commits": ["eadeb19", "1602ef7", "f00afc0", "67e6fe2", "36482f2", "f68fa1f"],
   "release_tag": "workbench/axtn-system-extensions/v0.1.0",
   "portable": true,
   "known_limitations": [
