@@ -24,11 +24,18 @@ import {
   axtnIssueSystemExtensionTicket,
   axtnListSystemExtensions,
   type AxtnSystemExtension,
+  type AxtnSystemExtensionWithAccessStatus,
 } from "@/utils/axtnSystemExtensions.functions";
+
+const tailscaleExtensionUrls: Record<string, string> = {
+  gitea: "https://ops-alexation-one.tailf4170c.ts.net:8445/",
+  n8n: "https://ops-alexation-one.tailf4170c.ts.net:8443/",
+  "matrix-admin": "https://ops-alexation-one.tailf4170c.ts.net:8447/",
+};
 
 export const Route = createFileRoute("/_authenticated/system-extensions")({
   head: () => ({
-    meta: [{ title: "System Extensions — AgentSwarms" }],
+    meta: [{ title: "aXtn Extensions — AgentSwarms" }],
   }),
   component: SystemExtensionsPage,
 });
@@ -44,7 +51,7 @@ function SystemExtensionsPage() {
   const [factorId, setFactorId] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
   const [mfaLoading, setMfaLoading] = useState(false);
-  const [extensions, setExtensions] = useState<AxtnSystemExtension[] | null>(null);
+  const [extensions, setExtensions] = useState<AxtnSystemExtensionWithAccessStatus[] | null>(null);
   const [extensionsLoading, setExtensionsLoading] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
@@ -108,8 +115,18 @@ function SystemExtensionsPage() {
       .finally(() => {
         if (!cancelled) setExtensionsLoading(false);
       });
+    const statusRefresh = window.setInterval(() => {
+      void listExtensions({ data: { access_token: authToken } })
+        .then((configured) => {
+          if (!cancelled) setExtensions(configured);
+        })
+        .catch(() => {
+          // The existing state remains visible if a periodic refresh fails.
+        });
+    }, 30_000);
     return () => {
       cancelled = true;
+      window.clearInterval(statusRefresh);
     };
   }, [assuranceLevel, authToken, isSuperadmin, listExtensions]);
 
@@ -159,6 +176,14 @@ function SystemExtensionsPage() {
       const issued = await issueTicket({
         data: { access_token: authToken, extension_id: extension.id },
       });
+      setExtensions(
+        (configured) =>
+          configured?.map((candidate) =>
+            candidate.id === extension.id
+              ? { ...candidate, maintenanceExpiresAt: issued.expires_at }
+              : candidate,
+          ) ?? null,
+      );
       if (maintenanceWindow) maintenanceWindow.location.replace(issued.redeem_url);
       else window.location.assign(issued.redeem_url);
     } catch (cause) {
@@ -179,8 +204,17 @@ function SystemExtensionsPage() {
       const closed = await closeAccess({
         data: { access_token: authToken, extension_id: extension.id },
       });
-      window.open(closed.close_url, "_blank", "noopener,noreferrer");
-      toast.success("Maintenance access closed.");
+      setExtensions(
+        (configured) =>
+          configured?.map((candidate) =>
+            candidate.id === extension.id
+              ? { ...candidate, maintenanceExpiresAt: null }
+              : candidate,
+          ) ?? null,
+      );
+      toast.success(
+        closed.revoked_count > 0 ? "Maintenance access closed." : "Maintenance access was closed.",
+      );
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Could not close maintenance access.";
@@ -218,10 +252,10 @@ function SystemExtensionsPage() {
           Admin
         </p>
         <h1 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight">
-          <Wrench className="h-6 w-6 text-primary" /> System Extensions
+          <Wrench className="h-6 w-6 text-primary" /> aXtn Extensions
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Open host maintenance tools through a short-lived, single-use access link. The
+          Open aXtn maintenance tools through a short-lived, single-use access link. The
           extension&apos;s own sign-in remains required. Access closes automatically after 15
           minutes, or immediately when you choose Close maintenance.
         </p>
@@ -321,8 +355,30 @@ function SystemExtensionsPage() {
           extensions?.map((extension) => (
             <Card key={extension.id}>
               <CardHeader>
-                <CardTitle>{extension.label}</CardTitle>
-                <CardDescription>{extension.description}</CardDescription>
+                <CardTitle className="flex items-center justify-between gap-3">
+                  {extension.label}
+                  <span
+                    className={
+                      extension.maintenanceExpiresAt
+                        ? "text-xs font-medium text-emerald-600"
+                        : "text-xs font-medium text-muted-foreground"
+                    }
+                  >
+                    Maintenance {extension.maintenanceExpiresAt ? "open" : "closed"}
+                  </span>
+                </CardTitle>
+                <CardDescription className="flex items-center justify-between gap-3">
+                  <span>{extension.description}</span>
+                  <span
+                    className={
+                      extension.health === "healthy"
+                        ? "whitespace-nowrap text-emerald-600"
+                        : "whitespace-nowrap text-destructive"
+                    }
+                  >
+                    {extension.health === "healthy" ? "Healthy" : "Unavailable"}
+                  </span>
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
                 <Button
@@ -348,6 +404,13 @@ function SystemExtensionsPage() {
                   )}
                   Close maintenance
                 </Button>
+                {tailscaleExtensionUrls[extension.id] && (
+                  <Button asChild variant="ghost">
+                    <a href={tailscaleExtensionUrls[extension.id]} rel="noreferrer" target="_blank">
+                      Tailscale
+                    </a>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

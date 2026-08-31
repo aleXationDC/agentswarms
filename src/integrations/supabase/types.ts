@@ -4960,6 +4960,17 @@ export type Database = {
         };
         Returns: boolean;
       };
+      axtn_get_extension_access_status: {
+        Args: {
+          _created_by: string;
+          _extension_id: string;
+          _target_host: string;
+          _target_url: string;
+        };
+        Returns: {
+          expires_at: string;
+        }[];
+      };
       axtn_issue_extension_access_ticket: {
         Args: {
           _created_by: string;

@@ -57,7 +57,8 @@ services:
       - "host.docker.internal:host-gateway"
     # nb-internal lets notebook kernels call back for governed model/KB access;
     # js-internal lets the app reach the (optional) JS sandbox by service name.
-    networks: [default, nb-internal, js-internal, supabase-internal]
+    networks:
+      [default, nb-internal, js-internal, supabase-internal, git-internal, n8n-internal, matrix-internal]
     restart: unless-stopped
 
   # ── Developer-workspace server runtime (opt-in: --profile notebooks) ─────────
@@ -266,6 +267,15 @@ networks:
     name: agentswarms_nb-dev
   supabase-internal:
     name: axtn-supabase_default
+    external: true
+  git-internal:
+    name: axtn_git_internal
+    external: true
+  n8n-internal:
+    name: axtn_n8n_internal
+    external: true
+  matrix-internal:
+    name: matrix_default
     external: true
 
 volumes:

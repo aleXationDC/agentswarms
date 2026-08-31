@@ -94,7 +94,7 @@ export function AppSidebar() {
           renderGroup("Admin", [
             { title: "IAM", url: "/admin/iam", icon: ShieldCheck },
             { title: "Developer runtime", url: "/admin/runtime", icon: Server },
-            { title: "System Extensions", url: "/system-extensions", icon: Wrench },
+            { title: "aXtn Extensions", url: "/system-extensions", icon: Wrench },
           ])}
       </SidebarContent>
 

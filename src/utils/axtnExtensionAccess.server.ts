@@ -4,7 +4,6 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   AXTN_ACCESS_SESSION_TTL_SECONDS,
   AXTN_TICKET_TTL_SECONDS,
-  buildAxtnExtensionCloseUrl,
   buildAxtnExtensionRedeemUrl,
   parseAxtnSystemExtensions,
   type AxtnSystemExtension,
@@ -24,6 +23,10 @@ export type RedeemedAxtnExtensionTicket = {
   sessionExpiresAt: string;
   userId: string;
   ticketId: string;
+};
+
+export type AxtnExtensionAccessStatus = {
+  expiresAt: string | null;
 };
 
 export function configuredAxtnSystemExtensions(): AxtnSystemExtension[] {
@@ -135,7 +138,7 @@ export async function authorizeAxtnExtensionSession(
 export async function closeAxtnExtensionAccess(
   extension: AxtnSystemExtension,
   userId: string,
-): Promise<{ closeUrl: string; revokedCount: number }> {
+): Promise<{ revokedCount: number }> {
   const { data, error } = await supabaseAdmin.rpc("axtn_revoke_extension_access_for_user", {
     _extension_id: extension.id,
     _target_url: extension.url,
@@ -145,8 +148,21 @@ export async function closeAxtnExtensionAccess(
   if (error) {
     throw new Error(error.message || "Could not close extension access.");
   }
-  return {
-    closeUrl: buildAxtnExtensionCloseUrl(extension),
-    revokedCount: data ?? 0,
-  };
+  return { revokedCount: data ?? 0 };
+}
+
+export async function getAxtnExtensionAccessStatus(
+  extension: AxtnSystemExtension,
+  userId: string,
+): Promise<AxtnExtensionAccessStatus> {
+  const { data, error } = await supabaseAdmin.rpc("axtn_get_extension_access_status", {
+    _extension_id: extension.id,
+    _target_url: extension.url,
+    _target_host: extension.targetHost,
+    _created_by: userId,
+  });
+  if (error) {
+    throw new Error(error.message || "Could not load extension access status.");
+  }
+  return { expiresAt: data?.[0]?.expires_at ?? null };
 }

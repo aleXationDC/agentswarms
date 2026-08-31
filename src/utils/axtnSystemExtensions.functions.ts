@@ -7,18 +7,48 @@ import {
   closeAxtnExtensionAccess,
   configuredAxtnSystemExtension,
   configuredAxtnSystemExtensions,
+  getAxtnExtensionAccessStatus,
   issueAxtnExtensionTicket,
 } from "@/utils/axtnExtensionAccess.server";
 import { requireSuperadminAal2 } from "@/utils/iam.server";
 
 const AuthInput = z.object({ access_token: z.string().min(1) });
 
+export type AxtnSystemExtensionWithAccessStatus = AxtnSystemExtension & {
+  maintenanceExpiresAt: string | null;
+  health: "healthy" | "unhealthy";
+};
+
+const extensionHealthUrls: Record<string, string> = {
+  gitea: "http://axtn-gitea:3000/api/healthz",
+  n8n: "http://axtn-n8n:5678/healthz",
+  "matrix-admin": "http://matrix-ketesa:8080/",
+};
+
+async function checkSystemExtensionHealth(extensionId: string): Promise<"healthy" | "unhealthy"> {
+  const url = extensionHealthUrls[extensionId];
+  if (!url) return "unhealthy";
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(3_000) });
+    return response.ok ? "healthy" : "unhealthy";
+  } catch {
+    return "unhealthy";
+  }
+}
+
 export const axtnListSystemExtensions = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => AuthInput.parse(input))
-  .handler(async ({ data }): Promise<AxtnSystemExtension[]> => {
+  .handler(async ({ data }): Promise<AxtnSystemExtensionWithAccessStatus[]> => {
     const guard = await requireSuperadminAal2(data.access_token);
     if (!guard.ok) throw new Error(guard.error);
-    return configuredAxtnSystemExtensions();
+    return Promise.all(
+      configuredAxtnSystemExtensions().map(async (extension) => ({
+        ...extension,
+        maintenanceExpiresAt: (await getAxtnExtensionAccessStatus(extension, guard.userId))
+          .expiresAt,
+        health: await checkSystemExtensionHealth(extension.id),
+      })),
+    );
   });
 
 export const axtnIssueSystemExtensionTicket = createServerFn({ method: "POST" })
@@ -54,7 +84,7 @@ export const axtnCloseSystemExtensionAccess = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     AuthInput.extend({ extension_id: z.string().regex(/^[a-z0-9-]+$/) }).parse(input),
   )
-  .handler(async ({ data }): Promise<{ close_url: string; revoked_count: number }> => {
+  .handler(async ({ data }): Promise<{ revoked_count: number }> => {
     const guard = await requireSuperadminAal2(data.access_token);
     if (!guard.ok) throw new Error(guard.error);
 
@@ -75,7 +105,7 @@ export const axtnCloseSystemExtensionAccess = createServerFn({ method: "POST" })
       },
     });
 
-    return { close_url: closed.closeUrl, revoked_count: closed.revokedCount };
+    return { revoked_count: closed.revokedCount };
   });
 
 export type { AxtnSystemExtension } from "@/lib/axtnExtensionAccess";
