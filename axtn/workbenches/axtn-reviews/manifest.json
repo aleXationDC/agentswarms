@@ -23,7 +23,7 @@
     "src/routes/_authenticated/review.tsx",
     "src/routes/_authenticated/review_.$approvalId.tsx"
   ],
-  "implementation_commits": ["fa6a48b"],
+  "implementation_commits": ["fa6a48b", "463fb54"],
   "release_tag": "workbench/axtn-reviews/v0.1.0",
   "portable": true,
   "known_limitations": [

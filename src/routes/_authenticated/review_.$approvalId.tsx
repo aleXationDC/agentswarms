@@ -1,12 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
-
-import type { NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { reviewContext, type NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -20,6 +19,7 @@ function ReviewDetailPage() {
   const [approval, setApproval] = useState<NativeApproval | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const decideApproval = useApprovalDecision();
 
   useEffect(() => {
     let cancelled = false;
@@ -41,17 +41,8 @@ function ReviewDetailPage() {
 
   async function decide(status: "approved" | "rejected") {
     if (!approval) return;
-    const { error: updateError } = await supabase
-      .from("approvals")
-      .update({ status, decided_at: new Date().toISOString(), decided_by: user?.id ?? null })
-      .eq("id", approval.id)
-      .eq("status", "pending");
-    if (updateError) {
-      toast.error(updateError.message);
-      return;
-    }
+    if (!(await decideApproval(approval, status))) return;
     setApproval({ ...approval, status });
-    toast.success(status === "approved" ? "Approval recorded." : "Rejection recorded.");
   }
 
   return (
@@ -97,6 +88,7 @@ function ReviewDetailPage() {
                 {approval.description || "No description provided."}
               </p>
             </div>
+            <ReviewContext approval={approval} />
             <div>
               <h2 className="text-sm font-medium">Request context</h2>
               <pre className="mt-2 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
@@ -116,6 +108,37 @@ function ReviewDetailPage() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function ReviewContext({ approval }: { approval: NativeApproval }) {
+  const context = reviewContext(approval);
+  const value = (field: string | number | null) => field ?? "—";
+  const fields: Array<[string, string | number | null]> = [
+    ["Subject / Filename", context.subject],
+    ["Item kind", context.itemKind],
+    ["Document type", context.documentType],
+    ["Document family", context.documentFamily],
+    ["Organisation / Issuer", context.organization],
+    ["Primary domain", context.primaryDomain],
+    ["Proposed location", context.proposedLocation],
+    ["Confidence", context.confidence === null ? null : `${Math.round(context.confidence * 100)}%`],
+    ["Topics", context.topics],
+    ["Summary", context.summary],
+    ["Clarification / context", context.clarification],
+  ];
+  return (
+    <div>
+      <h2 className="text-sm font-medium">Review context</h2>
+      <dl className="mt-2 grid gap-4 rounded-md border p-4 text-sm sm:grid-cols-2">
+        {fields.map(([label, field]) => (
+          <div key={label}>
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="mt-1 break-words">{value(field)}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

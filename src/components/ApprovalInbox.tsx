@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
-import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
 import {
   Inbox,
   CheckCircle2,
@@ -26,24 +24,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import {
+  useApprovalDecision,
+  type ApprovalDecision,
+  type NativeApproval,
+} from "@/hooks/use-approval-decision";
 
-type Approval = {
-  id: string;
-  user_id: string;
-  agent_name: string;
-  agent_avatar: string | null;
-  action_type: string;
-  action_title: string;
-  description: string | null;
-  payload: any;
-  risk_level: string;
-  status: string;
-  created_at: string;
-  approver_user_ids: string[] | null;
-  approver_group_ids: string[] | null;
-  /** Set when this approval parked a swarm run that has to be resumed. */
-  swarm_run_id: string | null;
-};
+type Approval = NativeApproval;
 
 const ACTION_ICON: Record<string, any> = {
   n8n_webhook: Webhook,
@@ -71,7 +58,7 @@ function timeAgo(iso: string) {
 export function ApprovalInbox() {
   const { user } = useAuth();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const resumeRunFn = useServerFn(resumeApprovedSwarmRun);
+  const decideApproval = useApprovalDecision();
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -163,52 +150,8 @@ export function ApprovalInbox() {
     };
   }, [user]);
 
-  const decide = async (id: string, status: "approved" | "rejected") => {
-    const item = approvals.find((a) => a.id === id);
-    const { error } = await supabase
-      .from("approvals")
-      .update({ status, decided_at: new Date().toISOString(), decided_by: user?.id ?? null })
-      .eq("id", id);
-    if (error) {
-      toast.error("Failed to update approval");
-      return;
-    }
-    if (status === "approved") {
-      toast.success(`Approved: ${item?.action_title}`, {
-        description: `${item?.agent_name} is resuming.`,
-      });
-    } else {
-      toast.error(`Rejected: ${item?.action_title}`, {
-        description: `${item?.agent_name} has been halted.`,
-      });
-    }
-
-    // A headless run (API key / schedule) parks at its approval node with a
-    // checkpoint and cannot continue itself — recording the decision is only
-    // half the job. Runs started from the canvas ignore this: they are still
-    // waiting in the tab that started them.
-    if (item?.swarm_run_id) {
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token;
-        if (token) {
-          const res = await resumeRunFn({
-            data: { access_token: token, approval_id: id },
-          });
-          if (!res.ok) {
-            toast.warning("Decision saved, but the run could not be resumed", {
-              description: res.error,
-              duration: 9000,
-            });
-          }
-        }
-      } catch (e) {
-        toast.warning("Decision saved, but the run could not be resumed", {
-          description: (e as Error).message,
-          duration: 9000,
-        });
-      }
-    }
+  const decide = async (item: Approval, status: ApprovalDecision) => {
+    await decideApproval(item, status);
   };
 
   return (
@@ -315,13 +258,13 @@ export function ApprovalInbox() {
 
                     <div className="flex border-t border-border">
                       <button
-                        onClick={() => decide(ap.id, "rejected")}
+                        onClick={() => void decide(ap, "rejected")}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
                       >
                         <XCircle className="h-3.5 w-3.5" /> Reject
                       </button>
                       <button
-                        onClick={() => decide(ap.id, "approved")}
+                        onClick={() => void decide(ap, "approved")}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" /> Approve

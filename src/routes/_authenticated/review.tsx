@@ -1,7 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { CheckCircle2, Search, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,10 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   NativeApproval,
-  isReviewStatus,
+  reviewContext,
   reviewSearchText,
   type ReviewStatus,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -29,6 +29,7 @@ function ReviewsPage() {
   const [sort, setSort] = useState<"newest" | "oldest" | "risk">("newest");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const decideApproval = useApprovalDecision();
 
   useEffect(() => {
     if (!user) return;
@@ -70,25 +71,12 @@ function ReviewsPage() {
   const pendingCount = items.filter((item) => item.status === "pending").length;
 
   async function decide(item: NativeApproval, decision: "approved" | "rejected") {
-    const { error: updateError } = await supabase
-      .from("approvals")
-      .update({
-        status: decision,
-        decided_at: new Date().toISOString(),
-        decided_by: user?.id ?? null,
-      })
-      .eq("id", item.id)
-      .eq("status", "pending");
-    if (updateError) {
-      toast.error(updateError.message);
-      return;
-    }
+    if (!(await decideApproval(item, decision))) return;
     setItems((current) =>
       current.map((candidate) =>
         candidate.id === item.id ? { ...candidate, status: decision } : candidate,
       ),
     );
-    toast.success(decision === "approved" ? "Approval recorded." : "Rejection recorded.");
   }
 
   return (
@@ -102,8 +90,12 @@ function ReviewsPage() {
           Review native AgentSwarms approvals. Decisions remain in the canonical approval workflow.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <Metric label="Pending" value={pendingCount} />
+        <Metric
+          label="High risk"
+          value={items.filter((item) => ["high", "critical"].includes(item.risk_level)).length}
+        />
         <Metric label="All reviews" value={items.length} />
         <Metric label="Visible" value={filtered.length} />
       </div>
@@ -171,6 +163,11 @@ function ReviewsPage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     {item.agent_name} · {item.action_type} ·{" "}
                     {new Date(item.created_at).toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {reviewContext(item).subject ?? "—"} ·{" "}
+                    {reviewContext(item).primaryDomain ?? "—"} ·{" "}
+                    {reviewContext(item).proposedLocation ?? "—"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
