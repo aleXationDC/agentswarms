@@ -1,0 +1,8 @@
+# aXtn single-host deployment override.
+#
+# Keep AgentSwarms reachable only through the local reverse proxy. The public
+# hostnames are supplied by ALLOWED_HOSTS in the deployment environment.
+services:
+  agentswarms:
+    ports: !override
+      - "127.0.0.1:18080:8080"

@@ -18,6 +18,13 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 const alasqlBrowserBuild = path.resolve(rootDir, "node_modules/alasql/dist/alasql.min.js");
 
+function configuredAllowedHosts(): string[] {
+  return (process.env.ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function stripExternalCssFontImports(): PluginOption {
   return {
     name: "agentswarms-strip-external-css-font-imports",
@@ -124,10 +131,13 @@ export default defineConfig(async ({ command, mode }) => {
       // http://host.docker.internal:8080 (dev mode). Vite's host check rejects
       // unknown Host headers with "Blocked request", which would break every
       // agentswarms.chat()/kb_search() call from a server kernel.
-      allowedHosts: ["host.docker.internal"],
+      allowedHosts: [...new Set(["host.docker.internal", ...configuredAllowedHosts()])],
       watch: {
         awaitWriteFinish: { stabilityThreshold: 1000, pollInterval: 100 },
       },
+    },
+    preview: {
+      allowedHosts: configuredAllowedHosts(),
     },
   };
 });
