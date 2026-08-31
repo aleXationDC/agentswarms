@@ -60,21 +60,33 @@ export async function geminiChatStream(args: {
   if (typeof maxTokens === "number") generationConfig.maxOutputTokens = maxTokens;
   if (Object.keys(generationConfig).length > 0) body.generationConfig = generationConfig;
 
-  const upstream = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:streamGenerateContent?alt=sse`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": cleanKey,
+  let upstream: Response | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:streamGenerateContent?alt=sse`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": cleanKey,
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    },
-  );
+    );
 
-  if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text();
+    if (upstream.ok && upstream.body) break;
+
+    const text = await upstream.text().catch(() => "");
+    if ((upstream.status === 429 || upstream.status === 503 || upstream.status >= 500) && attempt < 3) {
+      await new Promise((r) => setTimeout(r, attempt * 2500));
+      continue;
+    }
+
     throw new Error(`Gemini error [${upstream.status}]: ${text.slice(0, 300)}`);
+  }
+
+  if (!upstream || !upstream.ok || !upstream.body) {
+    throw new Error("Gemini upstream response stream missing");
   }
 
   const reader = upstream.body.getReader();

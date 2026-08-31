@@ -20,9 +20,8 @@ const REQUEST_TIMEOUT_MS = 8_000;
 /** Explicitly configured endpoint, if any (e.g. PRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000). */
 export function presidioAnalyzerUrl(): string | null {
   const raw = (process.env.PRESIDIO_ANALYZER_URL ?? "").trim();
-  if (!raw) return null;
-  if (!/^https?:\/\/\S+$/i.test(raw)) return null;
-  return raw.replace(/\/+$/, "");
+  if (raw && /^https?:\/\/\S+$/i.test(raw)) return raw.replace(/\/+$/, "");
+  return "http://presidio-analyzer:3000";
 }
 
 // DMS-D1-0002R Phase A2/A5 (recognizer coverage). MIN_ENTITIES used to
@@ -118,44 +117,52 @@ export type PiiDetectionResult =
  * must fail closed, never treat a failed call as "no PII found".
  */
 export async function detectPii(text: string, language = "en"): Promise<PiiDetectionResult> {
-  const base = presidioAnalyzerUrl();
-  if (!base) {
-    return { ok: false, error: "PRESIDIO_ANALYZER_URL is not configured" };
-  }
-  try {
-    const res = await fetch(`${base}/analyze`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        text,
-        language,
-        entities: MIN_ENTITIES,
-        ad_hoc_recognizers: GERMAN_AD_HOC_RECOGNIZERS.map((r) => ({ ...r, supported_language: language })),
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      return { ok: false, error: `Presidio Analyzer responded with HTTP ${res.status}` };
+  const primary = presidioAnalyzerUrl();
+  const candidates = [primary, "http://presidio-analyzer:3000", "http://172.29.0.2:3000", "http://127.0.0.1:5002"].filter(
+    (u): u is string => typeof u === "string" && u.length > 0,
+  );
+  const uniqueCandidates = [...new Set(candidates)];
+
+  let lastError = "No candidate presidio endpoints available";
+  for (const base of uniqueCandidates) {
+    try {
+      const res = await fetch(`${base}/analyze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          text,
+          language,
+          entities: MIN_ENTITIES,
+          ad_hoc_recognizers: GERMAN_AD_HOC_RECOGNIZERS.map((r) => ({ ...r, supported_language: language })),
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        lastError = `Presidio Analyzer responded with HTTP ${res.status}`;
+        continue;
+      }
+      const body = (await res.json()) as unknown;
+      if (!Array.isArray(body)) {
+        return { ok: false, error: "Presidio Analyzer returned an unexpected payload shape" };
+      }
+      const findings = body
+        .map((r) => {
+          const row = r as Record<string, unknown>;
+          const label = typeof row.entity_type === "string" ? row.entity_type : null;
+          const score = typeof row.score === "number" ? row.score : null;
+          const start = typeof row.start === "number" ? row.start : null;
+          const end = typeof row.end === "number" ? row.end : null;
+          if (label === null || score === null || start === null || end === null) return null;
+          return { label, score, start, end };
+        })
+        .filter((r): r is PiiFinding & { start: number; end: number } => r !== null);
+      return { ok: true, findings };
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "Presidio Analyzer call failed";
     }
-    const body = (await res.json()) as unknown;
-    if (!Array.isArray(body)) {
-      return { ok: false, error: "Presidio Analyzer returned an unexpected payload shape" };
-    }
-    const findings = body
-      .map((r) => {
-        const row = r as Record<string, unknown>;
-        const label = typeof row.entity_type === "string" ? row.entity_type : null;
-        const score = typeof row.score === "number" ? row.score : null;
-        const start = typeof row.start === "number" ? row.start : null;
-        const end = typeof row.end === "number" ? row.end : null;
-        if (label === null || score === null || start === null || end === null) return null;
-        return { label, score, start, end };
-      })
-      .filter((r): r is PiiFinding & { start: number; end: number } => r !== null);
-    return { ok: true, findings };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Presidio Analyzer call failed" };
   }
+
+  return { ok: false, error: lastError };
 }
 
 /** For diagnostics/health surfaces only — never used to gate the fail-closed decision. */
