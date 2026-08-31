@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { deleteMyAccount } from "@/lib/account.functions";
+import { mfaErrorMessage, totpQrCodeSource } from "@/lib/totpEnrollment";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,7 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -75,12 +77,135 @@ function AccountPage() {
   const [pwLoading, setPwLoading] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaLevel, setMfaLevel] = useState<"aal1" | "aal2" | null>(null);
+  const [totpFactor, setTotpFactor] = useState<{ id: string; friendlyName: string | null } | null>(
+    null,
+  );
+  const [enrollment, setEnrollment] = useState<{
+    id: string;
+    qrCode: string;
+    secret: string;
+  } | null>(null);
+  const [qrLoadError, setQrLoadError] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
 
   useEffect(() => {
     if (!user) return;
     void loadProfile();
+    void loadMfaStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  async function loadMfaStatus() {
+    const [{ data: assurance, error: assuranceError }, { data: factors, error: factorsError }] =
+      await Promise.all([
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        supabase.auth.mfa.listFactors(),
+      ]);
+    if (assuranceError || factorsError) {
+      toast.error(assuranceError?.message ?? factorsError?.message ?? "Could not load MFA status");
+      return;
+    }
+    setMfaLevel(
+      assurance.currentLevel === "aal2"
+        ? "aal2"
+        : assurance.currentLevel === "aal1"
+          ? "aal1"
+          : null,
+    );
+    const factor = factors.totp.find((item) => item.status === "verified");
+    setTotpFactor(factor ? { id: factor.id, friendlyName: factor.friendly_name ?? null } : null);
+  }
+
+  async function beginTotpEnrollment() {
+    setMfaLoading(true);
+    try {
+      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      if (factorsError) throw factorsError;
+      for (const factor of factors.all) {
+        if (factor.factor_type !== "totp" || factor.status !== "unverified") continue;
+        const { error: cleanupError } = await supabase.auth.mfa.unenroll({
+          factorId: factor.id,
+        });
+        if (cleanupError) throw cleanupError;
+      }
+
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "Authenticator app",
+      });
+      if (error) throw error;
+      setEnrollment({
+        id: data.id,
+        qrCode: totpQrCodeSource(data.totp.qr_code),
+        secret: data.totp.secret,
+      });
+      setQrLoadError(false);
+      setVerificationCode("");
+    } catch (err) {
+      toast.error(mfaErrorMessage(err, "Could not start TOTP enrollment."));
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  async function verifyTotpEnrollment() {
+    if (!enrollment || !verificationCode.trim()) return;
+    setMfaLoading(true);
+    try {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: enrollment.id,
+      });
+      if (challengeError) throw challengeError;
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: enrollment.id,
+        challengeId: challenge.id,
+        code: verificationCode.trim(),
+      });
+      if (verifyError) throw verifyError;
+      setEnrollment(null);
+      setVerificationCode("");
+      await loadMfaStatus();
+      toast.success("Authenticator app verified. This session is now AAL2.");
+    } catch (err) {
+      toast.error(mfaErrorMessage(err, "Could not verify authentication code."));
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  async function cancelTotpEnrollment() {
+    if (!enrollment) return;
+    setMfaLoading(true);
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: enrollment.id });
+      if (error) throw error;
+      setEnrollment(null);
+      setQrLoadError(false);
+      setVerificationCode("");
+    } catch (err) {
+      toast.error(mfaErrorMessage(err, "Could not cancel TOTP enrollment."));
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  async function removeTotpFactor() {
+    if (!totpFactor) return;
+    setMfaLoading(true);
+    try {
+      const { error } = await supabase.auth.mfa.unenroll({ factorId: totpFactor.id });
+      if (error) throw error;
+      setTotpFactor(null);
+      await loadMfaStatus();
+      toast.success("Authenticator app removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove authenticator app");
+    } finally {
+      setMfaLoading(false);
+    }
+  }
 
   async function loadProfile() {
     if (!user) return;
@@ -420,6 +545,94 @@ function AccountPage() {
                 </Button>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Smartphone className="h-4 w-4 text-primary" /> Authenticator App
+          </CardTitle>
+          <CardDescription>
+            Use a TOTP authenticator app for a second sign-in factor. Sensitive maintenance
+            operations require an AAL2 session.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Current session assurance</span>
+            <span className="font-medium uppercase">{mfaLevel ?? "Loading..."}</span>
+          </div>
+
+          {totpFactor && !enrollment && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+              <span>
+                Authenticator app{totpFactor.friendlyName ? `: ${totpFactor.friendlyName}` : ""} is
+                enrolled.
+              </span>
+              <Button variant="outline" size="sm" disabled={mfaLoading} onClick={removeTotpFactor}>
+                Remove
+              </Button>
+            </div>
+          )}
+
+          {!totpFactor && !enrollment && (
+            <Button disabled={mfaLoading} onClick={beginTotpEnrollment}>
+              {mfaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Set up authenticator app
+            </Button>
+          )}
+
+          {enrollment && (
+            <div className="space-y-4 rounded-lg border p-4">
+              <p className="text-sm">
+                Scan this QR code with your authenticator app, then enter its six-digit code.
+              </p>
+              {qrLoadError ? (
+                <p className="rounded border border-destructive/40 p-3 text-sm text-destructive">
+                  The QR code could not be rendered. Enter the manual setup key below instead.
+                </p>
+              ) : (
+                <img
+                  alt="TOTP enrollment QR code"
+                  className="h-48 w-48 rounded bg-white p-2"
+                  src={enrollment.qrCode}
+                  onError={() => setQrLoadError(true)}
+                />
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="totp-secret">Manual setup key</Label>
+                <Input id="totp-secret" readOnly value={enrollment.secret} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="totp-code">Authentication code</Label>
+                <Input
+                  id="totp-code"
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  disabled={mfaLoading || verificationCode.length !== 6}
+                  onClick={verifyTotpEnrollment}
+                >
+                  {mfaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Verify
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={mfaLoading}
+                  onClick={() => void cancelTotpEnrollment()}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
