@@ -176,16 +176,15 @@ function SystemExtensionsPage() {
       const issued = await issueTicket({
         data: { access_token: authToken, extension_id: extension.id },
       });
-      setExtensions(
-        (configured) =>
-          configured?.map((candidate) =>
-            candidate.id === extension.id
-              ? { ...candidate, maintenanceExpiresAt: issued.expires_at }
-              : candidate,
-          ) ?? null,
-      );
       if (maintenanceWindow) maintenanceWindow.location.replace(issued.redeem_url);
       else window.location.assign(issued.redeem_url);
+      window.setTimeout(() => {
+        void listExtensions({ data: { access_token: authToken } })
+          .then((configured) => setExtensions(configured))
+          .catch(() => {
+            // The regular status refresh will retry if the target is still redeeming the ticket.
+          });
+      }, 1_500);
     } catch (cause) {
       maintenanceWindow?.close();
       const message =
