@@ -1,4 +1,4 @@
-import { LogOut, ShieldCheck, Server } from "lucide-react";
+import { LogOut, ShieldCheck, Server, Wrench } from "lucide-react";
 
 import { Link, useLocation } from "@tanstack/react-router";
 import agentSwarmsLogo from "@/assets/agentswarms-logo.jpg";
@@ -94,6 +94,7 @@ export function AppSidebar() {
           renderGroup("Admin", [
             { title: "IAM", url: "/admin/iam", icon: ShieldCheck },
             { title: "Developer runtime", url: "/admin/runtime", icon: Server },
+            { title: "System Extensions", url: "/system-extensions", icon: Wrench },
           ])}
       </SidebarContent>
 
