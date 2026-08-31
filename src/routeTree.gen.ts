@@ -65,6 +65,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiBiRouteImport } from './routes/api/bi'
 import { Route as ApiA2aRouteImport } from './routes/api/a2a'
 import { Route as AuthenticatedTracesRouteImport } from './routes/_authenticated/traces'
+import { Route as AuthenticatedSystemExtensionsRouteImport } from './routes/_authenticated/system-extensions'
 import { Route as AuthenticatedSwarmsRouteImport } from './routes/_authenticated/swarms'
 import { Route as AuthenticatedSkillsRouteImport } from './routes/_authenticated/skills'
 import { Route as AuthenticatedSemanticsRouteImport } from './routes/_authenticated/semantics'
@@ -424,6 +425,12 @@ const AuthenticatedTracesRoute = AuthenticatedTracesRouteImport.update({
   path: '/traces',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSystemExtensionsRoute =
+  AuthenticatedSystemExtensionsRouteImport.update({
+    id: '/system-extensions',
+    path: '/system-extensions',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSwarmsRoute = AuthenticatedSwarmsRouteImport.update({
   id: '/swarms',
   path: '/swarms',
@@ -879,6 +886,7 @@ export interface FileRoutesByFullPath {
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/swarms': typeof AuthenticatedSwarmsRoute
+  '/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -1014,6 +1022,7 @@ export interface FileRoutesByTo {
   '/semantics': typeof AuthenticatedSemanticsRoute
   '/skills': typeof AuthenticatedSkillsRoute
   '/swarms': typeof AuthenticatedSwarmsRoute
+  '/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -1152,6 +1161,7 @@ export interface FileRoutesById {
   '/_authenticated/semantics': typeof AuthenticatedSemanticsRoute
   '/_authenticated/skills': typeof AuthenticatedSkillsRoute
   '/_authenticated/swarms': typeof AuthenticatedSwarmsRoute
+  '/_authenticated/system-extensions': typeof AuthenticatedSystemExtensionsRoute
   '/_authenticated/traces': typeof AuthenticatedTracesRoute
   '/api/a2a': typeof ApiA2aRoute
   '/api/bi': typeof ApiBiRouteWithChildren
@@ -1290,6 +1300,7 @@ export interface FileRouteTypes {
     | '/semantics'
     | '/skills'
     | '/swarms'
+    | '/system-extensions'
     | '/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -1425,6 +1436,7 @@ export interface FileRouteTypes {
     | '/semantics'
     | '/skills'
     | '/swarms'
+    | '/system-extensions'
     | '/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -1562,6 +1574,7 @@ export interface FileRouteTypes {
     | '/_authenticated/semantics'
     | '/_authenticated/skills'
     | '/_authenticated/swarms'
+    | '/_authenticated/system-extensions'
     | '/_authenticated/traces'
     | '/api/a2a'
     | '/api/bi'
@@ -2108,6 +2121,13 @@ declare module '@tanstack/react-router' {
       path: '/traces'
       fullPath: '/traces'
       preLoaderRoute: typeof AuthenticatedTracesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/system-extensions': {
+      id: '/_authenticated/system-extensions'
+      path: '/system-extensions'
+      fullPath: '/system-extensions'
+      preLoaderRoute: typeof AuthenticatedSystemExtensionsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/swarms': {
@@ -2729,6 +2749,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSemanticsRoute: typeof AuthenticatedSemanticsRoute
   AuthenticatedSkillsRoute: typeof AuthenticatedSkillsRoute
   AuthenticatedSwarmsRoute: typeof AuthenticatedSwarmsRoute
+  AuthenticatedSystemExtensionsRoute: typeof AuthenticatedSystemExtensionsRoute
   AuthenticatedTracesRoute: typeof AuthenticatedTracesRoute
   AuthenticatedAdminIamRoute: typeof AuthenticatedAdminIamRoute
   AuthenticatedAdminRuntimeRoute: typeof AuthenticatedAdminRuntimeRoute
@@ -2767,6 +2788,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSemanticsRoute: AuthenticatedSemanticsRoute,
   AuthenticatedSkillsRoute: AuthenticatedSkillsRoute,
   AuthenticatedSwarmsRoute: AuthenticatedSwarmsRoute,
+  AuthenticatedSystemExtensionsRoute: AuthenticatedSystemExtensionsRoute,
   AuthenticatedTracesRoute: AuthenticatedTracesRoute,
   AuthenticatedAdminIamRoute: AuthenticatedAdminIamRoute,
   AuthenticatedAdminRuntimeRoute: AuthenticatedAdminRuntimeRoute,
