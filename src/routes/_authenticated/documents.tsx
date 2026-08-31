@@ -21,6 +21,8 @@ function DocumentsPage() {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<WorkbenchDocument[]>([]);
   const [search, setSearch] = useState("");
+  const [type, setType] = useState("all");
+  const [sort, setSort] = useState<"name" | "updated">("updated");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,15 +47,23 @@ function DocumentsPage() {
 
   const visibleDocuments = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return documents;
-    return documents.filter((document) =>
-      [document.name, document.type, ...Object.values(document.metadata)]
-        .filter((value): value is string => typeof value === "string")
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+    const result = documents.filter(
+      (document) =>
+        [document.name, document.type, ...Object.values(document.metadata)]
+          .filter((value): value is string => typeof value === "string")
+          .join(" ")
+          .toLowerCase()
+          .includes(query) &&
+        (type === "all" || document.type === type),
     );
-  }, [documents, search]);
+    return result.sort((left, right) => {
+      if (sort === "name") return left.name.localeCompare(right.name);
+      return (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "");
+    });
+  }, [documents, search, sort, type]);
+  const types = Array.from(
+    new Set(documents.map((document) => document.type).filter((value): value is string => !!value)),
+  ).sort();
 
   return (
     <div className="space-y-6 p-6">
@@ -69,14 +79,38 @@ function DocumentsPage() {
       </div>
       <Card>
         <CardContent className="p-4">
-          <div className="relative max-w-xl">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search documents"
-              value={search}
-            />
+          <div className="flex flex-wrap gap-3">
+            <div className="relative min-w-64 flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search documents"
+                value={search}
+              />
+            </div>
+            <select
+              aria-label="Document type"
+              className="rounded-md border bg-background px-3 text-sm"
+              onChange={(event) => setType(event.target.value)}
+              value={type}
+            >
+              <option value="all">All types</option>
+              {types.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Document sort order"
+              className="rounded-md border bg-background px-3 text-sm"
+              onChange={(event) => setSort(event.target.value as "name" | "updated")}
+              value={sort}
+            >
+              <option value="updated">Last updated</option>
+              <option value="name">Name</option>
+            </select>
           </div>
         </CardContent>
       </Card>
