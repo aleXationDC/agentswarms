@@ -4,7 +4,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { deleteMyAccount } from "@/lib/account.functions";
-import { mfaErrorMessage, totpQrCodeSource } from "@/lib/totpEnrollment";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,7 +86,6 @@ function AccountPage() {
     qrCode: string;
     secret: string;
   } | null>(null);
-  const [qrLoadError, setQrLoadError] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
 
   useEffect(() => {
@@ -121,30 +119,15 @@ function AccountPage() {
   async function beginTotpEnrollment() {
     setMfaLoading(true);
     try {
-      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
-      if (factorsError) throw factorsError;
-      for (const factor of factors.all) {
-        if (factor.factor_type !== "totp" || factor.status !== "unverified") continue;
-        const { error: cleanupError } = await supabase.auth.mfa.unenroll({
-          factorId: factor.id,
-        });
-        if (cleanupError) throw cleanupError;
-      }
-
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
         friendlyName: "Authenticator app",
       });
       if (error) throw error;
-      setEnrollment({
-        id: data.id,
-        qrCode: totpQrCodeSource(data.totp.qr_code),
-        secret: data.totp.secret,
-      });
-      setQrLoadError(false);
+      setEnrollment({ id: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
       setVerificationCode("");
     } catch (err) {
-      toast.error(mfaErrorMessage(err, "Could not start TOTP enrollment."));
+      toast.error(err instanceof Error ? err.message : "Could not start TOTP enrollment");
     } finally {
       setMfaLoading(false);
     }
@@ -169,23 +152,7 @@ function AccountPage() {
       await loadMfaStatus();
       toast.success("Authenticator app verified. This session is now AAL2.");
     } catch (err) {
-      toast.error(mfaErrorMessage(err, "Could not verify authentication code."));
-    } finally {
-      setMfaLoading(false);
-    }
-  }
-
-  async function cancelTotpEnrollment() {
-    if (!enrollment) return;
-    setMfaLoading(true);
-    try {
-      const { error } = await supabase.auth.mfa.unenroll({ factorId: enrollment.id });
-      if (error) throw error;
-      setEnrollment(null);
-      setQrLoadError(false);
-      setVerificationCode("");
-    } catch (err) {
-      toast.error(mfaErrorMessage(err, "Could not cancel TOTP enrollment."));
+      toast.error(err instanceof Error ? err.message : "Could not verify authentication code");
     } finally {
       setMfaLoading(false);
     }
@@ -589,18 +556,11 @@ function AccountPage() {
               <p className="text-sm">
                 Scan this QR code with your authenticator app, then enter its six-digit code.
               </p>
-              {qrLoadError ? (
-                <p className="rounded border border-destructive/40 p-3 text-sm text-destructive">
-                  The QR code could not be rendered. Enter the manual setup key below instead.
-                </p>
-              ) : (
-                <img
-                  alt="TOTP enrollment QR code"
-                  className="h-48 w-48 rounded bg-white p-2"
-                  src={enrollment.qrCode}
-                  onError={() => setQrLoadError(true)}
-                />
-              )}
+              <img
+                alt="TOTP enrollment QR code"
+                className="h-48 w-48 rounded bg-white p-2"
+                src={`data:image/svg+xml;utf8,${encodeURIComponent(enrollment.qrCode)}`}
+              />
               <div className="space-y-2">
                 <Label htmlFor="totp-secret">Manual setup key</Label>
                 <Input id="totp-secret" readOnly value={enrollment.secret} />
@@ -624,11 +584,7 @@ function AccountPage() {
                   {mfaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Verify
                 </Button>
-                <Button
-                  variant="outline"
-                  disabled={mfaLoading}
-                  onClick={() => void cancelTotpEnrollment()}
-                >
+                <Button variant="outline" disabled={mfaLoading} onClick={() => setEnrollment(null)}>
                   Cancel
                 </Button>
               </div>
