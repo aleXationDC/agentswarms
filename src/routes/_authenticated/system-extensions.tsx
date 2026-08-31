@@ -185,6 +185,7 @@ function SystemExtensionsPage() {
             // The regular status refresh will retry if the target is still redeeming the ticket.
           });
       }, 1_500);
+      setOpeningId(null);
     } catch (cause) {
       maintenanceWindow?.close();
       const message =
@@ -214,6 +215,7 @@ function SystemExtensionsPage() {
       toast.success(
         closed.revoked_count > 0 ? "Maintenance access closed." : "Maintenance access was closed.",
       );
+      setClosingId(null);
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Could not close maintenance access.";
