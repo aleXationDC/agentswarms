@@ -1,0 +1,15 @@
+# Initial aXtn Maintenance Access state.
+#
+# This is deliberately fail-closed: normal administration is available only
+# through Tailscale, and all public traffic is denied until a later,
+# explicitly activated maintenance-access mechanism replaces this snippet.
+https://ops.alexation.com {
+	@trusted remote_ip 127.0.0.1/8 100.64.0.0/10
+	handle @trusted {
+		handle_path /supabase/* {
+			reverse_proxy 127.0.0.1:8000
+		}
+		reverse_proxy 127.0.0.1:18080
+	}
+	respond 403
+}
