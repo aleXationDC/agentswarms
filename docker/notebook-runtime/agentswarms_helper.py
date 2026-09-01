@@ -22,6 +22,7 @@ __all__ = [
     "run_agent",
     "run_swarm",
     "list_agents",
+    "local_table_upsert",
 ]
 
 
@@ -116,6 +117,21 @@ async def run_swarm(swarm_id, input="", *, inputs=None):
 async def list_agents():
     """Your saved agents and swarms as {"agents": [...], "swarms": [...]}."""
     return await _post("/api/python-agent", {"action": "list"})
+
+
+async def local_table_upsert(table_name, key_column, key_value, row):
+    """Atomically insert or update one permitted Local Table row by its key.
+
+    The platform validates the MCP runtime identity, table allow-list, owner,
+    declared schema and key before writing. The sandbox has no database access.
+    """
+    return await _post("/api/python-agent", {
+        "action": "local_table_upsert",
+        "table_name": str(table_name),
+        "key_column": str(key_column),
+        "key_value": str(key_value),
+        "row": row,
+    })
 
 
 def format_context(hits):

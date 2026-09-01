@@ -133,6 +133,7 @@ type KeyRow = {
   revoked_at: string | null;
   tool_allowlist: string[];
   ip_allowlist: string[];
+  key_prefix: string;
   use_count: number;
 };
 
@@ -170,7 +171,7 @@ async function authenticate(
   const { data: key } = await supabaseAdmin
     .from("mcp_app_keys")
     .select(
-      "id, app_id, is_internal, is_active, expires_at, revoked_at, tool_allowlist, ip_allowlist, use_count",
+      "id, app_id, is_internal, is_active, expires_at, revoked_at, tool_allowlist, ip_allowlist, key_prefix, use_count",
     )
     .eq("key_hash", await hashMcpApiKey(raw))
     .maybeSingle();
@@ -375,6 +376,34 @@ async function handlePost(request: Request): Promise<Response> {
     );
     if (!upstream.ok) {
       return json({ error: "upstream_unreachable", message: upstream.message }, 502, cors);
+    }
+
+    if (method === "tools/call") {
+      const params = body?.params ?? {};
+      const arguments_ = params.arguments;
+      const localTableArgs =
+        params.name === "local_table_upsert_tool" &&
+        arguments_ &&
+        typeof arguments_ === "object" &&
+        !Array.isArray(arguments_)
+          ? arguments_
+          : null;
+      auditEvent({
+        userId: app.user_id,
+        action: "mcp_app.tool_call",
+        resourceType: "mcp_app",
+        resourceId: app.id,
+        resourceName: app.name,
+        detail: {
+          key_id: key.id,
+          key_prefix: key.key_prefix,
+          tool_name: params.name ?? null,
+          upstream_status: upstream.status,
+          table_name: localTableArgs?.table_name ?? null,
+          key_column: localTableArgs?.key_column ?? null,
+          key_value: localTableArgs?.key_value ?? null,
+        },
+      });
     }
 
     recordUse(key, request);

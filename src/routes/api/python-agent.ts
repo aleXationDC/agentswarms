@@ -16,6 +16,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { resolvePythonCaller } from "@/utils/notebookRuntime/caller.server";
 import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
+import { LocalTableUpsertRequestError, localTableUpsert } from "@/utils/localTableUpsert.server";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -47,6 +48,10 @@ export const Route = createFileRoute("/api/python-agent")({
           input?: string;
           inputs?: Record<string, unknown>;
           history?: { role?: string; content?: string }[];
+          table_name?: unknown;
+          key_column?: unknown;
+          key_value?: unknown;
+          row?: unknown;
         };
         try {
           body = await request.json();
@@ -58,6 +63,24 @@ export const Route = createFileRoute("/api/python-agent")({
         // Session-token callers get a service-role client, so ownership has to
         // be pinned explicitly; JWT callers are already RLS-scoped.
         const ownerId = caller.scopeUserId ?? caller.userId;
+
+        if (action === "local_table_upsert") {
+          try {
+            const result = await localTableUpsert({
+              caller,
+              tableName: body.table_name,
+              keyColumn: body.key_column,
+              keyValue: body.key_value,
+              row: body.row,
+            });
+            return json(200, result);
+          } catch (error) {
+            if (error instanceof LocalTableUpsertRequestError) {
+              return json(400, { error: error.message });
+            }
+            throw error;
+          }
+        }
 
         // ── list: what this user can run ──
         if (action === "list") {

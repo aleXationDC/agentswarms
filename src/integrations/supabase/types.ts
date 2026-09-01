@@ -5076,6 +5076,20 @@ export type Database = {
         Args: { _columns: Json; _name: string; _source_filename: string };
         Returns: string;
       };
+      axtn_local_table_upsert: {
+        Args: {
+          _key_column: string;
+          _key_value: string;
+          _row: Json;
+          _table_name: string;
+          _user_id: string;
+        };
+        Returns: {
+          outcome: "inserted" | "updated";
+          row_id: number;
+          table_id: string;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

@@ -27,6 +27,8 @@ export type PythonCaller = {
   sb: SupabaseClient<Database>;
   /** Set only for the session-token path → explicit ownership scoping. */
   scopeUserId?: string;
+  /** Set only for a verified runtime-session token. */
+  runtimeSessionId?: string;
 };
 
 function jwtClient(token: string): SupabaseClient<Database> | null {
@@ -46,7 +48,14 @@ export async function resolvePythonCaller(request: Request): Promise<PythonCalle
 
   // A server kernel presents a session token — verify and act as that user.
   const claims = await verifySessionToken(token);
-  if (claims) return { userId: claims.sub, sb: supabaseAdmin, scopeUserId: claims.sub };
+  if (claims) {
+    return {
+      userId: claims.sub,
+      sb: supabaseAdmin,
+      scopeUserId: claims.sub,
+      runtimeSessionId: claims.sid,
+    };
+  }
 
   // Otherwise a Supabase user JWT from the browser runtime.
   const sb = jwtClient(token);
