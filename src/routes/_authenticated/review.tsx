@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { CheckCircle2, Search, XCircle } from "lucide-react";
+import { CheckCircle2, Pencil, Search, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,9 @@ import {
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
+import { useServerFn } from "@tanstack/react-start";
+import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 
 export const Route = createFileRoute("/_authenticated/review")({
   head: () => ({ meta: [{ title: "aXtn Reviews — AgentSwarms" }] }),
@@ -29,7 +32,10 @@ function ReviewsPage() {
   const [sort, setSort] = useState<"newest" | "oldest" | "risk">("newest");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [editing, setEditing] = useState(false);
   const decideApproval = useApprovalDecision();
+  const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
     if (!user) return;
@@ -121,6 +127,13 @@ function ReviewsPage() {
             <option value="rejected">Rejected</option>
             <option value="all">All</option>
           </select>
+          <Button
+            disabled={selected.length === 0}
+            onClick={() => setEditing(true)}
+            variant="outline"
+          >
+            <Pencil className="mr-1 h-4 w-4" /> Bulk Edit ({selected.length})
+          </Button>
           <select
             aria-label="Review sort order"
             className="rounded-md border bg-background px-3 text-sm"
@@ -152,6 +165,20 @@ function ReviewsPage() {
                 className="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
                 key={item.id}
               >
+                {item.status === "pending" && isEditable(item) && (
+                  <input
+                    aria-label={`Select ${item.action_title}`}
+                    checked={selected.includes(item.id)}
+                    onChange={() =>
+                      setSelected((current) =>
+                        current.includes(item.id)
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id],
+                      )
+                    }
+                    type="checkbox"
+                  />
+                )}
                 <div className="min-w-0">
                   <Link
                     className="font-medium hover:underline"
@@ -195,7 +222,33 @@ function ReviewsPage() {
           )}
         </CardContent>
       </Card>
+      <MetadataEditDialog
+        count={selected.length}
+        onOpenChange={setEditing}
+        onSave={async (edits) => {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (!session) throw new Error("Not signed in.");
+          await saveMetadata({
+            data: { access_token: session.access_token, kind: "approval", ids: selected, edits },
+          });
+          setSelected([]);
+          setEditing(false);
+        }}
+        open={editing}
+        values={{}}
+      />
     </div>
+  );
+}
+
+function isEditable(item: NativeApproval) {
+  return (
+    typeof item.payload === "object" &&
+    item.payload !== null &&
+    typeof (item.payload as Record<string, unknown>).proposal === "object" &&
+    (item.payload as Record<string, unknown>).proposal !== null
   );
 }
 

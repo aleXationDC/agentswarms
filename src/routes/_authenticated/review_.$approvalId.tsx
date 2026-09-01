@@ -1,13 +1,16 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Pencil, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { reviewContext, type NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
+import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/_authenticated/review_/$approvalId")({
   component: ReviewDetailPage,
@@ -19,7 +22,9 @@ function ReviewDetailPage() {
   const [approval, setApproval] = useState<NativeApproval | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const decideApproval = useApprovalDecision();
+  const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +94,11 @@ function ReviewDetailPage() {
               </p>
             </div>
             <ReviewContext approval={approval} />
+            {isEditableProposal(approval) && (
+              <Button onClick={() => setEditing(true)} variant="outline">
+                <Pencil className="mr-1 h-4 w-4" /> Edit proposal / Human Override
+              </Button>
+            )}
             <div>
               <h2 className="text-sm font-medium">Request context</h2>
               <pre className="mt-2 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
@@ -108,7 +118,52 @@ function ReviewDetailPage() {
           </CardContent>
         </Card>
       )}
+      {approval && isEditableProposal(approval) && (
+        <MetadataEditDialog
+          count={1}
+          onOpenChange={setEditing}
+          onSave={async (edits) => {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (!session) throw new Error("Not signed in.");
+            await saveMetadata({
+              data: {
+                access_token: session.access_token,
+                kind: "approval",
+                ids: [approval.id],
+                edits,
+              },
+            });
+            setApproval(
+              (current) =>
+                current && {
+                  ...current,
+                  payload: {
+                    ...(current.payload as object),
+                    proposal: {
+                      ...((current.payload as Record<string, unknown>).proposal as object),
+                      ...edits,
+                    },
+                  },
+                },
+            );
+            setEditing(false);
+          }}
+          open={editing}
+          values={(approval.payload as Record<string, unknown>).proposal as Record<string, unknown>}
+        />
+      )}
     </div>
+  );
+}
+
+function isEditableProposal(approval: NativeApproval): boolean {
+  return (
+    typeof approval.payload === "object" &&
+    approval.payload !== null &&
+    typeof (approval.payload as Record<string, unknown>).proposal === "object" &&
+    (approval.payload as Record<string, unknown>).proposal !== null
   );
 }
 

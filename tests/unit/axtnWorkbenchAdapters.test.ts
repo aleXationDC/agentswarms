@@ -5,6 +5,10 @@ import {
   normalizeWorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
 import { reviewContext } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import {
+  allowlistedMetadataEdits,
+  applyMetadataEdits,
+} from "@/axtn/workbenches/shared/metadataEdit";
 import type { NativeApproval } from "@/hooks/use-approval-decision";
 
 describe("aXtn Documents adapter", () => {
@@ -81,6 +85,41 @@ describe("aXtn Reviews adapter", () => {
       primaryDomain: "Legal",
       confidence: 0.8,
       organization: null,
+    });
+
+    describe("aXtn metadata edits", () => {
+      it("merges only allowlisted fields and records human bulk provenance", () => {
+        const edits = allowlistedMetadataEdits({
+          document_type: "Contract",
+          topics: "legal, renewal",
+          source_url: "https://immutable.example",
+          swarm_run_id: "immutable-run",
+          status: "approved",
+        });
+        expect(edits).toEqual({ document_type: "Contract", topics: "legal, renewal" });
+
+        expect(
+          applyMetadataEdits(
+            {
+              source_url: "https://immutable.example",
+              swarm_run_id: "immutable-run",
+              status: "pending",
+            },
+            edits,
+            "user-1",
+            true,
+          ),
+        ).toMatchObject({
+          source_url: "https://immutable.example",
+          swarm_run_id: "immutable-run",
+          status: "pending",
+          document_type: "Contract",
+          topics: "legal, renewal",
+          human_overridden: true,
+          human_overridden_by: "user-1",
+          bulk_overridden: true,
+        });
+      });
     });
   });
 });
