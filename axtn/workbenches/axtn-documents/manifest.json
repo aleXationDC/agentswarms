@@ -24,7 +24,7 @@
     "src/routes/_authenticated/documents_.$documentId.tsx",
     "src/utils/axtnWorkbenchEdits.functions.ts"
   ],
-  "implementation_commits": ["88ec442"],
+  "implementation_commits": ["88ec442", "18bda42"],
   "release_tag": "workbench/axtn-documents/v0.1.0",
   "portable": true,
   "known_limitations": [
