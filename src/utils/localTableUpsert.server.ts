@@ -16,6 +16,34 @@ export function localTableIntegrationAllowedTables(): Set<string> {
   return new Set(values);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * MCP apps explicitly authorised to invoke the Local Table mutation capability.
+ *
+ * Owning the target table is not sufficient. Every MCP app a user publishes
+ * runs as that user, so an ownership check alone would let *any* of their apps
+ * — including one written for an unrelated purpose, whose tool descriptions are
+ * model-visible instructions — write to the registry. This binds the capability
+ * to named app IDs instead.
+ *
+ * There is deliberately NO default. An unset or empty list authorises nobody,
+ * so a misconfiguration disables the capability rather than widening it. App
+ * IDs are opaque identifiers, not credentials: they authorise nothing on their
+ * own, because the caller must still present a valid MCP key and be running in
+ * a server-created runtime session that the platform itself stamped with that
+ * app id.
+ */
+export function localTableIntegrationAuthorizedAppIds(): Set<string> {
+  const configured = process.env.LOCAL_TABLE_INTEGRATION_MCP_APP_IDS ?? "";
+  return new Set(
+    configured
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => UUID_RE.test(value)),
+  );
+}
+
 export function declaredLocalTableColumns(columns: Json): Set<string> {
   if (!Array.isArray(columns)) throw new Error("The Local Table has no declared column schema.");
   const names = columns
@@ -70,6 +98,15 @@ export async function localTableUpsert(args: {
   if (!session?.mcp_app_id) {
     throw new LocalTableUpsertRequestError(
       "Local Table mutations are available only to MCP runtime sessions.",
+    );
+  }
+  // `session.mcp_app_id` is trustworthy precisely because it is not an
+  // argument: the platform writes it when it starts the app's service session,
+  // and the sandbox reaches this code with a signed session token, so nothing
+  // the tool caller controls can name a different app.
+  if (!localTableIntegrationAuthorizedAppIds().has(session.mcp_app_id.toLowerCase())) {
+    throw new LocalTableUpsertRequestError(
+      "This MCP app is not authorized for the Local Table mutation capability.",
     );
   }
 
