@@ -18,14 +18,18 @@
   "database_migrations": [],
   "source_paths": [
     "src/axtn/workbenches/documents/",
+    "src/axtn/workbenches/shared/metadataEdit.ts",
+    "src/components/axtn/MetadataEditDialog.tsx",
     "src/routes/_authenticated/documents.tsx",
-    "src/routes/_authenticated/documents_.$documentId.tsx"
+    "src/routes/_authenticated/documents_.$documentId.tsx",
+    "src/utils/axtnWorkbenchEdits.functions.ts"
   ],
   "implementation_commits": ["88ec442"],
   "release_tag": "workbench/axtn-documents/v0.1.0",
   "portable": true,
   "known_limitations": [
     "No persistence is introduced. Without a declared dataset, the Workbench renders an empty Greenfield inventory.",
-    "AI analysis, parsing, and filing are outside this inventory workbench."
+    "AI Analyst support is pending rebinding to a native AI Analyst/data contract.",
+    "Mixed string and string-array topic contracts are intentionally not bulk editable."
   ]
 }

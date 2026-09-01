@@ -34,6 +34,7 @@ function ReviewsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
   const decideApproval = useApprovalDecision();
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
@@ -53,7 +54,7 @@ function ReviewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, reload]);
 
   const filtered = useMemo(() => {
     const result = items.filter(
@@ -75,6 +76,10 @@ function ReviewsPage() {
     });
   }, [items, search, sort, status]);
   const pendingCount = items.filter((item) => item.status === "pending").length;
+  const selectable = filtered.filter((item) => item.status === "pending" && isEditable(item));
+  const selectedRecords = items
+    .filter((item) => selected.includes(item.id))
+    .map((item) => (item.payload as Record<string, unknown>).proposal as Record<string, unknown>);
 
   async function decide(item: NativeApproval, decision: "approved" | "rejected") {
     if (!(await decideApproval(item, decision))) return;
@@ -133,6 +138,16 @@ function ReviewsPage() {
             variant="outline"
           >
             <Pencil className="mr-1 h-4 w-4" /> Bulk Edit ({selected.length})
+          </Button>
+          <Button
+            disabled={selectable.length === 0}
+            onClick={() => setSelected(selectable.map((item) => item.id))}
+            variant="ghost"
+          >
+            Select all filtered
+          </Button>
+          <Button disabled={selected.length === 0} onClick={() => setSelected([])} variant="ghost">
+            Clear selection
           </Button>
           <select
             aria-label="Review sort order"
@@ -230,14 +245,17 @@ function ReviewsPage() {
             data: { session },
           } = await supabase.auth.getSession();
           if (!session) throw new Error("Not signed in.");
-          await saveMetadata({
+          const result = await saveMetadata({
             data: { access_token: session.access_token, kind: "approval", ids: selected, edits },
           });
+          if (result.failed.length)
+            setError(`${result.failed.length} item(s) could not be updated.`);
+          if (result.updated.length) setReload((current) => current + 1);
           setSelected([]);
           setEditing(false);
         }}
         open={editing}
-        values={{}}
+        records={selectedRecords}
       />
     </div>
   );

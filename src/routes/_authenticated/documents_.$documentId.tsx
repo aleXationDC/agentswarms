@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import {
   listWorkbenchDocuments,
-  normalizeWorkbenchDocument,
   type WorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
 import { Button } from "@/components/ui/button";
@@ -28,6 +27,7 @@ function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ function DocumentDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [documentId, user]);
+  }, [documentId, reload, user]);
 
   return (
     <div className="space-y-6 p-6">
@@ -152,7 +152,7 @@ function DocumentDetailPage() {
               data: { session },
             } = await supabase.auth.getSession();
             if (!session) throw new Error("Not signed in.");
-            await saveMetadata({
+            const result = await saveMetadata({
               data: {
                 access_token: session.access_token,
                 kind: "document",
@@ -160,15 +160,13 @@ function DocumentDetailPage() {
                 edits,
               },
             });
-            setDocument((current) =>
-              current
-                ? normalizeWorkbenchDocument({ ...current.metadata, ...edits }, current.rowId)
-                : null,
-            );
+            if (result.updated.length) setReload((current) => current + 1);
+            if (result.failed.length)
+              setError(`${result.failed.length} item(s) could not be updated.`);
             setEditing(false);
           }}
           open={editing}
-          values={document.metadata}
+          records={[document.metadata]}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import {
+  aggregateMetadataValues,
   EDITABLE_METADATA_FIELDS,
   type MetadataEdits,
 } from "@/axtn/workbenches/shared/metadataEdit";
@@ -19,17 +20,18 @@ export function MetadataEditDialog({
   open,
   onOpenChange,
   count,
-  values,
+  records,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   count: number;
-  values: Record<string, unknown>;
+  records: Record<string, unknown>[];
   onSave: (edits: MetadataEdits) => Promise<void>;
 }) {
   const [edits, setEdits] = useState<MetadataEdits>({});
   const [saving, setSaving] = useState(false);
+  const fields = aggregateMetadataValues(records);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -41,35 +43,53 @@ export function MetadataEditDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          {EDITABLE_METADATA_FIELDS.map((field) => (
-            <div className="grid grid-cols-[auto_1fr] items-center gap-3" key={field}>
-              <input
-                aria-label={`Apply ${field}`}
-                checked={field in edits}
-                onChange={(event) =>
-                  setEdits((current) => {
-                    const next = { ...current };
-                    if (event.target.checked) next[field] = String(values[field] ?? "");
-                    else delete next[field];
-                    return next;
-                  })
-                }
-                type="checkbox"
-              />
-              <div>
-                <Label htmlFor={field}>{field.replaceAll("_", " ")}</Label>
-                <Input
-                  disabled={!(field in edits)}
-                  id={field}
+          {EDITABLE_METADATA_FIELDS.map((field) => {
+            const state = fields[field];
+            const reference =
+              state.kind === "common"
+                ? Array.isArray(state.value)
+                  ? state.value.join(", ")
+                  : state.value
+                : "";
+            const unavailable = state.kind === "incompatible";
+            const placeholder = unavailable
+              ? "Mixed topic formats cannot be bulk edited"
+              : state.kind === "mixed"
+                ? "Mixed values"
+                : state.kind === "empty"
+                  ? "Not provided"
+                  : reference;
+            return (
+              <div className="grid grid-cols-[auto_1fr] items-center gap-3" key={field}>
+                <input
+                  aria-label={`Apply ${field}`}
+                  checked={field in edits && !unavailable}
+                  disabled={unavailable}
                   onChange={(event) =>
-                    setEdits((current) => ({ ...current, [field]: event.target.value }))
+                    setEdits((current) => {
+                      const next = { ...current };
+                      if (event.target.checked) next[field] = reference;
+                      else delete next[field];
+                      return next;
+                    })
                   }
-                  placeholder={values[field] === undefined ? "Not provided" : String(values[field])}
-                  value={edits[field] ?? ""}
+                  type="checkbox"
                 />
+                <div>
+                  <Label htmlFor={field}>{field.replaceAll("_", " ")}</Label>
+                  <Input
+                    disabled={!(field in edits) || unavailable}
+                    id={field}
+                    onChange={(event) =>
+                      setEdits((current) => ({ ...current, [field]: event.target.value }))
+                    }
+                    placeholder={placeholder}
+                    value={edits[field] ?? ""}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <Button
           disabled={saving || Object.keys(edits).length === 0}

@@ -20,13 +20,17 @@
   "database_migrations": [],
   "source_paths": [
     "src/axtn/workbenches/reviews/",
+    "src/axtn/workbenches/shared/metadataEdit.ts",
+    "src/components/axtn/MetadataEditDialog.tsx",
     "src/routes/_authenticated/review.tsx",
-    "src/routes/_authenticated/review_.$approvalId.tsx"
+    "src/routes/_authenticated/review_.$approvalId.tsx",
+    "src/utils/axtnWorkbenchEdits.functions.ts"
   ],
   "implementation_commits": ["fa6a48b", "463fb54"],
   "release_tag": "workbench/axtn-reviews/v0.1.0",
   "portable": true,
   "known_limitations": [
-    "The initial workbench intentionally supports the current native approval decision contract only."
+    "Human Overrides are limited to allowlisted proposal metadata and remain subject to native approval RLS.",
+    "Mixed string and string-array topic contracts are intentionally not bulk editable."
   ]
 }

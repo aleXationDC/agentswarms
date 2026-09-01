@@ -49,6 +49,7 @@ function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ function DocumentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, reload]);
 
   const visible = useMemo(
     () =>
@@ -78,6 +79,9 @@ function DocumentsPage() {
       }),
     [documents, domain, para, search, sort, status, type],
   );
+  const selectedRecords = documents
+    .filter((document) => selected.includes(document.rowId))
+    .map((document) => document.metadata);
 
   return (
     <div className="space-y-6 p-6">
@@ -142,6 +146,16 @@ function DocumentsPage() {
             variant="outline"
           >
             <Pencil className="mr-1 h-4 w-4" /> Bulk Edit ({selected.length})
+          </Button>
+          <Button
+            disabled={visible.length === 0}
+            onClick={() => setSelected(visible.map((item) => item.rowId))}
+            variant="ghost"
+          >
+            Select all filtered
+          </Button>
+          <Button disabled={selected.length === 0} onClick={() => setSelected([])} variant="ghost">
+            Clear selection
           </Button>
         </CardContent>
       </Card>
@@ -256,14 +270,17 @@ function DocumentsPage() {
             data: { session },
           } = await supabase.auth.getSession();
           if (!session) throw new Error("Not signed in.");
-          await saveMetadata({
+          const result = await saveMetadata({
             data: { access_token: session.access_token, kind: "document", ids: selected, edits },
           });
+          if (result.failed.length)
+            setError(`${result.failed.length} item(s) could not be updated.`);
+          if (result.updated.length) setReload((current) => current + 1);
           setSelected([]);
           setEditing(false);
         }}
         open={editing}
-        values={{}}
+        records={selectedRecords}
       />
     </div>
   );

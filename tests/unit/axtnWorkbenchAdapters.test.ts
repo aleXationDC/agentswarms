@@ -7,6 +7,7 @@ import {
 import { reviewContext } from "@/axtn/workbenches/reviews/reviewWorkbench";
 import {
   allowlistedMetadataEdits,
+  aggregateMetadataValues,
   applyMetadataEdits,
 } from "@/axtn/workbenches/shared/metadataEdit";
 import type { NativeApproval } from "@/hooks/use-approval-decision";
@@ -86,40 +87,58 @@ describe("aXtn Reviews adapter", () => {
       confidence: 0.8,
       organization: null,
     });
+  });
+});
 
-    describe("aXtn metadata edits", () => {
-      it("merges only allowlisted fields and records human bulk provenance", () => {
-        const edits = allowlistedMetadataEdits({
-          document_type: "Contract",
-          topics: "legal, renewal",
-          source_url: "https://immutable.example",
-          swarm_run_id: "immutable-run",
-          status: "approved",
-        });
-        expect(edits).toEqual({ document_type: "Contract", topics: "legal, renewal" });
-
-        expect(
-          applyMetadataEdits(
-            {
-              source_url: "https://immutable.example",
-              swarm_run_id: "immutable-run",
-              status: "pending",
-            },
-            edits,
-            "user-1",
-            true,
-          ),
-        ).toMatchObject({
+describe("aXtn metadata edits", () => {
+  it("merges only allowlisted fields and records human bulk provenance", () => {
+    const edits = allowlistedMetadataEdits({
+      document_type: "Contract",
+      topics: "legal, renewal",
+      source_url: "https://immutable.example",
+      swarm_run_id: "immutable-run",
+      status: "approved",
+    });
+    expect(edits).toEqual({ document_type: "Contract", topics: "legal, renewal" });
+    expect(
+      applyMetadataEdits(
+        {
           source_url: "https://immutable.example",
           swarm_run_id: "immutable-run",
           status: "pending",
-          document_type: "Contract",
-          topics: "legal, renewal",
-          human_overridden: true,
-          human_overridden_by: "user-1",
-          bulk_overridden: true,
-        });
-      });
+        },
+        edits,
+        "user-1",
+        true,
+      ),
+    ).toMatchObject({
+      source_url: "https://immutable.example",
+      swarm_run_id: "immutable-run",
+      status: "pending",
+      document_type: "Contract",
+      topics: "legal, renewal",
+      human_overridden: true,
+      human_overridden_by: "user-1",
+      bulk_overridden: true,
     });
+  });
+
+  it("preserves array topics and distinguishes common, mixed, and incompatible values", () => {
+    expect(
+      applyMetadataEdits({ topics: ["legal"] }, { topics: "legal, renewal" }, "user-1").topics,
+    ).toEqual(["legal", "renewal"]);
+    const fields = aggregateMetadataValues([
+      { document_type: "Contract" },
+      { document_type: "Contract" },
+      { topics: ["legal"] },
+    ]);
+    expect(fields.document_type).toEqual({ kind: "common", value: "Contract" });
+    expect(fields.organization).toEqual({ kind: "empty" });
+    expect(aggregateMetadataValues([{ topics: "legal" }, { topics: ["legal"] }]).topics).toEqual({
+      kind: "incompatible",
+    });
+    expect(
+      aggregateMetadataValues([{ topics: ["legal"] }, { topics: ["finance"] }]).topics,
+    ).toEqual({ kind: "mixed" });
   });
 });

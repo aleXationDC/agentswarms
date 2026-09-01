@@ -23,6 +23,7 @@ function ReviewDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
   const decideApproval = useApprovalDecision();
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
@@ -42,7 +43,7 @@ function ReviewDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [approvalId]);
+  }, [approvalId, reload]);
 
   async function decide(status: "approved" | "rejected") {
     if (!approval) return;
@@ -127,7 +128,7 @@ function ReviewDetailPage() {
               data: { session },
             } = await supabase.auth.getSession();
             if (!session) throw new Error("Not signed in.");
-            await saveMetadata({
+            const result = await saveMetadata({
               data: {
                 access_token: session.access_token,
                 kind: "approval",
@@ -135,23 +136,15 @@ function ReviewDetailPage() {
                 edits,
               },
             });
-            setApproval(
-              (current) =>
-                current && {
-                  ...current,
-                  payload: {
-                    ...(current.payload as object),
-                    proposal: {
-                      ...((current.payload as Record<string, unknown>).proposal as object),
-                      ...edits,
-                    },
-                  },
-                },
-            );
+            if (result.updated.length) setReload((current) => current + 1);
+            if (result.failed.length)
+              setError(`${result.failed.length} item(s) could not be updated.`);
             setEditing(false);
           }}
           open={editing}
-          values={(approval.payload as Record<string, unknown>).proposal as Record<string, unknown>}
+          records={[
+            (approval.payload as Record<string, unknown>).proposal as Record<string, unknown>,
+          ]}
         />
       )}
     </div>
