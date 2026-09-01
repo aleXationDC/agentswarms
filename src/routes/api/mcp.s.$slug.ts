@@ -382,7 +382,7 @@ async function handlePost(request: Request): Promise<Response> {
       const params = body?.params ?? {};
       const arguments_ = params.arguments;
       const localTableArgs =
-        params.name === "local_table_upsert_tool" &&
+        params.name === "local_table_upsert" &&
         arguments_ &&
         typeof arguments_ === "object" &&
         !Array.isArray(arguments_)

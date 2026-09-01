@@ -2,7 +2,7 @@
 
 This is the versioned MCP Builder source for the native Local Table integration.
 Deploy it as a Streamable HTTP MCP server and approve the discovered
-`local_table_upsert_tool` before exposing it. Create a scoped, hashed MCP key
+`local_table_upsert` before exposing it. Create a scoped, hashed MCP key
 whose tool allowlist contains only that tool.
 
 The initial table allowlist is `axtn_document_registry`. The AgentSwarms

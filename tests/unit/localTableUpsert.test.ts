@@ -33,7 +33,7 @@ describe("native Local Table MCP upsert boundary", () => {
 
   it("exposes exactly the approved registry table in the versioned MCP source", () => {
     expect(server).toContain('ALLOWED_TABLES = {"axtn_document_registry"}');
-    expect(server).toContain("local_table_upsert_tool");
+    expect(server).toContain("async def local_table_upsert(");
     expect(server).not.toContain("supabase");
   });
 
