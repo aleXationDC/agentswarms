@@ -6,6 +6,7 @@ const DOCUMENTS_DATASET_NAME = "axtn_documents";
 
 export type WorkbenchDocument = {
   id: string;
+  rowId: string;
   canonicalFilename: string | null;
   originalFilename: string | null;
   documentType: string | null;
@@ -59,6 +60,7 @@ export function normalizeWorkbenchDocument(
 ): WorkbenchDocument {
   return {
     id: readString(row, "id", "document_id") ?? fallbackId,
+    rowId: fallbackId,
     canonicalFilename: readString(row, "canonical_filename", "canonicalFilename", "name"),
     originalFilename: readString(row, "original_filename", "originalFilename", "filename"),
     documentType: readString(row, "document_type", "documentType", "type"),

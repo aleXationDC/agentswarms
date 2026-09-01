@@ -1,15 +1,19 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
   listWorkbenchDocuments,
+  normalizeWorkbenchDocument,
   type WorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
+import { useServerFn } from "@tanstack/react-start";
+import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 
 export const Route = createFileRoute("/_authenticated/documents_/$documentId")({
   component: DocumentDetailPage,
@@ -23,6 +27,8 @@ function DocumentDetailPage() {
   const [document, setDocument] = useState<WorkbenchDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
     if (!user) return;
@@ -77,6 +83,9 @@ function DocumentDetailPage() {
                 </a>
               </Button>
             )}
+            <Button onClick={() => setEditing(true)} variant="outline">
+              <Pencil className="mr-1 h-4 w-4" /> Edit metadata / Human Correction
+            </Button>
           </div>
           <Section
             title="Document"
@@ -133,6 +142,34 @@ function DocumentDetailPage() {
             </pre>
           </details>
         </div>
+      )}
+      {document && (
+        <MetadataEditDialog
+          count={1}
+          onOpenChange={setEditing}
+          onSave={async (edits) => {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (!session) throw new Error("Not signed in.");
+            await saveMetadata({
+              data: {
+                access_token: session.access_token,
+                kind: "document",
+                ids: [document.rowId],
+                edits,
+              },
+            });
+            setDocument((current) =>
+              current
+                ? normalizeWorkbenchDocument({ ...current.metadata, ...edits }, current.rowId)
+                : null,
+            );
+            setEditing(false);
+          }}
+          open={editing}
+          values={document.metadata}
+        />
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ExternalLink, FileText, Search } from "lucide-react";
+import { ExternalLink, FileText, Pencil, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -21,6 +21,9 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
+import { useServerFn } from "@tanstack/react-start";
+import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 
 export const Route = createFileRoute("/_authenticated/documents")({
   head: () => ({ meta: [{ title: "aXtn Documents — AgentSwarms" }] }),
@@ -44,6 +47,9 @@ function DocumentsPage() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [editing, setEditing] = useState(false);
+  const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
 
   useEffect(() => {
     if (!user) return;
@@ -130,6 +136,13 @@ function DocumentsPage() {
             <option value="name">Filename</option>
             <option value="organization">Organisation</option>
           </select>
+          <Button
+            disabled={selected.length === 0}
+            onClick={() => setEditing(true)}
+            variant="outline"
+          >
+            <Pencil className="mr-1 h-4 w-4" /> Bulk Edit ({selected.length})
+          </Button>
         </CardContent>
       </Card>
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -155,6 +168,9 @@ function DocumentsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>
+                    <span className="sr-only">Select</span>
+                  </TableHead>
                   <TableHead>Filename</TableHead>
                   <TableHead>Type / Family</TableHead>
                   <TableHead>Organisation / Issuer</TableHead>
@@ -169,6 +185,20 @@ function DocumentsPage() {
               <TableBody>
                 {visible.map((document) => (
                   <TableRow key={document.id}>
+                    <TableCell>
+                      <input
+                        aria-label={`Select ${display(document.canonicalFilename ?? document.originalFilename)}`}
+                        checked={selected.includes(document.rowId)}
+                        onChange={() =>
+                          setSelected((current) =>
+                            current.includes(document.rowId)
+                              ? current.filter((id) => id !== document.rowId)
+                              : [...current, document.rowId],
+                          )
+                        }
+                        type="checkbox"
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <Link
                         className="hover:underline"
@@ -218,6 +248,23 @@ function DocumentsPage() {
           )}
         </CardContent>
       </Card>
+      <MetadataEditDialog
+        count={selected.length}
+        onOpenChange={setEditing}
+        onSave={async (edits) => {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (!session) throw new Error("Not signed in.");
+          await saveMetadata({
+            data: { access_token: session.access_token, kind: "document", ids: selected, edits },
+          });
+          setSelected([]);
+          setEditing(false);
+        }}
+        open={editing}
+        values={{}}
+      />
     </div>
   );
 }
