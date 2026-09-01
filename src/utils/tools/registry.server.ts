@@ -1043,6 +1043,9 @@ export async function runN8nWorkflow(
 // ============================================================================
 // mcp_call_tool — Streamable HTTP MCP client
 // ============================================================================
+/** Protocol revision this client negotiates. */
+const MCP_PROTOCOL_VERSION = "2025-06-18";
+// ============================================================================
 export const mcpListServersTool: ToolDef = {
   type: "function",
   function: {
@@ -1113,11 +1116,16 @@ async function mcpRequest(
   authType: string,
   authToken: string | null,
   body: Record<string, unknown>,
-): Promise<{ ok: true; result: unknown } | { ok: false; error: string }> {
+  sessionId?: string | null,
+): Promise<
+  { ok: true; result: unknown; sessionId: string | null } | { ok: false; error: string }
+> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
+    "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
   };
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   if (authType === "token" && authToken) headers.Authorization = `Bearer ${authToken}`;
   try {
     // The endpoint is user-registered but fetched from inside the server's
@@ -1129,6 +1137,7 @@ async function mcpRequest(
       signal: AbortSignal.timeout(15_000),
     });
     const text = await r.text();
+    const negotiated = r.headers.get("mcp-session-id");
     if (!r.ok) return { ok: false, error: `${r.status}: ${text.slice(0, 300)}` };
     // Some servers return SSE for tool call results; pull the last data: event.
     if (text.startsWith("event:") || text.includes("\ndata:")) {
@@ -1136,19 +1145,61 @@ async function mcpRequest(
       let last = "";
       for (const l of lines) if (l.startsWith("data:")) last = l.slice(5).trim();
       try {
-        return { ok: true, result: JSON.parse(last) };
+        return { ok: true, result: JSON.parse(last), sessionId: negotiated };
       } catch {
-        return { ok: true, result: last };
+        return { ok: true, result: last, sessionId: negotiated };
       }
     }
     try {
-      return { ok: true, result: JSON.parse(text) };
+      return { ok: true, result: JSON.parse(text), sessionId: negotiated };
     } catch {
-      return { ok: true, result: text };
+      return { ok: true, result: text, sessionId: negotiated };
     }
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+/**
+ * Open a Streamable-HTTP MCP session.
+ *
+ * The spec requires `initialize` before any other method, and a session-bound
+ * server — which is FastMCP's default, so every MCP Builder app — answers a
+ * bare `tools/call` with "Bad Request: Missing session ID". Skipping the
+ * handshake therefore made the agent-facing MCP tools unusable against the
+ * platform's own published servers while appearing to work against the rare
+ * stateless one.
+ *
+ * Returns null for stateless servers, which issue no session id and need none.
+ */
+async function mcpOpenSession(
+  endpoint: string,
+  authType: string,
+  authToken: string | null,
+): Promise<{ ok: true; sessionId: string | null } | { ok: false; error: string }> {
+  const init = await mcpRequest(endpoint, authType, authToken, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: { name: "agentswarms", version: "1" },
+    },
+  });
+  if (!init.ok) return init;
+  // A notification carries no id and expects no result, but servers will not
+  // service requests until they have seen it.
+  if (init.sessionId) {
+    await mcpRequest(
+      endpoint,
+      authType,
+      authToken,
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      init.sessionId,
+    );
+  }
+  return { ok: true, sessionId: init.sessionId };
 }
 
 export async function runListMcpServers(
@@ -1187,12 +1238,15 @@ export async function runMcpListTools(
     });
   }
   const token = await resolveMcpAuthToken(srv);
-  const r = await mcpRequest(srv.endpoint, srv.auth_type, token, {
-    jsonrpc: "2.0",
-    id: 1,
-    method: "tools/list",
-    params: {},
-  });
+  const session = await mcpOpenSession(srv.endpoint, srv.auth_type, token);
+  if (!session.ok) return JSON.stringify({ error: session.error });
+  const r = await mcpRequest(
+    srv.endpoint,
+    srv.auth_type,
+    token,
+    { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+    session.sessionId,
+  );
   if (!r.ok) return JSON.stringify({ error: r.error });
   return JSON.stringify(r.result);
 }
@@ -1218,12 +1272,20 @@ export async function runMcpCallTool(
     });
   }
   const token = await resolveMcpAuthToken(srv);
-  const r = await mcpRequest(srv.endpoint, srv.auth_type, token, {
-    jsonrpc: "2.0",
-    id: Date.now(),
-    method: "tools/call",
-    params: { name: args.tool_name, arguments: args.arguments ?? {} },
-  });
+  const session = await mcpOpenSession(srv.endpoint, srv.auth_type, token);
+  if (!session.ok) return JSON.stringify({ error: session.error });
+  const r = await mcpRequest(
+    srv.endpoint,
+    srv.auth_type,
+    token,
+    {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: { name: args.tool_name, arguments: args.arguments ?? {} },
+    },
+    session.sessionId,
+  );
   if (!r.ok) return JSON.stringify({ error: r.error });
   return JSON.stringify(r.result);
 }
