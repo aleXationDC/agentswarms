@@ -21,7 +21,19 @@ export default defineConfig({
     // must never run by accident in CI, where they would either fail on
     // missing credentials or, worse, write to whatever project happened to be
     // configured.
-    exclude: ["tests/integration/**", "node_modules/**", "dist/**"],
+    //
+    // Behavioural tests are excluded for the same reason in a different shape:
+    // they start real containers, so in CI they would either hang waiting on a
+    // Docker daemon or pull images into a runner that never asked for them.
+    // The one exception is the schema-drift guard, which is pure file reading
+    // and belongs in the fast suite — that is what keeps the container suite's
+    // hand-copied schema subset honest even when nobody runs it.
+    exclude: [
+      "tests/integration/**",
+      "tests/behavioral/**/!(schemaDrift).test.ts",
+      "node_modules/**",
+      "dist/**",
+    ],
     testTimeout: 20_000,
     reporters: process.env.CI ? ["default", "junit"] : ["default"],
     outputFile: process.env.CI ? { junit: "./test-results/junit.xml" } : undefined,
