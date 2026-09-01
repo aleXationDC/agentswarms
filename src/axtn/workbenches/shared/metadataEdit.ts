@@ -52,21 +52,30 @@ export function aggregateMetadataValues(
 ): Record<EditableMetadataField, FieldValueState> {
   return Object.fromEntries(
     EDITABLE_METADATA_FIELDS.map((field) => {
-      const values = records
-        .map((record) => valueForField(record, field))
-        .filter(Boolean) as MetadataValue[];
-      if (values.length === 0) return [field, { kind: "empty" }];
-      if (field === "topics" && new Set(values.map((value) => Array.isArray(value))).size > 1) {
+      const values = records.map((record) => valueForField(record, field));
+      if (values.every((value) => value === null)) return [field, { kind: "empty" }];
+      if (
+        field === "topics" &&
+        new Set(values.filter((value): value is MetadataValue => value !== null).map(Array.isArray))
+          .size > 1
+      ) {
         return [field, { kind: "incompatible" }];
       }
-      const normalized = values.map((value) =>
+      if (values.some((value) => value === null)) return [field, { kind: "mixed" }];
+      const supportedValues = values as MetadataValue[];
+      const normalized = supportedValues.map((value) =>
         Array.isArray(value) ? value.join("\u0000") : value,
       );
       return new Set(normalized).size === 1
-        ? [field, { kind: "common", value: values[0] }]
+        ? [field, { kind: "common", value: supportedValues[0] }]
         : [field, { kind: "mixed" }];
     }),
   ) as Record<EditableMetadataField, FieldValueState>;
+}
+
+export function visibleSelectionIds(selected: string[], visibleIds: string[]): string[] {
+  const visible = new Set(visibleIds);
+  return selected.filter((id) => visible.has(id));
 }
 
 export function applyMetadataEdits(

@@ -21,6 +21,16 @@ export function isReviewStatus(value: string): value is ReviewStatus {
   return value === "pending" || value === "approved" || value === "rejected";
 }
 
+export function hasEditableReviewProposal(approval: NativeApproval): boolean {
+  return (
+    approval.status === "pending" &&
+    typeof approval.payload === "object" &&
+    approval.payload !== null &&
+    typeof (approval.payload as Record<string, unknown>).proposal === "object" &&
+    (approval.payload as Record<string, unknown>).proposal !== null
+  );
+}
+
 export function reviewSearchText(approval: NativeApproval): string {
   return [
     approval.agent_name,

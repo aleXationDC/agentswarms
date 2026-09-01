@@ -4,11 +4,15 @@ import {
   filterAndSortWorkbenchDocuments,
   normalizeWorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
-import { reviewContext } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import {
+  hasEditableReviewProposal,
+  reviewContext,
+} from "@/axtn/workbenches/reviews/reviewWorkbench";
 import {
   allowlistedMetadataEdits,
   aggregateMetadataValues,
   applyMetadataEdits,
+  visibleSelectionIds,
 } from "@/axtn/workbenches/shared/metadataEdit";
 import type { NativeApproval } from "@/hooks/use-approval-decision";
 
@@ -132,13 +136,47 @@ describe("aXtn metadata edits", () => {
       { document_type: "Contract" },
       { topics: ["legal"] },
     ]);
-    expect(fields.document_type).toEqual({ kind: "common", value: "Contract" });
+    expect(fields.document_type).toEqual({ kind: "mixed" });
     expect(fields.organization).toEqual({ kind: "empty" });
+    expect(
+      aggregateMetadataValues([{ document_type: "Contract" }, { document_type: "Contract" }])
+        .document_type,
+    ).toEqual({ kind: "common", value: "Contract" });
     expect(aggregateMetadataValues([{ topics: "legal" }, { topics: ["legal"] }]).topics).toEqual({
       kind: "incompatible",
     });
     expect(
       aggregateMetadataValues([{ topics: ["legal"] }, { topics: ["finance"] }]).topics,
     ).toEqual({ kind: "mixed" });
+    expect(aggregateMetadataValues([{ document_type: "Contract" }, {}]).document_type).toEqual({
+      kind: "mixed",
+    });
+    expect(aggregateMetadataValues([{}, {}]).document_type).toEqual({ kind: "empty" });
+  });
+
+  it("prunes selection to visible eligible IDs", () => {
+    expect(visibleSelectionIds(["visible", "hidden", "stale"], ["visible", "other"])).toEqual([
+      "visible",
+    ]);
+  });
+});
+
+describe("aXtn Review editability", () => {
+  it("only allows pending approvals with an object proposal to be selected or edited", () => {
+    expect(
+      hasEditableReviewProposal({ status: "pending", payload: { proposal: {} } } as NativeApproval),
+    ).toBe(true);
+    expect(
+      hasEditableReviewProposal({
+        status: "approved",
+        payload: { proposal: {} },
+      } as NativeApproval),
+    ).toBe(false);
+    expect(
+      hasEditableReviewProposal({
+        status: "pending",
+        payload: { proposal: null },
+      } as NativeApproval),
+    ).toBe(false);
   });
 });

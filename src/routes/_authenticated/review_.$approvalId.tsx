@@ -1,7 +1,11 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft, CheckCircle2, Pencil, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { reviewContext, type NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import {
+  hasEditableReviewProposal,
+  reviewContext,
+  type NativeApproval,
+} from "@/axtn/workbenches/reviews/reviewWorkbench";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,7 +99,7 @@ function ReviewDetailPage() {
               </p>
             </div>
             <ReviewContext approval={approval} />
-            {isEditableProposal(approval) && (
+            {hasEditableReviewProposal(approval) && (
               <Button onClick={() => setEditing(true)} variant="outline">
                 <Pencil className="mr-1 h-4 w-4" /> Edit proposal / Human Override
               </Button>
@@ -119,7 +123,7 @@ function ReviewDetailPage() {
           </CardContent>
         </Card>
       )}
-      {approval && isEditableProposal(approval) && (
+      {approval && hasEditableReviewProposal(approval) && (
         <MetadataEditDialog
           count={1}
           onOpenChange={setEditing}
@@ -148,15 +152,6 @@ function ReviewDetailPage() {
         />
       )}
     </div>
-  );
-}
-
-function isEditableProposal(approval: NativeApproval): boolean {
-  return (
-    typeof approval.payload === "object" &&
-    approval.payload !== null &&
-    typeof (approval.payload as Record<string, unknown>).proposal === "object" &&
-    (approval.payload as Record<string, unknown>).proposal !== null
   );
 }
 

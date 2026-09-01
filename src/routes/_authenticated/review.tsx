@@ -8,10 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import {
   NativeApproval,
+  hasEditableReviewProposal,
   reviewContext,
   reviewSearchText,
   type ReviewStatus,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { visibleSelectionIds } from "@/axtn/workbenches/shared/metadataEdit";
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -76,10 +78,15 @@ function ReviewsPage() {
     });
   }, [items, search, sort, status]);
   const pendingCount = items.filter((item) => item.status === "pending").length;
-  const selectable = filtered.filter((item) => item.status === "pending" && isEditable(item));
+  const selectable = useMemo(() => filtered.filter(hasEditableReviewProposal), [filtered]);
+  const selectableIds = useMemo(() => selectable.map((item) => item.id), [selectable]);
   const selectedRecords = items
     .filter((item) => selected.includes(item.id))
     .map((item) => (item.payload as Record<string, unknown>).proposal as Record<string, unknown>);
+
+  useEffect(() => {
+    setSelected((current) => visibleSelectionIds(current, selectableIds));
+  }, [selectableIds]);
 
   async function decide(item: NativeApproval, decision: "approved" | "rejected") {
     if (!(await decideApproval(item, decision))) return;
@@ -180,7 +187,7 @@ function ReviewsPage() {
                 className="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
                 key={item.id}
               >
-                {item.status === "pending" && isEditable(item) && (
+                {hasEditableReviewProposal(item) && (
                   <input
                     aria-label={`Select ${item.action_title}`}
                     checked={selected.includes(item.id)}
@@ -258,15 +265,6 @@ function ReviewsPage() {
         records={selectedRecords}
       />
     </div>
-  );
-}
-
-function isEditable(item: NativeApproval) {
-  return (
-    typeof item.payload === "object" &&
-    item.payload !== null &&
-    typeof (item.payload as Record<string, unknown>).proposal === "object" &&
-    (item.payload as Record<string, unknown>).proposal !== null
   );
 }
 

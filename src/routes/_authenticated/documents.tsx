@@ -7,6 +7,7 @@ import {
   listWorkbenchDocuments,
   type WorkbenchDocument,
 } from "@/axtn/workbenches/documents/documentsWorkbench";
+import { visibleSelectionIds } from "@/axtn/workbenches/shared/metadataEdit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,6 +83,15 @@ function DocumentsPage() {
   const selectedRecords = documents
     .filter((document) => selected.includes(document.rowId))
     .map((document) => document.metadata);
+
+  useEffect(() => {
+    setSelected((current) =>
+      visibleSelectionIds(
+        current,
+        visible.map((document) => document.rowId),
+      ),
+    );
+  }, [visible]);
 
   return (
     <div className="space-y-6 p-6">
