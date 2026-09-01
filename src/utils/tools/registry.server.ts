@@ -1043,8 +1043,9 @@ export async function runN8nWorkflow(
 // ============================================================================
 // mcp_call_tool — Streamable HTTP MCP client
 // ============================================================================
-/** Protocol revision this client negotiates. */
-const MCP_PROTOCOL_VERSION = "2025-06-18";
+/** Protocol revision this client asks for; the server may answer with an
+ * older one, and that answer is what every later request must carry. */
+const MCP_PREFERRED_PROTOCOL_VERSION = "2025-06-18";
 // ============================================================================
 export const mcpListServersTool: ToolDef = {
   type: "function",
@@ -1108,7 +1109,13 @@ async function loadMcpServer(ctx: AgentToolContext, name: string) {
   return data;
 }
 
-// Single MCP request over Streamable HTTP. The MCP spec requires the client
+/**
+ * One live MCP interaction: the version the server actually agreed to, plus
+ * the session id it issued (null for a server that keeps no session).
+ */
+type McpSession = { sessionId: string | null; protocolVersion: string };
+
+// Single MCP request over Streamable HTTP. Streamable HTTP requires the client
 // to accept BOTH application/json and text/event-stream — without it many
 // servers return 406. We always send JSON-RPC POST.
 async function mcpRequest(
@@ -1116,16 +1123,19 @@ async function mcpRequest(
   authType: string,
   authToken: string | null,
   body: Record<string, unknown>,
-  sessionId?: string | null,
+  session?: McpSession | null,
 ): Promise<
   { ok: true; result: unknown; sessionId: string | null } | { ok: false; error: string }
 > {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
-    "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    // Before a session exists there is nothing to echo, so the opening
+    // `initialize` advertises what we prefer; everything afterwards must use
+    // what the server actually chose, which may be older than our preference.
+    "MCP-Protocol-Version": session?.protocolVersion ?? MCP_PREFERRED_PROTOCOL_VERSION,
   };
-  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (session?.sessionId) headers["Mcp-Session-Id"] = session.sessionId;
   if (authType === "token" && authToken) headers.Authorization = `Bearer ${authToken}`;
   try {
     // The endpoint is user-registered but fetched from inside the server's
@@ -1161,45 +1171,115 @@ async function mcpRequest(
 }
 
 /**
- * Open a Streamable-HTTP MCP session.
+ * What a JSON-RPC reply actually carried.
  *
- * The spec requires `initialize` before any other method, and a session-bound
- * server — which is FastMCP's default, so every MCP Builder app — answers a
- * bare `tools/call` with "Bad Request: Missing session ID". Skipping the
- * handshake therefore made the agent-facing MCP tools unusable against the
- * platform's own published servers while appearing to work against the rare
- * stateless one.
+ * `opaque` exists because a body we cannot read as JSON-RPC is not evidence of
+ * failure — some servers answer with plain text — and the old code passed such
+ * replies through untouched. Turning "unreadable" into "failed" here would
+ * change behaviour for servers that work today.
+ */
+type RpcShape =
+  | { kind: "error"; error: string }
+  | { kind: "result"; result: Record<string, unknown> }
+  | { kind: "opaque" };
+
+function rpcShape(raw: unknown): RpcShape {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { kind: "opaque" };
+  const env = raw as Record<string, unknown>;
+  if (env.error) {
+    const e = env.error as { code?: unknown; message?: unknown };
+    const message =
+      e && typeof e === "object" && typeof e.message === "string"
+        ? e.message
+        : JSON.stringify(env.error).slice(0, 300);
+    const code = e && typeof e === "object" && e.code !== undefined ? ` (code ${e.code})` : "";
+    return { kind: "error", error: `${message}${code}` };
+  }
+  if (env.result && typeof env.result === "object" && !Array.isArray(env.result)) {
+    return { kind: "result", result: env.result as Record<string, unknown> };
+  }
+  return { kind: "opaque" };
+}
+
+/**
+ * Human-readable text out of an MCP tool result's `content` blocks, used to
+ * report a failure the caller would otherwise never see.
+ */
+function mcpResultText(result: Record<string, unknown>): string {
+  const content = result.content;
+  if (!Array.isArray(content)) return JSON.stringify(result).slice(0, 300);
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string")
+      parts.push((block as { text: string }).text);
+  }
+  return parts.join("\n").trim() || JSON.stringify(result).slice(0, 300);
+}
+
+/**
+ * Open a Streamable HTTP MCP session against a Builder/runtime server.
  *
- * Returns null for stateless servers, which issue no session id and need none.
+ * These servers are session-bound (FastMCP's default, so every app MCP Builder
+ * publishes): they answer a bare `tools/call` with "Bad Request: Missing
+ * session ID". Skipping the handshake therefore made the platform's own
+ * published servers silently unusable from swarms, because that refusal
+ * arrives as HTTP 200 wrapping a JSON-RPC error rather than as a failure.
+ *
+ * The handshake is `initialize` → `notifications/initialized`. The
+ * notification is sent whether or not a session id was issued: a server is
+ * entitled to reject real work until it has seen it, and a stateless server
+ * that skips it would leave the two cases silently divergent. Its failure is
+ * fatal for the interaction — continuing would be exactly the "looks fine,
+ * does nothing" behaviour this whole path is fixing.
+ *
+ * Scope note: this covers the handshake-based Builder/runtime path this client
+ * talks to. It is not a general-purpose MCP client and makes no claim to
+ * implement every transport the wider ecosystem allows.
  */
 async function mcpOpenSession(
   endpoint: string,
   authType: string,
   authToken: string | null,
-): Promise<{ ok: true; sessionId: string | null } | { ok: false; error: string }> {
+): Promise<{ ok: true; session: McpSession } | { ok: false; error: string }> {
   const init = await mcpRequest(endpoint, authType, authToken, {
     jsonrpc: "2.0",
     id: 1,
     method: "initialize",
     params: {
-      protocolVersion: MCP_PROTOCOL_VERSION,
+      protocolVersion: MCP_PREFERRED_PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: "agentswarms", version: "1" },
     },
   });
-  if (!init.ok) return init;
-  // A notification carries no id and expects no result, but servers will not
-  // service requests until they have seen it.
-  if (init.sessionId) {
-    await mcpRequest(
-      endpoint,
-      authType,
-      authToken,
-      { jsonrpc: "2.0", method: "notifications/initialized" },
-      init.sessionId,
-    );
+  if (!init.ok) return { ok: false, error: `MCP initialize failed: ${init.error}` };
+
+  const shape = rpcShape(init.result);
+  if (shape.kind === "error") {
+    return { ok: false, error: `MCP initialize failed: ${shape.error}` };
   }
-  return { ok: true, sessionId: init.sessionId };
+  // No readable result means no negotiated version, and guessing one would put
+  // a header on every later request that the server never agreed to.
+  if (shape.kind !== "result" || typeof shape.result.protocolVersion !== "string") {
+    return { ok: false, error: "MCP initialize returned no protocolVersion" };
+  }
+  const protocolVersion = shape.result.protocolVersion.trim();
+  if (!protocolVersion) return { ok: false, error: "MCP initialize returned no protocolVersion" };
+
+  const session: McpSession = { sessionId: init.sessionId, protocolVersion };
+
+  const ack = await mcpRequest(
+    endpoint,
+    authType,
+    authToken,
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    session,
+  );
+  if (!ack.ok) return { ok: false, error: `MCP initialized notification failed: ${ack.error}` };
+  const ackShape = rpcShape(ack.result);
+  if (ackShape.kind === "error") {
+    return { ok: false, error: `MCP initialized notification failed: ${ackShape.error}` };
+  }
+  return { ok: true, session };
 }
 
 export async function runListMcpServers(
@@ -1245,9 +1325,11 @@ export async function runMcpListTools(
     srv.auth_type,
     token,
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    session.sessionId,
+    session.session,
   );
   if (!r.ok) return JSON.stringify({ error: r.error });
+  const shape = rpcShape(r.result);
+  if (shape.kind === "error") return JSON.stringify({ error: shape.error });
   return JSON.stringify(r.result);
 }
 
@@ -1284,9 +1366,20 @@ export async function runMcpCallTool(
       method: "tools/call",
       params: { name: args.tool_name, arguments: args.arguments ?? {} },
     },
-    session.sessionId,
+    session.session,
   );
   if (!r.ok) return JSON.stringify({ error: r.error });
+  // A tool that refused still arrives as HTTP 200. Reporting that as success
+  // is what let a registry write silently do nothing, so both a JSON-RPC error
+  // and an `isError` result become a visible failure here. A normal result is
+  // passed through exactly as before.
+  const shape = rpcShape(r.result);
+  if (shape.kind === "error") return JSON.stringify({ error: shape.error });
+  if (shape.kind === "result" && shape.result.isError === true) {
+    return JSON.stringify({
+      error: `MCP tool '${args.tool_name}' failed: ${mcpResultText(shape.result)}`,
+    });
+  }
   return JSON.stringify(r.result);
 }
 
