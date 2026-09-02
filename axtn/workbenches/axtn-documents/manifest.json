@@ -41,7 +41,8 @@
   ],
   "implementation_commits": [
     "88ec442",
-    "18bda42"
+    "18bda42",
+    "74cc661"
   ],
   "release_tag": "workbench/axtn-documents/v0.1.0",
   "portable": true,
