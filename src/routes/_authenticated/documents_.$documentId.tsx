@@ -64,7 +64,7 @@ function DocumentDetailPage() {
       ) : !document ? (
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
-            This document is not available in the current dataset.
+            This document is not present in the document registry.
           </CardContent>
         </Card>
       ) : (
@@ -73,7 +73,7 @@ function DocumentDetailPage() {
             <div>
               <p className="text-sm text-muted-foreground">Document</p>
               <h1 className="font-display text-2xl font-semibold tracking-tight">
-                {value(document.canonicalFilename ?? document.originalFilename)}
+                {document.displayName}
               </h1>
             </div>
             {document.sourceUrl && (
@@ -114,8 +114,24 @@ function DocumentDetailPage() {
             ]}
           />
           <Section
+            title="Registration"
+            fields={[
+              ["Document ID", document.id],
+              ["Registration status", document.processingStatus],
+              ["Privacy status", document.privacyClass],
+              ["Extraction status", document.extractionStatus],
+              ["Registry schema", document.schemaVersion],
+              ["Originating run", document.sourceSwarmRunId],
+            ]}
+          />
+          <Section
             title="Source"
             fields={[
+              ["Source kind", document.sourceType],
+              ["Provider file ID", document.providerFileId],
+              ["Source reference", document.sourceRef],
+              ["Content hash", document.contentHash],
+              ["Hash algorithm", document.hashAlgorithm],
               ["Source / Drive link", document.sourceUrl],
               ["MIME type", document.mimeType],
               [
@@ -132,7 +148,8 @@ function DocumentDetailPage() {
               <CardTitle>History / Related</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Not provided by the declared document dataset.
+              Semantic history is not part of the registration record. Fields that a later lifecycle
+              stage has not produced yet stay unresolved rather than being guessed.
             </CardContent>
           </Card>
           <details className="rounded-lg border p-4">

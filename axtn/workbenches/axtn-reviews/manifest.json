@@ -4,33 +4,55 @@
   "name": "aXtn Reviews",
   "version": "0.1.0",
   "category": "operations",
-  "description": "Searchable operational review surface over native AgentSwarms approvals.",
-  "routes": ["/review", "/review/$approvalId"],
-  "navigation": { "group": "Overview", "label": "aXtn Reviews" },
-  "permissions": ["authenticated user subject to native approval RLS"],
+  "description": "Searchable operational review surface over native AgentSwarms approvals, including technical intake registration approvals.",
+  "routes": [
+    "/review",
+    "/review/$approvalId"
+  ],
+  "navigation": {
+    "group": "Overview",
+    "label": "aXtn Reviews"
+  },
+  "permissions": [
+    "authenticated user subject to native approval RLS"
+  ],
   "tested_agentswarms_upstream_sha": "7c6e48bca030675dbb47d4309e3a12d958e3e8f2",
   "axtn_base_sha": "36482f210de8b3e153831b56f1dc26187862c3d3",
   "native_capabilities_consumed": [
     "approvals table",
     "native approve/reject state",
-    "native approval RLS"
+    "native approval RLS",
+    "shared native approval decision and swarm-resume path (useApprovalDecision)"
   ],
   "axtn_dependencies": [],
-  "data_contracts": ["native approvals rows"],
+  "data_contracts": [
+    "native approvals rows",
+    "semantic classification approvals carry payload.proposal / payload.context and are rendered as a review context",
+    "intake registration approvals (action_title 'Review Intake Registration') carry the intake acknowledgement as a JSON string in payload.last_output, falling back to description; fields consumed: accepted, document_id, processing_status, processing_route, registry_outcome, next_location",
+    "source kind and provider file id are read back out of the namespaced document_id (<source_type>:<source_ref>) and never invented",
+    "a review is actionable only while status = pending; decided reviews are read-only history"
+  ],
   "database_migrations": [],
   "source_paths": [
     "src/axtn/workbenches/reviews/",
     "src/axtn/workbenches/shared/metadataEdit.ts",
     "src/components/axtn/MetadataEditDialog.tsx",
+    "src/components/axtn/ReviewContextPanel.tsx",
+    "src/components/ApprovalInbox.tsx",
     "src/routes/_authenticated/review.tsx",
     "src/routes/_authenticated/review_.$approvalId.tsx",
     "src/utils/axtnWorkbenchEdits.functions.ts"
   ],
-  "implementation_commits": ["fa6a48b", "463fb54", "18bda42"],
+  "implementation_commits": [
+    "fa6a48b",
+    "463fb54",
+    "18bda42"
+  ],
   "release_tag": "workbench/axtn-reviews/v0.1.0",
   "portable": true,
   "known_limitations": [
     "Human Overrides are limited to allowlisted proposal metadata and remain subject to native approval RLS.",
+    "A registration approval has no semantic proposal to override; only its technical facts are shown.",
     "Mixed string and string-array topic contracts are intentionally not bulk editable."
   ]
 }

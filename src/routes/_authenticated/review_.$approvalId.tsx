@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCircle2, Pencil, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   hasEditableReviewProposal,
-  reviewContext,
+  isActionableReview,
   type NativeApproval,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
+import { ReviewContextPanel } from "@/components/axtn/ReviewContextPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 import { useServerFn } from "@tanstack/react-start";
@@ -98,7 +99,7 @@ function ReviewDetailPage() {
                 {approval.description || "No description provided."}
               </p>
             </div>
-            <ReviewContext approval={approval} />
+            <ReviewContextPanel approval={approval} />
             {hasEditableReviewProposal(approval) && (
               <Button onClick={() => setEditing(true)} variant="outline">
                 <Pencil className="mr-1 h-4 w-4" /> Edit proposal / Human Override
@@ -110,7 +111,7 @@ function ReviewDetailPage() {
                 {JSON.stringify(approval.payload, null, 2)}
               </pre>
             </div>
-            {approval.status === "pending" && (
+            {isActionableReview(approval) && (
               <div className="flex gap-2 border-t pt-5">
                 <Button onClick={() => void decide("rejected")} variant="outline">
                   <XCircle className="mr-1 h-4 w-4" /> Reject
@@ -151,37 +152,6 @@ function ReviewDetailPage() {
           ]}
         />
       )}
-    </div>
-  );
-}
-
-function ReviewContext({ approval }: { approval: NativeApproval }) {
-  const context = reviewContext(approval);
-  const value = (field: string | number | null) => field ?? "—";
-  const fields: Array<[string, string | number | null]> = [
-    ["Subject / Filename", context.subject],
-    ["Item kind", context.itemKind],
-    ["Document type", context.documentType],
-    ["Document family", context.documentFamily],
-    ["Organisation / Issuer", context.organization],
-    ["Primary domain", context.primaryDomain],
-    ["Proposed location", context.proposedLocation],
-    ["Confidence", context.confidence === null ? null : `${Math.round(context.confidence * 100)}%`],
-    ["Topics", context.topics],
-    ["Summary", context.summary],
-    ["Clarification / context", context.clarification],
-  ];
-  return (
-    <div>
-      <h2 className="text-sm font-medium">Review context</h2>
-      <dl className="mt-2 grid gap-4 rounded-md border p-4 text-sm sm:grid-cols-2">
-        {fields.map(([label, field]) => (
-          <div key={label}>
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="mt-1 break-words">{value(field)}</dd>
-          </div>
-        ))}
-      </dl>
     </div>
   );
 }

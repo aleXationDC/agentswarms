@@ -29,6 +29,11 @@ import {
   type ApprovalDecision,
   type NativeApproval,
 } from "@/hooks/use-approval-decision";
+import {
+  isActionableReview,
+  registrationContext,
+} from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { ReviewContextPanel } from "@/components/axtn/ReviewContextPanel";
 
 type Approval = NativeApproval;
 
@@ -45,6 +50,19 @@ const RISK_COLORS: Record<string, string> = {
   high: "bg-orange-500/10 text-orange-400 border-orange-500/30",
   critical: "bg-red-500/10 text-red-400 border-red-500/30",
 };
+
+/**
+ * Registration approvals carry the raw acknowledgement JSON in `description`,
+ * which is unreadable in the drawer. Show the interpreted identity instead and
+ * keep the raw payload available below.
+ */
+function approvalHeadline(approval: Approval): string {
+  const registration = registrationContext(approval);
+  if (registration?.documentId) {
+    return `Registered ${registration.documentId}`;
+  }
+  return approval.description ?? "";
+}
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -240,15 +258,17 @@ export function ApprovalInbox() {
                         <Icon className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                         <div className="min-w-0">
                           <p className="text-xs font-semibold">{ap.action_title}</p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            {ap.description}
+                          <p className="text-[11px] text-muted-foreground mt-0.5 break-words">
+                            {approvalHeadline(ap)}
                           </p>
                         </div>
                       </div>
 
+                      <ReviewContextPanel approval={ap} compact />
+
                       <details className="group">
                         <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground select-none">
-                          View payload
+                          View raw payload
                         </summary>
                         <pre className="mt-1 max-w-full rounded-md bg-background border border-border/50 p-2 text-[10px] leading-relaxed whitespace-pre-wrap break-all font-mono text-muted-foreground">
                           {JSON.stringify(ap.payload, null, 2)}
@@ -256,20 +276,22 @@ export function ApprovalInbox() {
                       </details>
                     </div>
 
-                    <div className="flex border-t border-border">
-                      <button
-                        onClick={() => void decide(ap, "rejected")}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
-                      >
-                        <XCircle className="h-3.5 w-3.5" /> Reject
-                      </button>
-                      <button
-                        onClick={() => void decide(ap, "approved")}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                      </button>
-                    </div>
+                    {isActionableReview(ap) && (
+                      <div className="flex border-t border-border">
+                        <button
+                          onClick={() => void decide(ap, "rejected")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Reject
+                        </button>
+                        <button
+                          onClick={() => void decide(ap, "approved")}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
