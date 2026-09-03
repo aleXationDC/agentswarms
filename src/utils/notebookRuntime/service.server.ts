@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { getOrchestrator, type KernelKind } from "./orchestrator";
 import { getRuntimeSettings } from "./config.server";
-import { signSessionToken } from "./token.server";
+import { effectiveSessionTtlSeconds, signSessionToken } from "./token.server";
 import { appInContainer } from "./docker.server";
 
 export type SessionRow = Database["public"]["Tables"]["notebook_runtime_sessions"]["Row"];
@@ -120,10 +120,18 @@ export async function startSession(opts: {
   const mem = batch ? settings.batchMemLimitMb : settings.memLimitMb;
   const maxMin = batch ? settings.batchMaxMinutes : settings.sessionMaxMinutes;
   const nowIso = new Date().toISOString();
-  // A published MCP server is supposed to stay up: a hard expiry would take it
-  // offline on a timer for no reason. Idleness (or an explicit stop) ends it
-  // instead — see reapSessions().
-  const expiresAt = service ? null : new Date(Date.now() + maxMin * 60_000).toISOString();
+  // The sandbox capability token is clamped to at most an hour (see
+  // effectiveSessionTtlSeconds). A service used to record `expires_at = null`
+  // to mean "no hard expiry, idleness ends it instead" — but that described the
+  // CONTAINER, not the credential inside it. A service kept busy for longer than
+  // the clamp went on reporting `ready` while every call it made was rejected
+  // with an expired token, because nothing had written down when that token
+  // died. Record the credential deadline for every kind, so readiness can be
+  // judged against it and the service rotated before it lapses.
+  const ttlSeconds = effectiveSessionTtlSeconds(maxMin * 60);
+  const expiresAt = service
+    ? new Date(Date.now() + ttlSeconds * 1000).toISOString()
+    : new Date(Date.now() + maxMin * 60_000).toISOString();
 
   // `notebook_id` is a uuid FK to a saved notebook. Interactive kernels driven
   // over the websocket (e.g. running a bundled sample, which has a slug id like
@@ -160,7 +168,9 @@ export async function startSession(opts: {
   const token = await signSessionToken({
     userId: opts.userId,
     sessionId: row.id,
-    ttlSeconds: Math.min(maxMin * 60, 3600),
+    // Same clamp that produced `expires_at` above, so the recorded deadline
+    // and the minted one cannot drift apart.
+    ttlSeconds,
   });
   if (!token) {
     await supabaseAdmin
@@ -208,11 +218,33 @@ export async function startSession(opts: {
 /** Poll the orchestrator and reconcile the DB row. Returns the updated row. */
 export async function refreshSession(row: SessionRow): Promise<SessionRow> {
   const terminal = ["stopped", "error", "succeeded"];
-  if (terminal.includes(row.status) || !row.container_ref) return row;
+  if (terminal.includes(row.status)) return row;
+
+  // A session row is INSERTed before its container exists and only gets
+  // `container_ref` once the orchestrator has handed one back — a window that
+  // lasts as long as a cold start. This function used to return the caller's
+  // own object unchanged for such a row, without reading anything, so a waiter
+  // that had picked the row up inside that window polled a frozen copy of it
+  // forever: the container came up, the row went `ready` in the database, and
+  // the waiter sat on a stale snapshot until its deadline expired. Re-read the
+  // row instead, so the caller observes the transition it is waiting for.
+  if (!row.container_ref) {
+    const { data: fresh } = await supabaseAdmin
+      .from("notebook_runtime_sessions")
+      .select("*")
+      .eq("id", row.id)
+      .maybeSingle();
+    if (!fresh) return row;
+    if (terminal.includes(fresh.status) || !fresh.container_ref) return fresh as SessionRow;
+    row = fresh as SessionRow;
+  }
+
+  const containerRef = row.container_ref;
+  if (!containerRef) return row;
 
   const settings = await getRuntimeSettings();
   const orch = await getOrchestrator(settings);
-  const st = await orch.status(row.container_ref, row.kind as KernelKind);
+  const st = await orch.status(containerRef, row.kind as KernelKind);
 
   const patch: Database["public"]["Tables"]["notebook_runtime_sessions"]["Update"] = {
     last_active_at: new Date().toISOString(),
@@ -230,7 +262,7 @@ export async function refreshSession(row: SessionRow): Promise<SessionRow> {
     // to a dead container.
     patch.status = row.kind === "service" ? "stopped" : "succeeded";
     patch.stopped_at = new Date().toISOString();
-    patch.logs = await orch.logs(row.container_ref).catch(() => "");
+    patch.logs = await orch.logs(containerRef).catch(() => "");
   } else if (st.state === "gone") {
     patch.status = row.status === "ready" || row.status === "running" ? "stopped" : "error";
     patch.stopped_at = new Date().toISOString();

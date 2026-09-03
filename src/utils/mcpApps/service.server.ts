@@ -59,6 +59,41 @@ const POLL_MS = 750;
  */
 const LEASE_TTL_MS = COLD_START_MS * 2;
 
+/**
+ * How much credential life a service must have left to be handed to a caller.
+ *
+ * Container health and credential health are different things, and treating
+ * them as one is what let `ensureRunning()` return an endpoint whose sandbox
+ * token had already expired: the process was listening, so it looked fine, and
+ * every call it made was rejected. A service is only useful if the capability
+ * inside it will still be valid for the work about to be started, so anything
+ * closer than this to its deadline is replaced rather than returned.
+ *
+ * Sized above a normal cold start (a healthy one is ~5s, the budget is 90s) so
+ * the replacement is up and serving well before the outgoing credential lapses.
+ */
+export const CREDENTIAL_SAFETY_MS = 5 * 60_000;
+
+const TERMINAL = ["stopped", "error", "succeeded"];
+
+/**
+ * Will this session's sandbox credential outlive the call we are about to make?
+ *
+ * A null `expires_at` means "no recorded deadline" and is treated as healthy:
+ * that is how sessions created before this was recorded read, and refusing them
+ * would take working services offline for a missing field rather than a real
+ * expiry.
+ */
+export function credentialHealthy(
+  session: { expires_at?: string | null },
+  now: number = Date.now(),
+): boolean {
+  if (!session.expires_at) return true;
+  const expiry = Date.parse(session.expires_at);
+  if (Number.isNaN(expiry)) return true;
+  return expiry - now > CREDENTIAL_SAFETY_MS;
+}
+
 export type EnsureResult =
   | { ok: true; endpoint: string; session: SessionRow }
   | { ok: false; status: number; error: string; message: string };
@@ -139,6 +174,77 @@ async function waitReady(session: SessionRow, deadline: number): Promise<WaitOut
 }
 
 /**
+ * Outcome of waiting for this app to have a service worth using.
+ *
+ * Distinct from WaitOutcome, which watches ONE session a caller already holds.
+ * This watches the APP: whichever session is currently live for it, re-read on
+ * every pass. Latching a single row was the bug — a waiter that picked one up
+ * before it had a container_ref polled that snapshot until its deadline while
+ * the real session went ready seconds later.
+ */
+type Adoption =
+  | { outcome: "ready"; row: SessionRow }
+  /** Live, serving, but its credential is at or near its deadline. */
+  | { outcome: "expiring"; row: SessionRow }
+  /** Nothing live is left for this app; the caller may start a replacement. */
+  | { outcome: "gone"; row: SessionRow | null }
+  /** Still coming up when the clock ran out. Something IS starting. */
+  | { outcome: "deadline" };
+
+/**
+ * Wait until this app has a live, serving, credential-healthy service.
+ *
+ * The one waiter used by every non-starting path: the caller that found an
+ * existing session and the caller that lost the start lease both want the same
+ * thing — the first usable service, as soon as it exists — and they used to say
+ * so in two slightly different loops, only one of which could adopt promptly.
+ *
+ * `onExpiring` is the one place they differ. The caller that is in a position to
+ * ACT on a lapsing credential wants to hear about it ("report") so it can take
+ * the lease and rotate. A caller that has already lost the lease must not: the
+ * service it can see is the outgoing one, and reporting it would turn every
+ * concurrent caller during a rotation into a failure. It waits ("wait") for the
+ * replacement the lease holder is already starting.
+ */
+async function awaitAdoptable(
+  appId: string,
+  seed: SessionRow | null,
+  deadline: number,
+  onExpiring: "report" | "wait",
+): Promise<Adoption> {
+  let row = seed ?? (await liveSession(appId));
+  while (Date.now() < deadline) {
+    if (row) {
+      row = await refreshSession(row);
+      if (row.status === "ready" && row.endpoint) {
+        if (credentialHealthy(row)) return { outcome: "ready", row };
+        if (onExpiring === "report") return { outcome: "expiring", row };
+        // Otherwise: the lease holder is replacing it. Keep waiting.
+      } else if (TERMINAL.includes(row.status)) {
+        // This one is finished. Another caller may already have started its
+        // replacement, so look before concluding the app has nothing.
+        const other = await liveSession(appId);
+        if (other) {
+          row = other;
+          continue;
+        }
+        // Nothing live right now. For the caller that can act on that, this is
+        // the answer. For a lease loser it is just the gap between the holder
+        // stopping the outgoing service and inserting its replacement — a
+        // rotation is not a failure, so keep waiting for the new one.
+        if (onExpiring === "report") return { outcome: "gone", row };
+      }
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    // Re-read rather than reusing the handle: the live session for an app can
+    // legitimately change identity while we wait. Nothing live yet simply means
+    // the starter has not inserted its row — keep waiting, do not give up.
+    row = await liveSession(appId);
+  }
+  return { outcome: "deadline" };
+}
+
+/**
  * Return a live endpoint for this app, cold-starting the sandbox if needed.
  *
  * Scale-to-zero means the first call after an idle period pays the start cost;
@@ -167,35 +273,52 @@ export async function ensureRunning(app: McpAppRow): Promise<EnsureResult> {
 
   const deadline = Date.now() + COLD_START_MS;
 
+  // Whatever is already live for this app, adopted as soon as it can serve.
+  let retiring: SessionRow | null = null;
   const existing = await liveSession(app.id);
   if (existing) {
-    const outcome = await waitReady(existing, deadline);
-    if (outcome.ready && outcome.row.endpoint) {
-      await touch(outcome.row.id);
-      return { ok: true, endpoint: outcome.row.endpoint, session: outcome.row };
+    const adoption = await awaitAdoptable(app.id, existing, deadline, "report");
+    if (adoption.outcome === "ready") {
+      await touch(adoption.row.id);
+      return { ok: true, endpoint: adoption.row.endpoint!, session: adoption.row };
     }
-    // It died while we watched. Fall through and start a fresh one rather than
-    // reporting a failure the next request would have fixed anyway.
+    if (adoption.outcome === "deadline") {
+      // Something is still starting and may yet succeed. Starting a SECOND
+      // container here is how a slow-but-healthy cold start used to end with
+      // two sandboxes for one app: the waiter gave up, took the lease the
+      // starter had already released on success, and began again.
+      return fail(503, "starting", "The MCP server is still starting — retry in a few seconds.");
+    }
+    // "expiring": serving, but its credential is about to lapse — replace it
+    // under the same single-flight lease rather than handing out a service that
+    // will start failing mid-call. "gone": it is finished; start a fresh one.
+    if (adoption.outcome === "expiring") retiring = adoption.row;
   }
 
   if (!(await acquireStartLease(app.id))) {
-    // Another replica is starting it. Wait for its session to appear rather
+    // Another replica is starting (or rotating) it. Wait for its session rather
     // than racing it into a second container.
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      const s = await liveSession(app.id);
-      if (!s) continue;
-      const outcome = await waitReady(s, deadline);
-      if (outcome.ready && outcome.row.endpoint) {
-        await touch(outcome.row.id);
-        return { ok: true, endpoint: outcome.row.endpoint, session: outcome.row };
-      }
-      break;
+    const adoption = await awaitAdoptable(app.id, null, deadline, "wait");
+    if (adoption.outcome === "ready") {
+      await touch(adoption.row.id);
+      return { ok: true, endpoint: adoption.row.endpoint!, session: adoption.row };
     }
     return fail(503, "starting", "The MCP server is still starting — retry in a few seconds.");
   }
 
   try {
+    // Hold the lease before retiring anything: rotation has to be as
+    // single-flight as a cold start, or concurrent callers would each stop the
+    // outgoing service and start their own replacement.
+    if (retiring) {
+      const current = await liveSession(app.id);
+      // Re-check under the lease — another caller may have rotated it already,
+      // in which case the live session is a fresh one and must not be stopped.
+      if (current && current.id === retiring.id && !credentialHealthy(current)) {
+        await stopSession(current).catch(() => {});
+      }
+    }
+
     const caps = mcpServiceCaps();
     if ((await countLiveServices(app.user_id)) >= caps.perUser) {
       await setAppStatus(app.id, "error", `Per-user limit of ${caps.perUser} running MCP servers`);
@@ -296,6 +419,10 @@ async function touch(sessionId: string): Promise<void> {
 export async function runningEndpoint(appId: string): Promise<string | null> {
   const session = await liveSession(appId);
   if (!session || session.status !== "ready") return null;
+  // Same rule as ensureRunning(): a sandbox whose capability has lapsed cannot
+  // do the work being asked of it, so reporting it as reachable only converts
+  // "nothing was running" into a call that fails.
+  if (!credentialHealthy(session)) return null;
   return session.endpoint ?? null;
 }
 
