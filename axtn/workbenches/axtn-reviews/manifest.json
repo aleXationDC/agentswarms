@@ -22,7 +22,8 @@
     "approvals table",
     "native approve/reject state",
     "native approval RLS",
-    "shared native approval decision and swarm-resume path (useApprovalDecision)"
+    "shared native approval decision and swarm-resume path (useApprovalDecision)",
+    "user_data_tables / user_data_rows (read-only registry resolution, subject to the same native dataset RLS)"
   ],
   "axtn_dependencies": [],
   "data_contracts": [
@@ -30,7 +31,8 @@
     "semantic classification approvals carry payload.proposal / payload.context and are rendered as a review context",
     "intake registration approvals (action_title 'Review Intake Registration') carry the intake acknowledgement as a JSON string in payload.last_output, falling back to description; fields consumed: accepted, document_id, processing_status, processing_route, registry_outcome, next_location",
     "source kind and provider file id are read back out of the namespaced document_id (<source_type>:<source_ref>) and never invented",
-    "a review is actionable only while status = pending; decided reviews are read-only history"
+    "a review is actionable only while status = pending; decided reviews are read-only history",
+    "a registration approval additionally resolves its registry row read-only by document_id through the shared documents dataset binding; the acknowledgement stays the primary source and the registry only fills fields the acknowledgement does not carry (filename, MIME type, content hash, hash algorithm). A failed or empty lookup degrades to the acknowledgement alone and never blocks the review."
   ],
   "database_migrations": [],
   "source_paths": [
@@ -41,13 +43,15 @@
     "src/components/ApprovalInbox.tsx",
     "src/routes/_authenticated/review.tsx",
     "src/routes/_authenticated/review_.$approvalId.tsx",
-    "src/utils/axtnWorkbenchEdits.functions.ts"
+    "src/utils/axtnWorkbenchEdits.functions.ts",
+    "src/axtn/workbenches/documents/documentsWorkbench.ts"
   ],
   "implementation_commits": [
     "fa6a48b",
     "463fb54",
     "18bda42",
-    "74cc661"
+    "74cc661",
+    "d796237"
   ],
   "release_tag": "workbench/axtn-reviews/v0.1.0",
   "portable": true,

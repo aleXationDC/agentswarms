@@ -14,7 +14,19 @@ export default tseslint.config(
   // noise: it teaches you to skim the output, which is how four genuine
   // errors sat in the tracked source failing CI without being noticed.
   // Local lint must mean what CI's lint means.
-  { ignores: ["dist", ".output", ".vinxi", ".claude"] },
+  {
+    ignores: [
+      "dist",
+      ".output",
+      ".vinxi",
+      ".claude",
+      // Swarm function-node bodies. These are function BODIES executed by the
+      // swarm runtime, not modules: a top-level `return` is the contract, so
+      // parsing them as standalone files can only produce a false error. Their
+      // behaviour is covered by tests that execute them.
+      "axtn/swarms/*/nodes/*.js",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
