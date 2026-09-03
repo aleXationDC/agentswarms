@@ -21,7 +21,6 @@ try { envelope = JSON.parse(raw); } catch (e) { envelope = null; }
 
 const result = envelope && envelope.result ? envelope.result : null;
 const structured = result && result.structuredContent ? result.structuredContent : null;
-const rpcError = envelope && envelope.error ? envelope.error : (envelope && envelope.error === undefined ? null : null);
 const toolErrored = !result || result.isError === true;
 const outcome = structured ? String(structured.outcome || "") : "";
 const wrote = outcome === "inserted" || outcome === "updated";
@@ -35,16 +34,49 @@ const document_id = effective ? String(effective.document_id || "") : "";
 
 const accepted = Boolean(document_id) && Boolean(route) && !toolErrored && wrote;
 
+// An unproven write must fail the run, not return a rejection object.
+//
+// Returning a value here would let the swarm continue into the native approval
+// gate, which would both create a pending approval for a document that was
+// never registered and let the ingress record the deterministic
+// Idempotency-Key as a completed success. That permanently caches the failure
+// and makes the item unretryable. Throwing keeps the registry the single
+// source of truth: the run ends as an error, the key is recorded as failed and
+// stays reclaimable through the existing failed-state takeover, and the source
+// file is simply rediscovered by the next normal poll.
 if (!accepted) {
-  return JSON.stringify({
-    accepted: false,
-    document_id: document_id,
-    source_ref: source_ref,
-    processing_status: "rejected",
-    processing_route: route || "unresolved",
-    error: "registry_write_failed",
-    detail: raw.slice(0, 500),
-  });
+  // Only safe identifiers and failure classification are reported: no document
+  // bytes, no extracted content, no credentials.
+  const rpcMessage =
+    envelope && envelope.error && envelope.error.message ? String(envelope.error.message) : "";
+  let toolMessage = "";
+  if (result && Array.isArray(result.content)) {
+    for (const part of result.content) {
+      if (part && typeof part.text === "string" && part.text) {
+        toolMessage = part.text;
+        break;
+      }
+    }
+  }
+  const cause = rpcMessage || toolMessage || (raw ? "unrecognised registry response" : "empty registry response");
+  const where =
+    " source_ref=" +
+    (source_ref || "(none)") +
+    " outcome=" +
+    (outcome || "(none)") +
+    " document_id=" +
+    (document_id || "(none)");
+
+  // Deterministic, fail-closed rejection. Already enforced upstream by the
+  // envelope validator; kept here so an unroutable state can never be treated
+  // as a retryable infrastructure fault.
+  if (!route) {
+    throw new Error(
+      "PRIVACY_ROUTE_UNRESOLVED: privacy_status=" + (privacy_status || "(empty)") + where,
+    );
+  }
+
+  throw new Error("REGISTRY_WRITE_FAILED:" + where + " cause=" + String(cause).slice(0, 300));
 }
 // Workflow state and physical location are different things, and only the
 // mailbox transport is actually being told to move something.
