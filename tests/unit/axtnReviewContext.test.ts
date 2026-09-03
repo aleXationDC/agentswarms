@@ -179,3 +179,45 @@ describe("review detail page contract", () => {
     expect(page).toContain("useApprovalDecision");
   });
 });
+
+describe("registration review supplementation contract", () => {
+  const panel = readFileSync(
+    path.join(rootDir, "src/components/axtn/ReviewContextPanel.tsx"),
+    "utf8",
+  );
+
+  it("resolves the registry row read-only by document_id", () => {
+    expect(panel).toContain("findWorkbenchDocumentByDocumentId");
+  });
+
+  it("displays the technical identity fields the handoff requires", () => {
+    for (const label of [
+      '"Document ID"',
+      '"Filename"',
+      '"Source kind"',
+      '"Provider file ID"',
+      '"MIME type"',
+      '"Content hash"',
+      '"Registration status"',
+      '"Registry outcome"',
+      '"Next location"',
+    ]) {
+      expect(panel).toContain(label);
+    }
+  });
+
+  it("keeps the approval record as the primary source", () => {
+    // ACK values come first; registry values only fill gaps.
+    expect(panel).toContain("registration.sourceType ?? document?.sourceType");
+    expect(panel).toContain("registration.providerFileId ?? document?.providerFileId");
+  });
+
+  it("never mutates the approval or writes through this panel", () => {
+    expect(panel).not.toMatch(/\.update\(|\.insert\(|\.upsert\(|\.delete\(/);
+  });
+
+  it("tolerates a missing registry row without breaking rendering", () => {
+    // The lookup failure path is swallowed and the panel still renders the ACK.
+    expect(panel).toContain(".catch(() => undefined)");
+  });
+});

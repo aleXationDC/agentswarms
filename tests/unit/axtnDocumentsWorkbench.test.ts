@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  findWorkbenchDocumentByDocumentId,
   isRegisteredDocumentRow,
   listWorkbenchDocuments,
   normalizeWorkbenchDocument,
@@ -182,5 +183,49 @@ describe("aXtn Documents registry binding", () => {
 
     await listWorkbenchDocuments(client as never, "user-1");
     expect(written).toEqual([]);
+  });
+});
+
+describe("resolving a single registered document", () => {
+  const ROW = {
+    ...REGISTERED_ROW,
+    original_filename: "Rechnung-2026-01.pdf",
+    mime_type: "application/pdf",
+    content_hash: "e3b0c442",
+    hash_algorithm: "sha256",
+  };
+
+  it("resolves the registry row behind a registration approval", async () => {
+    const { client } = fakeSupabase([{ id: "14930", row: ROW }], "axtn_document_registry");
+    const document = await findWorkbenchDocumentByDocumentId(
+      client as never,
+      "user-1",
+      "google_drive:drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
+    );
+
+    expect(document?.originalFilename).toBe("Rechnung-2026-01.pdf");
+    expect(document?.mimeType).toBe("application/pdf");
+    expect(document?.contentHash).toBe("e3b0c442");
+    expect(document?.hashAlgorithm).toBe("sha256");
+  });
+
+  it("returns nothing rather than a guess for an unknown identity", async () => {
+    const { client } = fakeSupabase([{ id: "14930", row: ROW }], "axtn_document_registry");
+
+    expect(
+      await findWorkbenchDocumentByDocumentId(client as never, "user-1", "google_drive:drive:none"),
+    ).toBeNull();
+    expect(await findWorkbenchDocumentByDocumentId(client as never, "user-1", "  ")).toBeNull();
+  });
+
+  it("never resolves a seed row as a document", async () => {
+    const { client } = fakeSupabase(
+      [{ id: "14905", row: SCHEMA_SEED_ROW }],
+      "axtn_document_registry",
+    );
+
+    expect(
+      await findWorkbenchDocumentByDocumentId(client as never, "user-1", "schema_seed"),
+    ).toBeNull();
   });
 });

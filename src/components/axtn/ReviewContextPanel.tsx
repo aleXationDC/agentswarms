@@ -1,4 +1,12 @@
+import { useEffect, useState } from "react";
+
+import {
+  findWorkbenchDocumentByDocumentId,
+  type WorkbenchDocument,
+} from "@/axtn/workbenches/documents/documentsWorkbench";
 import { reviewContext, type NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { useAuth } from "@/hooks/use-auth";
+import { supabase } from "@/integrations/supabase/client";
 
 const display = (field: string | number | null) => field ?? "—";
 
@@ -36,13 +44,24 @@ export function ReviewContextPanel({
   ];
   const hasSemanticContext = semanticFields.some(([, field]) => field !== null);
   const registration = context.registration;
+  const document = useRegisteredDocument(registration?.documentId ?? null);
 
+  // The approval record stays the primary source. Registry facts only fill in
+  // what the acknowledgement does not carry, so a missing or not-yet-loaded
+  // registry row can never blank out something the approval already proved.
   const registrationFields: Array<[string, string | number | null]> = registration
     ? [
         ["Document ID", registration.documentId],
-        ["Source kind", registration.sourceType],
-        ["Provider file ID", registration.providerFileId],
-        ["Registration status", registration.processingStatus],
+        ["Filename", document?.displayName ?? document?.originalFilename ?? null],
+        ["Source kind", registration.sourceType ?? document?.sourceType ?? null],
+        ["Provider file ID", registration.providerFileId ?? document?.providerFileId ?? null],
+        ["MIME type", document?.mimeType ?? null],
+        ["Content hash", document?.contentHash ?? null],
+        ["Hash algorithm", document?.hashAlgorithm ?? null],
+        [
+          "Registration status",
+          registration.processingStatus ?? document?.processingStatus ?? null,
+        ],
         ["Registry outcome", registration.registryOutcome],
         ["Processing route", registration.processingRoute],
         ["Next location", registration.nextLocation],
@@ -65,6 +84,31 @@ export function ReviewContextPanel({
       )}
     </div>
   );
+}
+
+/**
+ * Read-only lookup of the registry row behind a registration approval.
+ *
+ * Failures are swallowed on purpose: the approval must stay readable and
+ * decidable even when the supplementary lookup cannot run.
+ */
+function useRegisteredDocument(documentId: string | null): WorkbenchDocument | null {
+  const { user } = useAuth();
+  const [document, setDocument] = useState<WorkbenchDocument | null>(null);
+
+  useEffect(() => {
+    setDocument(null);
+    if (!documentId || !user) return;
+    let cancelled = false;
+    void findWorkbenchDocumentByDocumentId(supabase, user.id, documentId)
+      .then((resolved) => !cancelled && setDocument(resolved))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, user]);
+
+  return document;
 }
 
 function Grid({

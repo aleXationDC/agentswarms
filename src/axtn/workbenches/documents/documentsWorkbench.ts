@@ -223,3 +223,23 @@ export async function listWorkbenchDocuments(
     .filter((entry) => isRegisteredDocumentRow(entry.fields))
     .map((entry) => normalizeWorkbenchDocument(entry.fields, entry.rowId));
 }
+
+/**
+ * Resolves a single registered document by its canonical `document_id`.
+ *
+ * Read-only, and deliberately reusing the same dataset binding, RLS path and
+ * normalisation as the inventory: a Review that resolved documents through a
+ * second query shape could disagree with what /documents shows for the same
+ * row. Returns null when the identity has no registry row, which is a normal
+ * state (for example a registration whose write did not happen) and must not
+ * be presented as missing data on the approval itself.
+ */
+export async function findWorkbenchDocumentByDocumentId(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  documentId: string,
+): Promise<WorkbenchDocument | null> {
+  if (!documentId.trim()) return null;
+  const documents = await listWorkbenchDocuments(supabase, userId);
+  return documents.find((document) => document.id === documentId) ?? null;
+}
