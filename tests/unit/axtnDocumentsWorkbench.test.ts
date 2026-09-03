@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  UNRESOLVED_FILENAME_LABEL,
   findWorkbenchDocumentByDocumentId,
   isRegisteredDocumentRow,
   listWorkbenchDocuments,
@@ -149,14 +150,65 @@ describe("aXtn Documents registry binding", () => {
     expect(document.canonicalFilename).toBeNull();
   });
 
-  it("still gives an unnamed registered document a usable identity in lists", () => {
-    expect(normalizeWorkbenchDocument(REGISTERED_ROW, "14930").displayName).toBe(
-      "1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
+  it("never presents a provider file id as the document's filename", () => {
+    // The defect: a row with no filename displayed its Drive file id under a
+    // column header that says "Filename", so a source locator was shown as the
+    // document's name.
+    const unnamed = normalizeWorkbenchDocument(REGISTERED_ROW, "14930");
+
+    expect(unnamed.filename).toBeNull();
+    expect(unnamed.filenameUnavailable).toBe(true);
+    expect(unnamed.displayName).toBe(UNRESOLVED_FILENAME_LABEL);
+    expect(unnamed.displayName).not.toBe("1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
+    // The provider id is not hidden — it is shown in the field that is about
+    // the provider.
+    expect(unnamed.providerFileId).toBe("1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
+  });
+
+  it("uses the real filename when the registration recorded one", () => {
+    const named = normalizeWorkbenchDocument(
+      { ...REGISTERED_ROW, original_filename: "Rechnung-2026-01.pdf" },
+      "1",
     );
+
+    expect(named.filename).toBe("Rechnung-2026-01.pdf");
+    expect(named.filenameUnavailable).toBe(false);
+    expect(named.displayName).toBe("Rechnung-2026-01.pdf");
     expect(
       normalizeWorkbenchDocument({ ...REGISTERED_ROW, canonical_filename: "Invoice.pdf" }, "1")
         .displayName,
     ).toBe("Invoice.pdf");
+  });
+
+  it("keeps a canonical 24-hex identity distinct from the provider id", () => {
+    const document = normalizeWorkbenchDocument(
+      {
+        ...REGISTERED_ROW,
+        document_id: "0f1e2d3c4b5a69788796a5b4",
+        source_ref: "drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
+        drive_file_id: "1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
+      },
+      "1",
+    );
+
+    expect(document.id).toMatch(/^[0-9a-f]{24}$/);
+    expect(document.id).not.toBe(document.providerFileId);
+    expect(document.providerFileId).toBe("1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
+    // A 24-hex identity carries no provider namespace to mis-parse.
+    expect(document.id).not.toContain(":");
+  });
+
+  it("exposes a Drive link for a registered Drive document", () => {
+    const document = normalizeWorkbenchDocument(
+      {
+        ...REGISTERED_ROW,
+        drive_url: "https://drive.google.com/file/d/1F8F2Uo/view",
+      },
+      "1",
+    );
+
+    expect(document.sourceUrl).toBe("https://drive.google.com/file/d/1F8F2Uo/view");
+    expect(document.sourceType).toBe("google_drive");
   });
 
   it("keeps the registry read-only: the workbench never writes", async () => {

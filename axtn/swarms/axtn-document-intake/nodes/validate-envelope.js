@@ -27,23 +27,40 @@ if (!Object.prototype.hasOwnProperty.call(ROUTES, state)) {
 }
 const processing_route = ROUTES[state];
 
-// Canonical, deterministic key. Never model-chosen.
-const canonical = String(env.source_type).trim().toLowerCase() + ":" + String(env.idempotency_key).trim();
-const document_id = canonical.replace(/[^A-Za-z0-9:._@-]/g, "_");
-if (!document_id) throw new Error("INVALID_ENVELOPE: could not derive document_id");
+// The DETERMINISTIC SOURCE IDENTITY. This is the key the registry row is
+// found by, and it is exactly that: a locator for the source item, not the
+// document's identity. Keying on it is what makes replay land on the row that
+// already exists instead of creating a second one.
+//
+// The internal document_id is deliberately NOT derived here. It is minted once
+// by the platform broker when the row is first created and carried forward on
+// every later write (see the immutable/generate directives at the bottom of
+// this file). A snippet here could not mint one correctly even if it wanted
+// to: this sandbox is built with no host globals, so it has no CSPRNG.
+const source_ref = String(env.idempotency_key).trim();
+if (!source_ref) throw new Error("INVALID_ENVELOPE: empty idempotency_key");
 
 const mail = env.mail && typeof env.mail === "object" ? env.mail : {};
 const identity = env.source_identity && typeof env.source_identity === "object" ? env.source_identity : {};
 const transport = env.transport && typeof env.transport === "object" ? env.transport : {};
 
 // Technical/provenance facts only. Semantic fields stay blank on purpose.
+const source_type = String(env.source_type).trim();
+const is_mail = source_type === "imap" || source_type === "gmail" || source_type === "mail";
+
+// A mail item is a mail; anything else this ingress registers is a document.
+// The old unconditional "mail" default silently mislabelled every Drive file
+// that did not state its own artifact_type.
+const artifact_type = env.artifact_type
+  ? String(env.artifact_type)
+  : (is_mail ? "mail" : "document");
+
 const row = {
   schema_version: String(env.schema_version),
   record_kind: "document",
-  document_id: document_id,
-  artifact_type: String(env.artifact_type || "mail"),
-  source_type: String(env.source_type),
-  source_ref: String(env.idempotency_key),
+  artifact_type: artifact_type,
+  source_type: source_type,
+  source_ref: source_ref,
   privacy_status: state,
   processing_status: "registered",
 };
@@ -90,20 +107,42 @@ if (declaredSize !== undefined && declaredSize !== null && declaredSize !== "") 
   if (Number.isFinite(size)) row.file_size = size;
 }
 
-// Provider-side location identifiers, again only when supplied.
+// Provider-side location identifiers, again only when supplied. These are
+// SOURCE LOCATORS and are stored in their own columns; nothing here is ever
+// promoted to the document's identity or to its filename.
 put("drive_file_id", identity.drive_file_id);
 put("current_parent_folder_id", identity.parent_folder_id || transport.parent_folder_id);
 put("current_path", transport.location);
+
+// Source link. Preferred verbatim from the transport, which reads it from
+// provider metadata. The canonical Drive fallback is a deterministic rendering
+// of an ID we already hold rather than a new fact: it states where the file
+// we just registered lives, and without it the Workbench has no way back to
+// the provider for documents whose metadata omitted the link.
+const suppliedUrl = env.source_url || identity.source_url || identity.drive_url || transport.source_url;
+if (suppliedUrl) {
+  put("drive_url", suppliedUrl);
+} else if (source_type === "google_drive" && identity.drive_file_id) {
+  put("drive_url", "https://drive.google.com/file/d/" + String(identity.drive_file_id) + "/view");
+}
 
 const discovered = transport.received_at || env.received_at;
 if (discovered) row.discovered_at = String(discovered);
 
 // Exactly the MCP tool's arguments and nothing else: the tool schema is
 // closed, so one extra key makes the whole call fail validation upstream.
+//
+// document_id is absent from `row` on purpose. The broker mints it only when
+// it inserts a new row, and `immutable_columns` makes it survive every later
+// write of the same source item — including the pre-existing rows whose
+// document_id is a legacy provider-derived value, which are carried forward
+// untouched rather than rewritten.
 if (!processing_route) throw new Error("PRIVACY_ROUTE_UNRESOLVED");
 return JSON.stringify({
   table_name: "axtn_document_registry",
-  key_column: "document_id",
-  key_value: document_id,
+  key_column: "source_ref",
+  key_value: source_ref,
   row: row,
+  immutable_columns: ["document_id"],
+  generate_columns: { document_id: "hex24" },
 });

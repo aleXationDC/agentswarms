@@ -230,7 +230,11 @@ function DocumentsPage() {
                         params={{ documentId: document.id }}
                         to="/documents/$documentId"
                       >
-                        {document.displayName}
+                        <span
+                          className={document.filenameUnavailable ? "text-muted-foreground" : ""}
+                        >
+                          {document.displayName}
+                        </span>
                       </Link>
                     </TableCell>
                     <TableCell>
@@ -273,7 +277,11 @@ function DocumentsPage() {
                         <Button asChild size="sm" variant="ghost">
                           <a href={document.sourceUrl} rel="noreferrer" target="_blank">
                             <ExternalLink className="h-4 w-4" />
-                            <span className="sr-only">Open source</span>
+                            <span className="sr-only">
+                              {document.sourceType === "google_drive"
+                                ? "Open in Drive"
+                                : "Open source"}
+                            </span>
                           </a>
                         </Button>
                       )}

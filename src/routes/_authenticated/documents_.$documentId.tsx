@@ -79,7 +79,8 @@ function DocumentDetailPage() {
             {document.sourceUrl && (
               <Button asChild variant="outline">
                 <a href={document.sourceUrl} rel="noreferrer" target="_blank">
-                  Open source <ExternalLink className="ml-1 h-4 w-4" />
+                  {document.sourceType === "google_drive" ? "Open in Drive" : "Open source"}
+                  <ExternalLink className="ml-1 h-4 w-4" />
                 </a>
               </Button>
             )}
@@ -90,6 +91,7 @@ function DocumentDetailPage() {
           <Section
             title="Document"
             fields={[
+              ["Filename", document.filename],
               ["Canonical filename", document.canonicalFilename],
               ["Original filename", document.originalFilename],
               ["Type", document.documentType],

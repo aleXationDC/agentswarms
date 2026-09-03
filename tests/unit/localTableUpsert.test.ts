@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { HEX24_RE, generateHex24 } from "@/utils/localTableUpsert.server";
+
 const broker = readFileSync("src/utils/localTableUpsert.server.ts", "utf8");
 const migration = readFileSync(
   "supabase/migrations/20260901000000_axtn_local_table_upsert.sql",
@@ -75,5 +77,76 @@ describe("native Local Table MCP upsert boundary", () => {
     expect(edge).not.toContain("row: localTableArgs");
     expect(broker).toContain('action: "local_table.upsert"');
     expect(broker).toContain("mcp_app_id: session.mcp_app_id");
+  });
+});
+
+// DMS-LIVE-0003-A: identity that the caller is not able to produce.
+//
+// The registration boundary runs in the function-node sandbox, and that
+// sandbox is built with `vm.createContext(Object.create(null))` — no host
+// globals whatsoever, so no `crypto` and no CSPRNG. A caller there can only
+// derive an "identity" from data it already holds, which is exactly the defect
+// this handoff removes: the document id was `google_drive:drive:<fileId>`, a
+// provider locator wearing the name of an internal identity.
+//
+// So the broker mints it. These tests are about the two generic table
+// semantics that makes that safe, and they run the real code rather than
+// grepping for it.
+describe("server-minted row identity", () => {
+  it("produces 96 bits of identifier with no structure to read", () => {
+    const value = generateHex24();
+
+    expect(value).toMatch(HEX24_RE);
+    expect(value).toHaveLength(24);
+    // Nothing namespaced, nothing provider-shaped, nothing to parse back out.
+    expect(value).not.toContain(":");
+  });
+
+  it("does not repeat itself", () => {
+    const seen = new Set(Array.from({ length: 2000 }, () => generateHex24()));
+
+    expect(seen.size).toBe(2000);
+  });
+
+  it("uses a cryptographic source, not Math.random", () => {
+    // A predictable document id is a disclosure problem, not just an
+    // aesthetic one: it makes another tenant's registrations guessable.
+    expect(broker).toContain('import { randomBytes } from "node:crypto"');
+    expect(broker).toContain('randomBytes(12).toString("hex")');
+    expect(broker).not.toContain("Math.random");
+  });
+
+  it("refuses to write an identifier it could not prove unique", () => {
+    // The loop's purpose is the failure mode. Reusing an identity that already
+    // belongs to another record is worse than not writing at all.
+    expect(broker).toContain("Could not mint a unique value");
+    expect(broker).toMatch(/for \(let attempt = 0; attempt < 5; attempt\+\+\)/);
+  });
+
+  it("generates only on insert, and only for a column the table declares", () => {
+    expect(broker).toContain("generate_columns names an undeclared column");
+    expect(broker).toContain('generate_columns supports only the "hex24" strategy');
+    // Inventing the lookup key is incoherent — it could never match a row.
+    expect(broker).toContain("generate_columns must not name the key_column");
+  });
+
+  it("carries an established identity through a replay instead of reminting it", () => {
+    // The RPC REPLACES the stored row, so without this an unchanged source
+    // item would get a new identity on every poll.
+    expect(broker).toContain("immutable_columns names an undeclared column");
+    expect(broker).toContain("effective_columns");
+  });
+
+  it("keeps a column name from reaching the filter syntax unchecked", () => {
+    // These names are interpolated into a PostgREST `row->>col` filter.
+    expect(broker).toContain("SAFE_COLUMN_RE");
+    expect(broker).toContain("const SAFE_COLUMN_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;");
+  });
+
+  it("stays a generic table semantic and learns nothing about documents", () => {
+    // A shared platform capability must not become registry-aware.
+    const identityCode = broker.slice(broker.indexOf("export const HEX24_RE"));
+    expect(identityCode).not.toContain("document_id");
+    expect(identityCode).not.toContain("axtn_document_registry");
   });
 });

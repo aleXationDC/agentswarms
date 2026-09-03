@@ -27,6 +27,8 @@ type UpsertCall = {
   key_column: string;
   key_value: string;
   row: Record<string, unknown>;
+  immutable_columns?: string[];
+  generate_columns?: Record<string, string>;
 };
 
 /**
@@ -59,13 +61,88 @@ const DRIVE_ENVELOPE = {
 };
 
 describe("intake registration mapping", () => {
-  it("still targets the canonical registry keyed on document_id", () => {
+  it("keys the registry row on the deterministic source identity", () => {
     const call = runValidate(DRIVE_ENVELOPE);
 
     expect(call.table_name).toBe("axtn_document_registry");
-    expect(call.key_column).toBe("document_id");
-    expect(call.key_value).toBe("google_drive:drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
-    expect(call.row.document_id).toBe(call.key_value);
+    // The row is found by WHICH PROVIDER ITEM it is. That is what makes a
+    // replay land on the row that already exists instead of creating a second.
+    expect(call.key_column).toBe("source_ref");
+    expect(call.key_value).toBe("drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
+    expect(call.row.source_ref).toBe(call.key_value);
+  });
+
+  it("never derives, invents or restates the internal document identity", () => {
+    const call = runValidate(DRIVE_ENVELOPE);
+
+    // The old contract wrote "google_drive:drive:<fileId>" here, which made a
+    // provider locator the document's identity. Nothing in this boundary is
+    // allowed to produce that value any more.
+    expect(call.row).not.toHaveProperty("document_id");
+    expect(JSON.stringify(call)).not.toContain("google_drive:drive:");
+
+    // Instead it asks the platform to mint one exactly once and to keep it.
+    expect(call.generate_columns).toEqual({ document_id: "hex24" });
+    expect(call.immutable_columns).toEqual(["document_id"]);
+  });
+
+  it("asks for the same identity treatment no matter how often it is called", () => {
+    const first = runValidate(DRIVE_ENVELOPE);
+    const second = runValidate(DRIVE_ENVELOPE);
+
+    // Replay of the same source item is byte-identical, so it can only ever
+    // resolve to the one existing row.
+    expect(second).toEqual(first);
+  });
+
+  it("gives two distinct provider items two distinct source identities", () => {
+    const a = runValidate(DRIVE_ENVELOPE);
+    const b = runValidate({
+      ...DRIVE_ENVELOPE,
+      idempotency_key: "drive:a-different-file",
+      source_identity: { ...DRIVE_ENVELOPE.source_identity, drive_file_id: "a-different-file" },
+    });
+
+    expect(b.key_value).not.toBe(a.key_value);
+  });
+
+  it("does not collapse two documents that happen to share a hash", () => {
+    const a = runValidate(DRIVE_ENVELOPE);
+    const b = runValidate({
+      ...DRIVE_ENVELOPE,
+      idempotency_key: "drive:second-copy",
+      source_identity: { ...DRIVE_ENVELOPE.source_identity, drive_file_id: "second-copy" },
+    });
+
+    // Identical bytes, different source items: still two rows.
+    expect(b.row.content_hash).toBe(a.row.content_hash);
+    expect(b.key_value).not.toBe(a.key_value);
+  });
+
+  it("registers a Drive file as a document rather than as mail", () => {
+    expect(runValidate(DRIVE_ENVELOPE).row.artifact_type).toBe("document");
+    // The defect: no explicit artifact_type used to fall back to "mail".
+    expect(runValidate({ ...DRIVE_ENVELOPE, artifact_type: undefined }).row.artifact_type).toBe(
+      "document",
+    );
+  });
+
+  it("records the physical location and a usable source link", () => {
+    const { row } = runValidate(DRIVE_ENVELOPE);
+
+    expect(row.current_path).toBe("00_Inbox");
+    expect(row.drive_url).toBe(
+      "https://drive.google.com/file/d/1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR/view",
+    );
+  });
+
+  it("prefers the link the transport supplies over the constructed one", () => {
+    const { row } = runValidate({
+      ...DRIVE_ENVELOPE,
+      source_url: "https://drive.google.com/file/d/x/view?usp=drivesdk",
+    });
+
+    expect(row.drive_url).toBe("https://drive.google.com/file/d/x/view?usp=drivesdk");
   });
 
   it("preserves the technical facts the transport already established", () => {
@@ -111,8 +188,8 @@ describe("intake registration mapping", () => {
     ]) {
       expect(row).not.toHaveProperty(column);
     }
-    // The identity that really did arrive is still recorded.
-    expect(row.document_id).toBeTruthy();
+    // The source identity that really did arrive is still recorded.
+    expect(row.source_ref).toBeTruthy();
     expect(row.drive_file_id).toBe("1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
   });
 

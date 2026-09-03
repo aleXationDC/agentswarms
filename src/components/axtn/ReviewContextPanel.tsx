@@ -52,32 +52,57 @@ export function ReviewContextPanel({
   const registrationFields: Array<[string, string | number | null]> = registration
     ? [
         ["Document ID", registration.documentId],
-        ["Filename", document?.displayName ?? document?.originalFilename ?? null],
+        // The document's own name, and nothing else. A provider file id is a
+        // source locator; showing one here would answer "what is this file
+        // called" with an identifier that is not a name.
+        ["Filename", document?.filename ?? null],
         ["Source kind", registration.sourceType ?? document?.sourceType ?? null],
         ["Provider file ID", registration.providerFileId ?? document?.providerFileId ?? null],
         ["MIME type", document?.mimeType ?? null],
         ["Content hash", document?.contentHash ?? null],
         ["Hash algorithm", document?.hashAlgorithm ?? null],
+        ["Current location", document?.currentPath ?? null],
         [
           "Registration status",
           registration.processingStatus ?? document?.processingStatus ?? null,
         ],
         ["Registry outcome", registration.registryOutcome],
         ["Processing route", registration.processingRoute],
-        ["Next location", registration.nextLocation],
+        // Registration does not move a Drive file, so there is no next physical
+        // location to report and the row is left out entirely rather than
+        // claiming a destination the file was never sent to.
+        ...(registration.nextLocation
+          ? ([["Next location", registration.nextLocation]] as Array<
+              [string, string | number | null]
+            >)
+          : []),
         ["Accepted", registration.accepted === null ? null : registration.accepted ? "yes" : "no"],
       ]
     : [];
+  const sourceUrl = document?.sourceUrl ?? null;
+  const isDrive = (registration?.sourceType ?? document?.sourceType) === "google_drive";
 
   return (
     <div className="space-y-4">
       {registration && (
-        <Grid
-          title="Registration"
-          note="This step confirms the technical registration of the document. No classification has been proposed yet."
-          fields={registrationFields}
-          compact={compact}
-        />
+        <>
+          <Grid
+            title="Registration"
+            note="This step confirms the technical registration of the document. No classification has been proposed yet."
+            fields={registrationFields}
+            compact={compact}
+          />
+          {sourceUrl && (
+            <a
+              className="inline-flex items-center text-sm font-medium underline underline-offset-4"
+              href={sourceUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {isDrive ? "Open in Drive" : "Open source"}
+            </a>
+          )}
+        </>
       )}
       {(hasSemanticContext || !registration) && (
         <Grid title="Review context" fields={semanticFields} compact={compact} />

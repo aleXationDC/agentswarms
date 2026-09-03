@@ -32,7 +32,11 @@ export type WorkbenchDocument = {
   modifiedAt: string | null;
   ingestedAt: string | null;
   privacyClass: string | null;
+  /** The document's real filename, or null. Never a provider identifier. */
+  filename: string | null;
   displayName: string;
+  /** True when the row carries no filename at all, so the UI can say so. */
+  filenameUnavailable: boolean;
   recordKind: string | null;
   sourceType: string | null;
   sourceRef: string | null;
@@ -102,10 +106,23 @@ export function isRegisteredDocumentRow(row: Record<string, unknown>): boolean {
   return Boolean(readString(row, "document_id"));
 }
 
+/** Shown wherever a document has no filename. Never a provider identifier. */
+export const UNRESOLVED_FILENAME_LABEL = "No filename recorded";
+
+/** The document's own name, from the filename columns only. */
+export function readDocumentFilename(row: Record<string, unknown>): string | null {
+  return (
+    readString(row, "canonical_filename", "canonicalFilename", "name") ??
+    readString(row, "original_filename", "originalFilename", "filename") ??
+    readString(row, "current_filename", "currentFilename")
+  );
+}
+
 export function normalizeWorkbenchDocument(
   row: Record<string, unknown>,
   fallbackId: string,
 ): WorkbenchDocument {
+  const filename = readDocumentFilename(row);
   return {
     id: readString(row, "id", "document_id") ?? fallbackId,
     rowId: fallbackId,
@@ -128,13 +145,14 @@ export function normalizeWorkbenchDocument(
     modifiedAt: readString(row, "modified_time", "modified_at", "updated_at"),
     ingestedAt: readString(row, "ingested_at", "created_at"),
     privacyClass: readString(row, "privacy_class", "privacyClass", "privacy_status"),
-    displayName:
-      readString(row, "canonical_filename", "canonicalFilename") ??
-      readString(row, "original_filename", "originalFilename") ??
-      readString(row, "current_filename") ??
-      readProviderFileId(row) ??
-      readString(row, "document_id") ??
-      fallbackId,
+    filename: filename,
+    // A name, or an honest statement that there is none. This used to fall
+    // through to the provider file id, which meant a row with no filename
+    // displayed a Drive file id under a column header that said "Filename" —
+    // presenting a source locator as the document's name. The provider id is
+    // still shown, in the field that is actually about the provider.
+    displayName: filename ?? UNRESOLVED_FILENAME_LABEL,
+    filenameUnavailable: filename === null,
     recordKind: readString(row, "record_kind"),
     sourceType: readString(row, "source_type", "provider_type"),
     sourceRef: readString(row, "source_ref"),
