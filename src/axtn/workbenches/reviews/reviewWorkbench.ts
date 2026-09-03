@@ -26,6 +26,8 @@ export type ReviewContext = {
 
 export type RegistrationContext = {
   documentId: string | null;
+  /** The source locator the registry row is keyed by, e.g. "drive:<fileId>". */
+  sourceRef: string | null;
   accepted: boolean | null;
   processingStatus: string | null;
   processingRoute: string | null;
@@ -34,6 +36,21 @@ export type RegistrationContext = {
   sourceType: string | null;
   providerFileId: string | null;
 };
+
+/**
+ * What a registration approval actually decides.
+ *
+ * Traced from the published "aXtn Document Management" swarm, where the
+ * approval node `gate1_intake` sits AFTER the `run_intake` sub-swarm and
+ * BEFORE `run_privacy`. The registry row therefore already exists by the time
+ * this approval is shown, and the runtime resumes into the parked node with
+ * the decision in hand: approval continues the run, rejection throws and halts
+ * it. Neither outcome writes or unwinds the registry row.
+ */
+export const REGISTRATION_GATE_NOTE =
+  "Technical registration is already complete and the registry entry exists. " +
+  "Approving releases the document for further processing; rejecting halts it. " +
+  "Neither decision creates or removes the registration.";
 
 export function isReviewStatus(value: string): value is ReviewStatus {
   return value === "pending" || value === "approved" || value === "rejected";
@@ -49,17 +66,84 @@ export function hasEditableReviewProposal(approval: NativeApproval): boolean {
   );
 }
 
-export function reviewSearchText(approval: NativeApproval): string {
+export function reviewSearchText(
+  approval: NativeApproval,
+  document?: RegisteredDocumentFacts | null,
+): string {
+  const registration = registrationContext(approval);
   return [
     approval.agent_name,
     approval.action_title,
     approval.description,
     approval.action_type,
     approval.risk_level,
+    // A document must be findable by its NAME. The acknowledgement never
+    // carries one, so the resolved registry row is what makes the queue
+    // searchable the way a human actually looks for a document.
+    document?.filename,
+    document?.currentPath,
+    document?.sourceType,
+    registration?.sourceRef,
+    registration?.providerFileId,
+    registration?.processingStatus,
   ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+/**
+ * The facts a registration approval needs from the registry to be readable.
+ * A structural subset of `WorkbenchDocument`, so the Reviews surface consumes
+ * exactly the existing Documents contract without depending on its module.
+ */
+export type RegisteredDocumentFacts = {
+  filename: string | null;
+  sourceType: string | null;
+  currentPath: string | null;
+  processingStatus: string | null;
+  providerFileId: string | null;
+};
+
+/**
+ * The human subject of a review row.
+ *
+ * For registration approvals every queue entry otherwise reads "Review Intake
+ * Registration", which is not triageable. The document's own filename is the
+ * subject; the identifiers stay in the fields that are about identifiers.
+ */
+export function reviewSubject(
+  approval: NativeApproval,
+  document?: RegisteredDocumentFacts | null,
+): string {
+  const filename = document?.filename;
+  if (filename && filename.trim()) return filename;
+  return approval.action_title;
+}
+
+/**
+ * Concise, already-established facts for one queue row. Only values that exist
+ * are listed, so a row never pads itself out with placeholder dashes.
+ */
+export function reviewFacts(
+  approval: NativeApproval,
+  document?: RegisteredDocumentFacts | null,
+): string[] {
+  const registration = registrationContext(approval);
+  if (!registration) {
+    const context = reviewContext(approval);
+    return [context.documentType, context.primaryDomain, context.proposedLocation].filter(
+      (value): value is string => Boolean(value),
+    );
+  }
+  return [
+    "Intake registration",
+    registration.sourceType ?? document?.sourceType ?? null,
+    document?.currentPath ?? null,
+    registration.processingStatus ?? document?.processingStatus ?? null,
+    registration.processingRoute ?? null,
+    approval.status === "pending" ? "pending approval" : null,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function stringValue(record: Record<string, unknown>, ...keys: string[]): string | null {
@@ -104,18 +188,16 @@ function parseLastOutput(
 }
 
 /**
- * Document ids are namespaced as "<source_type>:<source_ref>", where the source
- * reference itself is "<provider>:<fileId>". Both parts are read back out of the
- * identifier the run actually produced; nothing is invented.
+ * The provider's own file identifier, read back out of the source locator the
+ * run actually produced ("drive:<fileId>"). It is never derived from
+ * `document_id`: that is now a platform-minted opaque identity with no
+ * provider information in it, and splitting it would fabricate one.
  */
-function splitDocumentId(documentId: string | null): {
-  sourceType: string | null;
-  providerFileId: string | null;
-} {
-  if (!documentId) return { sourceType: null, providerFileId: null };
-  const parts = documentId.split(":").filter(Boolean);
-  if (parts.length < 2) return { sourceType: null, providerFileId: null };
-  return { sourceType: parts[0], providerFileId: parts[parts.length - 1] };
+function providerFileIdFromSourceRef(sourceRef: string | null): string | null {
+  if (!sourceRef) return null;
+  const parts = sourceRef.split(":").filter(Boolean);
+  if (parts.length < 2) return null;
+  return parts[parts.length - 1];
 }
 
 export function registrationContext(approval: NativeApproval): RegistrationContext | null {
@@ -128,16 +210,19 @@ export function registrationContext(approval: NativeApproval): RegistrationConte
   const documentId = stringValue(ack, "document_id", "documentId");
   const processingStatus = stringValue(ack, "processing_status", "processingStatus");
   if (!documentId && !processingStatus) return null;
-  const { sourceType, providerFileId } = splitDocumentId(documentId);
+  const sourceRef = stringValue(ack, "source_ref", "sourceRef");
   return {
     documentId,
+    sourceRef,
     accepted: typeof ack.accepted === "boolean" ? ack.accepted : null,
     processingStatus,
     processingRoute: stringValue(ack, "processing_route", "processingRoute"),
     registryOutcome: stringValue(ack, "registry_outcome", "registryOutcome"),
     nextLocation: stringValue(ack, "next_location", "nextLocation"),
-    sourceType,
-    providerFileId,
+    // Only ever a source kind the acknowledgement itself states. The registry
+    // row supplies it otherwise; it is not guessed from an identifier.
+    sourceType: stringValue(ack, "source_type", "sourceType"),
+    providerFileId: providerFileIdFromSourceRef(sourceRef),
   };
 }
 

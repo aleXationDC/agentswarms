@@ -78,15 +78,16 @@ function readNumber(row: Record<string, unknown>, ...keys: string[]): number | n
 
 /**
  * Drive intake records provenance as a source reference such as
- * "drive:<fileId>" and a document id such as "google_drive:drive:<fileId>".
- * When the dedicated provider column is not populated, read the identifier back
- * out of those existing values instead of leaving the field unresolved. This
- * parses what the registry already stores; it never invents an identifier.
+ * "drive:<fileId>". When the dedicated provider column is not populated, read
+ * the identifier back out of that existing value instead of leaving the field
+ * unresolved. This parses what the registry already stores; it never invents an
+ * identifier, and it deliberately does not look at `document_id`, which is now
+ * an opaque platform-minted identity carrying no provider information.
  */
 function readProviderFileId(row: Record<string, unknown>): string | null {
   const explicit = readString(row, "drive_file_id", "provider_file_id", "provider_message_id");
   if (explicit) return explicit;
-  const reference = readString(row, "source_ref", "document_id");
+  const reference = readString(row, "source_ref");
   if (!reference) return null;
   const tail = reference.split(":").pop();
   return tail && tail !== reference ? tail : null;
@@ -143,7 +144,12 @@ export function normalizeWorkbenchDocument(
     mimeType: readString(row, "mime_type", "mimeType"),
     fileSize: readNumber(row, "file_size", "fileSize", "size"),
     modifiedAt: readString(row, "modified_time", "modified_at", "updated_at"),
-    ingestedAt: readString(row, "ingested_at", "created_at"),
+    // `discovered_at` is the registry's own column for when intake first saw
+    // the item, which is exactly what "Ingested" means here. It was not read,
+    // so the field could only ever resolve through `ingested_at`/`created_at`
+    // — neither of which the registry declares. Reading the declared column is
+    // a mapping fix, not a new fact: nothing new is persisted for it.
+    ingestedAt: readString(row, "discovered_at", "ingested_at", "created_at"),
     privacyClass: readString(row, "privacy_class", "privacyClass", "privacy_status"),
     filename: filename,
     // A name, or an honest statement that there is none. This used to fall

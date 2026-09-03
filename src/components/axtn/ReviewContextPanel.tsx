@@ -1,12 +1,9 @@
-import { useEffect, useState } from "react";
-
 import {
-  findWorkbenchDocumentByDocumentId,
-  type WorkbenchDocument,
-} from "@/axtn/workbenches/documents/documentsWorkbench";
-import { reviewContext, type NativeApproval } from "@/axtn/workbenches/reviews/reviewWorkbench";
-import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
+  REGISTRATION_GATE_NOTE,
+  reviewContext,
+  type NativeApproval,
+} from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { useRegisteredDocument } from "@/hooks/use-registered-document";
 
 const display = (field: string | number | null) => field ?? "—";
 
@@ -51,12 +48,13 @@ export function ReviewContextPanel({
   // registry row can never blank out something the approval already proved.
   const registrationFields: Array<[string, string | number | null]> = registration
     ? [
-        ["Document ID", registration.documentId],
-        // The document's own name, and nothing else. A provider file id is a
-        // source locator; showing one here would answer "what is this file
-        // called" with an identifier that is not a name.
+        // The document's own name first. A provider file id is a source
+        // locator; showing one under "Filename" would answer "what is this
+        // file called" with an identifier that is not a name.
         ["Filename", document?.filename ?? null],
+        ["Document ID", registration.documentId],
         ["Source kind", registration.sourceType ?? document?.sourceType ?? null],
+        ["Source reference", registration.sourceRef ?? document?.sourceRef ?? null],
         ["Provider file ID", registration.providerFileId ?? document?.providerFileId ?? null],
         ["MIME type", document?.mimeType ?? null],
         ["Content hash", document?.contentHash ?? null],
@@ -88,7 +86,7 @@ export function ReviewContextPanel({
         <>
           <Grid
             title="Registration"
-            note="This step confirms the technical registration of the document. No classification has been proposed yet."
+            note={REGISTRATION_GATE_NOTE}
             fields={registrationFields}
             compact={compact}
           />
@@ -109,31 +107,6 @@ export function ReviewContextPanel({
       )}
     </div>
   );
-}
-
-/**
- * Read-only lookup of the registry row behind a registration approval.
- *
- * Failures are swallowed on purpose: the approval must stay readable and
- * decidable even when the supplementary lookup cannot run.
- */
-function useRegisteredDocument(documentId: string | null): WorkbenchDocument | null {
-  const { user } = useAuth();
-  const [document, setDocument] = useState<WorkbenchDocument | null>(null);
-
-  useEffect(() => {
-    setDocument(null);
-    if (!documentId || !user) return;
-    let cancelled = false;
-    void findWorkbenchDocumentByDocumentId(supabase, user.id, documentId)
-      .then((resolved) => !cancelled && setDocument(resolved))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId, user]);
-
-  return document;
 }
 
 function Grid({

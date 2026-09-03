@@ -22,7 +22,8 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 
 const ACK = {
   accepted: true,
-  document_id: "google_drive:drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
+  document_id: "b64b00c064ab0cba3fc3c733",
+  source_ref: "drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR",
   processing_status: "registered",
   next_location: "00_Review",
   processing_route: "privacy_hold",
@@ -59,11 +60,34 @@ describe("registration approval context", () => {
     expect(registration?.accepted).toBe(true);
   });
 
-  it("derives source and provider file id from the identifier the run produced", () => {
+  it("reads the provider file id out of the source reference, not the identity", () => {
     const registration = registrationContext(approval());
 
-    expect(registration?.sourceType).toBe("google_drive");
+    expect(registration?.sourceRef).toBe("drive:1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
     expect(registration?.providerFileId).toBe("1F8F2UoPXxj51XZarRMMQ9IqFH1UYz7TR");
+    // The document identity is opaque and carries no provider information, so
+    // no source kind can be derived from it. The registry row supplies that.
+    expect(registration?.sourceType).toBeNull();
+    expect(registration?.providerFileId).not.toBe(registration?.documentId);
+  });
+
+  it("never mines the opaque document identity for a provider file id", () => {
+    // A 24-hex identity has no ":" to split, and splitting it would fabricate
+    // a locator out of an identifier that deliberately contains none.
+    const registration = registrationContext(
+      approval({
+        description: JSON.stringify({
+          accepted: true,
+          document_id: "b64b00c064ab0cba3fc3c733",
+          processing_status: "registered",
+        }),
+        payload: {},
+      }),
+    );
+
+    expect(registration?.documentId).toBe("b64b00c064ab0cba3fc3c733");
+    expect(registration?.providerFileId).toBeNull();
+    expect(registration?.sourceType).toBeNull();
   });
 
   it("falls back to the description when the payload carries no last_output", () => {
@@ -185,9 +209,17 @@ describe("registration review supplementation contract", () => {
     path.join(rootDir, "src/components/axtn/ReviewContextPanel.tsx"),
     "utf8",
   );
+  const lookupHook = readFileSync(
+    path.join(rootDir, "src/hooks/use-registered-document.ts"),
+    "utf8",
+  );
 
   it("resolves the registry row read-only by document_id", () => {
-    expect(panel).toContain("findWorkbenchDocumentByDocumentId");
+    // The lookup lives in the shared hook so the drawer, the detail page and
+    // the queue can never disagree about which document an approval is about.
+    expect(panel).toContain("useRegisteredDocument");
+    expect(lookupHook).toContain("findWorkbenchDocumentByDocumentId");
+    expect(lookupHook).not.toMatch(/\.update\(|\.insert\(|\.upsert\(|\.delete\(/);
   });
 
   it("displays the technical identity fields the handoff requires", () => {
@@ -218,6 +250,6 @@ describe("registration review supplementation contract", () => {
 
   it("tolerates a missing registry row without breaking rendering", () => {
     // The lookup failure path is swallowed and the panel still renders the ACK.
-    expect(panel).toContain(".catch(() => undefined)");
+    expect(lookupHook).toContain(".catch(() => undefined)");
   });
 });

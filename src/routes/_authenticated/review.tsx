@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { CheckCircle2, Pencil, Search, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,13 @@ import { Input } from "@/components/ui/input";
 import {
   NativeApproval,
   hasEditableReviewProposal,
-  reviewContext,
+  registrationContext,
+  reviewFacts,
   reviewSearchText,
+  reviewSubject,
   type ReviewStatus,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { useRegisteredDocumentsById } from "@/hooks/use-registered-document";
 import { visibleSelectionIds } from "@/axtn/workbenches/shared/metadataEdit";
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
@@ -39,6 +42,16 @@ function ReviewsPage() {
   const [reload, setReload] = useState(0);
   const decideApproval = useApprovalDecision();
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
+  // One registry read for the whole queue. Registration approvals carry no
+  // filename of their own, and a queue of identical titles cannot be triaged.
+  const documentsById = useRegisteredDocumentsById();
+  const documentFor = useCallback(
+    (approval: NativeApproval) => {
+      const documentId = registrationContext(approval)?.documentId;
+      return documentId ? (documentsById.get(documentId) ?? null) : null;
+    },
+    [documentsById],
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -62,7 +75,7 @@ function ReviewsPage() {
     const result = items.filter(
       (item) =>
         (status === "all" || item.status === status) &&
-        reviewSearchText(item).includes(search.trim().toLowerCase()),
+        reviewSearchText(item, documentFor(item)).includes(search.trim().toLowerCase()),
     );
     const riskOrder = { critical: 4, high: 3, medium: 2, low: 1 };
     return result.sort((left, right) => {
@@ -76,7 +89,7 @@ function ReviewsPage() {
         new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
       return sort === "newest" ? chronological : -chronological;
     });
-  }, [items, search, sort, status]);
+  }, [documentFor, items, search, sort, status]);
   const pendingCount = items.filter((item) => item.status === "pending").length;
   const selectable = useMemo(() => filtered.filter(hasEditableReviewProposal), [filtered]);
   const selectableIds = useMemo(() => selectable.map((item) => item.id), [selectable]);
@@ -124,7 +137,7 @@ function ReviewsPage() {
             <Input
               className="pl-9"
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search approvals"
+              placeholder="Search by filename, source or status"
               value={search}
             />
           </div>
@@ -207,16 +220,13 @@ function ReviewsPage() {
                     params={{ approvalId: item.id }}
                     to="/review/$approvalId"
                   >
-                    {item.action_title}
+                    {reviewSubject(item, documentFor(item))}
                   </Link>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {item.agent_name} · {item.action_type} ·{" "}
-                    {new Date(item.created_at).toLocaleString()}
+                    {item.action_title} · {new Date(item.created_at).toLocaleString()}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {reviewContext(item).subject ?? "—"} ·{" "}
-                    {reviewContext(item).primaryDomain ?? "—"} ·{" "}
-                    {reviewContext(item).proposedLocation ?? "—"}
+                    {reviewFacts(item, documentFor(item)).join(" · ") || "—"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

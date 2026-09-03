@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import {
   hasEditableReviewProposal,
   isActionableReview,
+  registrationContext,
+  reviewSubject,
   type NativeApproval,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
+import { useRegisteredDocument } from "@/hooks/use-registered-document";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +34,10 @@ function ReviewDetailPage() {
   const [reload, setReload] = useState(0);
   const decideApproval = useApprovalDecision();
   const saveMetadata = useServerFn(saveAxtnWorkbenchMetadata);
+  const document = useRegisteredDocument(
+    approval ? (registrationContext(approval)?.documentId ?? null) : null,
+  );
+  const isRegistration = approval ? registrationContext(approval) !== null : false;
 
   useEffect(() => {
     let cancelled = false;
@@ -79,9 +86,9 @@ function ReviewDetailPage() {
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <CardTitle>{approval.action_title}</CardTitle>
+                <CardTitle>{reviewSubject(approval, document)}</CardTitle>
                 <CardDescription className="mt-1">
-                  {approval.agent_name} · {approval.action_type}
+                  {approval.action_title} · {approval.agent_name} · {approval.action_type}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
@@ -93,24 +100,47 @@ function ReviewDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div>
-              <h2 className="text-sm font-medium">Description</h2>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-                {approval.description || "No description provided."}
-              </p>
-            </div>
+            {/* A registration acknowledgement is JSON. Rendering it as the
+                Description made the raw payload the main working surface while
+                the same facts were interpreted directly below it. Structured
+                facts come first now; the raw forms stay one click away. */}
+            {!isRegistration && (
+              <div>
+                <h2 className="text-sm font-medium">Description</h2>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                  {approval.description || "No description provided."}
+                </p>
+              </div>
+            )}
             <ReviewContextPanel approval={approval} />
             {hasEditableReviewProposal(approval) && (
               <Button onClick={() => setEditing(true)} variant="outline">
                 <Pencil className="mr-1 h-4 w-4" /> Edit proposal / Human Override
               </Button>
             )}
-            <div>
-              <h2 className="text-sm font-medium">Request context</h2>
-              <pre className="mt-2 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-                {JSON.stringify(approval.payload, null, 2)}
-              </pre>
-            </div>
+            <details className="rounded-md border">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+                Technical metadata
+              </summary>
+              <div className="space-y-3 border-t p-3">
+                {isRegistration && (
+                  <div>
+                    <h3 className="text-xs font-medium text-muted-foreground">
+                      Acknowledgement (description)
+                    </h3>
+                    <pre className="mt-1 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+                      {approval.description || "No description provided."}
+                    </pre>
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-xs font-medium text-muted-foreground">Request context</h3>
+                  <pre className="mt-1 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+                    {JSON.stringify(approval.payload, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </details>
             {isActionableReview(approval) && (
               <div className="flex gap-2 border-t pt-5">
                 <Button onClick={() => void decide("rejected")} variant="outline">

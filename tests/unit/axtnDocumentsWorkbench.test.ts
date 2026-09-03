@@ -281,3 +281,80 @@ describe("resolving a single registered document", () => {
     ).toBeNull();
   });
 });
+
+// DMS-LIVE-0003-A-R1 §2.4: the empty technical fields on a Stage-0 document.
+//
+// Each was investigated against the registry contract. "Ingested" was a
+// mapping defect — the registry declares `discovered_at` and the workbench
+// read `ingested_at`/`created_at`, columns the registry does not have. The
+// rest are genuinely not persisted at this stage and must stay unresolved
+// rather than be filled with a plausible-looking substitute.
+describe("Stage-0 technical fields", () => {
+  const stage0 = {
+    document_id: "b64b00c064ab0cba3fc3c733",
+    record_kind: "document",
+    source_type: "google_drive",
+    source_ref: "drive:1WzrMnmvfvc_8Sejt5Dm7Wl8-itzSZWTr",
+    original_filename: "2026-03-22_Scan_ 1.pdf",
+    current_filename: "2026-03-22_Scan_ 1.pdf",
+    mime_type: "application/pdf",
+    content_hash: "d46804f6",
+    hash_algorithm: "sha256",
+    current_path: "00_Inbox",
+    processing_status: "registered",
+    privacy_status: "UNRESOLVED",
+  };
+
+  it("reads Ingested from the column the registry actually declares", () => {
+    const document = normalizeWorkbenchDocument(
+      { ...stage0, discovered_at: "2026-09-03T02:20:18Z" },
+      "1",
+    );
+
+    expect(document.ingestedAt).toBe("2026-09-03T02:20:18Z");
+  });
+
+  it("leaves technical fields the transport never supplied unresolved", () => {
+    const document = normalizeWorkbenchDocument(stage0, "1");
+
+    // Not guesses: file size and modified time would need the n8n envelope to
+    // carry them, and an originating run id would need the registration write
+    // to record one. Neither exists at this stage, so neither is invented.
+    expect(document.fileSize).toBeNull();
+    expect(document.modifiedAt).toBeNull();
+    expect(document.ingestedAt).toBeNull();
+    expect(document.sourceSwarmRunId).toBeNull();
+    expect(document.sourceApprovalId).toBeNull();
+  });
+
+  it("keeps semantic classification unresolved on a freshly registered row", () => {
+    const document = normalizeWorkbenchDocument(stage0, "1");
+
+    expect(document.documentType).toBeNull();
+    expect(document.documentFamily).toBeNull();
+    expect(document.organization).toBeNull();
+    expect(document.primaryDomain).toBeNull();
+    expect(document.paraClass).toBeNull();
+    expect(document.proposedPath).toBeNull();
+    expect(document.confidence).toBeNull();
+    expect(document.topics).toBeNull();
+  });
+
+  it("still resolves every technical fact the registration did establish", () => {
+    const document = normalizeWorkbenchDocument(stage0, "1");
+
+    expect(document.filename).toBe("2026-03-22_Scan_ 1.pdf");
+    expect(document.mimeType).toBe("application/pdf");
+    expect(document.contentHash).toBe("d46804f6");
+    expect(document.currentPath).toBe("00_Inbox");
+    expect(document.processingStatus).toBe("registered");
+    expect(document.providerFileId).toBe("1WzrMnmvfvc_8Sejt5Dm7Wl8-itzSZWTr");
+    expect(document.id).toBe("b64b00c064ab0cba3fc3c733");
+  });
+
+  it("does not mine the opaque identity for a provider file id", () => {
+    const { source_ref: _dropped, ...withoutSourceRef } = stage0;
+
+    expect(normalizeWorkbenchDocument(withoutSourceRef, "1").providerFileId).toBeNull();
+  });
+});

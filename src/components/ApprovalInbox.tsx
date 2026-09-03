@@ -34,6 +34,7 @@ import {
   registrationContext,
 } from "@/axtn/workbenches/reviews/reviewWorkbench";
 import { ReviewContextPanel } from "@/components/axtn/ReviewContextPanel";
+import { useRegisteredDocument } from "@/hooks/use-registered-document";
 
 type Approval = NativeApproval;
 
@@ -53,15 +54,26 @@ const RISK_COLORS: Record<string, string> = {
 
 /**
  * Registration approvals carry the raw acknowledgement JSON in `description`,
- * which is unreadable in the drawer. Show the interpreted identity instead and
- * keep the raw payload available below.
+ * which is unreadable in the drawer. Show the document the approval is about
+ * instead and keep the raw payload available below.
+ *
+ * The filename is the subject when the registry row resolves. The opaque
+ * document id is the fallback, not the headline: it identifies a row, it does
+ * not tell a human which document they are looking at.
  */
-function approvalHeadline(approval: Approval): string {
+function ApprovalHeadline({ approval }: { approval: Approval }) {
   const registration = registrationContext(approval);
-  if (registration?.documentId) {
-    return `Registered ${registration.documentId}`;
+  const document = useRegisteredDocument(registration?.documentId ?? null);
+  if (registration) {
+    const subject = document?.filename ?? registration.documentId ?? "";
+    return (
+      <>
+        {subject}
+        {registration.processingStatus ? ` · ${registration.processingStatus}` : ""}
+      </>
+    );
   }
-  return approval.description ?? "";
+  return <>{approval.description ?? ""}</>;
 }
 
 function timeAgo(iso: string) {
@@ -259,7 +271,7 @@ export function ApprovalInbox() {
                         <div className="min-w-0">
                           <p className="text-xs font-semibold">{ap.action_title}</p>
                           <p className="text-[11px] text-muted-foreground mt-0.5 break-words">
-                            {approvalHeadline(ap)}
+                            <ApprovalHeadline approval={ap} />
                           </p>
                         </div>
                       </div>
