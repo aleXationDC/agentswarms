@@ -185,7 +185,7 @@ function DocumentsPage() {
               <FileText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
               <p className="font-medium">No documents available</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                The declared document dataset is currently empty.
+                No registered documents are present in the document registry yet.
               </p>
             </div>
           ) : (
@@ -201,6 +201,7 @@ function DocumentsPage() {
                   <TableHead>Domain</TableHead>
                   <TableHead>Document date</TableHead>
                   <TableHead>PARA location</TableHead>
+                  <TableHead>Registration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Confidence</TableHead>
                   <TableHead className="text-right">Source</TableHead>
@@ -211,7 +212,7 @@ function DocumentsPage() {
                   <TableRow key={document.id}>
                     <TableCell>
                       <input
-                        aria-label={`Select ${display(document.canonicalFilename ?? document.originalFilename)}`}
+                        aria-label={`Select ${document.displayName}`}
                         checked={selected.includes(document.rowId)}
                         onChange={() =>
                           setSelected((current) =>
@@ -229,7 +230,11 @@ function DocumentsPage() {
                         params={{ documentId: document.id }}
                         to="/documents/$documentId"
                       >
-                        {display(document.canonicalFilename ?? document.originalFilename)}
+                        <span
+                          className={document.filenameUnavailable ? "text-muted-foreground" : ""}
+                        >
+                          {document.displayName}
+                        </span>
                       </Link>
                     </TableCell>
                     <TableCell>
@@ -248,6 +253,18 @@ function DocumentsPage() {
                       {display(document.proposedPath ?? document.currentPath)}
                     </TableCell>
                     <TableCell>
+                      {document.processingStatus ? (
+                        <Badge variant="outline">{document.processingStatus}</Badge>
+                      ) : (
+                        "—"
+                      )}
+                      {document.privacyClass && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {document.privacyClass}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       {document.status ? <Badge variant="outline">{document.status}</Badge> : "—"}
                     </TableCell>
                     <TableCell>
@@ -260,7 +277,11 @@ function DocumentsPage() {
                         <Button asChild size="sm" variant="ghost">
                           <a href={document.sourceUrl} rel="noreferrer" target="_blank">
                             <ExternalLink className="h-4 w-4" />
-                            <span className="sr-only">Open source</span>
+                            <span className="sr-only">
+                              {document.sourceType === "google_drive"
+                                ? "Open in Drive"
+                                : "Open source"}
+                            </span>
                           </a>
                         </Button>
                       )}

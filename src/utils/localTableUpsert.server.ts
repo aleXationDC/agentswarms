@@ -1,4 +1,5 @@
 import type { Json } from "@/integrations/supabase/types";
+import { randomBytes } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { refreshDatasetMirror } from "@/utils/data/parquet.server";
 import type { PythonCaller } from "@/utils/notebookRuntime/caller.server";
@@ -61,13 +62,132 @@ export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+/**
+ * Column names are interpolated into PostgREST JSON filters (`row->>name`), so
+ * they must be inert. Declared names come from the table's own schema rather
+ * than from the caller, but "not attacker-controlled today" is not a security
+ * property worth relying on — a table created through some future path could
+ * carry a name with a comma or paren in it and quietly widen a filter.
+ */
+const SAFE_COLUMN_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** The only generation strategy: 96 bits of CSPRNG as 24 lowercase hex chars. */
+export const HEX24_RE = /^[0-9a-f]{24}$/;
+
+export function generateHex24(): string {
+  return randomBytes(12).toString("hex");
+}
+
+/**
+ * Columns whose existing value must survive an update.
+ *
+ * This is a generic table semantic, not a document semantic: it says "this
+ * column is an identity, established once, and a later write of the same row
+ * may not restate it". It exists because the underlying upsert REPLACES the
+ * stored row, so without it every replay of an unchanged source item would
+ * mint a new value for a column that is supposed to be stable forever.
+ */
+function parseImmutableColumns(value: unknown, declared: Set<string>): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new LocalTableUpsertRequestError("immutable_columns must be an array of column names.");
+  }
+  const out: string[] = [];
+  for (const entry of value) {
+    if (!isNonEmptyString(entry)) {
+      throw new LocalTableUpsertRequestError(
+        "immutable_columns entries must be non-empty strings.",
+      );
+    }
+    const name = entry.trim();
+    if (!declared.has(name) || !SAFE_COLUMN_RE.test(name)) {
+      throw new LocalTableUpsertRequestError(
+        `immutable_columns names an undeclared column "${name}".`,
+      );
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Columns the broker fills with a server-generated identifier on INSERT only.
+ *
+ * Generation has to happen here. The function-node sandbox that builds these
+ * calls is created with no host globals at all — deliberately, so a snippet
+ * cannot reach the host realm — which means it has no `crypto` and therefore
+ * no way to produce cryptographically secure randomness. Deriving the value
+ * from data the caller already holds would defeat the point of a
+ * provider-independent identity, so the value is minted on the server that
+ * actually has a CSPRNG, and only when a new row is being created.
+ */
+function parseGenerateColumns(value: unknown, declared: Set<string>, keyColumn: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new LocalTableUpsertRequestError(
+      "generate_columns must be an object of column -> strategy.",
+    );
+  }
+  const out: string[] = [];
+  for (const [name, strategy] of Object.entries(value as Record<string, unknown>)) {
+    if (!declared.has(name) || !SAFE_COLUMN_RE.test(name)) {
+      throw new LocalTableUpsertRequestError(
+        `generate_columns names an undeclared column "${name}".`,
+      );
+    }
+    if (strategy !== "hex24") {
+      throw new LocalTableUpsertRequestError(
+        `generate_columns supports only the "hex24" strategy (got "${String(strategy)}").`,
+      );
+    }
+    // Generating the lookup key itself is incoherent: the key is how the row
+    // is found, so a value invented here could never match anything.
+    if (name === keyColumn) {
+      throw new LocalTableUpsertRequestError("generate_columns must not name the key_column.");
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/**
+ * Mint a 24-hex value that no row in this table already carries in `column`.
+ *
+ * A 96-bit collision is not a real expectation; this loop exists so that the
+ * failure mode is "refuse to write" rather than "silently reuse an identity
+ * that already belongs to another record". Exhausting the attempts throws,
+ * because inserting an identifier we could not prove unique is worse than not
+ * inserting at all.
+ */
+async function mintUniqueHex24(tableId: string, column: string): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = generateHex24();
+    const { data, error } = await supabaseAdmin
+      .from("user_data_rows")
+      .select("id")
+      .eq("table_id", tableId)
+      .eq(`row->>${column}`, candidate)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return candidate;
+  }
+  throw new Error(`Could not mint a unique value for "${column}" after 5 attempts.`);
+}
+
 export async function localTableUpsert(args: {
   caller: PythonCaller;
   tableName: unknown;
   keyColumn: unknown;
   keyValue: unknown;
   row: unknown;
-}): Promise<{ table_id: string; row_id: number; outcome: "inserted" | "updated" }> {
+  immutableColumns?: unknown;
+  generateColumns?: unknown;
+}): Promise<{
+  table_id: string;
+  row_id: number;
+  outcome: "inserted" | "updated";
+  effective_columns: Record<string, string>;
+}> {
   if (!args.caller.scopeUserId || !args.caller.runtimeSessionId) {
     throw new LocalTableUpsertRequestError(
       "Local Table mutations require an authenticated runtime session.",
@@ -138,13 +258,71 @@ export async function localTableUpsert(args: {
   if ((args.row as Record<string, unknown>)[args.keyColumn] !== args.keyValue) {
     throw new LocalTableUpsertRequestError("key_value must match row[key_column].");
   }
+  if (!SAFE_COLUMN_RE.test(args.keyColumn)) {
+    throw new LocalTableUpsertRequestError("key_column is not a usable column name.");
+  }
+
+  const immutableColumns = parseImmutableColumns(args.immutableColumns, columns);
+  const generateColumns = parseGenerateColumns(args.generateColumns, columns, args.keyColumn);
+  for (const name of generateColumns) {
+    // A caller that both supplies and asks us to generate a value is telling us
+    // two different things. Refusing is the only reading that cannot silently
+    // discard whichever one the caller actually meant.
+    if ((args.row as Record<string, unknown>)[name] !== undefined) {
+      throw new LocalTableUpsertRequestError(
+        `row must not supply "${name}" when generate_columns asks the broker to mint it.`,
+      );
+    }
+  }
+
+  const effectiveRow: Record<string, unknown> = { ...(args.row as Record<string, unknown>) };
+  const effectiveColumns: Record<string, string> = {};
+
+  if (immutableColumns.length > 0 || generateColumns.length > 0) {
+    // Read the row this upsert will land on, identified exactly the way the
+    // RPC identifies it, so "does it already exist" is answered by the same
+    // predicate that decides insert-vs-update.
+    const { data: existingRows, error: existingError } = await supabaseAdmin
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", table.id)
+      .eq(`row->>${args.keyColumn}`, args.keyValue)
+      .order("id")
+      .limit(1);
+    if (existingError) throw new Error(existingError.message);
+    const existing = (existingRows?.[0]?.row ?? null) as Record<string, unknown> | null;
+
+    for (const name of immutableColumns) {
+      const prior = existing?.[name];
+      if (isNonEmptyString(prior)) {
+        effectiveRow[name] = prior;
+        effectiveColumns[name] = prior;
+      } else if (isNonEmptyString(effectiveRow[name])) {
+        effectiveColumns[name] = String(effectiveRow[name]);
+      }
+    }
+
+    for (const name of generateColumns) {
+      const prior = existing?.[name];
+      if (isNonEmptyString(prior)) {
+        // Already established. Never reissued, even if the rest of the row is
+        // being rewritten wholesale by this update.
+        effectiveRow[name] = prior;
+        effectiveColumns[name] = prior;
+        continue;
+      }
+      const minted = await mintUniqueHex24(table.id, name);
+      effectiveRow[name] = minted;
+      effectiveColumns[name] = minted;
+    }
+  }
 
   const { data, error } = await supabaseAdmin.rpc("axtn_local_table_upsert", {
     _user_id: args.caller.scopeUserId,
     _table_name: args.tableName,
     _key_column: args.keyColumn,
     _key_value: args.keyValue,
-    _row: args.row as Json,
+    _row: effectiveRow as Json,
   });
   if (error) throw new Error(error.message);
   const result = data?.[0];
@@ -162,6 +340,7 @@ export async function localTableUpsert(args: {
       key_column: args.keyColumn,
       key_value: args.keyValue,
       outcome: result.outcome,
+      effective_columns: effectiveColumns,
     },
   });
 
@@ -170,5 +349,5 @@ export async function localTableUpsert(args: {
   void refreshDatasetMirror({ userId: args.caller.scopeUserId, tableId: result.table_id }).catch(
     (error) => console.warn("[local-table-upsert] mirror refresh failed:", error),
   );
-  return result;
+  return { ...result, effective_columns: effectiveColumns };
 }

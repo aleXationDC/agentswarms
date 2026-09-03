@@ -4,16 +4,32 @@
   "name": "aXtn Documents",
   "version": "0.1.0",
   "category": "operations",
-  "description": "Document inventory and detail surface over the optional declared axtn_documents dataset.",
-  "routes": ["/documents", "/documents/$documentId"],
-  "navigation": { "group": "Overview", "label": "aXtn Documents" },
-  "permissions": ["authenticated user subject to native dataset RLS"],
+  "description": "Document inventory and detail surface over the canonical axtn_document_registry lifecycle backbone.",
+  "routes": [
+    "/documents",
+    "/documents/$documentId"
+  ],
+  "navigation": {
+    "group": "Overview",
+    "label": "aXtn Documents"
+  },
+  "permissions": [
+    "authenticated user subject to native dataset RLS"
+  ],
   "tested_agentswarms_upstream_sha": "7c6e48bca030675dbb47d4309e3a12d958e3e8f2",
   "axtn_base_sha": "36482f210de8b3e153831b56f1dc26187862c3d3",
-  "native_capabilities_consumed": ["user_data_tables", "user_data_rows"],
+  "native_capabilities_consumed": [
+    "user_data_tables",
+    "user_data_rows"
+  ],
   "axtn_dependencies": [],
   "data_contracts": [
-    "optional user-owned dataset named axtn_documents; rows may provide canonical/original filename, type/family, organisation or issuer, domain, date, paths, PARA class, status, confidence, topics, source URL, MIME type, file size, modified/ingested time, and privacy class using the documented adapter aliases"
+    "user-owned dataset named axtn_document_registry, written by document intake; each document row is identified by document_id and marked record_kind=document",
+    "rows describing the registry itself (record_kind=schema_seed and other seed/system rows) are excluded from the inventory",
+    "registration-stage fields consumed: document_id, source_ref, source_type/provider_type, drive_file_id (derived from source_ref/document_id when absent), content_hash, hash_algorithm, processing_status, privacy_status, extraction_status, schema_version, source_swarm_run_id, source_approval_id",
+    "technical registration facts written by the intake stage and consumed here verbatim: original_filename, current_filename, mime_type, file_size, content_hash + hash_algorithm, extraction_status, drive_file_id, current_parent_folder_id, current_path; values are copied from the ingress envelope (technical.*, source_identity.*) and never derived or inferred",
+    "later lifecycle fields consumed when a subsequent stage produces them: canonical/original filename, type/family, organisation or issuer, domain, document date, paths, PARA class, status, confidence, topics, source URL, MIME type, file size, modified/ingested time",
+    "read-only: the Workbench never writes to the registry outside the existing allowlisted metadata edit path"
   ],
   "database_migrations": [],
   "source_paths": [
@@ -24,11 +40,18 @@
     "src/routes/_authenticated/documents_.$documentId.tsx",
     "src/utils/axtnWorkbenchEdits.functions.ts"
   ],
-  "implementation_commits": ["88ec442", "18bda42"],
+  "implementation_commits": [
+    "88ec442",
+    "18bda42",
+    "74cc661",
+    "d796237"
+  ],
   "release_tag": "workbench/axtn-documents/v0.1.0",
   "portable": true,
   "known_limitations": [
-    "No persistence is introduced. Without a declared dataset, the Workbench renders an empty Greenfield inventory.",
+    "No persistence is introduced and the registry schema is not modified.",
+    "A registered document carries no semantic classification yet; those fields stay unresolved until a later lifecycle stage produces them, and are never inferred.",
+    "Documents registered before DMS-LIVE-0002-A-R1 have no filename, MIME type or content hash: the intake mapping did not read the envelope technical facts at the time. Those historical rows are intentionally left unchanged and display the values as absent.",
     "AI Analyst support is pending rebinding to a native AI Analyst/data contract.",
     "Mixed string and string-array topic contracts are intentionally not bulk editable."
   ]

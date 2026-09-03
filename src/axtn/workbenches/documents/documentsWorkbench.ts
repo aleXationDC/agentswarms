@@ -2,7 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/integrations/supabase/types";
 
-const DOCUMENTS_DATASET_NAME = "axtn_documents";
+// The canonical registered-document lifecycle backbone. Intake writes here, so
+// this is the only source that can show a document from REGISTERED onward.
+const DOCUMENTS_DATASET_NAME = "axtn_document_registry";
+
+// Rows the registry uses to declare its own shape rather than to describe a
+// document. They are never documents and must never reach the inventory.
+const NON_DOCUMENT_RECORD_KINDS = new Set(["schema_seed", "seed", "system"]);
 
 export type WorkbenchDocument = {
   id: string;
@@ -26,6 +32,22 @@ export type WorkbenchDocument = {
   modifiedAt: string | null;
   ingestedAt: string | null;
   privacyClass: string | null;
+  /** The document's real filename, or null. Never a provider identifier. */
+  filename: string | null;
+  displayName: string;
+  /** True when the row carries no filename at all, so the UI can say so. */
+  filenameUnavailable: boolean;
+  recordKind: string | null;
+  sourceType: string | null;
+  sourceRef: string | null;
+  providerFileId: string | null;
+  contentHash: string | null;
+  hashAlgorithm: string | null;
+  processingStatus: string | null;
+  extractionStatus: string | null;
+  schemaVersion: string | null;
+  sourceSwarmRunId: string | null;
+  sourceApprovalId: string | null;
   metadata: Record<string, unknown>;
 };
 
@@ -54,10 +76,54 @@ function readNumber(row: Record<string, unknown>, ...keys: string[]): number | n
   return null;
 }
 
+/**
+ * Drive intake records provenance as a source reference such as
+ * "drive:<fileId>". When the dedicated provider column is not populated, read
+ * the identifier back out of that existing value instead of leaving the field
+ * unresolved. This parses what the registry already stores; it never invents an
+ * identifier, and it deliberately does not look at `document_id`, which is now
+ * an opaque platform-minted identity carrying no provider information.
+ */
+function readProviderFileId(row: Record<string, unknown>): string | null {
+  const explicit = readString(row, "drive_file_id", "provider_file_id", "provider_message_id");
+  if (explicit) return explicit;
+  const reference = readString(row, "source_ref");
+  if (!reference) return null;
+  const tail = reference.split(":").pop();
+  return tail && tail !== reference ? tail : null;
+}
+
+/**
+ * A registry row describes a real document only when it is a document record
+ * that carries a document identity. Seed and system rows are excluded.
+ */
+export function isRegisteredDocumentRow(row: Record<string, unknown>): boolean {
+  const recordKind = readString(row, "record_kind");
+  if (recordKind && NON_DOCUMENT_RECORD_KINDS.has(recordKind)) return false;
+  for (const key of ["source_type", "processing_status", "artifact_type", "privacy_status"]) {
+    const value = row[key];
+    if (typeof value === "string" && NON_DOCUMENT_RECORD_KINDS.has(value)) return false;
+  }
+  return Boolean(readString(row, "document_id"));
+}
+
+/** Shown wherever a document has no filename. Never a provider identifier. */
+export const UNRESOLVED_FILENAME_LABEL = "No filename recorded";
+
+/** The document's own name, from the filename columns only. */
+export function readDocumentFilename(row: Record<string, unknown>): string | null {
+  return (
+    readString(row, "canonical_filename", "canonicalFilename", "name") ??
+    readString(row, "original_filename", "originalFilename", "filename") ??
+    readString(row, "current_filename", "currentFilename")
+  );
+}
+
 export function normalizeWorkbenchDocument(
   row: Record<string, unknown>,
   fallbackId: string,
 ): WorkbenchDocument {
+  const filename = readDocumentFilename(row);
   return {
     id: readString(row, "id", "document_id") ?? fallbackId,
     rowId: fallbackId,
@@ -78,8 +144,32 @@ export function normalizeWorkbenchDocument(
     mimeType: readString(row, "mime_type", "mimeType"),
     fileSize: readNumber(row, "file_size", "fileSize", "size"),
     modifiedAt: readString(row, "modified_time", "modified_at", "updated_at"),
-    ingestedAt: readString(row, "ingested_at", "created_at"),
-    privacyClass: readString(row, "privacy_class", "privacyClass"),
+    // `discovered_at` is the registry's own column for when intake first saw
+    // the item, which is exactly what "Ingested" means here. It was not read,
+    // so the field could only ever resolve through `ingested_at`/`created_at`
+    // — neither of which the registry declares. Reading the declared column is
+    // a mapping fix, not a new fact: nothing new is persisted for it.
+    ingestedAt: readString(row, "discovered_at", "ingested_at", "created_at"),
+    privacyClass: readString(row, "privacy_class", "privacyClass", "privacy_status"),
+    filename: filename,
+    // A name, or an honest statement that there is none. This used to fall
+    // through to the provider file id, which meant a row with no filename
+    // displayed a Drive file id under a column header that said "Filename" —
+    // presenting a source locator as the document's name. The provider id is
+    // still shown, in the field that is actually about the provider.
+    displayName: filename ?? UNRESOLVED_FILENAME_LABEL,
+    filenameUnavailable: filename === null,
+    recordKind: readString(row, "record_kind"),
+    sourceType: readString(row, "source_type", "provider_type"),
+    sourceRef: readString(row, "source_ref"),
+    providerFileId: readProviderFileId(row),
+    contentHash: readString(row, "content_hash", "original_sha256", "sha256"),
+    hashAlgorithm: readString(row, "hash_algorithm"),
+    processingStatus: readString(row, "processing_status"),
+    extractionStatus: readString(row, "extraction_status"),
+    schemaVersion: readString(row, "schema_version"),
+    sourceSwarmRunId: readString(row, "source_swarm_run_id"),
+    sourceApprovalId: readString(row, "source_approval_id"),
     metadata: row,
   };
 }
@@ -99,6 +189,9 @@ export function filterAndSortWorkbenchDocuments(
       document.primaryDomain,
       document.topics,
       document.id,
+      document.sourceType,
+      document.providerFileId,
+      document.processingStatus,
     ]
       .filter(Boolean)
       .join(" ")
@@ -145,10 +238,32 @@ export async function listWorkbenchDocuments(
     .eq("table_id", dataset.id);
   if (rowsError) throw rowsError;
 
-  return (rows ?? []).map((row) =>
-    normalizeWorkbenchDocument(
-      typeof row.row === "object" && row.row !== null ? (row.row as Record<string, unknown>) : {},
-      String(row.id),
-    ),
-  );
+  return (rows ?? [])
+    .map((row) => ({
+      fields:
+        typeof row.row === "object" && row.row !== null ? (row.row as Record<string, unknown>) : {},
+      rowId: String(row.id),
+    }))
+    .filter((entry) => isRegisteredDocumentRow(entry.fields))
+    .map((entry) => normalizeWorkbenchDocument(entry.fields, entry.rowId));
+}
+
+/**
+ * Resolves a single registered document by its canonical `document_id`.
+ *
+ * Read-only, and deliberately reusing the same dataset binding, RLS path and
+ * normalisation as the inventory: a Review that resolved documents through a
+ * second query shape could disagree with what /documents shows for the same
+ * row. Returns null when the identity has no registry row, which is a normal
+ * state (for example a registration whose write did not happen) and must not
+ * be presented as missing data on the approval itself.
+ */
+export async function findWorkbenchDocumentByDocumentId(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  documentId: string,
+): Promise<WorkbenchDocument | null> {
+  if (!documentId.trim()) return null;
+  const documents = await listWorkbenchDocuments(supabase, userId);
+  return documents.find((document) => document.id === documentId) ?? null;
 }

@@ -52,6 +52,8 @@ export const Route = createFileRoute("/api/python-agent")({
           key_column?: unknown;
           key_value?: unknown;
           row?: unknown;
+          immutable_columns?: unknown;
+          generate_columns?: unknown;
         };
         try {
           body = await request.json();
@@ -72,6 +74,8 @@ export const Route = createFileRoute("/api/python-agent")({
               keyColumn: body.key_column,
               keyValue: body.key_value,
               row: body.row,
+              immutableColumns: body.immutable_columns,
+              generateColumns: body.generate_columns,
             });
             return json(200, result);
           } catch (error) {

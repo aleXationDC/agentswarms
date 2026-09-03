@@ -4,33 +4,60 @@
   "name": "aXtn Reviews",
   "version": "0.1.0",
   "category": "operations",
-  "description": "Searchable operational review surface over native AgentSwarms approvals.",
-  "routes": ["/review", "/review/$approvalId"],
-  "navigation": { "group": "Overview", "label": "aXtn Reviews" },
-  "permissions": ["authenticated user subject to native approval RLS"],
+  "description": "Searchable operational review surface over native AgentSwarms approvals, including technical intake registration approvals.",
+  "routes": [
+    "/review",
+    "/review/$approvalId"
+  ],
+  "navigation": {
+    "group": "Overview",
+    "label": "aXtn Reviews"
+  },
+  "permissions": [
+    "authenticated user subject to native approval RLS"
+  ],
   "tested_agentswarms_upstream_sha": "7c6e48bca030675dbb47d4309e3a12d958e3e8f2",
   "axtn_base_sha": "36482f210de8b3e153831b56f1dc26187862c3d3",
   "native_capabilities_consumed": [
     "approvals table",
     "native approve/reject state",
-    "native approval RLS"
+    "native approval RLS",
+    "shared native approval decision and swarm-resume path (useApprovalDecision)",
+    "user_data_tables / user_data_rows (read-only registry resolution, subject to the same native dataset RLS)"
   ],
   "axtn_dependencies": [],
-  "data_contracts": ["native approvals rows"],
+  "data_contracts": [
+    "native approvals rows",
+    "semantic classification approvals carry payload.proposal / payload.context and are rendered as a review context",
+    "intake registration approvals (action_title 'Review Intake Registration') carry the intake acknowledgement as a JSON string in payload.last_output, falling back to description; fields consumed: accepted, document_id, processing_status, processing_route, registry_outcome, next_location",
+    "source kind and provider file id are read back out of the namespaced document_id (<source_type>:<source_ref>) and never invented",
+    "a review is actionable only while status = pending; decided reviews are read-only history",
+    "a registration approval additionally resolves its registry row read-only by document_id through the shared documents dataset binding; the acknowledgement stays the primary source and the registry only fills fields the acknowledgement does not carry (filename, MIME type, content hash, hash algorithm). A failed or empty lookup degrades to the acknowledgement alone and never blocks the review."
+  ],
   "database_migrations": [],
   "source_paths": [
     "src/axtn/workbenches/reviews/",
     "src/axtn/workbenches/shared/metadataEdit.ts",
     "src/components/axtn/MetadataEditDialog.tsx",
+    "src/components/axtn/ReviewContextPanel.tsx",
+    "src/components/ApprovalInbox.tsx",
     "src/routes/_authenticated/review.tsx",
     "src/routes/_authenticated/review_.$approvalId.tsx",
-    "src/utils/axtnWorkbenchEdits.functions.ts"
+    "src/utils/axtnWorkbenchEdits.functions.ts",
+    "src/axtn/workbenches/documents/documentsWorkbench.ts"
   ],
-  "implementation_commits": ["fa6a48b", "463fb54", "18bda42"],
+  "implementation_commits": [
+    "fa6a48b",
+    "463fb54",
+    "18bda42",
+    "74cc661",
+    "d796237"
+  ],
   "release_tag": "workbench/axtn-reviews/v0.1.0",
   "portable": true,
   "known_limitations": [
     "Human Overrides are limited to allowlisted proposal metadata and remain subject to native approval RLS.",
+    "A registration approval has no semantic proposal to override; only its technical facts are shown.",
     "Mixed string and string-array topic contracts are intentionally not bulk editable."
   ]
 }

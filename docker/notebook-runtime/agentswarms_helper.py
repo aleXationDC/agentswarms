@@ -119,19 +119,32 @@ async def list_agents():
     return await _post("/api/python-agent", {"action": "list"})
 
 
-async def local_table_upsert(table_name, key_column, key_value, row):
+async def local_table_upsert(table_name, key_column, key_value, row,
+                             immutable_columns=None, generate_columns=None):
     """Atomically insert or update one permitted Local Table row by its key.
 
     The platform validates the MCP runtime identity, table allow-list, owner,
     declared schema and key before writing. The sandbox has no database access.
+
+    `immutable_columns` names columns whose already-stored value must survive
+    this write, so a repeated write of the same row cannot restate an identity
+    that was established once. `generate_columns` maps a column to a generation
+    strategy ("hex24") that the platform applies ONLY when it creates the row;
+    the sandbox has no CSPRNG, so such values are minted server-side and are
+    returned under "effective_columns".
     """
-    return await _post("/api/python-agent", {
+    payload = {
         "action": "local_table_upsert",
         "table_name": str(table_name),
         "key_column": str(key_column),
         "key_value": str(key_value),
         "row": row,
-    })
+    }
+    if immutable_columns:
+        payload["immutable_columns"] = list(immutable_columns)
+    if generate_columns:
+        payload["generate_columns"] = dict(generate_columns)
+    return await _post("/api/python-agent", payload)
 
 
 def format_context(hits):
