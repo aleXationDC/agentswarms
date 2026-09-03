@@ -72,6 +72,23 @@ function sign(data: string, key: string): string {
 }
 
 /** Mint a token for a session. Returns null if no runtime secret exists yet. */
+/**
+ * The lifetime a session token will ACTUALLY get, for a requested TTL.
+ *
+ * Callers used to pass a TTL and assume they got it. They do not: the value is
+ * clamped here, and a service asking for "as long as the sandbox lives" is
+ * silently cut to an hour. That gap is what let a service session outlive its
+ * own credential — the sandbox stayed up, the token in it did not, and nothing
+ * in the runtime knew the two had different deadlines.
+ *
+ * Exported so a caller can record the real expiry alongside the session instead
+ * of guessing it. It is the single definition of the clamp: signSessionToken()
+ * calls it too, so the recorded expiry cannot drift from the minted one.
+ */
+export function effectiveSessionTtlSeconds(ttlSeconds?: number): number {
+  return Math.max(60, Math.min(ttlSeconds ?? 900, 3600));
+}
+
 export async function signSessionToken(opts: {
   userId: string;
   sessionId: string;
@@ -85,7 +102,7 @@ export async function signSessionToken(opts: {
     sid: opts.sessionId,
     scope: SCOPE,
     iat: now,
-    exp: now + Math.max(60, Math.min(opts.ttlSeconds ?? 900, 3600)),
+    exp: now + effectiveSessionTtlSeconds(opts.ttlSeconds),
   };
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "nbr" }));
   const payload = b64url(JSON.stringify(claims));
