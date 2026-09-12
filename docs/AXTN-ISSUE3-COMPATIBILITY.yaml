@@ -1,0 +1,54 @@
+schema: axtn-agentswarms-issue3-compatibility/v1
+status: REVIEW_REQUIRED
+source:
+  fork_repository: aXtn/aXtn-agentswarms
+  fork_head_before_issue3: d87a155626d6564416b590bc0e0efb7e8f75436e
+  candidate_branch: work/AXTN-AGENTSWARMS-ISSUE3-0001
+  candidate_head_after_compose_pin: PENDING_COMMIT
+  upstream_repository: AgentSwarms-fyi/agentswarms
+  tested_upstream_base: 7c6e48bca030675dbb47d4309e3a12d958e3e8f2
+  observed_upstream_head: 13e4e8f06795333c6e95b8b7a7ac463f016d420f
+  merge_base: 7c6e48bca030675dbb47d4309e3a12d958e3e8f2
+  upstream_policy: observed_head_not_accepted_without_compatibility_run
+fork_delta:
+  basis: 7c6e48bca030675dbb47d4309e3a12d958e3e8f2
+  fork_commit: d87a155626d6564416b590bc0e0efb7e8f75436e
+  scope: aXtn_workbenches_mcp_runtime_local_table_extension_access_and_security_fixes
+  source_of_truth: gitea_fork
+  dirty_worktree_content: excluded
+stream_compatibility:
+  implementation: sdk/react/src/protocol.ts
+  regression_tests:
+    - tests/sdk-protocol.test.ts
+    - tests/unit/mcpSseParse.test.ts
+  covered_cases: [CRLF, LF, bare_CR, split_chunks, multiline_data, keepalive, notification_before_response, error_frame]
+  acceptance_result: covered_by_existing_candidate_tests
+whatsapp_compatibility:
+  application_source_reference: none
+  application_test_reference: none
+  interpretation: Matrix owns the Mautrix WhatsApp bridge; AgentSwarms consumes the MCP/SSE stream contract only
+  pairing_and_bridge_acceptance: gated_in_aXtn_matrix
+  acceptance_result: NOT_APPLICABLE_TO_AGENTSWARMS_RUNTIME
+compose:
+  profile_contract_test: tests/unit/composeProfiles.test.ts
+  floating_helper_tags_removed: true
+  pinned_helper_images:
+    notebook_runtime: agentswarms/notebook-runtime@sha256:67aa718d6650a011ad665587172293d87aaf981255dea4c90f42ae1251ce78eb
+    notebook_gateway: agentswarms/notebook-gateway@sha256:728c03bc862459b70bc9b02f10f63020298cf9de5d70a84397798d2180694226
+    docker_socket_proxy: tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    notebook_egress: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+    lakehouse_catalog: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fe2cd8ee0346485cb6122a4f93df6f94
+validation:
+  full_candidate_tests: passed
+  test_files: 250
+  tests: 4623
+  skipped: 39
+  build: passed
+  targeted_stream_tests: covered_in_full_suite
+  targeted_whatsapp_tests: not_applicable_matrix_owned
+release_gate:
+  decision: REVIEW_REQUIRED
+  blockers:
+    - integration_and_behavioral_acceptance
+    - migration_and_security_acceptance
+    - Matrix_bridge_pairing_and_start_acceptance
