@@ -37,7 +37,7 @@ compose:
     notebook_gateway: agentswarms/notebook-gateway@sha256:728c03bc862459b70bc9b02f10f63020298cf9de5d70a84397798d2180694226
     docker_socket_proxy: tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
     notebook_egress: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
-    lakehouse_catalog: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fe2cd8ee0346485cb6122a4f93df6f94
+    lakehouse_catalog: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
 validation:
   full_candidate_tests: passed
   test_files: 250
