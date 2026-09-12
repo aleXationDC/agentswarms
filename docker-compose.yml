@@ -68,7 +68,7 @@ services:
   notebook-runtime-image:
     build:
       context: ./docker/notebook-runtime
-    image: agentswarms/notebook-runtime:latest
+    image: agentswarms/notebook-runtime@sha256:67aa718d6650a011ad665587172293d87aaf981255dea4c90f42ae1251ce78eb
     profiles: [notebooks, all]
     entrypoint: ["/bin/true"]
     restart: "no"
@@ -77,7 +77,7 @@ services:
   notebook-gateway:
     build:
       context: ./services/notebook-gateway
-    image: agentswarms/notebook-gateway:latest
+    image: agentswarms/notebook-gateway@sha256:728c03bc862459b70bc9b02f10f63020298cf9de5d70a84397798d2180694226
     profiles: [notebooks, all]
     environment:
       PORT: "8090"
@@ -95,7 +95,7 @@ services:
   # Least-privilege Docker API: only container create/inspect/logs + write verbs
   # are exposed to the app (never the raw /var/run/docker.sock).
   notebook-docker-proxy:
-    image: tecnativa/docker-socket-proxy:latest # pin a digest in production
+    image: tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459 # pin a digest in production
     profiles: [notebooks, all]
     environment:
       # Only the API sections the orchestrator needs: create/inspect/stop/remove
@@ -122,7 +122,7 @@ services:
 
   # Default-deny egress proxy — the kernels' only route to the internet.
   notebook-egress:
-    image: ubuntu/squid:latest # pin a digest in production
+    image: ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029 # pin a digest in production
     profiles: [notebooks, all]
     # Fixed name so the app can locate and restart it when an administrator
     # saves a new egress allow-list (squid re-reads ACL files only on start,
@@ -141,7 +141,7 @@ services:
   # Postgres 12+ works; this one exists so a single-host deployment has zero
   # extra moving parts. Point LAKEHOUSE_CATALOG_URL at it (or at your own).
   lakehouse-catalog:
-    image: postgres:16
+    image: postgres@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
     profiles: [lakehouse, all]
     environment:
       POSTGRES_USER: ${LAKEHOUSE_CATALOG_USER:-lakehouse}
@@ -161,7 +161,6 @@ services:
   docgen:
     build:
       context: ./docgen-service
-    image: agentswarms/docgen:latest
     profiles: [docgen, all]
     environment:
       # Used only for the optional render-verify vision loop; falls back to no
@@ -206,7 +205,6 @@ services:
   js-sandbox:
     build:
       context: ./services/js-sandbox
-    image: agentswarms/js-sandbox:latest
     profiles: [sandbox, all]
     environment:
       PORT: "8091"
