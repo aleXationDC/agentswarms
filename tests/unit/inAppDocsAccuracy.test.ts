@@ -51,6 +51,10 @@ function envVarsInCode(): Set<string> {
   walk("src");
   walk("scripts");
   walk("services");
+  // vite.config.ts is a root-level runtime config outside the scanned source directories.
+  if (/\bprocess\.env\.ALLOWED_HOSTS\b/.test(readFileSync("vite.config.ts", "utf8"))) {
+    out.add("ALLOWED_HOSTS");
+  }
   return out;
 }
 
