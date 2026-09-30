@@ -107,7 +107,10 @@ describe("compileGraph — DAG shapes", () => {
     assertParsesAsPython(code);
   });
 
-  it("compiles every source type", () => {
+  // Named for what it is. EXHAUSTIVENESS over the source union lives in
+  // tests/unit/etlNodeMatrix.test.ts, which is keyed on the type so a new
+  // kind cannot be forgotten; this one keeps the hand-picked awkward cases.
+  it("compiles a source of each awkward shape", () => {
     const sources = [
       { type: "object_storage", path: "raw/*.csv", format: "csv" },
       { type: "object_storage", path: "raw/book.xlsx", format: "xlsx" },
@@ -126,7 +129,10 @@ describe("compileGraph — DAG shapes", () => {
     }
   });
 
-  it("compiles every transform type", () => {
+  // Likewise: the exhaustive pass is in etlNodeMatrix.test.ts. This one is
+  // here for the MARKERS it asserts — that the emitted program really uses
+  // groupby, sort_values and head, rather than merely compiling.
+  it("compiles a chain of transforms into the pandas calls they name", () => {
     const code = compileGraph(
       linear(
         node("n2", "transform", { type: "filter", expr: "amount > 0" }),
@@ -345,7 +351,14 @@ describe("compileGraph — engine-managed incremental", () => {
     };
     const code = compileGraph(g);
     expect(code).toContain("ETL_N1_CURSOR");
-    expect(code).toContain(".astype(str) > cursor");
+    // Compared in the COLUMN's own type, not as text. Comparing as text
+    // silently skipped rows whenever lexicographic and natural order differ:
+    // a numeric watermark of 9 hid every row from 10 up, and the run reported
+    // success. The text comparison survives only as the fallback for a
+    // watermark the column's type cannot hold.
+    expect(code).toContain("_cur = pd.Series([cursor]).astype(_col.dtype).iloc[0]");
+    expect(code).toContain("out = out[_col > _cur]");
+    expect(code).toContain("_cur, _col = str(cursor), _col.astype(str)");
     // Empty read → no watermark entry → the engine keeps the previous cursor.
     expect(code).toContain("if len(f_n1):");
     assertParsesAsPython(code);
@@ -382,7 +395,10 @@ describe("requirementsFor", () => {
       "pymysql",
       "psycopg2-binary",
       "sqlalchemy",
-      "ibis-framework[duckdb]",
+      // The SQL step runs on duckdb, not ibis: ibis 12 against the runtime's
+      // pandas 3 fails materialising the frame before the query is read, and
+      // the requirement was unpinned so every new sandbox pulled it.
+      "duckdb>=1.4",
       "dlt[sqlalchemy]>=1.3",
     ]) {
       expect(reqs).toContain(expected);
@@ -583,7 +599,12 @@ describe("http api targets", () => {
     const code = compileGraph(g({ wrap_key: "", auth_env: undefined }));
     assertParsesAsPython(code);
     expect(code).toContain("_body = _chunk");
-    expect(code).not.toContain("Authorization");
+    // The target's own requests carry no auth. The continuous-run report
+    // appended after the body authenticates to the platform, which is a
+    // different thing — so look only at the body.
+    const body = code.slice(0, code.indexOf("def _post_progress"));
+    expect(body.length).toBeGreaterThan(0);
+    expect(body).not.toContain("Authorization");
   });
 
   it("refuses a target with no URL", () => {
@@ -1177,6 +1198,37 @@ describe("quality gates", () => {
     expect(code).toContain("[quality] WARN");
   });
 
+  it("a row count cannot be asked to drop rows, and does not claim to", () => {
+    // The severity dropdown offered "Drop bad rows" for every check. For a
+    // row-count minimum there is nothing to drop — a short frame's rows are
+    // not the problem — so the generated code raised, which is right, while
+    // writing `severity: 'drop'` into the run's _quality metric, which is not:
+    // the record of the gate that failed the run said it had dropped rows.
+    const code = compileGraph(gateGraph([{ check: "row_count_min", min: 10, severity: "drop" }]));
+    assertParsesAsPython(code);
+    expect(code).toContain("'severity': 'fail'");
+    expect(code).not.toContain("'severity': 'drop'");
+    expect(code).toContain("raise RuntimeError");
+    // The editor no longer offers it either, which is where it came from.
+    expect(readFileSync("src/routes/_authenticated/etl.tsx", "utf8")).toContain(
+      'r.check !== "row_count_min" && (',
+    );
+    // And the Spark emitter, which carried the same line, agrees.
+    expect(readFileSync("src/utils/etl/sparkCodegen.ts", "utf8")).toContain(
+      'if (r.check === "row_count_min" && sev === "drop") sev = "fail";',
+    );
+  });
+
+  it("a droppable check still drops, and still says drop", () => {
+    // The control mutant for the rule above: nothing changed for the checks
+    // where dropping the offending rows is exactly what should happen.
+    const code = compileGraph(
+      gateGraph([{ check: "range", column: "amount", min: 0, max: 10, severity: "drop" }]),
+    );
+    expect(code).toContain("'severity': 'drop'");
+    expect(code).toContain("reset_index(drop=True)");
+  });
+
   it("half-open ranges compile (min-only and max-only)", () => {
     const code = compileGraph(
       gateGraph([
@@ -1214,7 +1266,13 @@ describe("quality gates", () => {
 // ── Lineage emission ────────────────────────────────────────────────────────
 
 describe("lineage in compiled metrics", () => {
-  it("emits per-target fqns in the crawler's vocabulary (jsonl is ndjson)", () => {
+  // The name this test used to carry — "jsonl is ndjson" — was the defect.
+  // dlt gzips text output, so a jsonl target leaves `<load>.jsonl.gz` and a
+  // glob of `*.ndjson` matches nothing in its own folder. The crawler stores
+  // the extension the files really have and `catalog_lineage` joins the two
+  // strings, so the run has to report the same one. Measured against dlt
+  // 1.30.0; see DLT_FILE_EXT and tests/unit/catalogGzipDataset.test.ts.
+  it("emits per-target fqns naming the files dlt actually writes", () => {
     const g: EtlGraph = {
       nodes: [
         node("s", "source", { type: "python", code: "df = None" }),
@@ -1245,7 +1303,7 @@ describe("lineage in compiled metrics", () => {
       ],
     };
     const code = compileGraph(g);
-    expect(code).toContain("'fqn': 'finance/exceptions/*.ndjson'");
+    expect(code).toContain("'fqn': 'finance/exceptions/*.jsonl.gz'");
     expect(code).toContain("'fqn': 'finance/orders/*.parquet'");
   });
 
@@ -1494,11 +1552,13 @@ describe("etl wiring", () => {
     // A LAN MinIO in the admin allow-list silently did nothing before: squid's
     // dstdomain ACL never matches an IP-form URL. Pinned end to end.
     const conf = read("deploy/notebooks/egress/squid.conf");
-    expect(conf).toContain('acl allowed_ips dst "/etc/squid/allowed_ips"');
+    expect(conf).toContain('acl allowed_ips dst "/etc/squid/egress/allowed_ips"');
     expect(conf).toContain("http_access allow allowed_ips");
     expect(conf).toContain("acl Safe_ports port 9000");
+    // The ACL files are mounted as a DIRECTORY now: they are generated, so
+    // untracked, and Docker turns a missing bind-mount source into a directory.
     const compose = read("docker-compose.yml");
-    expect(compose).toContain("allowed_ips:/etc/squid/allowed_ips:ro");
+    expect(compose).toContain("./deploy/notebooks/egress:/etc/squid/egress:ro");
     const apply = read("src/utils/notebookRuntime/egressApply.server.ts");
     expect(apply).toContain("renderEgressIpAllowlist");
   });
@@ -1529,11 +1589,37 @@ describe("etl wiring", () => {
 describe("egress IP renderer", () => {
   it("splits IPs from domains and drops everything else", async () => {
     const { renderEgressIpAllowlist, isEgressIp } = await import("@/utils/notebookRuntime/egress");
-    expect(isEgressIp("192.168.1.85")).toBe(true);
+    expect(isEgressIp("192.168.1.10")).toBe(true);
     expect(isEgressIp("pypi.org")).toBe(false);
-    const body = renderEgressIpAllowlist(["192.168.1.85", "pypi.org", "10.0.0.7"]);
-    expect(body).toContain("192.168.1.85");
+    const body = renderEgressIpAllowlist(["192.168.1.10", "pypi.org", "10.0.0.7"]);
+    expect(body).toContain("192.168.1.10");
     expect(body).toContain("10.0.0.7");
     expect(body).not.toContain("pypi.org");
+  });
+});
+
+describe("catalog lineage for every target", () => {
+  const svc = readFileSync(resolve(process.cwd(), "src/utils/etl/service.server.ts"), "utf8");
+
+  it("records lineage even when the destination is not a catalog source", () => {
+    // THE BUG: the lineage block sat inside `if (pipeline.dest_catalog_source_id)`,
+    // which a LAKEHOUSE-target pipeline never has — the lakehouse browses
+    // itself. Those pipelines therefore recorded no edges at all, so a number
+    // on a dashboard could not be traced back to the files it came from.
+    const crawlGate = svc.indexOf("if (pipeline.dest_catalog_source_id) {");
+    const lineage = svc.indexOf('await supabaseAdmin.from("catalog_lineage").insert(edges)');
+    expect(crawlGate).toBeGreaterThan(-1);
+    expect(lineage).toBeGreaterThan(-1);
+    // The crawl stays gated (there is nothing to crawl); lineage must not be.
+    const gateBlockEnd = svc.indexOf("}", svc.indexOf("crawlDestination(pipeline)"));
+    expect(lineage).toBeGreaterThan(gateBlockEnd);
+  });
+
+  it("falls back to the upstream source, because source_id is NOT NULL", () => {
+    expect(svc).toContain("const lineageSourceId =");
+    expect(svc).toContain("upstreamSourceId");
+    // No catalog source anywhere means no edge can be written at all — better
+    // than throwing inside a run that already loaded successfully.
+    expect(svc).toContain("if (targets.length && lineageSourceId)");
   });
 });

@@ -1,0 +1,99 @@
+schema: axtn-upstream-compatibility/v1
+execution:
+  date: "2026-09-30"
+  repository: aXtn/aXtn-agentswarms
+  branch: work/AXTN-AGENTSWARMS-UPSTREAM-150-0001
+  canonical_task: docs/CODEX-UPSTREAM-150-UPGRADE-20260930.md
+  canonical_task_commit: 8f884135460b5b5bf502024f117e5edcb5a46224
+  architecture: docs/AXTN-UPSTREAM-150-ASSESSMENT.md
+  selected_upstream_sha: 05df309fbabfa3612e3b86f1860d76c6d95f22b3
+  selected_upstream_version: 1.5.0
+  merge_base: 7c6e48bca030675dbb47d4309e3a12d958e3e8f2
+  status: implementation-complete-host-integration-blocked
+  production_mutation: false
+  main_merge: false
+  release: false
+
+classification:
+  workbenches: ported
+  document_intake: ported_business_logic_native_publish_contract
+  local_table: native_replacement_preferred_exact_axtn_gap_retained_namespaced
+  system_extension_access: retired_first_candidate
+  engagement_control_plane: deferred
+  sse_sdk_delta: retired_upstream_equivalent
+  token_lifecycle_helpers: not_ported_no_native_gap
+  security_deltas: compared_individually
+
+ledger:
+  accepted_baseline_migrations: 191
+  selected_upstream_migrations: 269
+  candidate_migrations: 274
+  baseline_ledger_sha256: 8c8bf8e88d63fd9b1d8af8875356b7b92a7feda6da697ac823c2a77f3bf84894
+  upstream_ledger_sha256: 5b96d39c54577bb7e0edcb37501212a22d7a0e4a4d2c1e9a5465ae6869d8d005
+  candidate_ledger_sha256: 839e1f1c427f0a9e84a18a13653c3c60db3fd526720eae5f6cf714deea0604b5
+  missing_upstream_migrations_applied: 83
+  axtn_candidate_migration: supabase/migrations/20260901000001_axtn_local_table_upsert.sql
+  isolated_database: true
+  destructive_production_change: false
+  schema_evidence:
+    user_data_tables: present_rls_enabled
+    user_data_rows: present_rls_enabled
+    approvals: present_rls_enabled
+    mcp_apps: present_rls_enabled
+    public_policy_count: 246
+    axtn_local_table_upsert: present_service_role_only
+
+checks:
+  dependency_install:
+    status: pass
+    command: npm ci
+  full_unit_differential:
+    status: pass
+    files: 541
+    passed: 8949
+    skipped: 40
+  typecheck:
+    status: blocked_host_resources_after_code_fix
+    prior_native_run: passed_before_final_runtime_narrowing_change
+    final_attempt: process_killed_without_diagnostics
+    reason: host_memory_pressure_no_swap
+  focused_axtn_mcp_runtime:
+    status: pass
+    tests: 71
+  lint:
+    status: pass
+    errors: 0
+    warnings: 231
+  docs: {status: pass, files: 45}
+  markdown_docs: {status: pass, files: 50}
+  doc_commands: {status: pass, files: 78}
+  infrastructure: {status: pass, powershell_parser: skipped_tool_missing}
+  integration:
+    status: collected_skipped
+    files: 7
+    tests: 40
+    reason: external_integration_environment_not_configured
+  migration_compatibility:
+    status: pass
+    path: isolated_supabase_postgres_container
+    transition: baseline_191_to_upstream_269_plus_candidate_axtn_migration
+  runtime_smoke:
+    status: partial_pass
+    port: 18082
+    liveness_http: 200
+    login_ui_http: 200
+    readiness_http: 503
+    readiness_reason: isolated_smoke_without_supabase_or_key_environment
+  production_build:
+    status: blocked_host_resources
+    canonical_command: npm run build
+    direct_heap_attempts: [2048, 3072]
+    failure_point: vite_chunk_rendering
+    host_available_memory: approximately_3_4_gib
+    host_swap: 0
+    retained_services_stopped: false
+
+continuity:
+  n8n_workflows_preserved: true
+  n8n_credentials_migrated: false
+  production_services_changed: false

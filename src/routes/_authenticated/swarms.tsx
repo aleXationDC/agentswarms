@@ -104,6 +104,7 @@ import {
   Puzzle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { chooseInitialSwarm } from "@/lib/swarmInitialLoad";
 import { supabase } from "@/integrations/supabase/client";
 import { ComponentLibraryDialog } from "@/components/swarms/ComponentLibraryDialog";
 import { bindingFor, type SwarmComponent } from "@/lib/swarmComponents";
@@ -836,6 +837,9 @@ function SwarmsCanvas({
   const [swarmList, setSwarmList] = useState<{ id: string; name: string }[]>([]);
   const [swarmName, setSwarmName] = useState("My First Swarm");
   const [loading, setLoading] = useState(true);
+  // Why the owner's swarms could not be read, when they could not (R110).
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [knowledgeBases, setKnowledgeBases] = useState<{ id: string; name: string }[]>([]);
   const [agentLibrary, setAgentLibrary] = useState<
@@ -996,11 +1000,15 @@ function SwarmsCanvas({
   const userId = user?.id;
   useEffect(() => {
     if (!userId) return;
-    const loadKey = `${userId}|${initialTemplate ?? ""}|${initialSwarmId ?? ""}`;
+    const loadKey = `${userId}|${initialTemplate ?? ""}|${initialSwarmId ?? ""}|${loadAttempt}`;
     if (loadedKeyRef.current === loadKey) return;
     loadedKeyRef.current = loadKey;
     (async () => {
-      const [{ data: swarmRows }, { data: kbs }, { data: agentRows }] = await Promise.all([
+      const [
+        { data: swarmRows, error: swarmsErr },
+        { data: kbs, error: kbsErr },
+        { data: agentRows, error: agentsErr },
+      ] = await Promise.all([
         supabase.from("swarms").select("*").order("created_at", { ascending: true }),
         supabase.from("knowledge_bases").select("id, name"),
         supabase
@@ -1010,6 +1018,28 @@ function SwarmsCanvas({
           )
           .order("created_at", { ascending: false }),
       ]);
+      // FOUND IN R110. A failed read of the swarm list was taken for an
+      // owner with no swarms: the canvas created "My First Swarm" and opened
+      // it instead of the swarm that was asked for. Nothing is opened or
+      // created on a read that did not happen.
+      const first = chooseInitialSwarm({
+        rows: swarmRows,
+        error: swarmsErr,
+        requestedId: initialSwarmId,
+      });
+      if (first.kind === "failed") {
+        setLoadError(first.error);
+        setLoading(false);
+        return;
+      }
+      setLoadError(null);
+      if (kbsErr || agentsErr) {
+        toast.warning("Some pickers could not be loaded", {
+          description: `${kbsErr ? `Knowledge bases: ${kbsErr.message}. ` : ""}${
+            agentsErr ? `Agents: ${agentsErr.message}. ` : ""
+          }They stay empty until the page is reloaded.`,
+        });
+      }
       setKnowledgeBases(kbs ?? []);
       setAgentLibrary(agentRows ?? []);
       const rows = swarmRows ?? [];
@@ -1038,20 +1068,18 @@ function SwarmsCanvas({
         }
       }
 
-      // If a specific swarm id was requested, load it
-      if (initialSwarmId) {
-        const target = rows.find((r) => r.id === initialSwarmId);
-        if (target) {
-          applySwarmRow(target);
-          setLoading(false);
-          return;
-        }
+      if (first.requestedMissing) {
+        toast.error("That swarm is not in your list", {
+          description:
+            first.kind === "open"
+              ? `Opened "${first.row.name}" instead.`
+              : "It may have been deleted.",
+        });
       }
-
-      if (rows.length > 0) {
-        applySwarmRow(rows[0]);
+      if (first.kind === "open") {
+        applySwarmRow(first.row);
       } else {
-        const { data: created } = await supabase
+        const { data: created, error: createErr } = await supabase
           .from("swarms")
           .insert({
             user_id: userId,
@@ -1061,24 +1089,35 @@ function SwarmsCanvas({
           })
           .select()
           .single();
-        if (created) {
+        if (createErr || !created) {
+          toast.error("Could not create your first swarm", {
+            description: createErr?.message ?? "no row came back from the insert",
+          });
+        } else {
           setSwarmId(created.id);
           setSwarmList([{ id: created.id, name: created.name }]);
         }
       }
       setLoading(false);
     })();
-  }, [userId, initialTemplate, initialSwarmId, setNodes, setEdges, applySwarmRow]);
+  }, [userId, initialTemplate, initialSwarmId, setNodes, setEdges, applySwarmRow, loadAttempt]);
 
   const handleSwitchSwarm = async (id: string) => {
     if (id === swarmId) return;
-    const { data } = await supabase.from("swarms").select("*").eq("id", id).maybeSingle();
-    if (data) applySwarmRow(data);
+    const { data, error } = await supabase.from("swarms").select("*").eq("id", id).maybeSingle();
+    if (error || !data) {
+      // The canvas stays on the swarm it has; say why it did not switch.
+      toast.error("Could not open that swarm", {
+        description: error?.message ?? "It is no longer in your list.",
+      });
+      return;
+    }
+    applySwarmRow(data);
   };
 
   const handleNewSwarm = async () => {
     if (!user) return;
-    const { data: created } = await supabase
+    const { data: created, error } = await supabase
       .from("swarms")
       .insert({
         user_id: user.id,
@@ -1088,6 +1127,15 @@ function SwarmsCanvas({
       })
       .select()
       .single();
+    // FOUND FROM THE UI. A create that failed did nothing at all — no swarm,
+    // no word — and a delete that failed (below) said "Swarm deleted" and
+    // dropped the swarm from the list until a reload brought it back.
+    if (error || !created) {
+      toast.error("Could not create a swarm", {
+        description: error?.message ?? "no row came back from the insert",
+      });
+      return;
+    }
     if (created) {
       setSwarmList((prev) => [...prev, { id: created.id, name: created.name }]);
       setSwarmId(created.id);
@@ -1103,13 +1151,18 @@ function SwarmsCanvas({
 
   const performDeleteSwarm = async () => {
     if (!swarmId || !user) return;
-    await supabase.from("swarms").delete().eq("id", swarmId);
+    const { error: deleteError } = await supabase.from("swarms").delete().eq("id", swarmId);
+    if (deleteError) {
+      // The swarm is still there; the list and the canvas stay as they are.
+      toast.error("Could not delete the swarm", { description: deleteError.message });
+      return;
+    }
     const remaining = swarmList.filter((s) => s.id !== swarmId);
     setSwarmList(remaining);
     if (remaining.length > 0) {
       await handleSwitchSwarm(remaining[0].id);
     } else {
-      const { data: created } = await supabase
+      const { data: created, error } = await supabase
         .from("swarms")
         .insert({
           user_id: user.id,
@@ -1119,6 +1172,12 @@ function SwarmsCanvas({
         })
         .select()
         .single();
+      if (error || !created) {
+        toast.error("Deleted, but could not create a fresh swarm to open", {
+          description: error?.message ?? "no row came back from the insert",
+        });
+        return;
+      }
       if (created) {
         setSwarmList([{ id: created.id, name: created.name }]);
         setSwarmId(created.id);
@@ -1715,9 +1774,37 @@ function SwarmsCanvas({
     }
   };
 
+  if (loadError) {
+    return (
+      <div className="flex h-canvas items-center justify-center p-6">
+        <div className="max-w-md rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm">
+          <p className="font-medium text-destructive">Could not load your swarms</p>
+          <p className="mt-1 text-muted-foreground">
+            {loadError}. Nothing was opened or created, and your swarms are as you left them.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setLoadError(null);
+                setLoading(true);
+                setLoadAttempt((n) => n + 1);
+              }}
+            >
+              Try again
+            </Button>
+            <Button size="sm" variant="outline" onClick={onBackToGallery}>
+              Back to gallery
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-3rem)] items-center justify-center">
+      <div className="flex h-canvas items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -1764,7 +1851,7 @@ function SwarmsCanvas({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="flex h-[calc(100vh-3rem)] w-full">
+      <div className="flex h-canvas w-full">
         {/* Palette */}
         <aside className="w-64 border-r border-border bg-card/40 flex flex-col overflow-y-auto">
           <div className="p-3 border-b border-border">

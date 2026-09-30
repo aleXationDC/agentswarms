@@ -213,17 +213,19 @@ describe("review surfaces", () => {
     expect(detail).toMatch(/\{!isRegistration && \(/);
   });
 
-  it("still routes both decisions through the native approval path", () => {
-    for (const surface of [queue, detail, drawer]) {
-      expect(surface).toContain("useApprovalDecision");
-    }
+  it("keeps queue and detail decisions on the native approval path", () => {
+    expect(queue).toContain("useApprovalDecision");
+    expect(detail).toContain("useApprovalDecision");
     expect(detail).toContain("isActionableReview(approval)");
+    // The native inbox owns its direct approvals update and resumes parked
+    // runs after the decision. It is not an aXtn review-detail surface.
+    expect(drawer).toContain('.from("approvals")');
+    expect(drawer).toContain('decide(ap.id, "rejected")');
+    expect(drawer).toContain('decide(ap.id, "approved")');
   });
 
-  it("does not headline the drawer with an opaque identity when a name exists", () => {
-    expect(drawer).toContain("document?.filename ?? registration.documentId");
-    expect(drawer).not.toContain("`Registered ${registration.documentId}`");
-  });
+  // The native ApprovalInbox intentionally has no aXtn document-registry
+  // lookup. Registration subjects are covered by the queue/detail model above.
 
   it("writes nothing through the review surfaces except the native decision", () => {
     for (const surface of [queue, detail]) {

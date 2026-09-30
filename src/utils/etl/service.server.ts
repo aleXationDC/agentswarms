@@ -11,9 +11,11 @@
 // sandbox process's memory — never in container env, never in the script text,
 // and scrubbed from captured logs before they are persisted.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { selectAllPages } from "@/lib/pagedSelect";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { loadStorageConfig } from "@/utils/catalog/crawler.server";
 import {
+  analyzeGraph,
   previewRequirementsFor,
   compilePreview,
   nativeWarehouseTarget,
@@ -21,13 +23,33 @@ import {
   envKey,
   normalizeGraph,
   type EtlNode,
+  lineageSourceOf,
 } from "@/utils/etl/codegen";
+import { etlErrorMessage } from "@/utils/etl/explainError";
+import { compilePipeline, engineOf, pipelineRequirements } from "@/utils/etl/compile";
+import { chainTargetsOf, hasChainTargets } from "@/lib/etlChain";
+import {
+  CONTINUOUS_SCHEDULE,
+  continuousRolloverMinutes,
+  exactlyOnceEligible,
+  isAutoIngest,
+} from "@/utils/etl/continuous";
+import { internalAppUrl, noProxyList } from "@/utils/notebookRuntime/service.server";
+import { isCatalogAsset, unwrapSourceConfig } from "@/utils/etl/catalogAsset";
 import { loadWarehouseConnectionForUser } from "@/utils/warehouse/connections.server";
 import type { WarehouseConfig } from "@/utils/warehouse/types";
 import { auditEvent } from "@/utils/audit.server";
 import { notifyUser } from "@/utils/notify.server";
 import { startSession, stopSession, getSession } from "@/utils/notebookRuntime/service.server";
 import { resolveSecretRefs } from "@/utils/secrets.server";
+import {
+  isStreamSource,
+  streamEgressHosts,
+  streamSecretEnv,
+  validateStreamSource,
+} from "@/utils/etl/streaming";
+import { egressPortRefusal, egressReaches, staticEgressHost } from "@/utils/notebookRuntime/egress";
+import { platformEgressHosts } from "@/utils/notebookRuntime/egressApply.server";
 
 export type EtlPipelineRow = Database["public"]["Tables"]["etl_pipelines"]["Row"];
 export type EtlRunRow = Database["public"]["Tables"]["etl_runs"]["Row"];
@@ -35,7 +57,8 @@ export type EtlRunRow = Database["public"]["Tables"]["etl_runs"]["Row"];
 /** Same shape the MCP builder accepts: KEY={{secret:NAME}} lines only. */
 const SECRET_BINDING_RE = /^([A-Za-z_][A-Za-z0-9_]*)=(\{\{\s*secret:[A-Za-z][A-Za-z0-9_]*\s*\}\})$/;
 
-const MAX_CONCURRENT_RUNS_PER_USER = 3;
+/** Fallback only — the effective value comes from Admin -> Developer runtime. */
+const DEFAULT_MAX_CONCURRENT_RUNS_PER_USER = 3;
 const LOG_CAP = 200_000;
 
 // ── Environment resolution ──────────────────────────────────────────────────
@@ -141,10 +164,26 @@ export function sqlalchemyUrlFor(cfg: WarehouseConfig): string {
  */
 export async function resolveRunEnv(
   pipeline: EtlPipelineRow,
-  opts?: { skipTargets?: boolean },
+  opts?: {
+    skipTargets?: boolean;
+    /** The endpoint THIS run got — a per-run cluster's, when there is one. */
+    sparkConnectUrl?: string | null;
+    /** The sandbox is about to run: an absent endpoint is now an error. */
+    requireSparkEndpoint?: boolean;
+    /**
+     * This run's id, when there is one.
+     *
+     * The Spark engine stages a lakehouse target's Parquet under a prefix
+     * named after the run, so two runs of the same pipeline cannot write over
+     * each other and a prefix left behind by a failure can be traced back to
+     * the run that left it. A compile has no run, and falls back to a clock.
+     */
+    runId?: string | null;
+  },
 ): Promise<{ env: Record<string, string>; secretValues: string[] }> {
   const env: Record<string, string> = {};
   const secretValues: string[] = [];
+  if (opts?.runId) env.ETL_RUN_ID = opts.runId;
 
   const storageEnv = async (catalogSourceId: string, stem: string, shape: "source" | "target") => {
     const { data: src } = await supabaseAdmin
@@ -172,6 +211,79 @@ export async function resolveRunEnv(
     secretValues.push(cfg.secret_access_key);
   };
 
+  // Stream sources: the broker or service address, and the credentials the
+  // owner bound by secret name, under the node's stem. Brokers are named in
+  // the graph, so the run refuses unless every host is already on the egress
+  // allow-list: a pipeline author cannot widen where the sandbox may reach.
+  let allowedEgress: Set<string> | null = null;
+
+  /**
+   * Refuse a host the sandbox may not reach, BEFORE a container starts.
+   *
+   * Every node that names an address off this machine goes through here, so
+   * the answer is one sentence naming the host and the page that fixes it.
+   * Without it the run reaches the egress proxy and comes back as a forty-line
+   * urllib3 ProxyError ending in `Tunnel connection failed: 403 Forbidden`,
+   * which says nothing about an allow-list and reads like the endpoint is
+   * down. Stream sources had this check from the start; HTTP API sources and
+   * reverse-ETL HTTP targets did not, and they are the two most likely to
+   * point at something new.
+   */
+  const assertEgress = async (node: EtlNode, hosts: string[], verb: string) => {
+    if (!hosts.length) return;
+    if (!allowedEgress) {
+      const { data } = await supabaseAdmin
+        .from("notebook_runtime_settings")
+        .select("egress_allowlist")
+        .eq("id", true)
+        .maybeSingle();
+      // THREE THINGS MAKE A HOST REACHABLE, and the check has to know all
+      // three or it refuses something that works. The operator's allow-list
+      // and the platform's own hosts go through the proxy; the NO_PROXY list
+      // (the app itself, localhost, in-cluster suffixes) skips it entirely.
+      // Patterns are kept RAW here — matching is squid's, done below — because
+      // the ACL normaliser insists on a two-label domain and would drop
+      // exactly the single-label names in that third group.
+      allowedEgress = new Set([
+        ...((data?.egress_allowlist ?? []) as string[]),
+        ...platformEgressHosts(),
+        ...noProxyList(internalAppUrl()).split(","),
+      ]);
+    }
+    for (const host of hosts) {
+      if (!egressReaches(allowedEgress, host)) {
+        throw new Error(
+          `Node "${node.label || node.id}" ${verb} ${host}, which is not on the sandbox egress allow-list. ` +
+            `An administrator adds it under Admin → Developer runtime → Egress allow-list.`,
+        );
+      }
+    }
+  };
+
+  const streamEnv = async (
+    node: EtlNode,
+    cfg: Parameters<typeof streamSecretEnv>[1],
+    stem: string,
+  ) => {
+    const bad = validateStreamSource(cfg);
+    if (bad) throw new Error(`Node "${node.label || node.id}": ${bad}`);
+    await assertEgress(node, streamEgressHosts(cfg), "reads from");
+    if (cfg.type === "kafka") {
+      env[`${stem}_BROKERS`] = cfg.brokers.trim();
+      env[`${stem}_TOPIC`] = cfg.topic.trim();
+    }
+    for (const { env: name, secret } of streamSecretEnv(stem, cfg)) {
+      const value = await resolveSecretRefs(pipeline.user_id, `{{secret:${secret}}}`);
+      if (!value || value === `{{secret:${secret}}}`) {
+        throw new Error(
+          `Node "${node.label || node.id}": the secret "${secret}" is not set for this account (Settings → Secrets).`,
+        );
+      }
+      env[name] = value;
+      secretValues.push(value);
+    }
+  };
+
   const databaseEnv = async (connectionId: string, stem: string, isTarget: boolean) => {
     const conn = await loadWarehouseConnectionForUser(
       supabaseAdmin,
@@ -196,10 +308,14 @@ export async function resolveRunEnv(
   // it exactly once (in Settings).
   const graph = normalizeGraph(pipeline.graph);
   for (const node of graph?.nodes ?? []) {
-    const c = (node as EtlNode).config as {
+    const raw = (node as EtlNode).config as { type?: string };
+    // A catalog asset resolves credentials as the source it stands for; an
+    // asset that was never picked refuses here, in the picker's words.
+    const c = (node.kind === "source" && isCatalogAsset(raw) ? unwrapSourceConfig(raw) : raw) as {
       type?: string;
       catalog_source_id?: string;
       connection_id?: string;
+      auth_secret?: string;
     };
     const stem = envKey(node.id);
     if (opts?.skipTargets && node.kind === "target") continue;
@@ -220,6 +336,62 @@ export async function resolveRunEnv(
       }
       await databaseEnv(c.connection_id, stem, node.kind === "target");
     }
+    if (node.kind === "source" && isStreamSource(c)) {
+      await streamEnv(node as EtlNode, c, stem);
+    }
+    // An HTTP node's own URL, held to the same rule as a broker's address —
+    // and to the proxy's PORT rule, which is a separate denial with an
+    // identical-looking symptom. Found live: a reverse-ETL target pointed at
+    // an allow-listed host on :8099 failed with a bare
+    // `403 Client Error: Forbidden for url: http://…:8099/hook`, which reads
+    // as the endpoint refusing rather than squid refusing the port.
+    if (c.type === "http_api") {
+      const url = (c as { url?: string }).url;
+      const portWhy = egressPortRefusal(url);
+      if (portWhy) {
+        throw new Error(
+          `${node.kind === "target" ? "Target" : "Source"} "${node.label || node.id}": ${portWhy}`,
+        );
+      }
+      await assertEgress(
+        node as EtlNode,
+        staticEgressHost(url),
+        node.kind === "target" ? "writes to" : "reads from",
+      );
+    }
+    // A named SaaS target writes through a connection that already exists, so
+    // there is no second copy of the CRM's credential to manage. The row is
+    // scoped by user_id: a stale connection id in a shared graph cannot reach
+    // another tenant's CRM.
+    if (node.kind === "target" && c.type === "saas") {
+      if (!c.connection_id) {
+        throw new Error(
+          `Node "${(node as EtlNode).label || node.id}" has no SaaS connection selected`,
+        );
+      }
+      const { loadWritableConnection, saasWriteAuth } = await import("@/utils/saas/write.server");
+      let auth: { base: string; token: string; vendor: string };
+      try {
+        const conn = await loadWritableConnection(pipeline.user_id, c.connection_id);
+        auth = await saasWriteAuth(conn.config);
+      } catch (e) {
+        throw new Error(`Node "${(node as EtlNode).label || node.id}": ${(e as Error).message}`);
+      }
+      env[`${stem}_BASE`] = auth.base;
+      env[`${stem}_TOKEN`] = auth.token;
+      secretValues.push(auth.token);
+    }
+    // A reverse-ETL target's bearer token, picked as a secret on the node.
+    if (node.kind === "target" && c.type === "http_api" && c.auth_secret) {
+      const value = await resolveSecretRefs(pipeline.user_id, `{{secret:${c.auth_secret}}}`);
+      if (!value || value === `{{secret:${c.auth_secret}}}`) {
+        throw new Error(
+          `Node "${(node as EtlNode).label || node.id}": the secret "${c.auth_secret}" is not set for this account (Settings → Secrets).`,
+        );
+      }
+      env[`${stem}_AUTH_TOKEN`] = value;
+      secretValues.push(value);
+    }
   }
 
   // Engine-managed incremental cursors: a source node marked incremental
@@ -233,7 +405,13 @@ export async function resolveRunEnv(
       mode?: string;
       type?: string;
     };
-    return Boolean(c.incremental?.cursor_column) || c.mode === "cdc" || c.type === "ingest";
+    return (
+      Boolean(c.incremental?.cursor_column) ||
+      c.mode === "cdc" ||
+      c.type === "ingest" ||
+      isAutoIngest(c) ||
+      isStreamSource(c)
+    );
   });
   if (incrementalNodes.length) {
     const { data: state } = await supabaseAdmin
@@ -247,13 +425,33 @@ export async function resolveRunEnv(
     }
   }
 
+  // A continuous pipeline is the same program told to loop. The poll
+  // interval and the rollover budget ride in env, so changing the schedule
+  // needs no recompile and a run never outlives its sandbox's own limit.
+  if (pipeline.schedule === CONTINUOUS_SCHEDULE) {
+    env.ETL_CONTINUOUS = "1";
+    env.ETL_POLL_SECONDS = String(Math.max(1, pipeline.poll_seconds ?? 5));
+    env.ETL_CONTINUOUS_MAX_SECONDS = String(continuousRolloverMinutes() * 60);
+    // Every target a lakehouse table: the tick's loads and its positions
+    // commit in one transaction, and a crash after the commit cannot replay.
+    env.ETL_PIPELINE_ID = pipeline.id;
+    if (exactlyOnceEligible(graph)) env.ETL_EXACTLY_ONCE = "1";
+  }
+
   // Lakehouse nodes: the sandbox attaches the SAME DuckLake catalog the app
   // uses. Access is checked HERE, as the pipeline's owner — the sandbox holds
   // engine-level credentials, so a schema the owner cannot reach must never
   // become reachable by writing its name into a graph.
-  const lakehouseNodes = (graph?.nodes ?? []).filter(
-    (n) => ((n as EtlNode).config as { type?: string }).type === "lakehouse",
-  );
+  // A catalog asset that resolved to a lakehouse table is a lakehouse node
+  // for the access check: the schema it names must be one the owner reaches.
+  const effective = (n: { kind: string; config: unknown }) => {
+    const c = n.config as { type?: string };
+    return (n.kind === "source" && isCatalogAsset(c) ? unwrapSourceConfig(c) : c) as {
+      type?: string;
+      schema?: string;
+    };
+  };
+  const lakehouseNodes = (graph?.nodes ?? []).filter((n) => effective(n).type === "lakehouse");
   if (lakehouseNodes.length) {
     const { lakehouseConfig, accessibleSchemas, catalogUrlToLibpq } =
       await import("@/utils/lakehouse/core.server");
@@ -264,8 +462,20 @@ export async function resolveRunEnv(
       );
     }
     const allowed = new Set((await accessibleSchemas(pipeline.user_id)).map((sch) => sch.name));
+    const sheetTargets = lakehouseNodes
+      .filter((n) => n.kind === "target")
+      .map((n) => {
+        const c = effective(n) as { schema?: string; table?: string };
+        return { schema: c.schema ?? "", table: c.table ?? "" };
+      })
+      .filter((t) => t.schema && t.table);
+    if (sheetTargets.length) {
+      const { sheetOwnedRefusal } = await import("@/utils/sheets/owned.server");
+      const why = await sheetOwnedRefusal(sheetTargets);
+      if (why) throw new Error(why);
+    }
     for (const node of lakehouseNodes) {
-      const schema = ((node as EtlNode).config as { schema?: string }).schema ?? "";
+      const schema = effective(node).schema ?? "";
       if (!allowed.has(schema)) {
         throw new Error(
           `Node "${(node as EtlNode).label || node.id}": no access to lakehouse schema "${schema}" — ` +
@@ -337,6 +547,41 @@ export async function resolveRunEnv(
     }
   }
 
+  // The Spark engine: where the sandbox's Spark Connect client dials. gRPC
+  // cannot go through the HTTP egress proxy, so the endpoint's host joins the
+  // no-proxy list — the prelude applies this env before the client connects.
+  if (engineOf(pipeline.engine) === "spark") {
+    const { sparkClusterSettings } = await import("@/utils/etl/sparkCluster.server");
+    const { provider, staticUrl } = await sparkClusterSettings();
+    // Under `k8s` the endpoint belongs to the run, not to the deployment, and
+    // it does not exist until the run's driver does — so a missing one is only
+    // an error once the sandbox is actually asking for its environment.
+    const sparkConnectUrl = provider === "k8s" ? (opts?.sparkConnectUrl ?? null) : staticUrl;
+    if (!sparkConnectUrl) {
+      if (provider === "static") {
+        throw new Error(
+          "This pipeline uses the Spark engine, but no Spark Connect endpoint is configured (Admin → Developer runtime → Spark engine).",
+        );
+      }
+      if (opts?.requireSparkEndpoint) {
+        throw new Error("This run's Spark cluster is not ready yet.");
+      }
+      return { env, secretValues };
+    }
+    env.ETL_SPARK_CONNECT_URL = sparkConnectUrl;
+    let host = "";
+    try {
+      host = new URL(sparkConnectUrl.replace(/^sc:\/\//i, "http://")).hostname;
+    } catch {
+      /* an unparseable URL fails in the sandbox with Spark's own message */
+    }
+    const noProxy = noProxyList(internalAppUrl(), host ? [host] : []);
+    env.NO_PROXY = noProxy;
+    env.no_proxy = noProxy;
+    // A token riding in the URL must never reach the run's logs.
+    const token = /[;?&]token=([^;&\s]+)/i.exec(sparkConnectUrl);
+    if (token) secretValues.push(decodeURIComponent(token[1]));
+  }
   return { env, secretValues };
 }
 
@@ -426,10 +671,21 @@ export function etlPrelude(): string {
     `_reqs = [r for r in (_bundle.get('requirements') or []) if r.strip()]`,
     `if _reqs:`,
     `    print('[etl] installing ' + str(len(_reqs)) + ' package(s)')`,
-    `    _sp.run(`,
+    `    # -q keeps a SUCCESSFUL install out of the logs, but check=True with -q`,
+    `    # reports a failure as bare "non-zero exit status" and throws away the`,
+    `    # one thing that explains it — a version conflict, an unreachable host,`,
+    `    # or ~/.local's tmpfs filling up all look identical. Capture instead,`,
+    `    # and print what pip said only when it matters.`,
+    `    _p = _sp.run(`,
     `        [_sys.executable, '-m', 'pip', 'install', '--user', '--no-input', '-q', *_reqs],`,
-    `        check=True,`,
+    `        capture_output=True, text=True,`,
     `    )`,
+    `    if _p.returncode != 0:`,
+    `        print('[etl] pip install FAILED (exit ' + str(_p.returncode) + ') for: ' + ', '.join(_reqs))`,
+    `        for _stream in (_p.stdout, _p.stderr):`,
+    `            if _stream and _stream.strip():`,
+    `                print(_stream[-4000:])`,
+    `        raise RuntimeError('pip install failed — see the output above')`,
     `    # The sandbox mounts an EMPTY tmpfs at ~/.local, so the user site dir`,
     `    # did not exist when this interpreter started and is NOT on sys.path --`,
     `    # pip just created it, so add it now or every install is invisible.`,
@@ -540,11 +796,16 @@ export async function etlIngestFor(
 
   const cursor = Number(opts.cursor);
   if (opts.consume && Number.isFinite(cursor) && cursor > 0) {
-    await supabaseAdmin
+    const { error: consumeErr } = await supabaseAdmin
       .from("etl_ingest_events")
       .delete()
       .eq("pipeline_id", pipelineId)
       .lte("id", cursor);
+    if (consumeErr) {
+      console.warn(
+        `[etl] pipeline ${pipelineId}: consumed events up to ${cursor} could not be deleted: ${consumeErr.message}; they will be offered again`,
+      );
+    }
   }
 
   const PAGE = 1000;
@@ -598,24 +859,26 @@ export async function etlDatasetFor(
     .eq("user_id", userId)
     .maybeSingle();
   if (!table) return { error: "Dataset not found for this session" };
-  const PAGE = 1000;
-  const rows: Record<string, unknown>[] = [];
+  // Ordered and error-checked already; what it lacked was an offset that
+  // advances by the response. Under a server cap below PAGE this read a scatter
+  // and called it truncated, and an ETL step over a scatter produces output that
+  // is wrong rather than short.
+  let rows: Record<string, unknown>[];
   let truncated = false;
-  for (let start = 0; ; start += PAGE) {
-    const { data: chunk, error } = await supabaseAdmin
-      .from("user_data_rows")
-      .select("row")
-      .eq("table_id", tableId)
-      .order("id", { ascending: true })
-      .range(start, start + PAGE - 1);
-    if (error) return { error: error.message };
-    if (!chunk?.length) break;
-    rows.push(...chunk.map((c) => c.row as Record<string, unknown>));
-    if (chunk.length < PAGE) break;
-    if (rows.length >= ETL_DATASET_MAX_ROWS) {
-      truncated = true;
-      break;
-    }
+  try {
+    const scan = await selectAllPages<{ row: unknown }>(
+      () =>
+        supabaseAdmin
+          .from("user_data_rows")
+          .select("row")
+          .eq("table_id", tableId)
+          .order("id", { ascending: true }),
+      ETL_DATASET_MAX_ROWS,
+    );
+    rows = scan.rows.map((c) => c.row as Record<string, unknown>);
+    truncated = scan.truncated;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "could not read the dataset" };
   }
   return { rows, truncated };
 }
@@ -627,7 +890,7 @@ export async function etlEnvFor(
 ): Promise<{ env: Record<string, string>; requirements: string[] } | { error: string }> {
   const { data: run } = await supabaseAdmin
     .from("etl_runs")
-    .select("id, pipeline_id, user_id")
+    .select("id, pipeline_id, user_id, spark_connect_url")
     .eq("id", etlRunId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -638,8 +901,26 @@ export async function etlEnvFor(
     .eq("id", run.pipeline_id)
     .maybeSingle();
   if (!pipeline) return { error: "Pipeline no longer exists" };
-  const { env } = await resolveRunEnv(pipeline);
-  const requirements = (pipeline.requirements ?? "")
+  const { env } = await resolveRunEnv(pipeline, {
+    sparkConnectUrl: run.spark_connect_url,
+    requireSparkEndpoint: true,
+    // This is the one call that is about to become a running sandbox, so it
+    // is the one that knows which run the staged files belong to.
+    runId: run.id,
+  });
+  // Same staleness, one layer down: the stored requirements were computed by
+  // the compiler that ran at the last save. When the SQL step moved off ibis
+  // the replacement package was in the new requirements and the old ones went
+  // on installing ibis, so the fix could not take even where the program was
+  // right. A visual pipeline's packages follow from its graph — the canvas
+  // rewrites them on every edit and offers no field to hand-edit — so they are
+  // derived here, for the engine this run uses. A code pipeline's list is
+  // typed by a person and is left exactly alone.
+  const graph = pipeline.mode === "visual" ? normalizeGraph(pipeline.graph) : null;
+  const reqText = graph
+    ? pipelineRequirements(graph, engineOf(pipeline.engine))
+    : (pipeline.requirements ?? "");
+  const requirements = reqText
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"));
@@ -654,8 +935,54 @@ export async function startEtlRun(
   params?: Record<string, unknown>,
 ): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
   if (!pipeline.source_code.trim()) {
+    // A VISUAL PIPELINE SAVES EVEN WHEN ITS GRAPH DOES NOT COMPILE. A draft is
+    // allowed to be half-wired, and the save toast says exactly what is wrong
+    // — but by the time anyone presses Run that toast is four seconds gone,
+    // and an empty `source_code` is the SYMPTOM, not the reason. The graph is
+    // still sitting in the row, so recompile it and say what the editor said.
+    //
+    // Found by pressing Run on a pipeline the editor had just refused: the
+    // banner on the canvas named the node and the column, and the run refused
+    // with a sentence that reads like the pipeline is empty.
+    const graph = normalizeGraph(pipeline.graph);
+    if (graph) {
+      try {
+        analyzeGraph(graph);
+      } catch (e) {
+        return { ok: false, error: (e as Error).message };
+      }
+    }
     return { ok: false, error: "Pipeline has no code to run" };
   }
+  // THE GENERATED PROGRAM IS A CACHE, NOT THE DEFINITION.
+  //
+  // For a visual pipeline the GRAPH is what somebody built; `source_code` is
+  // what the last save compiled it to. The two drift the moment the compiler
+  // changes, and the editor only recompiles on save — where the button is
+  // disabled when nothing has changed. So an upgraded deployment went on
+  // running last release's program, per pipeline, until somebody happened to
+  // edit that pipeline for some other reason.
+  //
+  // Found live, twice in one sitting: a fix to the SQL step (ibis → duckdb)
+  // and a fix to the target fqn a run reports both failed to reach a pipeline
+  // created twenty minutes earlier, and the second left a lineage edge
+  // pointing at a filename that does not exist. Recompiling here costs
+  // microseconds and makes "the fix shipped" mean the same thing for every
+  // pipeline. A graph the CURRENT compiler refuses stops the run with the
+  // compiler's own sentence, which is what the canvas would have said —
+  // better than silently running a program built from rules it now fails.
+  let sourceCode = pipeline.source_code;
+  if (pipeline.mode === "visual") {
+    const graph = normalizeGraph(pipeline.graph);
+    if (graph) {
+      try {
+        sourceCode = compilePipeline(graph, engineOf(pipeline.engine));
+      } catch (e) {
+        return { ok: false, error: (e as Error).message };
+      }
+    }
+  }
+
   // Resolve the env now to fail fast on a missing destination — a run that
   // dies inside the sandbox on a config error costs a cold start to discover.
   try {
@@ -687,10 +1014,16 @@ export async function startEtlRun(
     .select("id", { count: "exact", head: true })
     .eq("user_id", pipeline.user_id)
     .in("status", ["queued", "running"]);
-  if ((count ?? 0) >= MAX_CONCURRENT_RUNS_PER_USER) {
+  const { getPlatformResources } = await import("@/utils/notebookRuntime/config.server");
+  const maxConcurrent =
+    (await getPlatformResources()).etlMaxConcurrentRunsPerUser ||
+    DEFAULT_MAX_CONCURRENT_RUNS_PER_USER;
+  if ((count ?? 0) >= maxConcurrent) {
     return {
       ok: false,
-      error: `Concurrent run limit reached (${MAX_CONCURRENT_RUNS_PER_USER}). Wait for a running pipeline to finish.`,
+      error:
+        `Concurrent run limit reached (${maxConcurrent}). Wait for a running pipeline to ` +
+        `finish, or raise the limit under Admin -> Developer runtime.`,
     };
   }
 
@@ -708,7 +1041,7 @@ export async function startEtlRun(
       user_id: pipeline.user_id,
       status: "queued",
       trigger,
-      source_code: pipeline.source_code,
+      source_code: sourceCode,
       params: (Object.keys(mergedParams).length ? mergedParams : null) as Json,
       retries_remaining: pipeline.retry_count ?? 0,
       attempt: 1,
@@ -730,6 +1063,14 @@ export async function startEtlRun(
     },
   });
 
+  // Lakehouse nodes read Parquet through the egress proxy; make sure it
+  // admits the lake endpoint before the sandbox finds out it does not.
+  await import("@/utils/notebookRuntime/egressApply.server")
+    .then((m) => m.ensurePlatformEgress())
+    .then((r) => {
+      if (!r.applied) console.warn("[etl] egress allow-list:", r.reason);
+    })
+    .catch(() => {});
   const launched = await launchAttempt(run.id, pipeline, mergedParams, 1);
   return launched.ok ? { ok: true, runId: run.id } : launched;
 }
@@ -749,7 +1090,98 @@ async function launchAttempt(
   // Record the attempt BEFORE trying to launch: a failed launch must count
   // against the ladder (and grow the backoff), which it silently did not when
   // the attempt number was only written on the success path.
-  await supabaseAdmin.from("etl_runs").update({ attempt }).eq("id", runId);
+  const { error: attemptErr } = await supabaseAdmin
+    .from("etl_runs")
+    .update({ attempt })
+    .eq("id", runId);
+  if (attemptErr) {
+    console.warn(
+      `[etl] run ${runId}: attempt ${attempt} could not be recorded: ${attemptErr.message}; a failed launch will not count against the retry ladder`,
+    );
+  }
+
+  if (engineOf(pipeline.engine) === "spark") {
+    const { sparkClusterSettings } = await import("@/utils/etl/sparkCluster.server");
+    if ((await sparkClusterSettings()).provider === "k8s") {
+      // A per-run cluster takes minutes to come up, which is far too long to
+      // hold a "Run now" request or a scheduler sweep open. The run stays
+      // queued while it does; the orphan reaper knows to wait, and the
+      // driver's own deadline ends it even if this process dies here.
+      // Detached, so an unhandled rejection here would take the process down
+      // rather than the run: every failure inside becomes a failed attempt.
+      void provisionThenLaunch(runId, pipeline, params, attempt).catch((e) =>
+        console.warn("[etl] spark provisioning failed:", (e as Error).message),
+      );
+      return { ok: true };
+    }
+  }
+  return startRunSandbox(runId, pipeline, params, attempt);
+}
+
+/**
+ * Create this run's own Spark cluster, wait for it to answer, then start the
+ * sandbox. The reference is recorded as soon as the objects exist — before the
+ * slow wait — because a cluster nobody has written down is the one that leaks.
+ */
+async function provisionThenLaunch(
+  runId: string,
+  pipeline: EtlPipelineRow,
+  params: Record<string, unknown>,
+  attempt: number,
+): Promise<void> {
+  const { acquireSparkCluster, awaitSparkClusterReady, releaseSparkCluster } =
+    await import("@/utils/etl/sparkCluster.server");
+  let ref: string | null = null;
+  try {
+    // A previous attempt's cluster is dead weight the moment this one starts.
+    const { data: prior } = await supabaseAdmin
+      .from("etl_runs")
+      .select("spark_cluster_ref")
+      .eq("id", runId)
+      .maybeSingle();
+    await releaseSparkCluster(prior?.spark_cluster_ref);
+
+    const cluster = await acquireSparkCluster({
+      runId,
+      userId: pipeline.user_id,
+      timeoutMinutes: pipeline.timeout_minutes ?? 30,
+    });
+    ref = cluster.ref;
+    await supabaseAdmin
+      .from("etl_runs")
+      .update({ spark_cluster_ref: cluster.ref, spark_connect_url: cluster.url })
+      .eq("id", runId);
+    await awaitSparkClusterReady(cluster.ref);
+  } catch (e) {
+    await releaseSparkCluster(ref).catch(() => {});
+    await failOrRetry(
+      runId,
+      pipeline,
+      `Attempt ${attempt} could not start: ${(e as Error).message}`,
+    );
+    return;
+  }
+  // The run may have been cancelled while its cluster was coming up.
+  const { data: still } = await supabaseAdmin
+    .from("etl_runs")
+    .select("status")
+    .eq("id", runId)
+    .maybeSingle();
+  if (!still || !["queued", "running", "retrying"].includes(still.status)) {
+    await releaseSparkCluster(ref).catch(() => {});
+    return;
+  }
+  const launched = await startRunSandbox(runId, pipeline, params, attempt);
+  if (!launched.ok) await releaseSparkCluster(ref).catch(() => {});
+}
+
+/** Start the sandbox for one attempt. */
+async function startRunSandbox(
+  runId: string,
+  pipeline: EtlPipelineRow,
+  params: Record<string, unknown>,
+  attempt: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const { session } = await startSession({
       userId: pipeline.user_id,
@@ -757,8 +1189,12 @@ async function launchAttempt(
       etlRunId: runId,
       entrypoint: "entrypoint",
       inputs: params,
+      // A continuous run ends itself at the rollover; the sandbox's own
+      // limit sits past it so the run is never cut off mid-tick.
+      maxMinutes:
+        pipeline.schedule === CONTINUOUS_SCHEDULE ? continuousRolloverMinutes() + 10 : undefined,
     });
-    await supabaseAdmin
+    const { error: recErr } = await supabaseAdmin
       .from("etl_runs")
       .update({
         status: "running",
@@ -766,6 +1202,21 @@ async function launchAttempt(
         started_at: new Date().toISOString(),
       })
       .eq("id", runId);
+    if (recErr) {
+      // FOUND FROM THE SURVEY (R78). The sandbox is running and the run row
+      // does not know its session: nothing can cancel it, and the reconciler
+      // sees a queued run with nothing behind it. Stopped now, while the id
+      // is in hand, and the attempt fails as an attempt.
+      await stopSession(session).catch((e) =>
+        console.warn("[etl] could not stop an unrecorded run sandbox:", (e as Error).message),
+      );
+      await failOrRetry(
+        runId,
+        pipeline,
+        `Attempt ${attempt} started but its session could not be recorded: ${recErr.message}; the sandbox was stopped again`,
+      );
+      return { ok: false, error: recErr.message };
+    }
     return { ok: true };
   } catch (e) {
     const message = (e as Error).message;
@@ -817,6 +1268,9 @@ async function failOrRetry(
       .in("status", ["queued", "running", "retrying"])
       .select("id");
     if (!claimed?.length) return;
+    // The backoff is up to sixteen minutes, and a per-run Spark cluster does
+    // nothing during it but cost money. The next attempt creates a fresh one.
+    await releaseRunCluster(runId);
     auditEvent({
       userId: pipeline.user_id,
       action: "etl.run.retry_scheduled",
@@ -840,10 +1294,17 @@ async function failOrRetry(
     .in("status", ["queued", "running", "retrying"])
     .select("id");
   if (!claimedFail?.length) return;
-  await supabaseAdmin
+  await releaseRunCluster(runId);
+  const { error: stampErr } = await supabaseAdmin
     .from("etl_pipelines")
     .update({ last_run_at: stamp, last_run_status: "failed" })
     .eq("id", pipeline.id);
+  if (stampErr) {
+    // The run is failed; the pipeline's badge is not (R78).
+    console.warn(
+      `[etl] pipeline ${pipeline.id}: last status could not be stamped failed: ${stampErr.message}; the list shows the previous run's until it is`,
+    );
+  }
   auditEvent({
     userId: pipeline.user_id,
     action: "etl.run.failed",
@@ -888,11 +1349,14 @@ export async function appendPartialLogs(etlRunId: string, logs: string): Promise
       /* scrub what we can */
     }
   }
-  await supabaseAdmin
+  const { error: logErr } = await supabaseAdmin
     .from("etl_runs")
     .update({ logs: scrubSecrets(logs.slice(-LOG_CAP), secretValues) })
     .eq("id", etlRunId)
     .eq("status", "running");
+  if (logErr) {
+    console.warn(`[etl] run ${etlRunId}: partial logs could not be written: ${logErr.message}`);
+  }
 }
 
 /**
@@ -903,11 +1367,40 @@ export async function appendPartialLogs(etlRunId: string, logs: string): Promise
  * recovered from the session row (the batch runner stores them there too);
  * anything else goes through the ordinary retry ladder.
  */
+/**
+ * Release a run's own Spark cluster, if it had one.
+ *
+ * Called from every terminal path — success, exhausted retries, cancellation —
+ * because the replica that ends a run is rarely the one that started it, and
+ * the only durable pointer to the cluster is the run row.
+ */
+async function releaseRunCluster(runId: string): Promise<void> {
+  const { data } = await supabaseAdmin
+    .from("etl_runs")
+    .select("spark_cluster_ref")
+    .eq("id", runId)
+    .maybeSingle();
+  if (!data?.spark_cluster_ref) return;
+  const { releaseSparkCluster } = await import("@/utils/etl/sparkCluster.server");
+  await releaseSparkCluster(data.spark_cluster_ref).catch((e) =>
+    console.warn("[etl] could not release the run's Spark cluster:", (e as Error).message),
+  );
+  const { error: clearErr } = await supabaseAdmin
+    .from("etl_runs")
+    .update({ spark_cluster_ref: null })
+    .eq("id", runId);
+  if (clearErr) {
+    console.warn(
+      `[etl] run ${runId}: the released cluster's ref could not be cleared: ${clearErr.message}; it will read as still held`,
+    );
+  }
+}
+
 export async function reconcileOrphanedEtlRuns(): Promise<number> {
   const graceAgo = new Date(Date.now() - 2 * 60_000).toISOString();
   const { data: liveRuns } = await supabaseAdmin
     .from("etl_runs")
-    .select("id, pipeline_id, session_id, status, created_at")
+    .select("id, pipeline_id, session_id, status, created_at, spark_cluster_ref")
     .in("status", ["queued", "running"])
     .lt("created_at", graceAgo)
     .limit(20);
@@ -933,11 +1426,26 @@ export async function reconcileOrphanedEtlRuns(): Promise<number> {
         outcome = {
           status: "error",
           logs: session.logs ?? "",
-          error: session.error ?? "The sandbox ended without reporting a result.",
+          // Same treatment the preview gets. A scheduled run that fails at 3am
+          // is read from the run list hours later, with no chance to reproduce
+          // it interactively — so the recorded error is the whole story, and
+          // "PermissionError: Forbidden" is not a story.
+          error: etlErrorMessage(
+            [session.error, session.logs].filter(Boolean).join("\n") ||
+              "The sandbox ended without reporting a result.",
+          ),
         };
       } // starting/running/ready -> genuinely still going; leave it alone.
     } else if (run.status === "queued") {
-      outcome = { status: "error", error: "The run never acquired a sandbox session." };
+      // A run whose own Spark cluster is still coming up has no session yet,
+      // and that is not an orphan: provisioning one is minutes, not seconds.
+      const { sparkStartupSeconds } = await import("@/utils/etl/sparkCluster.server");
+      const provisioning =
+        run.spark_cluster_ref &&
+        Date.parse(run.created_at) > Date.now() - (sparkStartupSeconds() + 120) * 1000;
+      if (!provisioning) {
+        outcome = { status: "error", error: "The run never acquired a sandbox session." };
+      }
     }
     if (outcome) {
       await finalizeEtlRun(run.id, outcome);
@@ -945,6 +1453,74 @@ export async function reconcileOrphanedEtlRuns(): Promise<number> {
     }
   }
   return reconciled;
+}
+
+/**
+ * Engine-managed positions, persisted AFTER a durable load: a crash between
+ * the two re-reads rows, never skips them. Shared by a run's end and by a
+ * continuous run's every tick.
+ */
+export async function persistEtlWatermarks(
+  pipeline: { id: string; user_id: string },
+  watermarks: Record<string, unknown>,
+  now = new Date().toISOString(),
+): Promise<string[]> {
+  // FOUND FROM THE SURVEY (R78). A watermark that was not saved is a cursor
+  // the next run does not have: it reads from the previous one and loads
+  // the same rows again. The failures are returned, node by node, so the run
+  // that succeeded can say what it could not keep.
+  const failed: string[] = [];
+  for (const [nodeId, value] of Object.entries(watermarks)) {
+    if (value === null || value === undefined) continue;
+    const { error } = await supabaseAdmin.from("etl_pipeline_state").upsert(
+      {
+        pipeline_id: pipeline.id,
+        node_id: nodeId.slice(0, 64),
+        user_id: pipeline.user_id,
+        cursor_value: String(value).slice(0, 512),
+        updated_at: now,
+      },
+      { onConflict: "pipeline_id,node_id" },
+    );
+    if (error) failed.push(`${nodeId}: ${error.message}`);
+  }
+  if (failed.length > 0) {
+    console.warn(
+      `[etl] pipeline ${pipeline.id}: watermark(s) could not be saved — ${failed.join("; ")}. The next run reads from the previous cursor.`,
+    );
+  }
+  return failed;
+}
+
+/**
+ * A continuous run reports after every tick: positions to persist, counters
+ * to show. Nothing here ends the run — the sandbox's final callback does.
+ */
+export async function recordEtlProgress(
+  runId: string,
+  progress: Record<string, unknown>,
+): Promise<void> {
+  const { data: run } = await supabaseAdmin
+    .from("etl_runs")
+    .select("id, status, pipeline_id, user_id")
+    .eq("id", runId)
+    .maybeSingle();
+  if (!run || run.status !== "running") return;
+  const watermarks = progress.watermarks;
+  if (watermarks && typeof watermarks === "object") {
+    await persistEtlWatermarks(
+      { id: run.pipeline_id, user_id: run.user_id },
+      watermarks as Record<string, unknown>,
+    );
+  }
+  const { error: progressErr } = await supabaseAdmin
+    .from("etl_runs")
+    .update({ metrics: progress as Json })
+    .eq("id", runId)
+    .eq("status", "running");
+  if (progressErr) {
+    console.warn(`[etl] run ${runId}: progress could not be recorded: ${progressErr.message}`);
+  }
 }
 
 /** The retry sweep's entry: begin the next attempt of a retrying run. */
@@ -1048,15 +1624,22 @@ export async function finalizeEtlRun(
     .in("status", ["queued", "running", "retrying"])
     .select("id");
   if (!claimed?.length) return;
+  await releaseRunCluster(etlRunId);
 
   if (pipeline) {
     // The row in hand still carries the PREVIOUS run's status — read the
     // recovery transition off it before stamping the new one.
     const wasFailing = pipeline.last_run_status === "failed";
-    await supabaseAdmin
+    const { error: stampErr } = await supabaseAdmin
       .from("etl_pipelines")
       .update({ last_run_at: now, last_run_status: "succeeded" })
       .eq("id", pipeline.id);
+    if (stampErr) {
+      // The run is closed; the pipeline's badge is not (R78).
+      console.warn(
+        `[etl] pipeline ${pipeline.id}: last status could not be stamped succeeded: ${stampErr.message}; the list shows the previous run's until it is`,
+      );
+    }
 
     const alerts = etlAlertPolicy(pipeline);
     const rowsLoaded = (metrics as { rows_loaded?: number } | null)?.rows_loaded;
@@ -1089,18 +1672,21 @@ export async function finalizeEtlRun(
     // never skipped).
     const watermarks = (metrics as { watermarks?: Record<string, unknown> } | null)?.watermarks;
     if (watermarks && typeof watermarks === "object") {
-      for (const [nodeId, value] of Object.entries(watermarks)) {
-        if (value === null || value === undefined) continue;
-        await supabaseAdmin.from("etl_pipeline_state").upsert(
-          {
-            pipeline_id: pipeline.id,
-            node_id: nodeId.slice(0, 64),
-            user_id: pipeline.user_id,
-            cursor_value: String(value).slice(0, 512),
-            updated_at: now,
-          },
-          { onConflict: "pipeline_id,node_id" },
-        );
+      const lost = await persistEtlWatermarks(pipeline, watermarks, now);
+      if (lost.length > 0) {
+        // Succeeded, and said so; what it could not keep is on the run, where
+        // the next run's duplicates will be looked for.
+        const { error: noteErr } = await supabaseAdmin
+          .from("etl_runs")
+          .update({
+            error: `Succeeded, but the watermark could not be saved for ${lost.join("; ")}. The next run reads from the previous cursor.`,
+          })
+          .eq("id", etlRunId);
+        if (noteErr) {
+          console.warn(
+            `[etl] run ${etlRunId}: the lost-watermark note could not be written: ${noteErr.message}`,
+          );
+        }
       }
     }
 
@@ -1110,7 +1696,7 @@ export async function finalizeEtlRun(
     if (schemas && typeof schemas === "object") {
       for (const [nodeId, value] of Object.entries(schemas)) {
         if (!value || typeof value !== "object") continue;
-        await supabaseAdmin.from("etl_pipeline_state").upsert(
+        const { error: schemaErr } = await supabaseAdmin.from("etl_pipeline_state").upsert(
           {
             pipeline_id: pipeline.id,
             node_id: `schema:${nodeId}`.slice(0, 64),
@@ -1120,6 +1706,11 @@ export async function finalizeEtlRun(
           },
           { onConflict: "pipeline_id,node_id" },
         );
+        if (schemaErr) {
+          console.warn(
+            `[etl] pipeline ${pipeline.id}: the schema seen at ${nodeId} could not be recorded: ${schemaErr.message}; drift will be judged against the previous one`,
+          );
+        }
       }
     }
 
@@ -1129,7 +1720,16 @@ export async function finalizeEtlRun(
       void crawlDestination(pipeline).catch((e) =>
         console.warn("[etl] post-run crawl failed:", (e as Error).message),
       );
+    }
 
+    // Lineage is recorded for EVERY target, not only crawlable ones. A pipeline
+    // that lands in the built-in lakehouse has no destination catalog source —
+    // the lakehouse browses itself — and gating lineage on one meant those
+    // pipelines recorded no edges at all, so a number on a dashboard could not
+    // be traced back to the files it came from. The edge is attached to the
+    // catalog source that holds the UPSTREAM instead, which is the source whose
+    // lineage view should show where its data went.
+    {
       // Catalog lineage: each source descriptor feeds each produced asset.
       // Scoped to source_system 'etl' so crawler-derived lineage (Databricks
       // system tables) and pipeline-derived lineage coexist per source.
@@ -1141,25 +1741,98 @@ export async function finalizeEtlRun(
           ((metrics as { lineage_sources?: unknown[] } | null)?.lineage_sources ?? []).map(String),
         ),
       ];
-      if (targets.length) {
+      // source_id is NOT NULL, so an edge needs a catalog source to belong to:
+      // the destination's when there is one, otherwise the first source node's.
+      const graph = normalizeGraph(pipeline.graph);
+      const graphNodes = (graph?.nodes ?? []) as EtlNode[];
+      const upstreamSourceId = graphNodes
+        .filter((n) => n.kind === "source")
+        .map((n) => {
+          const c = n.config as { type?: string; catalog_source_id?: string; source_id?: string };
+          // A catalog asset belongs to its catalog source outright.
+          return isCatalogAsset(c) ? c.source_id : c.catalog_source_id;
+        })
+        .find(Boolean);
+      const lineageSourceId =
+        (pipeline.dest_catalog_source_id as string | null) ?? upstreamSourceId ?? null;
+
+      if (targets.length && lineageSourceId) {
         // Wholesale replace of THIS pipeline's edges: targets can be renamed
         // between runs, so a delete keyed on the new fqns would strand the old.
-        await supabaseAdmin
+        const { error: clearErr } = await supabaseAdmin
           .from("catalog_lineage")
           .delete()
           .eq("pipeline_id", pipeline.id)
           .eq("source_system", "etl");
-        const edges = (sources.length ? sources : [`etl:${pipeline.name}`]).flatMap((up) =>
-          targets.map((down) => ({
-            user_id: pipeline.user_id,
-            source_id: pipeline.dest_catalog_source_id as string,
-            pipeline_id: pipeline.id,
-            upstream_fqn: up.slice(0, 512),
-            downstream_fqn: down,
-            source_system: "etl",
-          })),
+        type LineageRow = Database["public"]["Tables"]["catalog_lineage"]["Insert"];
+        const edges: LineageRow[] = (sources.length ? sources : [`etl:${pipeline.name}`]).flatMap(
+          (up) =>
+            targets.map((down) => ({
+              user_id: pipeline.user_id,
+              source_id: lineageSourceId,
+              pipeline_id: pipeline.id,
+              upstream_fqn: up.slice(0, 512),
+              downstream_fqn: down,
+              source_system: "etl",
+              // Explicit, not defaulted: a bulk insert sends null for a key
+              // some rows carry and others omit, and null is not the default.
+              exact: true,
+            })),
         );
-        await supabaseAdmin.from("catalog_lineage").insert(edges);
+        // Column edges: the columns the run saw per node, traced through the
+        // graph by what each transform does. Written beside the table edges so
+        // the same wholesale replace keeps both honest; capped so one opaque
+        // wide step cannot flood the table.
+        const targetsByNode = new Map(
+          ((metrics as { targets?: { node?: string; fqn?: string }[] } | null)?.targets ?? [])
+            .filter((t) => t.node && t.fqn)
+            .map((t) => [t.node as string, t.fqn as string]),
+        );
+        const columnsSeen = (metrics as { columns?: Record<string, string[]> } | null)?.columns;
+        if (graph && columnsSeen && targetsByNode.size) {
+          try {
+            const { traceColumnLineage } = await import("@/lib/columnLineage");
+            const labelOf = new Map(
+              graphNodes.filter((n) => n.kind === "source").map((n) => [n.id, lineageSourceOf(n)]),
+            );
+            for (const e of traceColumnLineage(graph, columnsSeen).slice(0, 4000)) {
+              const up = labelOf.get(e.sourceNode);
+              const down = targetsByNode.get(e.targetNode);
+              if (!up || !down) continue;
+              edges.push({
+                user_id: pipeline.user_id,
+                source_id: lineageSourceId,
+                pipeline_id: pipeline.id,
+                upstream_fqn: up.slice(0, 512),
+                downstream_fqn: down,
+                upstream_column: e.sourceColumn.slice(0, 255),
+                downstream_column: e.targetColumn.slice(0, 255),
+                source_system: "etl",
+                exact: e.exact,
+              });
+            }
+          } catch (e) {
+            console.warn("[etl] column lineage not recorded:", (e as Error).message);
+          }
+        }
+        // A failed insert used to vanish: the run succeeded, the graph stayed
+        // empty, and nothing said why. Lineage is a view of the run, never
+        // part of it, but a silent gap is not the same as an honest one.
+        if (clearErr) {
+          // The old edges stand; writing the new ones beside them would draw a
+          // graph that was never true (R82).
+          console.warn(
+            `[etl] lineage not refreshed for "${pipeline.name}": the previous edges could not be cleared: ${clearErr.message}; the new ones were not written, so the old ones stand`,
+          );
+        } else {
+          const { error: lineageError } = await supabaseAdmin.from("catalog_lineage").insert(edges);
+          if (lineageError) {
+            console.warn(
+              `[etl] lineage not recorded for "${pipeline.name}" (${edges.length} edge(s)):`,
+              lineageError.message,
+            );
+          }
+        }
       }
     }
 
@@ -1176,6 +1849,53 @@ export async function finalizeEtlRun(
       if (!res.ok) {
         console.warn(`[etl-chain] "${child.name}" did not start: ${res.error}`);
       }
+    }
+
+    // Beyond pipelines: the SQL models to build and the ML schedules to run,
+    // as the owner, the way their own schedules would. Each is its own run
+    // with its own record, so a failure there is visible on its own page and
+    // never rewrites this run's outcome — the pipeline did succeed.
+    const targets = chainTargetsOf(pipeline);
+    // A continuous run "succeeds" at every rollover, which is not the event
+    // a chain means; models and schedules keep their own clocks.
+    if (hasChainTargets(targets) && pipeline.schedule !== CONTINUOUS_SCHEDULE) {
+      void runChainTargets(pipeline, targets).catch((e) =>
+        console.warn(`[etl-chain] after "${pipeline.name}":`, (e as Error).message),
+      );
+    }
+  }
+}
+
+/** Start what a succeeded pipeline chains to besides other pipelines. */
+async function runChainTargets(
+  pipeline: EtlPipelineRow,
+  targets: ReturnType<typeof chainTargetsOf>,
+): Promise<void> {
+  if (targets.sqlModels !== null) {
+    const { buildSqlModels } = await import("@/utils/sqlModels/run.server");
+    const res = await buildSqlModels({
+      userId: pipeline.user_id,
+      selected: targets.sqlModels,
+      trigger: "chain",
+    });
+    if (res.status !== "success") {
+      console.warn(
+        `[etl-chain] SQL models after "${pipeline.name}": ${res.status}`,
+        res.error ?? "",
+      );
+    }
+  }
+  if (targets.mlSchedules.length) {
+    const { runMlSchedule } = await import("@/utils/ml/schedule.server");
+    const { data: schedules } = await supabaseAdmin
+      .from("ml_schedules")
+      .select("*")
+      .in("id", targets.mlSchedules)
+      .eq("user_id", pipeline.user_id)
+      .eq("is_active", true);
+    for (const s of schedules ?? []) {
+      const res = await runMlSchedule(s, "chain");
+      if (!res.ok) console.warn(`[etl-chain] ML schedule "${s.name}" did not start: ${res.error}`);
     }
   }
 }
@@ -1201,21 +1921,38 @@ async function crawlDestination(pipeline: EtlPipelineRow): Promise<void> {
 }
 
 /** Cancel a queued/running run and tear its sandbox down. */
-export async function cancelEtlRun(runId: string, userId: string): Promise<boolean> {
-  const { data: run } = await supabaseAdmin
+export async function cancelEtlRun(
+  runId: string,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: run, error: readErr } = await supabaseAdmin
     .from("etl_runs")
     .select("id, user_id, status, session_id")
     .eq("id", runId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (!run || !["queued", "running", "retrying"].includes(run.status)) return false;
-  await supabaseAdmin
+  if (readErr) return { ok: false, error: `The run could not be read: ${readErr.message}` };
+  if (!run || !["queued", "running", "retrying"].includes(run.status)) {
+    return { ok: false, error: "That run is not running." };
+  }
+  // FOUND FROM THE SURVEY (R78). This dropped the cancel's error and returned
+  // true, then stopped the sandbox: a row still "running" over nothing, and
+  // the page saying "Stopping". The record is written first, and the
+  // sandbox is stopped only once the record says so.
+  const { error: cancelErr } = await supabaseAdmin
     .from("etl_runs")
     .update({ status: "cancelled", finished_at: new Date().toISOString() })
     .eq("id", runId);
+  if (cancelErr) {
+    return {
+      ok: false,
+      error: `The run could not be marked cancelled: ${cancelErr.message}. It is still running — try again.`,
+    };
+  }
+  await releaseRunCluster(runId);
   if (run.session_id) {
     const session = await getSession(userId, run.session_id);
     if (session) await stopSession(session).catch(() => {});
   }
-  return true;
+  return { ok: true };
 }

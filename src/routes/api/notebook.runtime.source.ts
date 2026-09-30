@@ -118,6 +118,19 @@ async function handle(request: Request): Promise<Response> {
     return "error" in out ? json(404, out) : json(200, out);
   }
 
+  // A warm scorer: the model and version ride in the session's inputs, and it
+  // fetches the scoring program once at start rather than per request.
+  {
+    const serve = await import("@/utils/ml/serve.server");
+    const stash = serve.mlScoreStashOf(session?.inputs);
+    if (stash) {
+      // One call: the program, its config and the lakehouse credentials the
+      // artifact download needs. A scorer fetches this once, at start.
+      const out = await serve.mlScoreBundleFor(stash, claims.sub);
+      return "error" in out ? json(404, out) : json(200, out);
+    }
+  }
+
   // ETL node previews: no run row — the pipeline + node ride in the session's
   // inputs, and the bundle is compiled fresh (sampled sources, no loads).
   {
@@ -142,6 +155,63 @@ async function handle(request: Request): Promise<Response> {
             : part === "etl_env"
               ? await etl.etlPreviewEnvFor(stash, claims.sub)
               : await etl.etlPreviewBundleFor(stash, claims.sub);
+      return "error" in out ? json(404, out) : json(200, out);
+    }
+  }
+
+  // ML training jobs: no run row either — the job id rides in the session's
+  // inputs; the program is pinned server-side and the env resolved as the
+  // model's owner. Same two parts as ETL so the prelude is shared verbatim.
+  {
+    const ml = await import("@/utils/ml/types");
+    const stash = ml.mlJobStashOf(session?.inputs);
+    if (stash) {
+      let part = "";
+      try {
+        const body = (await request.json()) as { part?: string };
+        part = body?.part ?? "";
+      } catch {
+        /* empty body = default part */
+      }
+      let out:
+        | { code: string }
+        | { env: Record<string, string>; requirements: string[] }
+        | { error: string };
+      if (stash.kind === "predict") {
+        const m = await import("@/utils/ml/predict.server");
+        out =
+          part === "etl_env"
+            ? await m.mlPredictEnvFor(stash, claims.sub)
+            : await m.mlPredictBundleFor(stash, claims.sub, session?.inputs);
+      } else {
+        const m = await import("@/utils/ml/train.server");
+        out =
+          part === "etl_env"
+            ? await m.mlEnvFor(stash, claims.sub)
+            : await m.mlBundleFor(stash, claims.sub);
+      }
+      return "error" in out ? json(404, out) : json(200, out);
+    }
+  }
+
+  // A lakehouse query on Spark: the query id rides in the session's inputs;
+  // the program is compiled from the governed plan and the env resolved as
+  // the query's owner. Same two parts as ETL so the prelude is shared verbatim.
+  {
+    const sq = await import("@/utils/lakehouse/sparkQuery.server");
+    const stash = sq.sparkQueryStashOf(session?.inputs);
+    if (stash) {
+      let part = "";
+      try {
+        const body = (await request.json()) as { part?: string };
+        part = body?.part ?? "";
+      } catch {
+        /* empty body = default part */
+      }
+      const out =
+        part === "etl_env"
+          ? await sq.sparkQueryEnvFor(stash, claims.sub)
+          : await sq.sparkQueryBundleFor(stash, claims.sub);
       return "error" in out ? json(404, out) : json(200, out);
     }
   }

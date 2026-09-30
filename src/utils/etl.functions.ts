@@ -20,12 +20,19 @@ import {
   requirementsFor,
   type EtlGraph,
 } from "@/utils/etl/codegen";
+import { compilePipeline, engineOf, pipelineRequirements } from "@/utils/etl/compile";
+import { chainTargetsOf, validateChainTargets } from "@/lib/etlChain";
+import { CONTINUOUS_SCHEDULE, canRunContinuously } from "@/utils/etl/continuous";
 import {
   cancelEtlRun,
   startEtlRun,
   type EtlPipelineRow,
   type EtlRunRow,
 } from "@/utils/etl/service.server";
+import { etlErrorMessage } from "@/utils/etl/explainError";
+import { loadWarehouseConnectionForUser } from "@/utils/warehouse/connections.server";
+import { listWarehouseTables } from "@/utils/warehouse/drivers.server";
+import type { WarehouseTable } from "@/utils/warehouse/types";
 import { nextEtlRunAt } from "@/utils/etl/schedule.server";
 import { validateCron } from "@/lib/cron";
 import { computeEtlOverview, type OverviewRun } from "@/lib/etlOverview";
@@ -63,12 +70,16 @@ const UpsertSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(2000).optional(),
   mode: z.enum(["visual", "code"]),
+  /** Which engine runs it. Absent = pandas, which is what every pipeline was. */
+  engine: z.enum(["pandas", "spark"]).optional(),
   source_code: z.string().max(200_000).optional(),
   graph: GraphSchema.optional(),
   requirements: z.string().max(10_000).optional(),
   secret_refs: z.string().max(10_000).optional(),
   dest_catalog_source_id: z.string().uuid().nullable().optional(),
-  schedule: z.enum(["manual", "hourly", "daily", "weekly", "cron"]).optional(),
+  schedule: z.enum(["manual", "hourly", "daily", "weekly", "cron", "continuous"]).optional(),
+  /** Continuous only: seconds to wait after an empty tick before draining again. */
+  poll_seconds: z.number().int().min(1).max(3600).optional(),
   cron_expr: z.string().max(120).nullable().optional(),
   timezone: z.string().max(60).nullable().optional(),
   retry_count: z.number().int().min(0).max(5).optional(),
@@ -82,6 +93,10 @@ const UpsertSchema = z.object({
   allow_concurrent: z.boolean().optional(),
   default_params: z.record(z.string(), z.unknown()).nullable().optional(),
   run_after: z.string().uuid().nullable().optional(),
+  /** SQL models to build when a run succeeds: null none, [] every active model, else these. */
+  chain_sql_models: z.array(z.string().trim().min(1).max(63)).max(200).nullable().optional(),
+  /** ML schedules to run when a run succeeds. */
+  chain_ml_schedules: z.array(z.string().uuid()).max(50).optional(),
   is_active: z.boolean().optional(),
   timeout_minutes: z.number().int().min(1).max(240).optional(),
 });
@@ -103,6 +118,64 @@ export type EtlPipelineSummary = Pick<
 > & { has_trigger_token: boolean };
 
 // ── List / read ─────────────────────────────────────────────────────────────
+
+/**
+ * The schemas, tables and columns behind one of the caller's warehouse
+ * connections (own or IAM-granted), for the editor's pickers: read through
+ * the connection as the caller, the moment the picker opens.
+ */
+export const etlListWarehouseTables = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ access_token: z.string().min(1), connection_id: z.string().uuid() }).parse(input),
+  )
+  .handler(
+    async ({
+      data,
+    }): Promise<{ ok: true; tables: WarehouseTable[] } | { ok: false; error: string }> => {
+      try {
+        const userId = await resolveCaller(data.access_token);
+        const conn = await loadWarehouseConnectionForUser(
+          supabaseAdmin,
+          { connectionId: data.connection_id },
+          userId,
+        );
+        return { ok: true, tables: await listWarehouseTables(conn.config) };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Could not list tables" };
+      }
+    },
+  );
+
+/**
+ * The lakehouse schemas the caller can reach, which of them they may write
+ * to, and the tables with their columns - from information_schema alone, so
+ * the picker answers at once even on a cold engine (the Lakehouse overview
+ * counts rows in every table, which is what a picker must not wait for).
+ */
+export const etlListLakehouseTables = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(
+    async ({
+      data,
+    }): Promise<
+      | {
+          ok: true;
+          enabled: boolean;
+          schemas: { name: string; writable: boolean }[];
+          tables: { schema: string; table: string; columns: { name: string; type: string }[] }[];
+        }
+      | { ok: false; error: string }
+    > => {
+      try {
+        const userId = await resolveCaller(data.access_token);
+        const { listLakehouseTablesForUser } = await import("@/utils/lakehouse/tables.server");
+        const listing = await listLakehouseTablesForUser(userId);
+        return { ok: true, ...listing };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Could not list tables" };
+      }
+    },
+  );
 
 export const listEtlPipelines = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
@@ -143,6 +216,17 @@ export const getEtlPipeline = createServerFn({ method: "POST" })
     return { pipeline: safe };
   });
 
+/** What a continuous pipeline's card shows while its run is live. */
+export type EtlLiveRun = {
+  id: string;
+  status: string;
+  started_at: string | null;
+  rows_loaded: number;
+  ticks: number;
+  last_tick_at: string | null;
+  last_tick_rows: number;
+};
+
 export type EtlRecentRun = {
   id: string;
   pipeline_id: string;
@@ -171,7 +255,7 @@ export const getEtlOverview = createServerFn({ method: "POST" })
       supabaseAdmin
         .from("etl_pipelines")
         .select(
-          "id, name, description, mode, schedule, cron_expr, timezone, is_active, next_run_at, last_run_at, last_run_status, dest_catalog_source_id, retry_count, run_after, created_at, updated_at",
+          "id, name, description, mode, schedule, poll_seconds, cron_expr, timezone, is_active, next_run_at, last_run_at, last_run_status, dest_catalog_source_id, retry_count, run_after, chain_sql_models, chain_ml_schedules, created_at, updated_at",
         )
         .eq("user_id", userId)
         .order("updated_at", { ascending: false }),
@@ -203,8 +287,55 @@ export const getEtlOverview = createServerFn({ method: "POST" })
       rows_loaded: rowsLoadedOf(r.metrics),
     }));
 
+    // A continuous pipeline's live run, with the counters its ticks report,
+    // so the card can say what the stream is doing right now.
+    const liveRun = new Map<string, EtlLiveRun>();
+    for (const r of runs ?? []) {
+      if (!["queued", "running"].includes(r.status) || liveRun.has(r.pipeline_id)) continue;
+      const m = (r.metrics ?? {}) as {
+        rows_loaded?: number;
+        ticks?: number;
+        last_tick_at?: string;
+        last_tick_rows?: number;
+      };
+      liveRun.set(r.pipeline_id, {
+        id: r.id,
+        status: r.status,
+        started_at: r.started_at,
+        rows_loaded: typeof m.rows_loaded === "number" ? m.rows_loaded : 0,
+        ticks: typeof m.ticks === "number" ? m.ticks : 0,
+        last_tick_at: typeof m.last_tick_at === "string" ? m.last_tick_at : null,
+        last_tick_rows: typeof m.last_tick_rows === "number" ? m.last_tick_rows : 0,
+      });
+    }
+
+    // Which continuous pipelines are exactly-once — every target a lakehouse
+    // table. Their graphs are read for this alone, so the list stays light.
+    const { exactlyOnceEligible } = await import("@/utils/etl/continuous");
+    const continuousIds = (pipelines ?? [])
+      .filter((p) => p.schedule === "continuous")
+      .map((p) => p.id);
+    const exactlyOnce = new Set<string>();
+    if (continuousIds.length) {
+      const { data: graphs } = await supabaseAdmin
+        .from("etl_pipelines")
+        .select("id, graph")
+        .in("id", continuousIds);
+      for (const g of graphs ?? []) {
+        if (
+          exactlyOnceEligible(g.graph as { nodes?: { kind?: string; config?: unknown }[] } | null)
+        ) {
+          exactlyOnce.add(g.id);
+        }
+      }
+    }
+
     return {
-      pipelines: pipelines ?? [],
+      pipelines: (pipelines ?? []).map((p) => ({
+        ...p,
+        live_run: liveRun.get(p.id) ?? null,
+        exactly_once: exactlyOnce.has(p.id),
+      })),
       stats: overview.stats,
       per_pipeline: overview.per_pipeline,
       recent_runs,
@@ -283,6 +414,7 @@ export const saveEtlPipeline = createServerFn({ method: "POST" })
       // be saveable — losing work to "join needs two inputs" would be hostile —
       // so a compile failure saves the graph with empty source_code (which the
       // run path refuses) and reports the error for the UI to show.
+      const engine = engineOf(data.engine);
       let sourceCode = data.source_code ?? "";
       let requirements = data.requirements;
       let compileError: string | null = null;
@@ -290,12 +422,12 @@ export const saveEtlPipeline = createServerFn({ method: "POST" })
         if (!data.graph) throw new Error("Visual pipeline needs a graph");
         const graph: EtlGraph = normalizeGraph(data.graph) ?? (data.graph as unknown as EtlGraph);
         try {
-          sourceCode = compileGraph(graph);
+          sourceCode = compilePipeline(graph, engine);
         } catch (e) {
           sourceCode = "";
           compileError = (e as Error).message;
         }
-        if (requirements === undefined) requirements = requirementsFor(graph);
+        if (requirements === undefined) requirements = pipelineRequirements(graph, engine);
       }
 
       // Cron expressions and timezones are validated at save, not at sweep
@@ -304,6 +436,13 @@ export const saveEtlPipeline = createServerFn({ method: "POST" })
       if ((data.schedule ?? "manual") === "cron") {
         if (!data.cron_expr) throw new Error("A cron schedule needs an expression");
         validateCron(data.cron_expr, data.timezone ?? null);
+      }
+      // Continuous needs a source that can be drained again and again, and a
+      // visual graph for the loop to wrap; both are checked here so the form
+      // bounces, not the first sweep.
+      if (data.schedule === CONTINUOUS_SCHEDULE) {
+        const why = canRunContinuously(data.mode, data.graph ?? null);
+        if (why) throw new Error(why);
       }
 
       // Chaining: run_after must be the caller's own pipeline, not this one,
@@ -332,11 +471,31 @@ export const saveEtlPipeline = createServerFn({ method: "POST" })
         }
       }
 
+      // What the run starts beyond other pipelines must be the caller's own
+      // models and schedules, refused here by name rather than failing on a
+      // build nobody is watching.
+      const chain = chainTargetsOf({
+        chain_sql_models: data.chain_sql_models ?? null,
+        chain_ml_schedules: data.chain_ml_schedules ?? [],
+      });
+      if (chain.sqlModels !== null || chain.mlSchedules.length) {
+        const [{ data: models }, { data: schedules }] = await Promise.all([
+          supabaseAdmin.from("sql_models").select("name").eq("user_id", userId),
+          supabaseAdmin.from("ml_schedules").select("id").eq("user_id", userId),
+        ]);
+        const bad = validateChainTargets(chain, {
+          modelNames: (models ?? []).map((m) => m.name),
+          scheduleIds: (schedules ?? []).map((s) => s.id),
+        });
+        if (bad) throw new Error(bad);
+      }
+
       const payload = {
         user_id: userId,
         name: data.name,
         description: data.description ?? null,
         mode: data.mode,
+        engine,
         source_code: sourceCode,
         graph: (data.mode === "visual" ? (data.graph ?? null) : null) as never,
         requirements: requirements ?? "",
@@ -347,9 +506,14 @@ export const saveEtlPipeline = createServerFn({ method: "POST" })
         timezone: data.timezone ?? null,
         retry_count: data.retry_count ?? 0,
         ...(data.alerts ? { alerts: data.alerts as never } : {}),
-        allow_concurrent: data.allow_concurrent ?? false,
+        // Two live runs of one continuous pipeline would drain the same stream twice.
+        allow_concurrent:
+          data.schedule === CONTINUOUS_SCHEDULE ? false : (data.allow_concurrent ?? false),
+        poll_seconds: data.poll_seconds ?? 5,
         default_params: (data.default_params ?? null) as never,
         run_after: data.run_after ?? null,
+        chain_sql_models: chain.sqlModels,
+        chain_ml_schedules: chain.mlSchedules,
         is_active: data.is_active ?? true,
         timeout_minutes: data.timeout_minutes ?? 30,
       };
@@ -501,9 +665,10 @@ export const cancelEtlRunFn = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z.object({ access_token: z.string().min(1), run_id: z.string().uuid() }).parse(input),
   )
-  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; error?: string }> => {
     const userId = await resolveCaller(data.access_token);
-    return { ok: await cancelEtlRun(data.run_id, userId) };
+    // What cancel could not write is what the page will go on showing (R78).
+    return cancelEtlRun(data.run_id, userId);
   });
 
 export type EtlRunSummary = Pick<
@@ -706,7 +871,7 @@ export const previewEtlNode = createServerFn({ method: "POST" })
     const userId = await resolveCaller(data.access_token);
     const { data: pipeline } = await supabaseAdmin
       .from("etl_pipelines")
-      .select("id, graph")
+      .select("*")
       .eq("id", data.pipeline_id)
       .eq("user_id", userId)
       .maybeSingle();
@@ -716,6 +881,14 @@ export const previewEtlNode = createServerFn({ method: "POST" })
     // Compile now so a broken graph fails HERE with a message, not inside a
     // container that spins up just to die.
     compilePreview(graph, data.node_id);
+    // And resolve the environment now, for exactly the same reason. A bucket
+    // that was never picked, a secret that is not set, a host the sandbox may
+    // not reach: this code knows all three and can say them in a sentence. The
+    // sandbox learns them by asking for its source bundle, which then answers
+    // 500 — and the reader gets a Python traceback about an HTTP status where
+    // a sentence about an allow-list was available all along.
+    const { resolveRunEnv } = await import("@/utils/etl/service.server");
+    await resolveRunEnv(pipeline, { skipTargets: true });
     const { startSession } = await import("@/utils/notebookRuntime/service.server");
     const { session } = await startSession({
       userId,
@@ -759,11 +932,17 @@ export const getEtlPreview = createServerFn({ method: "POST" })
             ),
           }
         : null,
+      // Explain before showing. The runtime is pandas/boto/fsspec, so a failure
+      // arrives as forty frames of library internals ending in something like
+      // "PermissionError: Forbidden" — true, and nearly useless. The whole log
+      // is searched rather than just its last line: the line that names the
+      // cause (ListObjectsV2, NoSuchBucket, the missing module) sits mid-trace,
+      // while the last line is the generic re-raise.
       error:
         session.status === "error"
-          ? (session.error ??
-            (session.logs ?? "").split("\n").filter(Boolean).slice(-1)[0] ??
-            "Preview failed")
+          ? etlErrorMessage(
+              [session.error, session.logs].filter(Boolean).join("\n") || "Preview failed",
+            )
           : null,
     };
   });
@@ -793,6 +972,7 @@ export const duplicateEtlPipeline = createServerFn({ method: "POST" })
         name,
         description: src.description,
         mode: src.mode,
+        engine: engineOf(src.engine),
         graph: src.graph as never,
         source_code: src.source_code,
         requirements: src.requirements,
@@ -819,3 +999,64 @@ export const duplicateEtlPipeline = createServerFn({ method: "POST" })
     });
     return { id: created.id, name };
   });
+
+/**
+ * Whether the Spark engine can be chosen on this instance, for the picker.
+ * Only whether an endpoint exists and its host — never the URL itself, which
+ * may carry a token.
+ */
+export const etlEngineStatus = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      spark: { configured: boolean; provider: "static" | "k8s"; host: string | null };
+    }> => {
+      await resolveCaller(data.access_token);
+      const { sparkEngineAvailability } = await import("@/utils/etl/sparkCluster.server");
+      return { spark: await sparkEngineAvailability() };
+    },
+  );
+
+/**
+ * What a pipeline may chain to besides other pipelines: the caller's SQL
+ * models and ML schedules, for the editor's pickers.
+ */
+export const etlChainCandidates = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      sqlModels: { name: string; schema_name: string; is_active: boolean }[];
+      mlSchedules: { id: string; name: string; kind: string; model_name: string }[];
+    }> => {
+      const userId = await resolveCaller(data.access_token);
+      const [{ data: models }, { data: schedules }] = await Promise.all([
+        supabaseAdmin
+          .from("sql_models")
+          .select("name, schema_name, is_active")
+          .eq("user_id", userId)
+          .order("name"),
+        supabaseAdmin
+          .from("ml_schedules")
+          .select("id, name, kind, ml_models(name)")
+          .eq("user_id", userId)
+          .order("name"),
+      ]);
+      return {
+        sqlModels: (models ?? []).map((m) => ({
+          name: m.name,
+          schema_name: m.schema_name,
+          is_active: m.is_active,
+        })),
+        mlSchedules: (schedules ?? []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          kind: s.kind,
+          model_name: (s.ml_models as unknown as { name?: string } | null)?.name ?? "",
+        })),
+      };
+    },
+  );

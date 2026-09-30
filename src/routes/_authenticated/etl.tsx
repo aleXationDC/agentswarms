@@ -8,6 +8,9 @@
 // provider+model picker, so IAM model rules apply here exactly as in BI.
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+
+import { chainTargetsOf, describeChain } from "@/lib/etlChain";
+import { placeNode, shouldChain } from "@/lib/etlGraphEdit";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { vscodeDark, vscodeLight } from "@uiw/codemirror-theme-vscode";
@@ -41,11 +44,17 @@ import {
   Shuffle,
   SlidersHorizontal,
   Sparkles,
+  Radio,
   Square,
   Trash2,
   Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  isStreamSource,
+  validateStreamSource,
+  type StreamSourceConfig,
+} from "@/utils/etl/streaming";
 
 import {
   AggregationsEditor,
@@ -53,6 +62,24 @@ import {
   ColumnCombo,
   RenameEditor,
 } from "@/components/etl/TransformFields";
+import {
+  SOURCE_TYPES,
+  TARGET_TYPES,
+  TRANSFORM_TYPES,
+  defaultNodeConfig,
+  typeLabel,
+} from "@/utils/etl/nodeDefaults";
+import { nodeTypeIcon } from "@/components/etl/nodeIcons";
+import {
+  CatalogAssetPicker,
+  LakehousePicker,
+  RegionPicker,
+  SecretPicker,
+  StoragePathPicker,
+  StorageTargetPicker,
+  WarehouseTablePicker,
+  useSecretNames,
+} from "@/components/etl/SourcePickers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,6 +126,7 @@ import { BiModelSelect } from "@/components/bi/BiModelSelect";
 import { parseModelChoice } from "@/utils/providers/modelChoice";
 import { listCatalogSources, type CatalogSource } from "@/lib/dataCatalog";
 import { useAuth } from "@/hooks/use-auth";
+import { useTokenRef } from "@/hooks/use-token-ref";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import {
@@ -112,14 +140,12 @@ import {
   starterGraph,
   type EtlGraph,
   type EtlNode,
-  type EtlSourceConfig,
-  type EtlTargetConfig,
-  type EtlTransformConfig,
   type QualityRule,
 } from "@/utils/etl/codegen";
-import { getLakehouseOverview } from "@/utils/lakehouse.functions";
 import { ETL_TEMPLATES } from "@/lib/etlTemplates";
 import { listWarehouseConnections } from "@/utils/warehouse.functions";
+import { listSaasConnections } from "@/utils/saas.functions";
+import { SAAS_TARGETS, isWritableVendor, type SaasTargetVendor } from "@/lib/saasTargets";
 import type { WarehouseConnectionSummary } from "@/utils/warehouse/types";
 import {
   cancelEtlRunFn,
@@ -139,6 +165,8 @@ import {
   type EtlVersionSummary,
   runEtlPipeline,
   saveEtlPipeline,
+  etlEngineStatus,
+  etlChainCandidates,
   type EtlRecentRun,
   type EtlRunSummary,
 } from "@/utils/etl.functions";
@@ -431,6 +459,12 @@ function fmtRuntime(ms: number): string {
 }
 
 function scheduleLabel(p: OverviewPipeline): string {
+  if (p.schedule === "continuous") {
+    // Every target a lakehouse table: a tick's loads and positions commit
+    // together, so a crash cannot replay. Anything else stays at-least-once.
+    const once = p.exactly_once ? " · exactly-once" : "";
+    return `continuous · poll ${p.poll_seconds ?? 5} s${once}`;
+  }
   if (p.schedule === "cron") {
     return `cron ${p.cron_expr ?? "?"}${p.timezone ? ` (${p.timezone})` : ""}`;
   }
@@ -482,11 +516,38 @@ function PipelineRow({
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const cancelFn = useServerFn(cancelEtlRunFn);
+  // A continuous pipeline's Stop: cancel its live run. The sweep will not
+  // start another while the pipeline is paused; while it is active, it will.
+  const stopLive = async () => {
+    if (!p.live_run) return;
+    setBusy(true);
+    try {
+      const res = await cancelFn({
+        data: { access_token: session?.access_token ?? "", run_id: p.live_run.id },
+      });
+      if (!res.ok) {
+        // FOUND FROM THE SURVEY (R78): this said "Stopping" whatever the
+        // server answered.
+        toast.error("Could not stop the run", {
+          description: res.error ?? "The run could not be cancelled.",
+        });
+        return;
+      }
+      toast.success("Stopping — pause the pipeline too if it should stay stopped");
+      onChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runNow = async () => {
     setBusy(true);
     try {
       const res = await runFn({ data: { access_token: session?.access_token ?? "", id: p.id } });
-      if (res.ok) toast.success("Run started");
+      if (res.ok) toast.success(p.schedule === "continuous" ? "Streaming started" : "Run started");
       else toast.error(res.error ?? "Run did not start");
       onChanged();
     } catch (e) {
@@ -516,11 +577,31 @@ function PipelineRow({
                 chained
               </Badge>
             )}
+            {describeChain(chainTargetsOf(p)) && (
+              <Badge
+                variant="outline"
+                title="When a run succeeds, SQL models are built and ML schedules run as this pipeline's owner"
+              >
+                {describeChain(chainTargetsOf(p))}
+              </Badge>
+            )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>schedule: {scheduleLabel(p)}</span>
             <span>last run: {fmtWhen(p.last_run_at)}</span>
-            {p.schedule !== "manual" && p.is_active && <span>next: {fmtWhen(p.next_run_at)}</span>}
+            {p.schedule !== "manual" && p.schedule !== "continuous" && p.is_active && (
+              <span>next: {fmtWhen(p.next_run_at)}</span>
+            )}
+            {p.live_run && p.schedule === "continuous" && (
+              <span
+                className="flex items-center gap-1 text-emerald-600"
+                title={`Live since ${fmtWhen(p.live_run.started_at)} · last tick ${fmtWhen(p.live_run.last_tick_at)} loaded ${p.live_run.last_tick_rows} row(s)`}
+              >
+                <Radio className="h-3 w-3 animate-pulse" />
+                streaming · {p.live_run.rows_loaded.toLocaleString()} rows · {p.live_run.ticks} tick
+                {p.live_run.ticks === 1 ? "" : "s"}
+              </span>
+            )}
             {(p.retry_count ?? 0) > 0 && <span>retries: {p.retry_count}</span>}
             {pulse && pulse.runtime_ms_7d > 0 && (
               <span title="Sandbox runtime attributed to this pipeline, last 7 days">
@@ -535,10 +616,19 @@ function PipelineRow({
         </button>
         <StatusChip status={p.last_run_status} />
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={runNow} disabled={busy}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            <span className="ml-1 hidden sm:inline">Run</span>
-          </Button>
+          {p.schedule === "continuous" && p.live_run ? (
+            <Button size="sm" variant="outline" onClick={stopLive} disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+              <span className="ml-1 hidden sm:inline">Stop</span>
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={runNow} disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              <span className="ml-1 hidden sm:inline">
+                {p.schedule === "continuous" ? "Start" : "Run"}
+              </span>
+            </Button>
+          )}
           <Button
             size="icon"
             variant="ghost"
@@ -642,8 +732,20 @@ function NewPipelineDialog({
     }
   };
 
+  // Dismissing resets the form. Radix unmounts the content but not this
+  // component, so without it a template stays selected across openings — and
+  // since the tile TOGGLES, the next reader clicks the thing they want and
+  // deselects it, ending up with a blank starter graph under a name they
+  // chose for a sample. (Found doing exactly that.)
+  const dismiss = () => {
+    setName("");
+    setTemplateId(null);
+    setMode("visual");
+    onClose();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && dismiss()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New pipeline</DialogTitle>
@@ -719,7 +821,7 @@ function NewPipelineDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={dismiss}>
             Cancel
           </Button>
           <Button onClick={create} disabled={busy || !name.trim()}>
@@ -743,7 +845,9 @@ type EditorPipeline = {
   requirements: string;
   secret_refs: string;
   dest_catalog_source_id: string | null;
-  schedule: "manual" | "hourly" | "daily" | "weekly" | "cron";
+  schedule: "manual" | "hourly" | "daily" | "weekly" | "cron" | "continuous";
+  /** Continuous only: seconds to wait after an empty tick before draining again. */
+  poll_seconds: number;
   cron_expr: string | null;
   timezone: string | null;
   retry_count: number;
@@ -751,13 +855,19 @@ type EditorPipeline = {
   allow_concurrent: boolean;
   default_params: Record<string, unknown> | null;
   run_after: string | null;
+  /** null: none; []: every active model; names: these with their ancestors. */
+  chain_sql_models: string[] | null;
+  chain_ml_schedules: string[];
   is_active: boolean;
   timeout_minutes: number;
+  /** pandas is what every pipeline was; spark is opt-in per pipeline. */
+  engine: "pandas" | "spark";
 };
 
 function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
   const { session } = useAuth();
   const token = session?.access_token ?? "";
+  const { tokenRef, signedIn } = useTokenRef(token);
   const getFn = useServerFn(getEtlPipeline);
   const saveFn = useServerFn(saveEtlPipeline);
   const runFn = useServerFn(runEtlPipeline);
@@ -768,9 +878,14 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState("build");
 
+  // Loads the saved pipeline over the editor: on opening it, and after a
+  // version is restored. Not when the session refreshes (R125): keyed on the
+  // token, that put the saved copy back over unsaved edits every hour and
+  // left Save enabled, so saving wrote the older copy.
   const reloadPipeline = useCallback(() => {
     // The session hydrates a beat after first render; firing with an empty
     // token would bounce the editor back to the list with a zod error.
+    const token = tokenRef.current;
     if (!token) return;
     void (async () => {
       try {
@@ -798,8 +913,12 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
           allow_concurrent: row.allow_concurrent ?? false,
           default_params: (row.default_params as Record<string, unknown> | null) ?? null,
           run_after: row.run_after,
+          chain_sql_models: row.chain_sql_models ?? null,
+          chain_ml_schedules: row.chain_ml_schedules ?? [],
           is_active: row.is_active,
           timeout_minutes: row.timeout_minutes,
+          poll_seconds: row.poll_seconds ?? 5,
+          engine: row.engine === "spark" ? "spark" : "pandas",
         });
       } catch (e) {
         toast.error((e as Error).message);
@@ -807,7 +926,7 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, token]);
+  }, [id, signedIn]);
   useEffect(() => {
     reloadPipeline();
   }, [reloadPipeline]);
@@ -844,8 +963,12 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
           allow_concurrent: p.allow_concurrent,
           default_params: p.default_params,
           run_after: p.run_after,
+          chain_sql_models: p.chain_sql_models,
+          chain_ml_schedules: p.chain_ml_schedules,
           is_active: p.is_active,
           timeout_minutes: p.timeout_minutes,
+          poll_seconds: p.poll_seconds,
+          engine: p.engine,
         },
       });
       setP((prev) => (prev ? { ...prev, source_code: res.source_code } : prev));
@@ -893,7 +1016,7 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] w-full flex-col gap-3 p-3 md:p-4">
+    <div className="flex h-canvas w-full flex-col gap-3 p-3 md:p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack}>
@@ -952,6 +1075,7 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
           {p.mode === "visual" ? (
             <CanvasBuilder
               pipelineId={p.id}
+              destCatalogSourceId={p.dest_catalog_source_id}
               graph={p.graph ?? starterGraph()}
               onChange={(graph) => patch({ graph, requirements: requirementsFor(graph) })}
               onEject={(code) => {
@@ -1041,176 +1165,11 @@ function RunParamsDialog({
 
 // ── Canvas builder ──────────────────────────────────────────────────────────
 
-const SOURCE_TYPES = [
-  { type: "object_storage", label: "Object storage files" },
-  { type: "database", label: "Database / warehouse" },
-  { type: "http_api", label: "HTTP API (JSON)" },
-  { type: "platform_dataset", label: "Platform dataset" },
-  { type: "lakehouse", label: "Lakehouse table" },
-  { type: "ingest", label: "Streamed rows (push)" },
-  { type: "python", label: "Custom Python" },
-] as const;
-
-const TRANSFORM_TYPES = [
-  { type: "filter", label: "Filter rows" },
-  { type: "select", label: "Select columns" },
-  { type: "rename", label: "Rename columns" },
-  { type: "derive", label: "Derive column" },
-  { type: "join", label: "Join" },
-  { type: "union", label: "Union" },
-  { type: "aggregate", label: "Aggregate" },
-  { type: "sort", label: "Sort" },
-  { type: "dedupe", label: "Deduplicate" },
-  { type: "fill_nulls", label: "Fill nulls" },
-  { type: "drop_nulls", label: "Drop nulls" },
-  { type: "limit", label: "Limit rows" },
-  { type: "quality_gate", label: "Quality gate" },
-  { type: "sql", label: "SQL" },
-  { type: "python", label: "Custom Python" },
-] as const;
-
-const TARGET_TYPES = [
-  { type: "object_storage", label: "Object storage" },
-  { type: "database", label: "Database / warehouse" },
-  { type: "lakehouse", label: "Lakehouse table" },
-  { type: "http_api", label: "HTTP API (reverse ETL)" },
-] as const;
-
-function typeLabel(node: EtlNode): string {
-  const t = (node.config as { type: string }).type;
-  const all = [...SOURCE_TYPES, ...TRANSFORM_TYPES, ...TARGET_TYPES] as readonly {
-    type: string;
-    label: string;
-  }[];
-  return all.find((x) => x.type === t)?.label ?? t;
-}
-
-function defaultNodeConfig(
-  kind: EtlNode["kind"],
-  type: string,
-): EtlSourceConfig | EtlTransformConfig | EtlTargetConfig {
-  if (kind === "source") {
-    switch (type) {
-      case "object_storage":
-        return { type, path: "raw/*.csv", format: "csv" };
-      case "database":
-        return { type, mode: "table", table: "" };
-      case "http_api":
-        return { type, url: "https://", records_path: "" };
-      default:
-        return { type: "python", code: "return [{'id': 1}]" };
-    }
-  }
-  if (kind === "target") {
-    if (type === "http_api") {
-      return { type: "http_api", url: "https://", method: "POST", batch_size: 500 };
-    }
-    if (type === "lakehouse") {
-      return { type: "lakehouse", schema: "", table: "", write_mode: "replace" };
-    }
-    return type === "database"
-      ? { type: "database", dataset: "public", table: "etl_output", write_mode: "replace" }
-      : {
-          type: "object_storage",
-          dataset: "etl",
-          table: "output",
-          format: "parquet",
-          write_mode: "replace",
-        };
-  }
-  switch (type) {
-    case "platform_dataset":
-      return { type, table_id: "" };
-    case "ingest":
-      return { type };
-    case "lakehouse":
-      return { type, schema: "", mode: "table", table: "" };
-    case "filter":
-      return { type, expr: "amount > 0" };
-    case "select":
-      return { type, columns: [] };
-    case "rename":
-      return { type, mapping: {} };
-    case "derive":
-      return { type, column: "total", expr: "price * quantity" };
-    case "join":
-      return { type, how: "inner", left_on: ["id"], right_on: ["id"] };
-    case "union":
-      return { type };
-    case "aggregate":
-      return { type, group_by: [], aggs: [{ column: "id", fn: "count", as: "rows" }] };
-    case "sort":
-      return { type, by: [], descending: false };
-    case "dedupe":
-      return { type };
-    case "fill_nulls":
-      return { type, value: "0" };
-    case "drop_nulls":
-      return { type };
-    case "limit":
-      return { type, n: 1000 };
-    case "sql":
-      return { type, query: "SELECT * FROM t" };
-    case "quality_gate":
-      return { type, rules: [{ check: "not_null", column: "id", severity: "fail" }] };
-    default:
-      return { type: "python", code: "# df is the input frame\nreturn df" };
-  }
-}
-
 /**
  * Run this node on sampled sources in the sandbox and show the frame it
  * produces. Polls the preview session until it lands; the pipeline itself is
  * untouched (no loads, no watermark movement).
  */
-/** Lakehouse schemas the signed-in user can reach (owned + IAM-granted). */
-function LakehouseSchemaPicker({
-  value,
-  onPick,
-}: {
-  value: string;
-  onPick: (schema: string) => void;
-}) {
-  const { session } = useAuth();
-  const token = session?.access_token ?? "";
-  const overviewFn = useServerFn(getLakehouseOverview);
-  const [schemas, setSchemas] = useState<string[]>([]);
-  const [enabled, setEnabled] = useState(true);
-  useEffect(() => {
-    if (!token) return;
-    void overviewFn({ data: { access_token: token } })
-      .then((res) => {
-        setEnabled(res.enabled);
-        setSchemas(res.schemas.map((sch) => sch.name));
-      })
-      .catch(() => setSchemas([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-  if (!enabled) {
-    return (
-      <p className="text-[11px] text-red-500">
-        The lakehouse isn&apos;t configured on this deployment — this node can&apos;t run.
-      </p>
-    );
-  }
-  return (
-    <Field label="Lakehouse schema">
-      <Select value={value} onValueChange={onPick}>
-        <SelectTrigger className="h-8">
-          <SelectValue placeholder="Choose a schema" />
-        </SelectTrigger>
-        <SelectContent>
-          {schemas.map((sch) => (
-            <SelectItem key={sch} value={sch}>
-              {sch}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </Field>
-  );
-}
-
 /** Datasets already on the platform: uploads, prep outputs, connector syncs. */
 function PlatformDatasetPicker({
   tableId,
@@ -1438,7 +1397,10 @@ function QualityRulesEditor({
               <SelectContent>
                 <SelectItem value="fail">Fail the run</SelectItem>
                 <SelectItem value="warn">Warn and continue</SelectItem>
-                <SelectItem value="drop">Drop bad rows</SelectItem>
+                {/* A row count has no offending rows to drop. Offering it
+                    here was the reason a gate could be saved asking for
+                    something the compiler quietly turned into "fail". */}
+                {r.check !== "row_count_min" && <SelectItem value="drop">Drop bad rows</SelectItem>}
               </SelectContent>
             </Select>
           </div>
@@ -1542,7 +1504,7 @@ type FlowData = { node: EtlNode };
 function EtlFlowNode({ data, selected }: NodeProps) {
   const node = (data as FlowData).node;
   const style = NODE_STYLE[node.kind];
-  const Icon = style.icon;
+  const Icon = nodeTypeIcon(node.kind, (node.config as { type: string }).type) ?? style.icon;
   return (
     <div
       className={cn(
@@ -1573,11 +1535,14 @@ function CanvasBuilder({
   pipelineId,
   onChange,
   onEject,
+  destCatalogSourceId,
 }: {
   graph: EtlGraph;
   pipelineId: string;
   onChange: (g: EtlGraph) => void;
   onEject: (code: string) => void;
+  /** The pipeline's default storage destination (Settings), for targets that pick no bucket. */
+  destCatalogSourceId?: string | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
@@ -1685,6 +1650,21 @@ function CanvasBuilder({
     [graph, onChange],
   );
 
+  /**
+   * Add a node and, when one is selected, WIRE IT UP AND PUT IT AFTER IT.
+   *
+   * Every added node used to land on a fixed column at `80 + (count % 6) * 90`
+   * and arrive unconnected, so a ten-step pipeline was nine hand-drags between
+   * two 8px handles, over nodes that started overlapping at the seventh. The
+   * graphs this product is for are longer than that, and the sample templates
+   * were the only realistic way to get one.
+   *
+   * The rules are the ones the compiler already enforces, so an auto-edge can
+   * never build a graph that will not compile: a source takes no input; a
+   * target gives no output; and a target already holding its one input is not
+   * extended. Anything the rules refuse simply lands unconnected, exactly as
+   * before, and the canvas says so.
+   */
   const addNode = (kind: EtlNode["kind"], type: string, label: string) => {
     const nextNum =
       graph.nodes.reduce((max, n) => {
@@ -1692,14 +1672,15 @@ function CanvasBuilder({
         return m ? Math.max(max, Number(m[1])) : max;
       }, 0) + 1;
     const id = `n${nextNum}`;
-    const x = kind === "source" ? 80 : kind === "target" ? 640 : 360;
-    const y = 80 + (graph.nodes.length % 6) * 90;
+    const from = graph.nodes.find((n) => n.id === selectedId) ?? null;
+    const chain = shouldChain(kind, from);
+    const position = placeNode(kind, from, graph.nodes.length);
     onChange({
       ...graph,
-      nodes: [
-        ...graph.nodes,
-        { id, kind, label, config: defaultNodeConfig(kind, type), position: { x, y } },
-      ],
+      nodes: [...graph.nodes, { id, kind, label, config: defaultNodeConfig(kind, type), position }],
+      edges: chain
+        ? [...graph.edges, { id: `e${Date.now().toString(36)}`, from: from!.id, to: id }]
+        : graph.edges,
     });
     setSelectedId(id);
   };
@@ -1719,13 +1700,24 @@ function CanvasBuilder({
     <div className="flex h-full min-h-0 gap-3">
       <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border">
         <div className="absolute left-2 top-2 z-10 flex gap-1">
-          <AddMenu label="Source" items={SOURCE_TYPES} onPick={(t, l) => addNode("source", t, l)} />
           <AddMenu
+            kind="source"
+            label="Source"
+            items={SOURCE_TYPES}
+            onPick={(t, l) => addNode("source", t, l)}
+          />
+          <AddMenu
+            kind="transform"
             label="Transform"
             items={TRANSFORM_TYPES}
             onPick={(t, l) => addNode("transform", t, l)}
           />
-          <AddMenu label="Target" items={TARGET_TYPES} onPick={(t, l) => addNode("target", t, l)} />
+          <AddMenu
+            kind="target"
+            label="Target"
+            items={TARGET_TYPES}
+            onPick={(t, l) => addNode("target", t, l)}
+          />
         </div>
         <div className="absolute right-2 top-2 z-10 flex gap-1">
           <Button
@@ -1796,9 +1788,14 @@ function CanvasBuilder({
       {selected && !showCode && (
         <div className="w-80 shrink-0 overflow-auto rounded-lg border p-3">
           <NodePanel
+            // Keyed by node: the panel holds draft state for fields a saved
+            // config cannot represent mid-edit (a rename row with no "from"
+            // yet), and that draft must not follow the reader to another node.
+            key={selected.id}
             node={selected}
             graph={graph}
             pipelineId={pipelineId}
+            destCatalogSourceId={destCatalogSourceId}
             columnsByNode={columnsByNode}
             onColumns={rememberColumns}
             onChange={updateSelected}
@@ -1817,10 +1814,12 @@ function CanvasBuilder({
 }
 
 function AddMenu({
+  kind,
   label,
   items,
   onPick,
 }: {
+  kind: EtlNode["kind"];
   label: string;
   items: readonly { type: string; label: string }[];
   onPick: (type: string, label: string) => void;
@@ -1834,11 +1833,15 @@ function AddMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuLabel>{label}</DropdownMenuLabel>
-        {items.map((it) => (
-          <DropdownMenuItem key={it.type} onClick={() => onPick(it.type, it.label)}>
-            {it.label}
-          </DropdownMenuItem>
-        ))}
+        {items.map((it) => {
+          const Icon = nodeTypeIcon(kind, it.type);
+          return (
+            <DropdownMenuItem key={it.type} onClick={() => onPick(it.type, it.label)}>
+              {Icon ? <Icon className="mr-2 h-3.5 w-3.5 text-muted-foreground" /> : null}
+              {it.label}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1846,14 +1849,11 @@ function AddMenu({
 
 // ── Node config panel ───────────────────────────────────────────────────────
 
-function csv(list: string[] | undefined): string {
-  return (list ?? []).join(", ");
-}
-function unCsv(s: string): string[] {
-  return s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
+/** "schema.table" → its parts; a bare name is a table with no schema. */
+function qualifiedParts(fqn: string | undefined): { schema: string; table: string } {
+  const s = (fqn ?? "").trim();
+  const i = s.indexOf(".");
+  return i < 0 ? { schema: "", table: s } : { schema: s.slice(0, i), table: s.slice(i + 1) };
 }
 
 function NodePanel({
@@ -1864,6 +1864,7 @@ function NodePanel({
   onDelete,
   columnsByNode,
   onColumns,
+  destCatalogSourceId,
 }: {
   node: EtlNode;
   graph: EtlGraph;
@@ -1873,15 +1874,24 @@ function NodePanel({
   /** Columns a preview has resolved, per node id. */
   columnsByNode: Record<string, string[]>;
   onColumns: (nodeId: string, columns: string[]) => void;
+  destCatalogSourceId?: string | null;
 }) {
   const { session } = useAuth();
+  const token = session?.access_token ?? "";
+  const { names: secretNames } = useSecretNames(token);
   const [storageSources, setStorageSources] = useState<CatalogSource[]>([]);
   const [connections, setConnections] = useState<WarehouseConnectionSummary[]>([]);
+  const [saasConnections, setSaasConnections] = useState<
+    { id: string; name: string; provider: string }[]
+  >([]);
   const listConnFn = useServerFn(listWarehouseConnections);
+  const listSaasFn = useServerFn(listSaasConnections);
 
   const c = node.config as { type: string } & Record<string, unknown>;
+  const TypeIcon = nodeTypeIcon(node.kind, c.type);
   const needsStorage = c.type === "object_storage";
   const needsDb = c.type === "database";
+  const needsSaas = c.type === "saas";
 
   // A transform is configured against the columns arriving from upstream, not
   // its own output — those don't exist until it runs. Fall back to this node's
@@ -1907,16 +1917,34 @@ function NodePanel({
         })
         .catch(() => {});
     }
+    if (needsSaas && session?.access_token) {
+      listSaasFn({ data: { access_token: session.access_token } })
+        .then((rows) =>
+          setSaasConnections(
+            rows.map((r) => ({ id: r.id, name: r.name, provider: r.provider as string })),
+          ),
+        )
+        .catch(() => {});
+    }
+    // The token belongs in here: without it a picker that ran before the
+    // session was ready would stay empty for good rather than filling in when
+    // it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsStorage, needsDb, node.id]);
+  }, [needsStorage, needsDb, needsSaas, node.id, session?.access_token]);
 
   const set = (updates: Record<string, unknown>) =>
     onChange({ ...node.config, ...updates } as EtlNode["config"]);
+  // Columns a picker learned about what it picked: kept beside the preview's,
+  // so the cursor, the merge keys and downstream transforms list them at once.
+  const remember = (cols?: string[]) => {
+    if (cols?.length) onColumns(node.id, cols);
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <Badge variant="outline" className="capitalize">
+          {TypeIcon ? <TypeIcon className="mr-1 inline h-3 w-3" /> : null}
           {node.kind} · {typeLabel(node)}
         </Badge>
         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
@@ -2004,10 +2032,6 @@ function NodePanel({
 
       {c.type === "lakehouse" && (
         <>
-          <LakehouseSchemaPicker
-            value={(c.schema as string) ?? ""}
-            onPick={(schema) => set({ schema })}
-          />
           {node.kind === "source" ? (
             <>
               <Field label="Read">
@@ -2024,6 +2048,19 @@ function NodePanel({
                   </SelectContent>
                 </Select>
               </Field>
+              <LakehousePicker
+                token={token}
+                schema={(c.schema as string) ?? ""}
+                table={(c.table as string) ?? ""}
+                withTable={c.mode !== "query"}
+                onChange={(v) => {
+                  set({
+                    ...(v.schema !== undefined ? { schema: v.schema } : {}),
+                    ...(v.table !== undefined ? { table: v.table } : {}),
+                  });
+                  remember(v.columns);
+                }}
+              />
               {c.mode === "query" ? (
                 <Field label="Query (schema-qualified)">
                   <Textarea
@@ -2034,27 +2071,22 @@ function NodePanel({
                     placeholder="SELECT * FROM analytics.orders WHERE amount > 100"
                   />
                 </Field>
-              ) : (
-                <Field label="Table">
-                  <Input
-                    className="h-8 font-mono text-xs"
-                    value={(c.table as string) ?? ""}
-                    onChange={(e) => set({ table: e.target.value.toLowerCase() })}
-                    placeholder="orders"
-                  />
-                </Field>
-              )}
+              ) : null}
             </>
           ) : (
             <>
-              <Field label="Table">
-                <Input
-                  className="h-8 font-mono text-xs"
-                  value={(c.table as string) ?? ""}
-                  onChange={(e) => set({ table: e.target.value.toLowerCase() })}
-                  placeholder="orders"
-                />
-              </Field>
+              <LakehousePicker
+                token={token}
+                schema={(c.schema as string) ?? ""}
+                table={(c.table as string) ?? ""}
+                allowNew
+                onChange={(v) =>
+                  set({
+                    ...(v.schema !== undefined ? { schema: v.schema } : {}),
+                    ...(v.table !== undefined ? { table: v.table } : {}),
+                  })
+                }
+              />
               <Field label="Write mode">
                 <Select
                   value={(c.write_mode as string) ?? "replace"}
@@ -2072,11 +2104,11 @@ function NodePanel({
               </Field>
               {c.write_mode === "merge" && (
                 <Field label="Primary key columns">
-                  <Input
-                    className="h-8 font-mono text-xs"
-                    value={csv(c.primary_key as string[])}
-                    onChange={(e) => set({ primary_key: unCsv(e.target.value) })}
-                    placeholder="id"
+                  <ColumnChips
+                    value={(c.primary_key as string[]) ?? []}
+                    onChange={(primary_key) => set({ primary_key })}
+                    columns={upstreamColumns}
+                    emptyMeans="Pick the column(s) rows are matched on."
                   />
                 </Field>
               )}
@@ -2088,12 +2120,42 @@ function NodePanel({
           </p>
         </>
       )}
+      {isStreamSource(c as { type?: string }) && node.kind === "source" && (
+        <StreamSourceFields
+          cfg={c as unknown as StreamSourceConfig}
+          set={set}
+          secrets={secretNames}
+        />
+      )}
       {c.type === "ingest" && node.kind === "source" && (
         <p className="text-[11px] text-muted-foreground">
           Drains rows pushed to <span className="font-mono">POST /api/etl/ingest</span> with this
           pipeline&apos;s trigger token (Settings → External trigger). Each run loads everything
           received since the last run — push, then trigger a run for near-real-time.
         </p>
+      )}
+      {c.type === "catalog_asset" && node.kind === "source" && (
+        <>
+          <CatalogAssetPicker
+            token={token}
+            assetId={(c.asset_id as string) ?? ""}
+            onPick={(cfg, cols) => {
+              onChange(
+                {
+                  ...cfg,
+                  incremental: c.incremental as { cursor_column: string } | undefined,
+                } as EtlNode["config"],
+                node.label && node.label !== "Data Catalog asset" ? node.label : cfg.fqn,
+              );
+              remember(cols);
+            }}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Read the way the asset&apos;s source is read — a warehouse table through its connection,
+            a bucket file through its storage source, a lakehouse table through the engine — with
+            the same credentials and access checks. Lineage records the asset.
+          </p>
+        </>
       )}
       {c.type === "platform_dataset" && node.kind === "source" && (
         <PlatformDatasetPicker
@@ -2103,14 +2165,19 @@ function NodePanel({
       )}
       {c.type === "object_storage" && node.kind === "source" && (
         <>
-          <Field label="Path or glob">
-            <Input
-              className="h-8 font-mono text-xs"
-              value={c.path as string}
-              onChange={(e) => set({ path: e.target.value })}
-              placeholder="raw/orders/*.csv"
-            />
-          </Field>
+          <StoragePathPicker
+            token={token}
+            sourceId={(c.catalog_source_id as string) || undefined}
+            path={(c.path as string) ?? ""}
+            format={(c.format as string) ?? "csv"}
+            onChange={(v) => {
+              set({
+                ...(v.path !== undefined ? { path: v.path } : {}),
+                ...(v.format ? { format: v.format } : {}),
+              });
+              remember(v.columns);
+            }}
+          />
           <Field label="Format">
             <Select value={c.format as string} onValueChange={(v) => set({ format: v })}>
               <SelectTrigger className="h-8">
@@ -2142,14 +2209,20 @@ function NodePanel({
             </Select>
           </Field>
           {c.mode === "table" || c.mode === "cdc" ? (
-            <Field label="Table">
-              <Input
-                className="h-8 font-mono text-xs"
-                value={(c.table as string) ?? ""}
-                onChange={(e) => set({ table: e.target.value })}
-                placeholder="schema.orders"
-              />
-            </Field>
+            <WarehouseTablePicker
+              token={token}
+              connectionId={(c.connection_id as string) || undefined}
+              schema={(c.schema as string) || qualifiedParts(c.table as string).schema}
+              table={qualifiedParts(c.table as string).table}
+              onChange={(v) => {
+                const schema =
+                  v.schema ?? ((c.schema as string) || qualifiedParts(c.table as string).schema);
+                const table = v.table ?? qualifiedParts(c.table as string).table;
+                // The compiler reads `table`; it is qualified only once both are picked.
+                set({ schema, table: schema && table ? `${schema}.${table}` : "" });
+                remember(v.columns);
+              }}
+            />
           ) : (
             <Field label="Query">
               <Textarea
@@ -2184,24 +2257,59 @@ function NodePanel({
           )}
         </>
       )}
-      {(c.type === "database" || c.type === "object_storage") &&
+      {c.type === "object_storage" && node.kind === "source" && (
+        <>
+          <div className="flex items-center gap-2">
+            <Switch
+              id={`${node.id}-new-files`}
+              checked={Boolean(c.new_files_only)}
+              onCheckedChange={(v) =>
+                set({ new_files_only: v ? true : undefined, max_files_per_run: undefined })
+              }
+            />
+            <Label htmlFor={`${node.id}-new-files`} className="text-xs">
+              Only files not loaded before (auto-ingest)
+            </Label>
+          </div>
+          {c.new_files_only ? (
+            <Field label="Files per run">
+              <Input
+                className="h-8 w-28 text-xs"
+                type="number"
+                min={1}
+                value={String((c.max_files_per_run as number | undefined) ?? 500)}
+                onChange={(e) =>
+                  set({ max_files_per_run: Math.max(1, Number(e.target.value) || 500) })
+                }
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                The prefix is listed every run and only new files are read; the engine keeps a
+                ledger of what it loaded. A file uploaded again loads again as a new version — a
+                merge target with keys makes that idempotent. Makes the source continuous-eligible;
+                sandbox engine only.
+              </p>
+            </Field>
+          ) : null}
+        </>
+      )}
+      {(c.type === "database" ||
+        c.type === "object_storage" ||
+        (c.type === "catalog_asset" &&
+          Boolean(c.resolved) &&
+          (c.resolved as { type?: string }).type !== "lakehouse")) &&
         node.kind === "source" &&
         c.mode !== "cdc" && (
           <Field label="Incremental cursor column (optional)">
-            <Input
-              className="h-8 font-mono text-xs"
+            <ColumnCombo
               value={
                 ((c.incremental as { cursor_column?: string } | undefined)?.cursor_column as
                   | string
                   | undefined) ?? ""
               }
-              onChange={(e) =>
-                set({
-                  incremental: e.target.value.trim()
-                    ? { cursor_column: e.target.value.trim() }
-                    : undefined,
-                })
+              onChange={(v) =>
+                set({ incremental: v.trim() ? { cursor_column: v.trim() } : undefined })
               }
+              columns={upstreamColumns}
               placeholder="updated_at"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -2210,7 +2318,7 @@ function NodePanel({
             </p>
           </Field>
         )}
-      {c.type === "http_api" && (
+      {c.type === "http_api" && node.kind === "source" && (
         <>
           <Field label="URL">
             <Input
@@ -2453,6 +2561,106 @@ function NodePanel({
         </Field>
       )}
 
+      {node.kind === "target" && c.type === "saas" && (
+        <>
+          <Field label="Connection">
+            <Select
+              value={(c.connection_id as string) ?? ""}
+              onValueChange={(v) => {
+                const conn = saasConnections.find((x) => x.id === v);
+                set({
+                  connection_id: v,
+                  vendor: conn && isWritableVendor(conn.provider) ? conn.provider : undefined,
+                  object: undefined,
+                });
+              }}
+            >
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="Pick a connected tool…" />
+              </SelectTrigger>
+              <SelectContent>
+                {saasConnections
+                  .filter((x) => isWritableVendor(x.provider))
+                  .map((x) => (
+                    <SelectItem key={x.id} value={x.id}>
+                      {x.name} · {SAAS_TARGETS[x.provider as SaasTargetVendor].label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          {saasConnections.length > 0 &&
+          saasConnections.every((x) => !isWritableVendor(x.provider)) ? (
+            <p className="text-[11px] text-muted-foreground">
+              None of your connected tools can be written to. Writable destinations are HubSpot and
+              Salesforce; the rest are read-only sources.
+            </p>
+          ) : null}
+          {c.vendor ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Object">
+                  <Select
+                    value={(c.object as string) ?? ""}
+                    onValueChange={(v) => set({ object: v })}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="Pick…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SAAS_TARGETS[c.vendor as SaasTargetVendor].objects.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Rows per request">
+                  <Input
+                    type="number"
+                    className="h-8 font-mono text-xs"
+                    value={
+                      (c.batch_size as number) ??
+                      SAAS_TARGETS[c.vendor as SaasTargetVendor].maxBatch
+                    }
+                    onChange={(e) => set({ batch_size: Number(e.target.value) || undefined })}
+                  />
+                </Field>
+              </div>
+              <Field label={SAAS_TARGETS[c.vendor as SaasTargetVendor].idLabel}>
+                {/*
+                  Typed, not picked from a list: an upstream node's columns are
+                  often unknown until it runs (a Python source, a SQL step), and
+                  a Select with no matching option renders a configured target
+                  as blank. Known columns are offered as suggestions instead.
+                */}
+                <Input
+                  className="h-8 font-mono text-xs"
+                  list={`saas-cols-${node.id}`}
+                  value={(c.id_column as string) ?? ""}
+                  onChange={(e) => set({ id_column: e.target.value })}
+                  placeholder="the column that identifies a record"
+                />
+                <datalist id={`saas-cols-${node.id}`}>
+                  {upstreamColumns.map((col) => (
+                    <option key={col} value={col} />
+                  ))}
+                </datalist>
+              </Field>
+              <p className="text-[11px] text-muted-foreground">
+                {SAAS_TARGETS[c.vendor as SaasTargetVendor].idHint}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Every other column is sent as a field. Batches are capped at{" "}
+                {SAAS_TARGETS[c.vendor as SaasTargetVendor].maxBatch} records because the API
+                rejects a larger one whole, and a response that reports rejected records fails the
+                run rather than counting them as loaded.
+              </p>
+            </>
+          ) : null}
+        </>
+      )}
       {node.kind === "target" && c.type === "http_api" && (
         <>
           <Field label="URL">
@@ -2498,121 +2706,355 @@ function NodePanel({
               placeholder="records"
             />
           </Field>
-          <Field label="Bearer token env var (optional)">
-            <Input
-              className="h-8 font-mono text-xs"
-              value={(c.auth_env as string) ?? ""}
-              onChange={(e) => set({ auth_env: e.target.value.trim() || undefined })}
-              placeholder="MY_API_TOKEN"
-            />
-          </Field>
+          <SecretPicker
+            label="Bearer token secret (optional)"
+            secrets={secretNames}
+            value={(c.auth_secret as string) ?? ""}
+            onChange={(v) => set({ auth_secret: v || undefined, auth_env: undefined })}
+          />
+          {c.auth_env && !c.auth_secret ? (
+            <p className="text-[11px] text-muted-foreground">
+              Currently bound to the env var <span className="font-mono">{String(c.auth_env)}</span>{" "}
+              from Settings → secret bindings; picking a secret above replaces it.
+            </p>
+          ) : null}
           <p className="text-[11px] text-muted-foreground">
-            Bind the env var to a secret under Settings → secret bindings; it is sent as a Bearer
-            Authorization header and scrubbed from logs.
+            Sent as a Bearer Authorization header, resolved as the pipeline owner at run start and
+            scrubbed from logs.
           </p>
         </>
       )}
-      {node.kind === "target" && c.type !== "http_api" && c.type !== "lakehouse" && (
+      {node.kind === "target" &&
+        c.type !== "http_api" &&
+        c.type !== "saas" &&
+        c.type !== "lakehouse" && (
+          <>
+            {c.type === "database" ? (
+              <WarehouseTablePicker
+                token={token}
+                connectionId={(c.connection_id as string) || undefined}
+                schema={(c.dataset as string) ?? ""}
+                table={(c.table as string) ?? ""}
+                allowNew
+                onChange={(v) =>
+                  set({
+                    ...(v.schema !== undefined ? { dataset: v.schema } : {}),
+                    ...(v.table !== undefined ? { table: v.table } : {}),
+                  })
+                }
+              />
+            ) : (
+              <StorageTargetPicker
+                token={token}
+                sourceId={(c.catalog_source_id as string) || destCatalogSourceId || undefined}
+                dataset={(c.dataset as string) ?? ""}
+                table={(c.table as string) ?? ""}
+                onChange={(v) =>
+                  set({
+                    ...(v.dataset !== undefined ? { dataset: v.dataset } : {}),
+                    ...(v.table !== undefined ? { table: v.table } : {}),
+                  })
+                }
+              />
+            )}
+            {c.type === "object_storage" && (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Table format">
+                  <Select
+                    value={(c.table_format as string) ?? "none"}
+                    onValueChange={(v) =>
+                      set(
+                        v === "none"
+                          ? { table_format: "none" }
+                          : { table_format: v, format: "parquet" },
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Plain files</SelectItem>
+                      <SelectItem value="delta">Delta Lake</SelectItem>
+                      <SelectItem value="iceberg">Iceberg</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="File format">
+                  <Select
+                    value={c.format as string}
+                    onValueChange={(v) => set({ format: v })}
+                    disabled={c.table_format === "delta" || c.table_format === "iceberg"}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["parquet", "csv", "jsonl"].map((f) => (
+                        <SelectItem key={f} value={f}>
+                          {f.toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            )}
+            <Field label="Write mode">
+              <Select value={c.write_mode as string} onValueChange={(v) => set({ write_mode: v })}>
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="replace">Replace</SelectItem>
+                  <SelectItem value="append">Append</SelectItem>
+                  <SelectItem value="merge">Merge (upsert)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {c.write_mode === "merge" && (
+              <Field label="Primary key columns">
+                <ColumnChips
+                  value={(c.primary_key as string[]) ?? []}
+                  onChange={(primary_key) => set({ primary_key })}
+                  columns={upstreamColumns}
+                  emptyMeans="Pick the column(s) rows are matched on."
+                />
+              </Field>
+            )}
+            <Field label="Schema drift">
+              <Select
+                value={(c.schema_policy as string) ?? "evolve"}
+                onValueChange={(v) => set({ schema_policy: v })}
+              >
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="evolve">Evolve silently</SelectItem>
+                  <SelectItem value="warn">Warn on drift</SelectItem>
+                  <SelectItem value="strict">Fail on drift</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </>
+        )}
+    </div>
+  );
+}
+
+/** The three stream sources: address, payload, where to start, the batch, the secrets. */
+function StreamSourceFields({
+  cfg,
+  set,
+  secrets,
+}: {
+  cfg: StreamSourceConfig;
+  set: (updates: Record<string, unknown>) => void;
+  /** The owner's secrets by name, for the credential pickers. */
+  secrets: string[];
+}) {
+  const problem = validateStreamSource(cfg);
+  const secretField = (label: string, key: string, value: string, placeholder: string) => (
+    <SecretPicker
+      label={label}
+      secrets={secrets}
+      value={value}
+      onChange={(v) => set({ [key]: v })}
+      placeholder={`e.g. ${placeholder}`}
+    />
+  );
+  return (
+    <>
+      {cfg.type === "kafka" && (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={c.type === "database" ? "Schema" : "Dataset"}>
-              <Input
-                className="h-8 font-mono text-xs"
-                value={c.dataset as string}
-                onChange={(e) => set({ dataset: e.target.value })}
-              />
-            </Field>
-            <Field label="Table">
-              <Input
-                className="h-8 font-mono text-xs"
-                value={c.table as string}
-                onChange={(e) => set({ table: e.target.value })}
-              />
-            </Field>
-          </div>
-          {c.type === "object_storage" && (
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Table format">
-                <Select
-                  value={(c.table_format as string) ?? "none"}
-                  onValueChange={(v) =>
-                    set(
-                      v === "none"
-                        ? { table_format: "none" }
-                        : { table_format: v, format: "parquet" },
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Plain files</SelectItem>
-                    <SelectItem value="delta">Delta Lake</SelectItem>
-                    <SelectItem value="iceberg">Iceberg</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="File format">
-                <Select
-                  value={c.format as string}
-                  onValueChange={(v) => set({ format: v })}
-                  disabled={c.table_format === "delta" || c.table_format === "iceberg"}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {["parquet", "csv", "jsonl"].map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {f.toUpperCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-          )}
-          <Field label="Write mode">
-            <Select value={c.write_mode as string} onValueChange={(v) => set({ write_mode: v })}>
+          <Field label="Brokers">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.brokers}
+              onChange={(e) => set({ brokers: e.target.value })}
+              placeholder="broker-1:9092,broker-2:9092"
+            />
+          </Field>
+          <Field label="Topic">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.topic}
+              onChange={(e) => set({ topic: e.target.value })}
+              placeholder="orders"
+            />
+          </Field>
+          <Field label="Security">
+            <Select value={cfg.security} onValueChange={(v) => set({ security: v })}>
               <SelectTrigger className="h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="replace">Replace</SelectItem>
-                <SelectItem value="append">Append</SelectItem>
-                <SelectItem value="merge">Merge (upsert)</SelectItem>
+                <SelectItem value="plaintext">Plaintext</SelectItem>
+                <SelectItem value="ssl">TLS</SelectItem>
+                <SelectItem value="sasl_plaintext">SASL (plaintext)</SelectItem>
+                <SelectItem value="sasl_ssl">SASL over TLS</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          {c.write_mode === "merge" && (
-            <Field label="Primary key columns">
-              <Input
-                className="h-8 font-mono text-xs"
-                value={csv(c.primary_key as string[])}
-                onChange={(e) => set({ primary_key: unCsv(e.target.value) })}
-                placeholder="id"
-              />
-            </Field>
+          {cfg.security.startsWith("sasl") && (
+            <>
+              <Field label="SASL mechanism">
+                <Select
+                  value={cfg.sasl_mechanism}
+                  onValueChange={(v) => set({ sasl_mechanism: v })}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PLAIN">PLAIN</SelectItem>
+                    <SelectItem value="SCRAM-SHA-256">SCRAM-SHA-256</SelectItem>
+                    <SelectItem value="SCRAM-SHA-512">SCRAM-SHA-512</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {secretField(
+                "Username secret",
+                "username_secret",
+                cfg.username_secret,
+                "KAFKA_USERNAME",
+              )}
+              {secretField(
+                "Password secret",
+                "password_secret",
+                cfg.password_secret,
+                "KAFKA_PASSWORD",
+              )}
+            </>
           )}
-          <Field label="Schema drift">
-            <Select
-              value={(c.schema_policy as string) ?? "evolve"}
-              onValueChange={(v) => set({ schema_policy: v })}
-            >
+          <Field label="Start (first run)">
+            <Select value={cfg.start} onValueChange={(v) => set({ start: v })}>
               <SelectTrigger className="h-8">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="evolve">Evolve silently</SelectItem>
-                <SelectItem value="warn">Warn on drift</SelectItem>
-                <SelectItem value="strict">Fail on drift</SelectItem>
+                <SelectItem value="earliest">Earliest retained message</SelectItem>
+                <SelectItem value="latest">Only new messages</SelectItem>
               </SelectContent>
             </Select>
           </Field>
         </>
       )}
-    </div>
+      {cfg.type === "kinesis" && (
+        <>
+          <Field label="Stream name">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.stream}
+              onChange={(e) => set({ stream: e.target.value })}
+              placeholder="orders-stream"
+            />
+          </Field>
+          <RegionPicker value={cfg.region} onChange={(region) => set({ region })} />
+          <Field label="Endpoint (optional)">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.endpoint}
+              onChange={(e) => set({ endpoint: e.target.value })}
+              placeholder="https://kinesis.us-east-1.amazonaws.com"
+            />
+          </Field>
+          {secretField(
+            "Access key id secret",
+            "access_key_secret",
+            cfg.access_key_secret,
+            "AWS_ACCESS_KEY_ID",
+          )}
+          {secretField(
+            "Secret access key secret",
+            "secret_key_secret",
+            cfg.secret_key_secret,
+            "AWS_SECRET_ACCESS_KEY",
+          )}
+          <Field label="Start (first run)">
+            <Select value={cfg.start} onValueChange={(v) => set({ start: v })}>
+              <SelectTrigger className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="trim_horizon">Oldest retained record</SelectItem>
+                <SelectItem value="latest">Only new records</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </>
+      )}
+      {cfg.type === "pubsub" && (
+        <>
+          <Field label="Project id">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.project}
+              onChange={(e) => set({ project: e.target.value })}
+              placeholder="my-gcp-project"
+            />
+          </Field>
+          <Field label="Subscription">
+            <Input
+              className="h-8 font-mono text-xs"
+              value={cfg.subscription}
+              onChange={(e) => set({ subscription: e.target.value })}
+              placeholder="orders-sub"
+            />
+          </Field>
+          {secretField(
+            "Service-account JSON secret",
+            "credentials_secret",
+            cfg.credentials_secret,
+            "GCP_SERVICE_ACCOUNT",
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            Pub/Sub has no replayable position: a message is acknowledged as it is read. Give the
+            subscription a dead-letter topic, or use Kafka, when a failed run must not lose
+            messages.
+          </p>
+        </>
+      )}
+      <Field label="Payload">
+        <Select value={cfg.format} onValueChange={(v) => set({ format: v })}>
+          <SelectTrigger className="h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="json">JSON object per message (keys become columns)</SelectItem>
+            <SelectItem value="text">Text (one value column)</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Messages per run">
+          <Input
+            type="number"
+            min={1}
+            className="h-8 font-mono text-xs"
+            value={cfg.max_messages}
+            onChange={(e) => set({ max_messages: Number(e.target.value) })}
+          />
+        </Field>
+        <Field label="Stop after quiet (ms)">
+          <Input
+            type="number"
+            min={0}
+            className="h-8 font-mono text-xs"
+            value={cfg.idle_ms}
+            onChange={(e) => set({ idle_ms: Number(e.target.value) })}
+          />
+        </Field>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Each run reads from where the previous run durably loaded, up to the message cap or until
+        the stream goes quiet, and stores the new positions as its watermark - a failed run re-reads
+        the same messages. Rows carry the payload's fields plus _stream_* columns. The broker or
+        service host must be on the sandbox egress allow-list (Admin → Developer runtime).
+      </p>
+      {problem && <p className="text-[11px] text-destructive">{problem}</p>}
+    </>
   );
 }
 
@@ -2831,6 +3273,7 @@ function RunsTab({ pipelineId }: { pipelineId: string }) {
             {runs.map((r) => {
               const metrics = (r.metrics ?? {}) as {
                 rows_loaded?: number;
+                ticks?: number;
                 targets?: { target: string; rows: number }[];
               };
               return (
@@ -2865,6 +3308,7 @@ function RunsTab({ pipelineId }: { pipelineId: string }) {
                   {typeof metrics.rows_loaded === "number" && (
                     <span className="text-xs text-muted-foreground">
                       {metrics.rows_loaded.toLocaleString()} rows
+                      {typeof metrics.ticks === "number" ? ` · ${metrics.ticks} tick(s)` : ""}
                       {metrics.targets?.length ? ` → ${metrics.targets.length} target(s)` : ""}
                     </span>
                   )}
@@ -2879,7 +3323,22 @@ function RunsTab({ pipelineId }: { pipelineId: string }) {
                         size="sm"
                         variant="ghost"
                         onClick={async () => {
-                          await cancelFn({ data: { access_token: token, run_id: r.id } });
+                          // A cancel whose call never reached the server is
+                          // as unsaid as one the server refused (R78).
+                          try {
+                            const res = await cancelFn({
+                              data: { access_token: token, run_id: r.id },
+                            });
+                            if (!res.ok) {
+                              toast.error("Could not cancel the run", {
+                                description: res.error ?? "The run could not be cancelled.",
+                              });
+                            }
+                          } catch (e) {
+                            toast.error("Could not cancel the run", {
+                              description: `${(e as Error).message}. It is still running.`,
+                            });
+                          }
                           void load();
                         }}
                       >
@@ -3034,6 +3493,10 @@ function SettingsTab({
   const [triggerToken, setTriggerToken] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [chainCandidates, setChainCandidates] = useState<{ id: string; name: string }[]>([]);
+  const chainTargetsFn = useServerFn(etlChainCandidates);
+  const [chainTargets, setChainTargets] = useState<Awaited<
+    ReturnType<typeof chainTargetsFn>
+  > | null>(null);
   const [paramsText, setParamsText] = useState(() =>
     p.default_params ? JSON.stringify(p.default_params, null, 2) : "",
   );
@@ -3044,6 +3507,9 @@ function SettingsTab({
       .then((all) => setSources(all.filter((s) => s.kind === "object_storage")))
       .catch(() => {});
     if (token) {
+      chainTargetsFn({ data: { access_token: token } })
+        .then(setChainTargets)
+        .catch(() => setChainTargets({ sqlModels: [], mlSchedules: [] }));
       listPipelinesFn({ data: { access_token: token } })
         .then((res) =>
           setChainCandidates(
@@ -3052,6 +3518,24 @@ function SettingsTab({
         )
         .catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // Whether the Spark engine can be chosen here at all, so the picker can say
+  // "no endpoint configured" rather than offer an option that fails at run
+  // time. Only whether one exists and its host; never the URL, which may
+  // carry a token.
+  const engineStatusFn = useServerFn(etlEngineStatus);
+  const [spark, setSpark] = useState<{
+    configured: boolean;
+    provider: "static" | "k8s";
+    host: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    engineStatusFn({ data: { access_token: token } })
+      .then((r) => setSpark(r.spark))
+      .catch(() => setSpark({ configured: false, provider: "static", host: null }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -3069,6 +3553,39 @@ function SettingsTab({
               onChange={(e) => onPatch({ description: e.target.value })}
               rows={2}
             />
+          </div>
+          {/* Which engine runs it. The graph is the same either way; what
+              changes is where the program executes. */}
+          <div>
+            <Label className="text-xs">Engine</Label>
+            <Select
+              value={p.engine ?? "pandas"}
+              onValueChange={(engine) => onPatch({ engine: engine as EditorPipeline["engine"] })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pandas">Sandbox (pandas) — the default</SelectItem>
+                <SelectItem value="spark" disabled={!spark?.configured}>
+                  Spark cluster
+                  {spark && !spark.configured
+                    ? spark.provider === "k8s"
+                      ? " — this app is not running in Kubernetes"
+                      : " — no endpoint configured"
+                    : spark?.provider === "k8s"
+                      ? " — one per run, on Kubernetes"
+                      : spark?.host
+                        ? ` — ${spark.host}`
+                        : ""}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {p.engine === "spark"
+                ? "Transforms and every table load — object storage, warehouses over JDBC, and the lakehouse — run on the cluster. HTTP and SaaS targets and Custom Python run in the sandbox on the collected result; a merge into object storage needs a Delta target. Preview always samples in the sandbox."
+                : "One sandbox container running an in-memory pandas program — right for most pipelines. Pick the Spark cluster when a run's data does not fit one box."}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3088,6 +3605,7 @@ function SettingsTab({
                   <SelectItem value="daily">Daily</SelectItem>
                   <SelectItem value="weekly">Weekly</SelectItem>
                   <SelectItem value="cron">Cron expression</SelectItem>
+                  <SelectItem value="continuous">Continuous (stream)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -3100,6 +3618,27 @@ function SettingsTab({
               />
             </div>
           </div>
+          {p.schedule === "continuous" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Poll every (seconds)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={p.poll_seconds}
+                  onChange={(e) =>
+                    onPatch({ poll_seconds: Math.max(1, Number(e.target.value) || 5) })
+                  }
+                />
+              </div>
+              <p className="self-end text-xs text-muted-foreground">
+                One long-running sandbox drains the source, loads, persists its position, and goes
+                again — after this pause only when a tick found nothing. Needs a Kafka, Kinesis or
+                Pub/Sub stream, webhook ingest, CDC, a storage prefix watched for new files, or an
+                incremental cursor. Stop it from the card; the sweep restarts it if it dies.
+              </p>
+            </div>
+          )}
           {p.schedule === "cron" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -3165,6 +3704,120 @@ function SettingsTab({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Starts this pipeline when the selected one succeeds. Cycles are refused at save.
               </p>
+            </div>
+          </div>
+          {/* Beyond pipelines: ingest → transform → train on one graph. */}
+          <div className="space-y-3 rounded-md border p-2">
+            <div>
+              <p className="text-sm">After it succeeds, also…</p>
+              <p className="text-xs text-muted-foreground">
+                Build SQL models and run ML schedules as this pipeline&apos;s owner, the way their
+                own schedules would. Each is its own run on its own page; a failure there never
+                changes this run&apos;s outcome.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Build SQL models</Label>
+              <Select
+                value={
+                  p.chain_sql_models === null
+                    ? "none"
+                    : p.chain_sql_models.length === 0
+                      ? "all"
+                      : "some"
+                }
+                onValueChange={(v) =>
+                  onPatch({
+                    chain_sql_models:
+                      v === "none"
+                        ? null
+                        : v === "all"
+                          ? []
+                          : p.chain_sql_models?.length
+                            ? p.chain_sql_models
+                            : (chainTargets?.sqlModels.slice(0, 1).map((m) => m.name) ?? []),
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— none —</SelectItem>
+                  <SelectItem value="all">Every active model</SelectItem>
+                  <SelectItem value="some">Only these models (with their ancestors)</SelectItem>
+                </SelectContent>
+              </Select>
+              {p.chain_sql_models !== null && p.chain_sql_models.length >= 0 && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {p.chain_sql_models.length === 0
+                    ? `Every active model you own is rebuilt in dependency order${chainTargets ? ` (${chainTargets.sqlModels.filter((m) => m.is_active).length} today)` : ""}.`
+                    : "Pick the models below; everything they depend on is built first."}
+                </p>
+              )}
+              {p.chain_sql_models !== null && p.chain_sql_models.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(chainTargets?.sqlModels ?? []).map((m) => {
+                    const on = p.chain_sql_models?.includes(m.name) ?? false;
+                    return (
+                      <button
+                        key={m.name}
+                        type="button"
+                        onClick={() =>
+                          onPatch({
+                            chain_sql_models: on
+                              ? (p.chain_sql_models ?? []).filter((n) => n !== m.name)
+                              : [...(p.chain_sql_models ?? []), m.name],
+                          })
+                        }
+                        className={`rounded-full border px-2 py-0.5 font-mono text-[11px] ${on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+                        aria-pressed={on}
+                      >
+                        {m.schema_name}.{m.name}
+                      </button>
+                    );
+                  })}
+                  {chainTargets && chainTargets.sqlModels.length === 0 && (
+                    <span className="text-[11px] text-muted-foreground">
+                      You have no SQL models yet.
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">Run ML schedules</Label>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {(chainTargets?.mlSchedules ?? []).map((s) => {
+                  const on = p.chain_ml_schedules.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() =>
+                        onPatch({
+                          chain_ml_schedules: on
+                            ? p.chain_ml_schedules.filter((id) => id !== s.id)
+                            : [...p.chain_ml_schedules, s.id],
+                        })
+                      }
+                      className={`rounded-full border px-2 py-0.5 text-[11px] ${on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
+                      aria-pressed={on}
+                      title={`${s.kind === "retrain" ? "Retrain" : "Batch predict"} · ${s.model_name}`}
+                    >
+                      {s.name}
+                      <span className="ml-1 opacity-70">
+                        · {s.kind === "retrain" ? "retrain" : "predict"} · {s.model_name}
+                      </span>
+                    </button>
+                  );
+                })}
+                {chainTargets && chainTargets.mlSchedules.length === 0 && (
+                  <span className="text-[11px] text-muted-foreground">
+                    No ML schedules yet — create one on a model&apos;s Operations tab.
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center justify-between rounded-md border p-2">

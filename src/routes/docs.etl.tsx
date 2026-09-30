@@ -95,10 +95,12 @@ function EtlDocsPage() {
             name: "Sources",
             body: (
               <>
-                Object storage files (CSV, TSV, JSON, JSONL, Parquet, Excel — with glob patterns
-                like <C>raw/orders/*.csv</C>), a database or warehouse table or SQL query, an HTTP
-                API returning JSON, a platform dataset (uploads, prep outputs, connector-synced
-                tables), a Lakehouse table, or custom Python.
+                A Data Catalog asset (any table, view, file or dataset the catalog crawled), object
+                storage files (CSV, TSV, JSON, JSONL, Parquet, Excel — the datasets the crawl found,
+                or a glob like <C>raw/orders/*.csv</C>), a database or warehouse table or SQL query,
+                an HTTP API returning JSON, a platform dataset (uploads, prep outputs,
+                connector-synced tables), a Lakehouse table, a Kafka, Kinesis or Pub/Sub stream, or
+                custom Python.
               </>
             ),
           },
@@ -122,6 +124,16 @@ function EtlDocsPage() {
           },
         ]}
       />
+      <P>
+        <strong>Nothing is typed that the platform already knows.</strong> A connection, then its
+        schema, then a table; a bucket, then a folder, then a dataset; a lakehouse schema, then a
+        table; a catalog source, then its schema or folder, then an asset; secrets by name; AWS
+        regions. Every one is a picker, each level narrowing the next, and a target that may create
+        something offers <em>New …</em> before asking for a name. Each pick reports its columns, so
+        the incremental cursor, the merge keys and the transforms downstream are picked too, before
+        any preview has run. What stays a field is what only you know: a URL, a topic, an
+        expression, a query.
+      </P>
       <H3 id="code">Code</H3>
       <P>
         A full-height Python editor. The contract is small: define <C>entrypoint(inputs=None)</C>,
@@ -228,6 +240,84 @@ function EtlDocsPage() {
         install), runs fail immediately with a message saying exactly that. See{" "}
         <DocLink to="/docs/self-hosting">Install &amp; deploy</DocLink>.
       </Callout>
+      <Callout kind="warn" title="Lakehouse targets need the catalog on the kernel's network">
+        Because the run happens in a kernel, a pipeline whose target is a lakehouse table attaches
+        the catalog from <em>there</em> — and kernels sit on an <C>internal</C> network whose only
+        way out is the HTTP egress proxy. Parquet is HTTP and travels through it; the catalog is a
+        raw Postgres connection and cannot. Name the catalog by service (
+        <C>lakehouse-catalog:5432</C>), not by a host IP or published port. The symptom otherwise is{" "}
+        <C>Network is unreachable</C> in the run log, and it shows up only once the app runs in a
+        container — under <C>npm run dev</C> kernels get a routable network instead. See{" "}
+        <DocLink to="/docs/lakehouse">Lakehouse</DocLink>.
+      </Callout>
+
+      <H2 id="engines">Engines: the sandbox, or a Spark cluster</H2>
+      <P>
+        Every pipeline runs on the <strong>pandas engine</strong> unless it says otherwise: one
+        sandbox, an in-memory pandas program, the sizing table below. That is right for most
+        pipelines, and nothing about it changed. A pipeline whose data does not fit one box picks
+        the <strong>Spark engine</strong> in Settings → Engine. The graph, the canvas, the run log
+        and the metrics are the same; what changes is where the program executes: the compiler emits
+        PySpark instead of pandas, and the sandbox drives a cluster over{" "}
+        <strong>Spark Connect</strong> — it holds only the pure-Python client, no JVM, so every
+        hardening decision made for it stands. Previews always sample in the sandbox.
+      </P>
+      <Table
+        headers={["On the cluster", "In the sandbox, then lifted into Spark"]}
+        rows={[
+          [
+            "Object-storage reads and writes (CSV, TSV, JSON, JSONL, Parquet; Delta including merge)",
+            "Spreadsheets, HTTP API fetches, platform datasets",
+          ],
+          [
+            "Database reads and writes over JDBC (PostgreSQL, MySQL, SQL Server families)",
+            "CDC, webhook ingest, stream drains",
+          ],
+          [
+            "Every transform, SQL steps (as Spark SQL), quality gates",
+            "Custom Python, the lakehouse, HTTP API and SaaS targets",
+          ],
+        ]}
+      />
+      <P>
+        Where pandas differs from SQL the pandas behaviour is reproduced on purpose — a null group
+        key forms a group, nulls sort last either way, a join suffixes shared columns <C>_x</C>/
+        <C>_y</C>, a null fails a range or regex check — so a pipeline gives the same answer on
+        either engine. Filter and derive expressions keep their pandas spelling and are translated
+        to Spark SQL at save time; a construct Spark cannot express is refused at save, naming it
+        and the fix. The engine also refuses, at save: Iceberg targets (write Delta), merge into
+        plain files (merge needs a Delta table), merge into a database, and a SQL step calling{" "}
+        <C>regexp_extract</C> without its third argument — DuckDB returns the whole match there
+        while Spark reads the missing argument as capture group 1, so the step is asked which it
+        means rather than left to fail minutes into a cluster run.
+      </P>
+      <P>
+        <strong>Where the cluster comes from</strong> is one choice for the deployment, in Admin →
+        Developer runtime → Spark engine. <strong>An endpoint you run</strong> is the default: one
+        Spark Connect endpoint shared by every run, set there or as <C>SPARK_CONNECT_URL</C> — and
+        until it is set the engine picker says so. Locally, <C>docker compose up -d</C> gives you
+        one at <C>sc://spark-connect:15002</C> with the S3A, Delta and JDBC connectors already on
+        it.
+      </P>
+      <P>
+        <strong>One cluster per run, on Kubernetes</strong> is the other, available when the app
+        runs in a cluster. Each run gets its own driver — which is also its Spark Connect endpoint —
+        and the executors it asks for, sized in the admin form; both are deleted when the run ends,
+        so a run&apos;s size is the node pool rather than one box and nothing is paid for between
+        runs. Apply <C>deploy/k8s/spark/spark-runtime.yaml</C> first for the namespace, the service
+        account, the quota and the network policy. Because provisioning takes minutes on a stock
+        image, a run stays <em>queued</em> while its cluster comes up; bake the connector jars into
+        your own image and set <C>SPARK_PACKAGES=</C> to make that fast.
+      </P>
+      <Callout kind="info" title="What keeps a per-run cluster from outliving its run">
+        Executors are owned by the driver pod, so deleting the driver removes them. The driver
+        carries a deadline past the run&apos;s own timeout, so the kubelet ends it even if the app
+        never comes back. Every object is labelled with the run id, so the ETL sweep can delete a
+        cluster whose run is over even when nothing points at it any more. Spark Connect is gRPC and
+        cannot go through the egress proxy, so the endpoint is reached directly; a token in a URL is
+        kept out of every run log, and storage credentials travel as per-call options, never on the
+        cluster&apos;s shared configuration.
+      </Callout>
 
       <H2 id="credentials">Credentials and secrets</H2>
       <P>
@@ -274,6 +364,16 @@ function EtlDocsPage() {
           are refused at save with the reason.
         </li>
         <li>
+          <strong>Continuous</strong> — one long-running run drains a stream source (Kafka, Kinesis,
+          Pub/Sub), webhook ingest, CDC or an incremental cursor every few seconds, persisting its
+          position after every committed load, and the sweep restarts it whenever none is live. Stop
+          it from the card. When every target is a lakehouse table the card says{" "}
+          <strong>exactly-once</strong>: a tick&apos;s loads and its positions commit in one
+          lakehouse transaction and the next run resumes from what committed with the rows, so a
+          crash cannot replay a batch. Rollover and restart backoff:{" "}
+          <C>ETL_CONTINUOUS_ROLLOVER_MINUTES</C>, <C>ETL_CONTINUOUS_RESTART_BACKOFF_SECONDS</C>.
+        </li>
+        <li>
           <strong>External trigger</strong> — mint a token under Settings and{" "}
           <C>POST /api/etl/run</C> with it as a bearer plus <C>{'{"pipeline_id": "…"}'}</C>{" "}
           (optionally <C>{'"params"'}</C>). This is how a swarm&apos;s http node, an n8n workflow or
@@ -287,6 +387,17 @@ function EtlDocsPage() {
         </li>
       </UL>
 
+      <H3 id="chain-beyond">Beyond pipelines: SQL models and ML schedules</H3>
+      <P>
+        <strong>Run after</strong> chains a pipeline to another pipeline. A pipeline can also say
+        what to start <em>when a run succeeds</em>, in Settings → &ldquo;After it succeeds,
+        also…&rdquo;: <strong>build SQL models</strong> — every active model you own in dependency
+        order, or the ones you pick with everything they depend on built first — and{" "}
+        <strong>run ML schedules</strong>, any retrain or batch-predict schedule you own. Both run
+        as the pipeline&apos;s owner, and both are their own runs on their own pages (the build
+        carries the trigger <C>chain</C>), so a failure there never changes the pipeline&apos;s
+        outcome. The save path refuses a model or schedule that is not yours, by name.
+      </P>
       <H3 id="retries">Retries and overlap</H3>
       <P>
         A pipeline can retry up to five times with exponential backoff (1, 2, 4, 8, 16 minutes).
@@ -320,6 +431,85 @@ function EtlDocsPage() {
         bookkeeping re-reads rows rather than skipping them — and an empty read keeps the previous
         cursor. State is server-held per node and never client-writable.
       </P>
+      <P>
+        An object-storage source can also be a <strong>landing zone</strong>: turn on{" "}
+        <em>Only files not loaded before</em> and every run lists the prefix and reads only the
+        files the engine has not loaded, keeping a small ledger on the cursor (the newest
+        modification time loaded and the keys at that time). <em>Files per run</em> bounds a
+        backlog; a re-uploaded file loads again as a new version, so pair it with a merge target
+        when that matters. The source becomes drainable, which is what lets the pipeline run
+        continuous — exactly-once into the lakehouse. Sandbox engine only; the Spark engine reads a
+        prefix whole and refuses the setting at save.
+      </P>
+
+      <H3 id="spark-writes">What the cluster writes, and what it does not</H3>
+      <P>
+        On the Spark engine every target is written by the <strong>executors</strong> — object
+        storage, warehouses over JDBC, and the lakehouse. That last one was the exception until
+        recently: DuckLake has no Spark connector, so a lakehouse target collected the result to the
+        driver and loaded it from there, which meant a pipeline sized for a cluster still had to fit
+        its <em>result</em> in one process.
+      </P>
+      <Callout kind="why" title="No connector, and no longer any need for one">
+        The executors write ordinary Parquet into the lake&apos;s own bucket, and the driver then
+        runs one statement that streams those files into the table. The frame never exists in the
+        driver — only the statement does. Staged files are cleared once the load commits, and a
+        failure to clear them does not fail a run whose rows are already committed: it says where
+        they were left.
+      </Callout>
+      <P>
+        Two targets still take the collected result, and deliberately: <strong>HTTP</strong> and{" "}
+        <strong>SaaS</strong>. Each posts a few hundred records at a time to an API, so there is
+        nothing for a cluster to parallelise and the row counts that reach them are small by nature.
+      </P>
+
+      <H2 id="reverse-etl-saas">Reverse ETL into a SaaS tool</H2>
+      <P>
+        The <strong>SaaS tool</strong> target pushes rows back into HubSpot or Salesforce through a
+        connection you have already made — the same one that syncs contacts <em>in</em> syncs them
+        back <em>out</em>, so there is no second copy of the CRM&apos;s credential to manage. Pick
+        the connection, the object, and the column that identifies a record: a HubSpot unique
+        property such as <C>email</C>, or a Salesforce External ID field. Every other column is sent
+        as a field, and it is an upsert — the same row twice updates rather than duplicates.
+      </P>
+      <Callout title="Why not just the HTTP API target">
+        These APIs answer <C>200</C> and report per-record failures inside the body. The HTTP target
+        checks the status code, sees 200, and records every row as loaded — so a run that pushed
+        5,000 contacts and had 4,000 rejected shows as a complete success, and nobody finds out
+        until somebody asks the CRM why the numbers are wrong. This target reads HubSpot&apos;s{" "}
+        <C>numErrors</C> and Salesforce&apos;s per-record <C>success</C> flag and fails the run,
+        naming what was rejected.
+      </Callout>
+      <UL>
+        <li>
+          <strong>The batch cap is applied for you.</strong> HubSpot takes 100 records per request
+          and Salesforce 200; exceeding it rejects the whole batch, not one record.
+        </li>
+        <li>
+          <strong>The id column is checked before the first request</strong>, because otherwise
+          every record is rejected one batch at a time.
+        </li>
+        <li>
+          <strong>Only HubSpot and Salesforce can be written to.</strong> Stripe, Shopify, Jira,
+          Zendesk and Google Sheets are read-only here — creating a charge or an issue from a
+          nightly pipeline is a different kind of decision.
+        </li>
+        <li>
+          <strong>A shared connection can be read from but not written to.</strong> Pushing records
+          into somebody else&apos;s CRM is a bigger step than reading rows out of it, so reverse-ETL
+          targets resolve owner-only.
+        </li>
+        <li>
+          <strong>Partial batches are not rolled back.</strong> One bad record does not block the
+          rest; the run fails with the rejections named, and re-running is safe because an upsert on
+          the same key updates rather than duplicates.
+        </li>
+      </UL>
+      <P>
+        The CRM&apos;s host must be on the egress allow-list (<C>api.hubapi.com</C>, or your
+        Salesforce My Domain) under <strong>Admin → Developer runtime</strong>. A run blocked by the
+        proxy says so by name rather than leaving you with a bare 403.
+      </P>
 
       <H2 id="ecosystem">Where the data goes next</H2>
       <Steps
@@ -331,6 +521,10 @@ function EtlDocsPage() {
           {
             title: "The destination is re-crawled automatically",
             body: "After every successful run the linked catalog source is crawled, so new tables appear as assets without waiting for a crawl schedule.",
+          },
+          {
+            title: "Streaming sources: Kafka, Kinesis, Pub/Sub",
+            body: "A Kafka / Redpanda topic, a Kinesis stream or a Pub/Sub subscription is a source node read in micro-batches on the schedule: each run continues from where the last one durably loaded (offsets per partition, sequence numbers per shard, kept as the engine cursor and persisted only when the load committed - at-least-once, never lost), up to a message cap or until the stream goes quiet. Rows carry the payload's fields plus _stream_* metadata; credentials are secrets by name; the broker host must be on the sandbox egress allow-list.",
           },
           {
             title: "Streamed rows and reverse ETL",
@@ -396,7 +590,7 @@ function EtlDocsPage() {
       <Table
         headers={["Data per run", "Transforms", "Kernel memory", "Host machine"]}
         rows={[
-          ["≤ 100 MB", "anything", "2 GB (default)", "4 GB / 2 vCPU"],
+          ["≤ 100 MB", "anything", "2 GB (under the 4 GB default)", "4 GB / 2 vCPU"],
           ["100 MB – 1 GB", "filters, derives, dedupe", "4 GB", "8 GB / 4 vCPU"],
           ["100 MB – 1 GB", "joins, aggregations, SCD", "8 GB", "16 GB / 4 vCPU"],
           ["1 – 5 GB", "simple linear transforms", "16 GB", "32 GB / 8 vCPU"],
@@ -419,7 +613,9 @@ function EtlDocsPage() {
         runtime backend: <C>docker</C> runs kernels on one host (scale that host up), <C>k8s</C>{" "}
         schedules every run as its own pod across the cluster — the horizontal path — and <C>e2b</C>{" "}
         rents externally hosted sandboxes. The unit of parallelism is the run: ten pipelines can
-        execute on ten nodes, but one run&apos;s dataframe lives on one machine.
+        execute on ten nodes, but one run&apos;s dataframe lives on one machine — unless the
+        pipeline is on the Spark engine, where the data is spread across the cluster&apos;s
+        executors (see Engines above).
       </P>
       <P>
         <strong>The app tier is safe behind a load balancer.</strong> Replicas are stateless (all

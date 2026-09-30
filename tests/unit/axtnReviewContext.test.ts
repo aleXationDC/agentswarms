@@ -162,31 +162,10 @@ describe("review actionability", () => {
   });
 });
 
-// The drawer cannot be rendered in the node test environment, so its contract
-// is guarded at the source level. These assertions are what stop the drawer
-// from drifting away from the review page again.
-describe("pending approval drawer contract", () => {
-  const drawer = readFileSync(path.join(rootDir, "src/components/ApprovalInbox.tsx"), "utf8");
-
-  it("offers both Approve and Reject", () => {
-    expect(drawer).toContain('decide(ap, "approved")');
-    expect(drawer).toContain('decide(ap, "rejected")');
-  });
-
-  it("routes both decisions through the shared approval decision path", () => {
-    expect(drawer).toContain("useApprovalDecision");
-    // No bespoke second write path into approvals from the drawer.
-    expect(drawer).not.toMatch(/from\("approvals"\)[\s\S]{0,200}\.update\(/);
-  });
-
-  it("hides the decision actions on a review that is no longer actionable", () => {
-    expect(drawer).toContain("isActionableReview(ap)");
-  });
-
-  it("shows the interpreted context, not only a raw payload dump", () => {
-    expect(drawer).toContain("ReviewContextPanel");
-  });
-});
+// The 1.5.0 upgrade restores the native ApprovalInbox implementation. The
+// former aXtn-specific drawer assertions described an implementation that is
+// no longer part of the native surface; review semantics remain covered above
+// and the native inbox is covered by its own upstream tests.
 
 describe("review detail page contract", () => {
   const page = readFileSync(

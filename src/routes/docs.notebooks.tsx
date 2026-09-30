@@ -155,6 +155,14 @@ function NotebooksDoc() {
           — a LlamaIndex LLM and a retriever over your Knowledge Base (managed hybrid search, no
           embedding model to configure).
         </li>
+        <li>
+          <code>agentswarms.start_run("churn-v2", params={"{...}"})</code> — record what this
+          attempt tried and what it scored, so the runs behind a kept model do not vanish with the
+          output cells. Use it as a context manager and it closes the run whichever way the cell
+          ends; <code>run.log_metric("loss", v, step=epoch)</code> keeps the curve and the score.
+          They appear under <DocLink to="/docs/ml">ML Models → Experiments</DocLink>, and a run that
+          recorded an artifact can be registered as a model version from there.
+        </li>
       </UL>
 
       <Note>
@@ -162,7 +170,11 @@ function NotebooksDoc() {
         capabilities dropped, no-new-privileges, CPU/memory/PID limits, and outbound network
         restricted to an operator-managed allowlist. Kernels are ephemeral — files written during a
         session are discarded on teardown; notebooks themselves live in the database. Operators
-        enable and tune all of this under <strong>Admin → Developer runtime</strong>.
+        enable and tune all of this under <strong>Admin → Developer runtime</strong>. That page also
+        holds the sizing tabs — <strong>Sandboxes</strong> for CPU, memory and scratch space, and{" "}
+        <strong>Data platform</strong> for ETL concurrency and the lakehouse engine's limits. None
+        of them is capped by the app: the page reports what the host actually has and lets you spend
+        it, warning rather than blocking when a value goes past what it detected.
       </Note>
 
       <H2 id="where-they-fit">Where the workspace fits</H2>
@@ -219,7 +231,7 @@ function NotebooksDoc() {
         an administrator enables the server runtime, opening a notebook shows a "runtime required"
         panel with the command to run rather than a half-working editor.
       </P>
-      <Code lang="bash">{`docker compose --profile notebooks up -d --build`}</Code>
+      <Code lang="bash">{`docker compose up -d --build`}</Code>
       <P>
         Then turn it on under <strong>Admin → Developer runtime</strong>. Enabling it mints the
         signing secret automatically.

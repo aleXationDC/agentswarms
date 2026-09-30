@@ -41,9 +41,7 @@ Apply the classifications in the architecture assessment. At minimum inspect the
 - `src/axtn/**`
 - `src/components/axtn/**`
 - `src/routes/api/axtn/**`
-- `src/lib/axtnExtensionAccess.ts`
-- `src/utils/axtnExtensionAccess.server.ts`
-- `src/utils/axtnSystemExtensions.functions.ts`
+- retired System Extension Access implementation (deleted in this candidate)
 - `src/utils/axtnWorkbenchEdits.functions.ts`
 - `deploy/axtn/**`
 - aXtn MCP/local-table integration
@@ -53,13 +51,27 @@ Apply the classifications in the architecture assessment. At minimum inspect the
 
 Required decisions already made:
 - aXtn Workbenches: port
-- aXtn Local Table MCP integration: port using current native MCP lifecycle
+- aXtn Local Table MCP integration: REASSESS; prefer a native AgentSwarms data/write path and port the old service only if a documented native gap remains
 - aXtn Document Intake swarm: port business logic; use native publish/deploy contract
 - SSE/SDK protocol patch: retire as aXtn delta because it is already upstream-identical
 - aXtn System Extension Access: do not port in the first candidate
 - deploy/axtn helpers: port only what remains necessary after current upstream composition
 - Engagement Control Plane: do not implement in this upgrade
 - security fixes: port only where an exact current upstream comparison still shows a gap
+
+
+## Immediate correction for current execution
+
+Do not continue adding aXtn-specific lifecycle/token helpers into native AgentSwarms core merely because legacy Local Table/service tests expect them.
+
+For the currently observed focused-test failures:
+
+- JSON-RPC handshake failures returned under HTTP 200 and missing protocol negotiation may be fixed only if they are reproducible defects of the current native MCP contract itself. If so, make the smallest generic upstream-oriented fix and regression test.
+- The missing aXtn lifecycle helper in the token module is not, by itself, an upstream defect. Stop that port unless current native AgentSwarms independently requires the same behavior.
+- Reassess the legacy Local Table MCP service against AgentSwarms 1.5 native data, MCP Builder/runtime, scoped-key and runtime-session capabilities before implementing any replacement.
+- Treat failing legacy aXtn tests as evidence to classify, not as requirements to restore old APIs.
+
+If work on the token/lifecycle helper is already in progress, preserve the diff for inspection but do not commit it as the chosen solution until the native-gap classification is complete.
 
 ## Upgrade strategy
 
@@ -106,7 +118,7 @@ Run the strongest relevant upstream-native checks available at the selected revi
 - targeted aXtn regression tests
 - workbench registry/load tests
 - MCP/SSE protocol tests
-- local-table integration tests
+- local-table/document-intake contract tests, interpreted according to the architecture assessment; obsolete implementation-specific expectations must be adapted or retired
 - extension-access tests only as read-only regression evidence if they still apply; the extension-access feature is not part of this first upgraded candidate
 
 Use upstream's own canonical `npm run check` where feasible, then add aXtn-specific checks.

@@ -30,8 +30,18 @@ import path from "node:path";
 import { auditEvent } from "@/utils/audit.server";
 import { applyTablePolicies, loadPolicies } from "@/utils/lakehouse/policies.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  blankLiterals,
+  callsVolatileFunction,
+  qualifiedRefs,
+  stripComments,
+  tableRefs,
+  writeSubSelect,
+} from "@/utils/lakehouse/sqlRefs";
 
 import type { DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import { usesAiSqlFunctions } from "@/utils/aiSql/core";
+import { runWithAiSql, type AiSqlStats } from "@/utils/aiSql/run.server";
 
 export type LakehouseConfig = {
   catalog: string;
@@ -92,13 +102,46 @@ function sq(v: string): string {
 
 async function createEngine(cfg: LakehouseConfig): Promise<DuckDBInstance> {
   const { DuckDBInstance } = await import("@duckdb/node-api");
+  // Admin -> Developer runtime wins, then the env var, then the default. The
+  // old form clamped threads to 2-8 regardless, which meant a 16-core host
+  // could never be told to use more than half of itself.
+  const { getPlatformResources } = await import("@/utils/notebookRuntime/config.server");
+  const resources = await getPlatformResources();
   const instance = await DuckDBInstance.create(":memory:", {
-    threads: String(Math.max(2, Math.min(8, Number(process.env.LAKEHOUSE_THREADS ?? 4)))),
+    threads: String(Math.max(1, resources.lakehouseThreads)),
   });
   const c = await instance.connect();
   try {
-    await c.run("INSTALL ducklake; INSTALL postgres; INSTALL httpfs;");
-    await c.run("LOAD ducklake; LOAD postgres; LOAD httpfs;");
+    await c.run("INSTALL ducklake; INSTALL postgres; INSTALL httpfs; INSTALL azure;");
+    // Iceberg (and avro, which it needs) are installed HERE, before httpfs
+    // is loaded: once it is, DuckDB downloads extensions through it and the
+    // container's CA store refuses ("Failed to download extension avro",
+    // seen live twice; the same INSTALL succeeds before LOAD httpfs). A
+    // download that fails once is retried once. Never fatal: a lakehouse
+    // without Iceberg is still a lakehouse, and the catalog features say so.
+    let icebergInstalled = false;
+    for (let attempt = 0; attempt < 2 && !icebergInstalled; attempt++) {
+      try {
+        await c.run("INSTALL avro; INSTALL iceberg;");
+        icebergInstalled = true;
+      } catch (e) {
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        console.warn("[lakehouse] iceberg extension unavailable:", firstLine(e));
+      }
+    }
+    await c.run("LOAD ducklake; LOAD postgres; LOAD httpfs; LOAD azure;");
+    icebergLoaded = false;
+    if (icebergInstalled) {
+      try {
+        await c.run("LOAD avro; LOAD iceberg;");
+        icebergLoaded = true;
+      } catch (e) {
+        console.warn("[lakehouse] iceberg extension did not load:", firstLine(e));
+      }
+    }
     const s3parts = [
       "TYPE s3",
       `KEY_ID ${sq(cfg.s3.keyId)}`,
@@ -115,7 +158,7 @@ async function createEngine(cfg: LakehouseConfig): Promise<DuckDBInstance> {
     // behaviour for a shared engine.
     const spillDir = path.join(os.tmpdir(), "agentswarms-lakehouse-spill");
     await fs.mkdir(spillDir, { recursive: true }).catch(() => {});
-    await c.run(`SET memory_limit=${sq(process.env.LAKEHOUSE_MEMORY_LIMIT?.trim() || "2GB")};`);
+    await c.run(`SET memory_limit=${sq(resources.lakehouseMemoryLimit)};`);
     await c.run(`SET temp_directory=${sq(spillDir.replace(/\\/g, "/"))};`);
     await c.run(
       `SET max_temp_directory_size=${sq(process.env.LAKEHOUSE_SPILL_LIMIT?.trim() || "20GB")};`,
@@ -145,6 +188,19 @@ async function createEngine(cfg: LakehouseConfig): Promise<DuckDBInstance> {
     if (process.env.LAKEHOUSE_METADATA_CACHE !== "false") {
       await c.run("SET parquet_metadata_cache=true;");
     }
+    // CATALOG CONNECTIONS. The Postgres pool behind the DuckLake attachment
+    // holds sessions per WORKER PROCESS, and its default acquire mode is
+    // 'force' — "always connect, ignore the limit" — so without both of these
+    // nothing bounds workers × replicas against the catalog's
+    // max_connections. Measured on the compose catalog: 32 concurrent queries
+    // over a 300-file table held 3 pool sessions unbounded, and stayed at the
+    // limit once one was set (at the cost of queueing when it is tight). 8 is
+    // above what a worker uses, and it is a ceiling an operator can size
+    // against: LAKEHOUSE_CATALOG_CONNECTIONS × workers × replicas, plus one
+    // session per worker for the attachment itself.
+    const catalogConns = Number(process.env.LAKEHOUSE_CATALOG_CONNECTIONS ?? "") || 8;
+    await c.run(`SET pg_pool_max_connections=${Math.max(1, Math.min(256, catalogConns))};`);
+    await c.run("SET pg_pool_acquire_mode='wait';");
     await c.run(`CREATE OR REPLACE SECRET lakehouse_s3 (${s3parts.join(", ")});`);
     await c.run(
       // The postgres: prefix is LOAD-BEARING: without it DuckLake treats the
@@ -157,6 +213,13 @@ async function createEngine(cfg: LakehouseConfig): Promise<DuckDBInstance> {
     // Data-lake mounts: each mounted storage source gets its own scoped
     // credential so a view can read ITS bucket and nothing else.
     await ensureLakeSecrets(c);
+    // Iceberg REST catalogs: attached on the shared instance so mount views
+    // resolve; a catalog that fails to attach is noted on its row, not fatal.
+    if (icebergLoaded) {
+      await import("@/utils/lakehouse/iceberg.server")
+        .then((m) => m.ensureIcebergCatalogs(c))
+        .catch((e) => console.warn("[lakehouse] iceberg catalogs:", (e as Error).message));
+    }
   } finally {
     c.closeSync();
   }
@@ -184,17 +247,30 @@ export async function ensureLakeSecrets(c: DuckDBConnection): Promise<void> {
         .maybeSingle();
       if (!src) continue;
       const cfg = await loadStorageConfig(mount.user_id, src);
-      const scope = `s3://${cfg.bucket}${cfg.prefix ? `/${cfg.prefix.replace(/^\/+|\/+$/g, "")}` : ""}`;
-      const parts = [
-        "TYPE s3",
-        `KEY_ID ${sq(cfg.access_key_id)}`,
-        `SECRET ${sq(cfg.secret_access_key)}`,
-        ...(cfg.endpoint ? [`ENDPOINT ${sq(cfg.endpoint.replace(/^https?:\/\//, ""))}`] : []),
-        ...(cfg.region ? [`REGION ${sq(cfg.region)}`] : []),
-        `URL_STYLE ${sq(cfg.path_style === false ? "vhost" : "path")}`,
-        `USE_SSL ${cfg.endpoint?.startsWith("http://") ? "false" : "true"}`,
-        `SCOPE ${sq(scope)}`,
-      ];
+      const cleanPrefix = cfg.prefix ? `/${cfg.prefix.replace(/^\/+|\/+$/g, "")}` : "";
+      // SCOPE confines the credential to its own container/bucket and prefix,
+      // whichever cloud it lives in. Azure mounts are read through the azure
+      // extension (az://); everything else through httpfs (s3://).
+      let parts: string[];
+      if (cfg.provider === "azure") {
+        const { azureConnectionString } = await import("@/utils/catalog/azureBlob.server");
+        parts = [
+          "TYPE azure",
+          `CONNECTION_STRING ${sq(azureConnectionString(cfg))}`,
+          `SCOPE ${sq(`az://${cfg.bucket}${cleanPrefix}`)}`,
+        ];
+      } else {
+        parts = [
+          "TYPE s3",
+          `KEY_ID ${sq(cfg.access_key_id)}`,
+          `SECRET ${sq(cfg.secret_access_key)}`,
+          ...(cfg.endpoint ? [`ENDPOINT ${sq(cfg.endpoint.replace(/^https?:\/\//, ""))}`] : []),
+          ...(cfg.region ? [`REGION ${sq(cfg.region)}`] : []),
+          `URL_STYLE ${sq(cfg.path_style === false ? "vhost" : "path")}`,
+          `USE_SSL ${cfg.endpoint?.startsWith("http://") ? "false" : "true"}`,
+          `SCOPE ${sq(`s3://${cfg.bucket}${cleanPrefix}`)}`,
+        ];
+      }
       await c.run(
         `CREATE OR REPLACE SECRET lake_mount_${mount.id.replace(/-/g, "")} (${parts.join(", ")});`,
       );
@@ -207,24 +283,141 @@ export async function ensureLakeSecrets(c: DuckDBConnection): Promise<void> {
   }
 }
 
+/**
+ * Strip credentials out of an engine error before it can reach a browser.
+ *
+ * FOUND FROM THE UI. The ATTACH embeds the catalog's whole libpq string, so
+ * DuckDB's "connection refused" quotes it back verbatim — `password=...`
+ * included — and that message was already being shown to any signed-in user as
+ * a toast. The catalog password is deployment infrastructure; a workspace
+ * member should not be able to read it off a page, transiently or otherwise.
+ *
+ * Belt and braces: the shapes a connection string takes, AND the configured
+ * values themselves, in case a driver formats them some way not matched below.
+ */
+export function redactLakehouseSecrets(message: string): string {
+  let out = message
+    // libpq: password=secret / password='secret'
+    .replace(/(password\s*=\s*)('[^']*'|"[^"]*"|\S+)/gi, "$1[redacted]")
+    // URL: postgres://user:secret@host
+    .replace(/(\b[a-z+]+:\/\/[^:@\s/]+:)[^@\s]+(@)/gi, "$1[redacted]$2");
+
+  const cfg = lakehouseConfig();
+  for (const secret of [cfg?.s3.secret, catalogPassword(cfg?.catalog)]) {
+    // Short values would redact innocuous substrings and make the error
+    // unreadable, which is its own kind of failure.
+    if (secret && secret.length >= 6) out = out.split(secret).join("[redacted]");
+  }
+  return out;
+}
+
+/**
+ * A data file the catalog still lists, that object storage no longer has.
+ *
+ * DuckDB reports this as a bare HTTP 404 quoting the full S3 URL — which names
+ * the operator's endpoint and says nothing about what went wrong or what to do.
+ * The condition is specific and worth naming: the DuckLake catalog and the
+ * object store have diverged, which happens when a bucket is recreated or
+ * emptied while the catalog database survives. The rows are gone; the catalog
+ * is the only thing still claiming otherwise.
+ *
+ * Returns null for anything else, so ordinary errors pass through untouched.
+ */
+export function describeMissingDataFile(message: string): string | null {
+  // Both signals required. A 404 alone could be any HTTP call; a .parquet
+  // mention alone is most of the lakehouse's error surface.
+  const missing = /NoSuchKey|specified key does not exist/i.test(message);
+  const notFound = /\b404\b/.test(message);
+  if (!(missing || notFound)) return null;
+  const file = /([A-Za-z0-9._-]+\.parquet)/.exec(message);
+  if (!file) return null;
+  // The BASENAME only — the surrounding URL carries the endpoint host.
+  return (
+    `A data file this table refers to is missing from object storage (${file[1]}). ` +
+    `The lakehouse catalog and the object store have diverged — usually because the ` +
+    `bucket was recreated or emptied while the catalog database survived. Those rows ` +
+    `cannot be read back from here: re-import the table, or drop it if it is no longer ` +
+    `needed. Other tables are unaffected.`
+  );
+}
+
+/** The password inside a libpq URL/keyword string, if it has one. */
+function catalogPassword(catalog: string | undefined): string | null {
+  if (!catalog) return null;
+  const url = /\b[a-z+]+:\/\/[^:@\s/]+:([^@\s]+)@/i.exec(catalog);
+  if (url) return decodeURIComponent(url[1]);
+  const kw = /password\s*=\s*('([^']*)'|"([^"]*)"|(\S+))/i.exec(catalog);
+  return kw ? (kw[2] ?? kw[3] ?? kw[4] ?? null) : null;
+}
+
 /** The shared engine: attached once per process, connections per request. */
 export async function lakehouseEngine(): Promise<DuckDBInstance> {
   const cfg = lakehouseConfig();
   if (!cfg) throw new Error("The lakehouse is not configured (LAKEHOUSE_CATALOG_URL).");
   if (!enginePromise) {
-    enginePromise = createEngine(cfg).catch((e) => {
+    enginePromise = createEngine(cfg).catch((e: unknown) => {
       enginePromise = null; // a failed boot must not poison every later call
-      throw e;
+      // Re-thrown redacted: this is the error that carries the ATTACH string,
+      // and it travels all the way to the browser.
+      const err = e instanceof Error ? e : new Error(String(e));
+      err.message = redactLakehouseSecrets(err.message);
+      throw err;
     });
   }
   return enginePromise;
+}
+
+/** Whether the engine loaded the Iceberg extension at boot. */
+let icebergLoaded = false;
+
+/** The first line of an engine error: the part a person reads. */
+function firstLine(e: unknown): string {
+  return String((e as Error).message ?? e).split(String.fromCharCode(10))[0];
+}
+export function icebergExtensionAvailable(): boolean {
+  return icebergLoaded;
 }
 
 export async function lakehouseConnection(): Promise<DuckDBConnection> {
   const engine = await lakehouseEngine();
   const c = await engine.connect();
   await c.run("USE lake;");
+  if (icebergLoaded) {
+    // Catalogs registered on another worker reach this instance here (at
+    // most one catalog read every few seconds; nothing per statement).
+    await import("@/utils/lakehouse/iceberg.server")
+      .then((m) => m.ensureIcebergCatalogs(c))
+      .catch((e) => console.warn("[lakehouse] iceberg catalogs:", (e as Error).message));
+  }
   return c;
+}
+
+/**
+ * Is there a table at this name in the lakehouse catalog right now?
+ *
+ * For every write that CREATES a table by name but would build it with a
+ * statement able to replace one (R101, R102). Compared without case, because
+ * DuckDB resolves identifiers that way: a table created as `Orders` is the one
+ * `CREATE OR REPLACE TABLE "orders"` would replace.
+ */
+export async function lakehouseTableExists(
+  schema: string,
+  table: string,
+  connect: () => Promise<Pick<DuckDBConnection, "run" | "closeSync">> = lakehouseConnection,
+): Promise<boolean> {
+  const c = await connect();
+  try {
+    const rows = await (
+      await c.run(
+        `SELECT count(*) FROM information_schema.tables ` +
+          `WHERE table_catalog = 'lake' AND lower(table_schema) = lower(${sq(schema)}) ` +
+          `AND lower(table_name) = lower(${sq(table)})`,
+      )
+    ).getRows();
+    return Number(rows[0][0]) > 0;
+  } finally {
+    c.closeSync();
+  }
 }
 
 // ── Maintenance ─────────────────────────────────────────────────────────────
@@ -238,33 +431,60 @@ export type LakehouseMaintenanceResult = {
 const SNAPSHOT_RETENTION_DAYS = 7;
 
 /**
- * Keep the lakehouse fast and small. Four steps, in the only order that is
+ * Keep the lakehouse fast and small. Five steps, in the only order that is
  * safe: flush rows still inlined in the catalog into Parquet, merge the small
  * files that incremental loads produce (the single biggest lever on scan
- * speed), expire snapshots past the retention window, then delete the files
- * only those snapshots referenced. Each step is independent — one failing
- * never blocks the rest, because a half-maintained lakehouse still serves
- * queries correctly.
+ * speed) on every table that is not clustered, rewrite the clustered tables
+ * that grew since their last rewrite (their own compaction, in key order),
+ * expire snapshots past the retention window, then delete the files only
+ * those snapshots referenced. Each step is independent — one failing never
+ * blocks the rest, because a half-maintained lakehouse still serves queries
+ * correctly.
  */
 export async function runLakehouseMaintenance(): Promise<LakehouseMaintenanceResult> {
   if (!lakehouseEnabled()) return { ran: false, steps: [] };
   const steps: LakehouseMaintenanceResult["steps"] = [];
   const c = await lakehouseConnection();
   try {
-    const calls: [string, string][] = [
-      ["flush_inlined", "CALL ducklake_flush_inlined_data('lake')"],
-      ["merge_files", "CALL ducklake_merge_adjacent_files('lake')"],
+    const layout = await import("@/utils/lakehouse/layout.server");
+    const calls: [string, () => Promise<LakehouseMaintenanceResult["steps"] | void>][] = [
+      ["flush_inlined", () => c.run("CALL ducklake_flush_inlined_data('lake')").then(() => {})],
+      // Table by table: DuckLake's merge concatenates adjacent files up to a
+      // size, which would fold a clustered table's ranged files back into
+      // overlapping ones. Those tables compact through their own rewrite.
+      ["merge_files", () => layout.mergeUnclusteredTables(c)],
+      ["recluster", () => layout.reclusterDueTables(c)],
       [
         "expire_snapshots",
-        `CALL ducklake_expire_snapshots('lake', older_than => now() - INTERVAL ${SNAPSHOT_RETENTION_DAYS} DAY)`,
+        () =>
+          c
+            .run(
+              `CALL ducklake_expire_snapshots('lake', older_than => now() - INTERVAL ${SNAPSHOT_RETENTION_DAYS} DAY)`,
+            )
+            .then(() => {}),
       ],
-      ["cleanup_files", "CALL ducklake_cleanup_old_files('lake', cleanup_all => true)"],
+      [
+        "cleanup_files",
+        () => c.run("CALL ducklake_cleanup_old_files('lake', cleanup_all => true)").then(() => {}),
+      ],
     ];
-    for (const [step, sql] of calls) {
+    for (const [step, run] of calls) {
       const started = Date.now();
       try {
-        await c.run(sql);
-        steps.push({ step, ok: true, ms: Date.now() - started });
+        const sub = await run();
+        if (Array.isArray(sub)) {
+          const failed = sub.filter((s) => !s.ok);
+          steps.push({
+            step,
+            ok: failed.length === 0,
+            ms: Date.now() - started,
+            ...(failed.length
+              ? { error: failed.map((f) => `${f.step}: ${f.error ?? ""}`).join("; ") }
+              : {}),
+          });
+        } else {
+          steps.push({ step, ok: true, ms: Date.now() - started });
+        }
       } catch (e) {
         steps.push({ step, ok: false, ms: Date.now() - started, error: (e as Error).message });
       }
@@ -296,12 +516,23 @@ export type Classified = {
 
 const IDENT = String.raw`(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)`;
 const QUALIFIED = new RegExp(`^(${IDENT})\\.(${IDENT})`);
+/** A third part after a qualified name: `lake.schema.table`. */
+const THIRD_PART = new RegExp(`^\\s*\\.\\s*(${IDENT})`);
+/** The catalog the lakehouse is attached as (see ATTACH above). */
+export const LAKE_CATALOG = "lake";
 
 export function stripSqlComments(sql: string): string {
-  return sql
-    .replace(/--[^\n]*/g, " ")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .trim();
+  // Delegates to the literal-aware scanner. The two regexes this replaced did
+  // not know what a string was, and the STRIPPED text is what executes:
+  //
+  //   SELECT 'A--B'        ->  SELECT 'A            (unterminated, refused)
+  //   SELECT '/*' , '*/'   ->  SELECT '  '          (one column, NO error)
+  //
+  // Found by running it rather than reading it: a literal-aware stripper was
+  // written for the write-authorization work and then only used there, so
+  // every SELECT kept the broken one. The first symptom was a parse error on
+  // a perfectly valid statement typed into the editor.
+  return stripComments(sql).trim();
 }
 
 function unquote(ident: string): string {
@@ -315,7 +546,11 @@ function unquote(ident: string): string {
 export function classifyStatement(rawSql: string): Classified {
   const sql = stripSqlComments(rawSql).replace(/;\s*$/, "");
   if (!sql) throw new Error("Empty statement");
-  if (sql.includes(";")) {
+  // FOUND BUILDING SHEETS. This read the raw text, so a ";" inside a string
+  // was a second statement: SELECT 'north; south' was refused, and so was a
+  // sheet's TEXTJOIN("; ", …) column. Only a ";" outside literals and quoted
+  // names separates statements.
+  if (blankLiterals(sql).includes(";")) {
     throw new Error("One statement per request — split multi-statement SQL");
   }
   const head = sql.slice(0, 40).toUpperCase();
@@ -349,6 +584,27 @@ export function classifyStatement(rawSql: string): Classified {
       throw new Error(
         `${shape.verb} must target a schema-qualified table (schema.table) in the lakehouse`,
       );
+    }
+    // FOUND IN R126. A three-part name was read as its first two parts:
+    // `lake.ice_sales.t` authorized schema "lake" and table "ice_sales",
+    // while the engine wrote catalog lake, schema ice_sales. Anyone who
+    // owned a schema named "lake" could write anywhere a check keyed on the
+    // schema should have stopped them: read-only mounts, other people's
+    // schemas, policies, tables Sheets holds. A third part now names the
+    // table, and the first must be the lakehouse's own catalog.
+    const third = THIRD_PART.exec(rest.slice(qm[0].length));
+    if (third) {
+      if (unquote(qm[1]) !== LAKE_CATALOG) {
+        throw new Error(
+          `${shape.verb} names a table in "${unquote(qm[1])}", which is not the lakehouse — write schema.table`,
+        );
+      }
+      return {
+        kind: shape.kind,
+        writeSchemas: [unquote(qm[2])],
+        writeTables: [unquote(third[1])],
+        verb: shape.verb,
+      };
     }
     return {
       kind: shape.kind,
@@ -434,10 +690,33 @@ export async function selectReferencedTables(
 export async function selectReferencedSchemas(c: DuckDBConnection, sql: string): Promise<string[]> {
   const cleaned = stripSqlComments(sql).replace(/;\s*$/, "");
   const head = cleaned.slice(0, 20).toUpperCase();
-  // DESCRIBE/SUMMARIZE/SHOW take one target; serialize only handles SELECTs.
+  // DESCRIBE/SUMMARIZE/SHOW.
+  //
+  // The old shortcut took the FIRST schema-qualified name it could regex out
+  // and authorized only that. `SUMMARIZE SELECT * FROM mine.t JOIN
+  // theirs.secret USING (id)` therefore checked "mine" and executed — and
+  // SUMMARIZE reports min, max, approx-distinct and mean per column, which is
+  // a rich leak. `SHOW ALL TABLES` matched no qualified name at all, returned
+  // an empty read set, and listed every schema, table and column in the
+  // catalog including other users' and every mounted lake.
+  //
+  // DESCRIBE/SUMMARIZE over a SELECT *do* serialize (checked against the
+  // engine), so try the parser first and fall back only for the bare-target
+  // forms. Anything with no qualified name left is refused rather than
+  // treated as reading nothing.
   if (/^(DESCRIBE|SUMMARIZE|SHOW)\b/.test(head)) {
-    const m = new RegExp(`(${IDENT})\\.(${IDENT})`).exec(cleaned);
-    return m ? [unquote(m[1])] : [];
+    const sub = cleaned.replace(/^(DESCRIBE|SUMMARIZE)\s+/i, "");
+    if (/^(SELECT|WITH|FROM|\()/i.test(sub) && !/^SHOW\b/i.test(head)) {
+      return selectReferencedSchemas(c, sub);
+    }
+    const refs = qualifiedRefs(cleaned);
+    if (!refs.length) {
+      throw new Error(
+        `"${head.split(/\s+/)[0]}" needs a schema-qualified target here — ` +
+          `catalog-wide listings are not available`,
+      );
+    }
+    return [...new Set(refs.map((r) => r.schema))];
   }
   // json_serialize_sql needs a CONSTANT varchar — a bound parameter is
   // rejected — so the statement rides in as an escaped literal.
@@ -477,28 +756,56 @@ export type SchemaRow = {
   description: string | null;
   /** Set = this schema is a READ-ONLY mount of a catalog storage source. */
   lake_source_id?: string | null;
+  /** Set = this schema is a READ-ONLY mount of one Iceberg namespace. */
+  iceberg_catalog_id?: string | null;
+  iceberg_namespace?: string | null;
 };
 
-/** Schemas this user owns or holds a grant on. */
+/**
+ * Schemas this user owns or holds a grant on.
+ *
+ * ONE ROUND TRIP, and it matters more than it looks. This runs ahead of every
+ * governed statement — every dashboard, every agent query, every feature
+ * lookup behind a live prediction — and the database is usually not local.
+ * Measured from inside the app container, a round trip to a hosted Supabase is
+ * 85 ms at the median, which is most of the 127 ms floor under every lakehouse
+ * read on this deployment.
+ *
+ * It used to read every schema and then ask `has_resource_access` about each
+ * one the user did not own, sequentially, in this loop. At one owner and two
+ * schemas that is a single extra call and invisible. At twenty shared schemas
+ * it is twenty-one sequential round trips — about 1.8 s before the query
+ * starts — and it is a cliff rather than a slope, invisible to whoever writes
+ * the code because they own their own schemas.
+ *
+ * The rule itself did not move. `accessible_lakehouse_schemas` calls the same
+ * `has_resource_access` per row inside one statement rather than restating the
+ * grant predicate, so the user, group and no-grant paths cannot drift apart
+ * from the loop this replaces.
+ */
 export async function accessibleSchemas(userId: string): Promise<SchemaRow[]> {
-  const { data: all } = await supabaseAdmin
-    .from("lakehouse_schemas")
-    .select("id, name, user_id, description, lake_source_id")
-    .order("name");
-  const out: SchemaRow[] = [];
-  for (const row of all ?? []) {
-    if (row.user_id === userId) {
-      out.push(row);
-      continue;
-    }
-    const { data: ok } = await supabaseAdmin.rpc("has_resource_access", {
-      rtype: "lakehouse_schema",
-      rid: row.id,
-      uid: userId,
-    });
-    if (ok) out.push(row);
+  const { data, error } = await supabaseAdmin.rpc("accessible_lakehouse_schemas", { uid: userId });
+  // A READ THAT FAILED IS NOT AN ANSWER ABOUT ACCESS.
+  //
+  // The error was dropped and `data ?? []` turned a database blip into "this
+  // user can reach no schema at all" — which five callers then report as a
+  // fact about the account: the ETL preflight says "no access to lakehouse
+  // schema X — it doesn't exist, or nobody shared it", the SQL path says "No
+  // access to schema X", and the materialized-view and Iceberg paths refuse
+  // the same way. Each invites the reader to fix it by granting something
+  // they already have.
+  //
+  // Caught on a live run: a Kafka pipeline wrote analytics.kafka_orders
+  // successfully, and a later run of the SAME pipeline was refused for having
+  // no access to `analytics` — while the same owner read that very table in
+  // the SQL editor seconds afterwards.
+  if (error) {
+    throw new Error(
+      `Could not read which lakehouse schemas this account may use (${error.message}). ` +
+        `This is a failure to check access, not a refusal — nothing about the grants has changed.`,
+    );
   }
-  return out;
+  return (data ?? []) as SchemaRow[];
 }
 
 export function assertSchemasAllowed(schemas: string[], allowed: SchemaRow[]): void {
@@ -527,8 +834,12 @@ async function readerEmail(userId: string): Promise<string | null> {
 //
 // Keyed on (user, sql, catalog snapshot). The snapshot id is the whole trick:
 // DuckLake bumps it on every commit, so a write invalidates cached results by
-// making their key unreachable — no TTL guesswork, no stale answers. The cache
-// is per-replica and in-memory; a replica restart simply re-earns it.
+// making their key unreachable — no TTL guesswork, no stale answers.
+//
+// The cache is in-memory and per PROCESS, and the app forks one worker process
+// per CPU, so a repeated query only hits when it lands on the same worker.
+// That costs hit rate, never correctness: a miss re-runs the query. Restarting
+// simply re-earns it.
 
 type CacheEntry = { at: number; snapshot: string; result: LakehouseResult };
 
@@ -545,6 +856,76 @@ export function lakehouseCacheSize(): number {
 /** Test seam: drop everything (a fresh process starts empty anyway). */
 export function clearLakehouseCache(): void {
   RESULT_CACHE.clear();
+}
+
+/**
+ * The lakehouse's current snapshot, for recording at the start of a decision.
+ *
+ * DuckLake can re-run a query AT a snapshot, so this one integer is what makes
+ * an answer reproducible rather than merely recorded. Null when the lakehouse
+ * is not configured or cannot be reached -- an honest "not reproducible", and
+ * never an exception, because provenance must not fail the thing it describes.
+ */
+export async function lakehouseSnapshotId(): Promise<string | null> {
+  if (!lakehouseConfig()) return null;
+  let c: DuckDBConnection | null = null;
+  try {
+    c = await lakehouseConnection();
+    const id = await currentSnapshotId(c);
+    return id.startsWith("nosnap") ? null : id;
+  } catch {
+    return null;
+  } finally {
+    c?.closeSync();
+  }
+}
+
+/**
+ * Aliases currently attached at a pinned snapshot, oldest first.
+ *
+ * ATTACH is instance-wide while USE is connection-wide, so a pinned alias
+ * outlives the query that made it and is safely shared by later ones. Left
+ * attached deliberately -- a read-only catalog handle is cheap and re-attaching
+ * per replay is not -- but capped, so a long-lived process replaying many
+ * decisions does not accumulate them without bound.
+ */
+const pinnedAliases: string[] = [];
+const PINNED_LIMIT = 8;
+
+/**
+ * Point this connection at the lake AS IT WAS at `snapshot`.
+ *
+ * Mechanism note, because the obvious one does not work: DuckLake documents a
+ * per-table `FROM t AT (VERSION => n)`, and on this catalog that returns
+ * "Catalog type does not support time travel". Pinning the whole attachment
+ * works, and is the better shape regardless -- the recorded SQL runs
+ * UNMODIFIED against the pinned alias, so a replay cannot differ from the
+ * original by a rewrite we performed on its behalf.
+ *
+ * READ_ONLY is not decoration: it is verified to refuse writes, so replaying a
+ * decision can never alter the data it is examining.
+ */
+async function attachAsOf(c: DuckDBConnection, snapshot: string): Promise<void> {
+  const cfg = lakehouseConfig();
+  if (!cfg) throw new Error("Lakehouse is not configured");
+  // The snapshot id is interpolated into SQL as an identifier and a literal.
+  // It comes from our own catalog, but a digits-only check is what makes that
+  // safe to rely on rather than merely likely.
+  if (!/^\d+$/.test(snapshot)) throw new Error(`Invalid snapshot id: ${snapshot}`);
+  const alias = `lake_at_${snapshot}`;
+  await c.run(
+    `ATTACH IF NOT EXISTS 'ducklake:postgres:${catalogUrlToLibpq(cfg.catalog).replace(/'/g, "''")}' AS ${alias} (DATA_PATH ${sq(cfg.dataUrl)}, SNAPSHOT_VERSION ${snapshot}, READ_ONLY);`,
+  );
+  await c.run(`USE ${alias};`);
+  const at = pinnedAliases.indexOf(alias);
+  if (at !== -1) pinnedAliases.splice(at, 1);
+  pinnedAliases.push(alias);
+  while (pinnedAliases.length > PINNED_LIMIT) {
+    const stale = pinnedAliases.shift();
+    // Best-effort: another connection may still be reading through it, and the
+    // engine may have been rebuilt since we recorded the name.
+    await c.run(`DETACH ${stale};`).catch(() => {});
+  }
 }
 
 async function currentSnapshotId(c: DuckDBConnection): Promise<string> {
@@ -632,7 +1013,19 @@ export type LakehouseResult = {
   cached?: boolean;
   /** Times this write lost a commit race and was re-run. */
   retries?: number;
+  /** Present when the statement called ai_* functions: what it cost to answer them. */
+  ai?: AiSqlStats;
+  /** Which engine answered; absent means the lakehouse engine on this worker. */
+  engine?: "duckdb" | "spark";
+  spark_version?: string;
 };
+
+/**
+ * A statement that calls ai_* functions waits on model calls between its
+ * passes, so it gets this much longer before the engine is interrupted. The
+ * per-statement call cap and the per-call timeout bound the wait themselves.
+ */
+const AI_SQL_EXTRA_TIMEOUT_MS = 10 * 60_000;
 
 const ROW_CAP = 10_000;
 const TIMEOUT_MS = 60_000;
@@ -656,11 +1049,24 @@ function jsValue(v: unknown): LakehouseCell {
 export async function runLakehouseStatement(
   userId: string,
   sql: string,
-  opts?: { rowCap?: number; timeoutMs?: number; auditVia?: string; useCache?: boolean },
+  opts?: {
+    rowCap?: number;
+    timeoutMs?: number;
+    auditVia?: string;
+    useCache?: boolean;
+    /** Read the lake as it was at this snapshot instead of as it is now. */
+    asOfSnapshot?: string | null;
+  },
 ): Promise<LakehouseResult> {
   const started = Date.now();
   const rowCap = Math.min(opts?.rowCap ?? ROW_CAP, 100_000);
   const classified = classifyStatement(sql);
+  if (opts?.asOfSnapshot && classified.kind !== "select") {
+    // The past is not writable, and a "replay" that modified data would be a
+    // contradiction. READ_ONLY on the attachment enforces this too; refusing
+    // here makes the reason legible instead of surfacing a DuckDB error.
+    throw new Error("Only a SELECT can be run as of a snapshot");
+  }
   const allowed = await accessibleSchemas(userId);
   /** Tables whose security policy was applied to this statement. */
   let policyTables: string[] = [];
@@ -695,6 +1101,7 @@ export async function runLakehouseStatement(
         rows: rowCount ?? undefined,
         duration_ms: Date.now() - started,
         via: opts?.auditVia,
+        as_of_snapshot: opts?.asOfSnapshot ?? undefined,
         cached: extra?.cached ? true : undefined,
         retries: extra?.retries || undefined,
         policies_applied: policyTables.length ? policyTables : undefined,
@@ -717,17 +1124,36 @@ export async function runLakehouseStatement(
             `Schema "${schema}" is a read-only data-lake mount — query it, or write to a regular schema`,
           );
         }
+        // FOUND IN R111. An Iceberg mount is read-only by the same rule, and
+        // this guard only knew the data-lake kind. Driven: CREATE TABLE
+        // ice_r111.r111_written from the Query editor succeeded in a schema
+        // the mount dialog calls read-only, and removing the catalog then
+        // dropped the table with the mount's views. The catalog's own tables
+        // are written with Publish to Iceberg, never through a mount.
+        if (row?.iceberg_catalog_id) {
+          throw new Error(
+            `Schema "${schema}" is a read-only Iceberg mount — query it, or write to a regular schema. Publish to Iceberg puts a table into the catalog.`,
+          );
+        }
         // A reader who only sees part of a table must not be able to write to
         // it: they could overwrite or delete rows the policy hides from them,
         // with no way to notice.
         if (row && row.user_id !== userId) {
-          const { data: policed } = await supabaseAdmin
-            .from("lakehouse_table_policies")
-            .select("table_name")
-            .eq("user_id", row.user_id)
-            .eq("schema_name", schema);
-          if ((policed ?? []).length) {
-            const names = new Set((policed ?? []).map((x) => String(x.table_name).toLowerCase()));
+          // Through loadPolicies, NOT a direct read of the policy table. The
+          // direct read was a second implementation of "is this table policed"
+          // and it had already drifted: a table protected only by a TAG rule
+          // has no row here, so its grantee could UPDATE and DELETE rows the
+          // policy hides from them. loadPolicies folds tag rules in, so the
+          // two enforcement points now answer the same question.
+          const policedMap = await loadPolicies(
+            [row.user_id],
+            (classified.writeTables ?? []).map((t) => ({
+              schema: schema.toLowerCase(),
+              table: t.toLowerCase(),
+            })),
+          );
+          if (policedMap.size) {
+            const names = new Set([...policedMap.keys()].map((k) => k.split(".")[1] ?? ""));
             const target = classified.writeTables?.find((t) => names.has(t.toLowerCase()));
             if (target) {
               throw new Error(
@@ -737,12 +1163,69 @@ export async function runLakehouseStatement(
           }
         }
       }
+      // A table a Sheets workbook holds its rows in (a file uploaded into a
+      // table sheet, rows imported from a connection) is changed only by
+      // Sheets: it replaces the table when the import is refreshed, and the
+      // sheet's calculated columns, pivots and formulas stand on its columns.
+      // Read it here like any table; a change made here would break the
+      // sheet or be overwritten by it.
+      const targets = classified.writeSchemas
+        .map((schema, i) => ({ schema, table: classified.writeTables?.[i] ?? "" }))
+        .filter((t) => t.table);
+      if (targets.length) {
+        const { sheetOwnedRefusal } = await import("@/utils/sheets/owned.server");
+        const why = await sheetOwnedRefusal(targets);
+        if (why) throw new Error(why);
+      }
+      // WHAT THE STATEMENT READS, not only what it writes.
+      //
+      // This check did not exist, and its absence was the whole security
+      // model's biggest hole: `CREATE TABLE mine.copy AS SELECT * FROM
+      // theirs.customers` authorized "mine", never resolved "theirs", and
+      // executed — DuckDB has no per-user ACLs and the engine holds one attach
+      // over the entire catalog, so the read simply worked. The same shape
+      // applies to INSERT…SELECT, MERGE…USING, UPDATE…FROM and DELETE…USING.
+      //
+      // It cannot reuse the SELECT path's AST walk, because DuckDB's
+      // `json_serialize_sql` refuses every non-SELECT statement ("Only SELECT
+      // statements can be serialized to json!") — verified against the engine
+      // this app ships. So the read set comes from a text scan that fails
+      // closed: every schema-qualified name in the statement must be one the
+      // caller may touch. See src/utils/lakehouse/sqlRefs.ts.
+      // Alias qualifiers are not schemas: `WHERE t.id = 5` mentions `t.id`,
+      // and treating that as a schema refuses most real write SQL. tableRefs
+      // drops names bound inside the statement.
+      const mentioned = tableRefs(sql);
+      assertSchemasAllowed([...new Set(mentioned.map((r) => r.schema))], allowed);
+      // A write that READS a table under someone else's policy is refused
+      // rather than filtered. Filtering would silently produce a copy with
+      // fewer rows than the source, which is a quieter wrong answer than a
+      // refusal the user can ask about.
+      const foreignRead = allowed.filter((sch) => sch.user_id !== userId);
+      if (foreignRead.length) {
+        const readTables = mentioned.filter((r) =>
+          foreignRead.some((sch) => sch.name.toLowerCase() === r.schema.toLowerCase()),
+        );
+        const readPolicies = await loadPolicies(
+          [...new Set(foreignRead.map((f) => f.user_id))],
+          readTables.map((r) => ({ schema: r.schema.toLowerCase(), table: r.table.toLowerCase() })),
+        );
+        if (readPolicies.size) {
+          const first = [...readPolicies.keys()][0];
+          throw new Error(
+            `This statement reads "${first}", which has a security policy — ` +
+              `a policy can only be applied to a SELECT, so it cannot be copied or written through. ` +
+              `Read it with SELECT, or ask its owner.`,
+          );
+        }
+      }
     }
     // Writes get a bounded retry; reads never need one. Each attempt opens a
     // fresh connection so it reads the catalog as it is NOW — retrying on the
     // stale snapshot that just lost would simply lose again.
     for (let attempt = 0; ; attempt++) {
       c = await lakehouseConnection();
+      if (opts?.asOfSnapshot) await attachAsOf(c, opts.asOfSnapshot);
       let cacheSlot: { key: string; snapshot: string } | null = null;
       // Security policies rewrite the statement; everything downstream must
       // run the rewritten text, while history and the cache key keep the SQL
@@ -779,7 +1262,19 @@ export async function runLakehouseStatement(
         }
         // Cache lookup happens AFTER the access check, never before: a cached
         // row must not be reachable by someone whose grant was revoked.
-        if (opts?.useCache !== false) {
+        // The result cache is keyed by the CURRENT snapshot, so a historical
+        // read must not consult it: the same SQL as of snapshot 100 and as of
+        // now are different questions with the same key.
+        // FOUND BUILDING SHEETS. The key is the statement and the snapshot,
+        // and neither changes when the clock does: SELECT now() answered with
+        // the first run's time for ten minutes, and a TODAY() column would
+        // have said yesterday. A statement that reads the clock or a random
+        // source is run every time.
+        if (
+          opts?.useCache !== false &&
+          !opts?.asOfSnapshot &&
+          !callsVolatileFunction(effectiveSql)
+        ) {
           const snapshot = await currentSnapshotId(c);
           // The key is per user already, so a policy rewrite cannot leak
           // across readers; including it keeps a policy edit from being
@@ -796,16 +1291,37 @@ export async function runLakehouseStatement(
       }
 
       const conn = c;
-      const timer = setTimeout(() => {
-        try {
-          conn.interrupt();
-        } catch {
-          /* already finished */
-        }
-      }, opts?.timeoutMs ?? TIMEOUT_MS);
+      const aiExtraMs = usesAiSqlFunctions(effectiveSql).length ? AI_SQL_EXTRA_TIMEOUT_MS : 0;
+      const timer = setTimeout(
+        () => {
+          try {
+            conn.interrupt();
+          } catch {
+            /* already finished */
+          }
+        },
+        (opts?.timeoutMs ?? TIMEOUT_MS) + aiExtraMs,
+      );
 
       try {
-        const reader = await conn.runAndReadUntil(stripSqlComments(effectiveSql), rowCap + 1);
+        // ai_* functions, when the statement calls any: registered on this
+        // connection, answered through the model channel between passes.
+        const execute = () =>
+          runWithAiSql(
+            conn,
+            userId,
+            effectiveSql,
+            () => conn.runAndReadUntil(stripSqlComments(effectiveSql), rowCap + 1),
+            { auditVia: opts?.auditVia },
+          );
+        const { result: reader, ai } = await execute().catch(async (e) => {
+          // An Iceberg mount's view names a catalog this instance may have
+          // attached seconds ago on another worker: sync and try once more.
+          const ice = await import("@/utils/lakehouse/iceberg.server");
+          if (!icebergLoaded || !ice.isMissingIcebergCatalogError((e as Error).message)) throw e;
+          await ice.ensureIcebergCatalogs(conn, true);
+          return execute();
+        });
         const names = reader.columnNames();
         const types = reader.columnTypes();
         const raw = reader.getRows();
@@ -819,6 +1335,7 @@ export async function runLakehouseStatement(
           duration_ms: Date.now() - started,
           kind: classified.kind,
           retries: attempt || undefined,
+          ai: ai ?? undefined,
         };
         if (cacheSlot) cachePut(cacheSlot.key, cacheSlot.snapshot, result);
         record("ok", rows.length, undefined, { retries: attempt });
@@ -845,7 +1362,12 @@ export async function runLakehouseStatement(
       }
     }
   } catch (e) {
-    const message = (e as Error).message;
+    // Redact HERE, not only on engine boot. Every query error travels to the
+    // browser and into lakehouse_query_history, and object-store failures quote
+    // the full endpoint URL — which is the operator's internal address.
+    const message = redactLakehouseSecrets(
+      describeMissingDataFile((e as Error).message) ?? (e as Error).message,
+    );
     record("error", null, message);
     throw new Error(message);
   } finally {

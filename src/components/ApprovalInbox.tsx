@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
+import { OPEN_APPROVALS_EVENT } from "@/lib/approvalsInbox";
+import { mlApplyApprovedPromotion } from "@/utils/ml.functions";
 import {
   Inbox,
   CheckCircle2,
@@ -24,19 +28,24 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
-import {
-  useApprovalDecision,
-  type ApprovalDecision,
-  type NativeApproval,
-} from "@/hooks/use-approval-decision";
-import {
-  isActionableReview,
-  registrationContext,
-} from "@/axtn/workbenches/reviews/reviewWorkbench";
-import { ReviewContextPanel } from "@/components/axtn/ReviewContextPanel";
-import { useRegisteredDocument } from "@/hooks/use-registered-document";
 
-type Approval = NativeApproval;
+type Approval = {
+  id: string;
+  user_id: string;
+  agent_name: string;
+  agent_avatar: string | null;
+  action_type: string;
+  action_title: string;
+  description: string | null;
+  payload: any;
+  risk_level: string;
+  status: string;
+  created_at: string;
+  approver_user_ids: string[] | null;
+  approver_group_ids: string[] | null;
+  /** Set when this approval parked a swarm run that has to be resumed. */
+  swarm_run_id: string | null;
+};
 
 const ACTION_ICON: Record<string, any> = {
   n8n_webhook: Webhook,
@@ -52,30 +61,6 @@ const RISK_COLORS: Record<string, string> = {
   critical: "bg-red-500/10 text-red-400 border-red-500/30",
 };
 
-/**
- * Registration approvals carry the raw acknowledgement JSON in `description`,
- * which is unreadable in the drawer. Show the document the approval is about
- * instead and keep the raw payload available below.
- *
- * The filename is the subject when the registry row resolves. The opaque
- * document id is the fallback, not the headline: it identifies a row, it does
- * not tell a human which document they are looking at.
- */
-function ApprovalHeadline({ approval }: { approval: Approval }) {
-  const registration = registrationContext(approval);
-  const document = useRegisteredDocument(registration?.documentId ?? null);
-  if (registration) {
-    const subject = document?.filename ?? registration.documentId ?? "";
-    return (
-      <>
-        {subject}
-        {registration.processingStatus ? ` · ${registration.processingStatus}` : ""}
-      </>
-    );
-  }
-  return <>{approval.description ?? ""}</>;
-}
-
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
@@ -88,12 +73,20 @@ function timeAgo(iso: string) {
 export function ApprovalInbox() {
   const { user } = useAuth();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const decideApproval = useApprovalDecision();
+  const resumeRunFn = useServerFn(resumeApprovedSwarmRun);
+  const applyPromotionFn = useServerFn(mlApplyApprovedPromotion);
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const myGroupIdsRef = useRef<Set<string>>(new Set());
+
+  // A parked run's row in Recent runs asks for the inbox (R108).
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener(OPEN_APPROVALS_EVENT, show);
+    return () => window.removeEventListener(OPEN_APPROVALS_EVENT, show);
+  }, []);
 
   // Is the current user a designated approver of this approval? When no
   // approvers are set (legacy / single-user swarms), the owner counts. This
@@ -180,8 +173,80 @@ export function ApprovalInbox() {
     };
   }, [user]);
 
-  const decide = async (item: Approval, status: ApprovalDecision) => {
-    await decideApproval(item, status);
+  const decide = async (id: string, status: "approved" | "rejected") => {
+    const item = approvals.find((a) => a.id === id);
+    const { error } = await supabase
+      .from("approvals")
+      .update({ status, decided_at: new Date().toISOString(), decided_by: user?.id ?? null })
+      .eq("id", id);
+    if (error) {
+      toast.error("Failed to update approval");
+      return;
+    }
+    // A model promotion is not an agent resuming, and saying so would be the
+    // kind of small lie that makes a reader distrust the rest of the sentence.
+    const isPromotion = item?.action_type === "ml.promote";
+    if (status === "approved") {
+      toast.success(`Approved: ${item?.action_title}`, {
+        description: isPromotion
+          ? `${item?.agent_name} is going into production.`
+          : `${item?.agent_name} is resuming.`,
+      });
+    } else {
+      toast.error(`Rejected: ${item?.action_title}`, {
+        description: isPromotion
+          ? `${item?.agent_name} stays on the version it is serving.`
+          : `${item?.agent_name} has been halted.`,
+      });
+    }
+
+    // The inbox records the decision; the server does the thing, and re-checks
+    // everything — including that the approver is not the person who asked.
+    if (isPromotion && status === "approved") {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (token) {
+          const res = await applyPromotionFn({ data: { access_token: token, approval_id: id } });
+          if (!res.ok) {
+            toast.warning("Decision saved, but the version was not promoted", {
+              description: res.error,
+            });
+          }
+        }
+      } catch (e) {
+        toast.warning("Decision saved, but the version was not promoted", {
+          description: (e as Error).message,
+        });
+      }
+    }
+
+    // A headless run (API key / schedule) parks at its approval node with a
+    // checkpoint and cannot continue itself — recording the decision is only
+    // half the job. Runs started from the canvas ignore this: they are still
+    // waiting in the tab that started them.
+    if (item?.swarm_run_id) {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (token) {
+          const res = await resumeRunFn({
+            data: { access_token: token, approval_id: id },
+          });
+          if (!res.ok) {
+            toast.warning("Decision saved, but the run could not be resumed", {
+              description: res.error,
+              duration: 9000,
+            });
+          }
+        }
+      } catch (e) {
+        toast.warning("Decision saved, but the run could not be resumed", {
+          description: (e as Error).message,
+          duration: 9000,
+        });
+      }
+    }
   };
 
   return (
@@ -270,17 +335,15 @@ export function ApprovalInbox() {
                         <Icon className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                         <div className="min-w-0">
                           <p className="text-xs font-semibold">{ap.action_title}</p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 break-words">
-                            <ApprovalHeadline approval={ap} />
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {ap.description}
                           </p>
                         </div>
                       </div>
 
-                      <ReviewContextPanel approval={ap} compact />
-
                       <details className="group">
                         <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground select-none">
-                          View raw payload
+                          View payload
                         </summary>
                         <pre className="mt-1 max-w-full rounded-md bg-background border border-border/50 p-2 text-[10px] leading-relaxed whitespace-pre-wrap break-all font-mono text-muted-foreground">
                           {JSON.stringify(ap.payload, null, 2)}
@@ -288,22 +351,20 @@ export function ApprovalInbox() {
                       </details>
                     </div>
 
-                    {isActionableReview(ap) && (
-                      <div className="flex border-t border-border">
-                        <button
-                          onClick={() => void decide(ap, "rejected")}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
-                        >
-                          <XCircle className="h-3.5 w-3.5" /> Reject
-                        </button>
-                        <button
-                          onClick={() => void decide(ap, "approved")}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex border-t border-border">
+                      <button
+                        onClick={() => decide(ap.id, "rejected")}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors border-r border-border"
+                      >
+                        <XCircle className="h-3.5 w-3.5" /> Reject
+                      </button>
+                      <button
+                        onClick={() => decide(ap.id, "approved")}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                      </button>
+                    </div>
                   </div>
                 );
               })}

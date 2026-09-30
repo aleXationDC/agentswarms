@@ -110,16 +110,22 @@ If a workbench feature is now provided natively by AgentSwarms, the native surfa
 Paths:
 - `axtn/mcp-servers/axtn-local-table-integration/**`
 
-Classification: **STILL_REQUIRED BUSINESS CAPABILITY / NEEDS_PORT**
+Classification: **REASSESS / NATIVE_REPLACEMENT_PREFERRED**
 
 Reason:
-The specific controlled `local_table_upsert` contract, allowlist, ownership checks and document-registry semantics are aXtn-specific. Upstream has Local Tables and a mature MCP Builder but does not expose this exact aXtn tool contract.
+The business need is controlled, auditable writing of document-intake state into AgentSwarms-managed data. The legacy `local_table_upsert` MCP service is only one historical implementation of that need and is not itself an architectural requirement. AgentSwarms 1.5 now has materially expanded native data, MCP Builder/runtime, scoped-key and runtime-session capabilities, so the first task is to prove whether the business contract can be satisfied natively.
 
 Target:
-Rebuild/revalidate this as a native current MCP Builder application. Reuse current upstream session, key, tool-approval and sandbox contracts. Do not preserve obsolete transport/session code.
+Prefer an upstream-native AgentSwarms data/write path. Retain an aXtn MCP application only if a concrete functional or security gap remains after testing current upstream behavior. Do not add aXtn-specific lifecycle/token helpers to native upstream core merely to satisfy legacy tests.
+
+Decision rule:
+- legacy aXtn tests are compatibility evidence, not requirements;
+- if a failing test exposes a general defect in current upstream behavior, fix upstream minimally and add an upstream-oriented regression test;
+- if it only encodes an obsolete aXtn implementation contract, adapt or retire that test;
+- if the document-intake business invariant cannot be met by native AgentSwarms, document the exact gap before porting the old service.
 
 Security:
-The sandbox must never receive Supabase service-role credentials. Table/tool/owner allowlists remain fail-closed.
+Whatever implementation remains must keep credentials server-side, preserve fail-closed authorization, and avoid direct service-role exposure to sandboxes or external callers.
 
 ### 3. aXtn Document Intake swarm
 
@@ -156,12 +162,9 @@ Do not carry this as an aXtn patch. Keep regression coverage only where it adds 
 
 ### 5. aXtn System Extension Access
 
-Paths include:
-- `src/lib/axtnExtensionAccess.ts`
-- `src/utils/axtnExtensionAccess.server.ts`
-- `src/utils/axtnSystemExtensions.functions.ts`
-- `src/routes/api/axtn/extension-access/**`
-- `deploy/axtn/caddy.*extension-access*`
+The candidate deletes the former System Extension Access implementation,
+including its source/API/Caddy paths; historical database migrations remain
+only for ledger compatibility.
 
 Classification: **DEFER / ARCHITECTURE_REVIEW_REQUIRED BEFORE PORT**
 
@@ -213,6 +216,21 @@ Known protocol delta already landed upstream. For each remaining security patch:
 - port only demonstrated gaps
 - preserve targeted regression tests where useful
 
+
+## Legacy-test interpretation rule
+
+During this upgrade, a failing aXtn regression test does not by itself justify restoring an old implementation contract.
+
+For every failing legacy test:
+
+1. identify the business/security invariant it protects;
+2. compare that invariant with current AgentSwarms 1.5 native behavior;
+3. if upstream already satisfies the invariant, update or retire the legacy test;
+4. if upstream violates a generally valid invariant, fix the native helper minimally and test that native behavior;
+5. only preserve an aXtn-specific implementation when no native path satisfies the requirement.
+
+In particular, missing aXtn-only token/lifecycle helpers are not defects in upstream unless a current native AgentSwarms contract independently requires that behavior.
+
 ## Data and migration consequence
 
 The selected upstream candidate contains 269 migration files; the last accepted aXtn runtime reconciled 191.
@@ -247,7 +265,7 @@ The mechanical upgrade shall use these architecture decisions:
 1. Pin the upgrade attempt to upstream `05df309fbabfa3612e3b86f1860d76c6d95f22b3`. Do not chase a moving `main` during this run.
 2. Start from the dedicated aXtn upgrade branch.
 3. Integrate upstream first.
-4. Port aXtn Workbenches and the business-specific Local Table / Document Intake capabilities.
+4. Port aXtn Workbenches and the Document Intake business logic; reassess the legacy Local Table MCP implementation against current native AgentSwarms before carrying it forward.
 5. Do not port the old system-extension-access mechanism in the first candidate.
 6. Do not implement ECP in this upgrade.
 7. Do not restore old Compose/profile semantics merely to reduce merge conflicts.
@@ -268,7 +286,7 @@ Candidate is ready for host integration review only when:
 - isolated login/UI/agent/swarm smoke succeeds
 - draft/published behavior is verified
 - native n8n integration contract is verified at least synthetically
-- native MCP path plus aXtn Local Table tool is verified
+- native data/MCP path satisfies the Document Intake write contract; an aXtn Local Table tool is required only if a documented native gap remains
 - restart/persistence succeeds
 - no secrets or retained production state were changed
 
@@ -307,3 +325,54 @@ Expected direction:
 - shared platform services by default where continuity and native integration support it
 - targeted isolation for schema/data/credentials/blast radius
 - no permanent full-platform DEV/Prod duplication without a demonstrated requirement
+
+## Execution result — 2026-09-30
+
+The canonical execution contract was re-read from Gitea at task-doc commit
+`8f884135460b5b5bf502024f117e5edcb5a46224`. The selected upstream remains
+`05df309fbabfa3612e3b86f1860d76c6d95f22b3` (`1.5.0`); the merge base is
+`7c6e48bca030675dbb47d4309e3a12d958e3e8f2`.
+
+The candidate integrates upstream first and keeps the native operating model:
+
+- Workbenches and Document Intake business logic remain namespaced under
+  `axtn/` and use native approvals, data, MCP Builder/runtime and publish
+  contracts.
+- Local Table was reassessed against native `user_data_tables`,
+  `user_data_rows`, scoped MCP keys, MCP Builder and runtime sessions. The
+  exact controlled `local_table_upsert` contract is not exposed natively, so
+  the aXtn broker remains namespaced and app-facing; no aXtn helper was added
+  to native AgentSwarms core.
+- The old System Extension Access UI/API/Caddy path was not ported. Its
+  historical migrations remain only for upgrade-ledger compatibility, and the
+  deployment documentation marks the path deferred.
+- The missing aXtn token/service lifetime helper was explicitly not ported.
+  The only native runtime correction is the generic stale-row reread in
+  `refreshSession`; generic MCP JSON-RPC negotiation/error handling was fixed
+  only for reproducible native HTTP-200 handshake defects.
+- Migration filenames are unique: the baseline Local Table function is
+  preserved under the candidate's `20260901000001_axtn_local_table_upsert.sql`
+  name after the upstream `20260901000000_saas_ga4.sql` collision.
+
+Validation evidence is recorded in
+`docs/AXTN-UPSTREAM-150-COMPATIBILITY.yaml`. In summary: `npm ci` passed;
+the full unit/differential suite passed with 541 files and 8,949 tests (40
+environmental skips); lint, docs, doc-command and infra checks passed; focused
+aXtn/MCP/runtime checks passed; integration tests collected 7 files and
+skipped 40 tests because no external integration environment was configured.
+The final typecheck attempt after the last native runtime narrowing change was
+terminated by the host without a diagnostic, so it is recorded as a
+resource-blocked verify rather than claimed as green.
+
+the isolated migration run completed baseline 191 → 269 upstream migrations
+plus the idempotent candidate aXtn migration and verified native tables,
+RLS, policies and the namespaced broker.
+
+The isolated Dev server served `/api/health` and `/login` with HTTP 200. Its
+readiness endpoint correctly returned HTTP 503 because no Supabase/key
+environment was injected into that smoke process. The production Vite build
+was attempted with the canonical script and direct 2/3 GiB heap limits; the
+host killed the process during chunk rendering / the 2 GiB process reached
+V8 OOM. The host had about 3.4 GiB available and no swap while retained
+continuity stacks were running, so no retained service was stopped. This is an
+environmental host-integration blocker, not a code or migration failure.

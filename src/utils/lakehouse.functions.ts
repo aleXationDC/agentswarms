@@ -6,15 +6,23 @@ import { z } from "zod";
 import { createServerFn } from "@tanstack/react-start";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { selectAllPages } from "@/lib/pagedSelect";
 import { auditEvent } from "@/utils/audit.server";
 import {
   accessibleSchemas,
   lakehouseConnection,
   lakehouseEnabled,
+  lakehouseTableExists,
   runLakehouseStatement,
   type LakehouseResult,
   type SchemaRow,
 } from "@/utils/lakehouse/core.server";
+import {
+  cancelSparkQuery,
+  getSparkQuery,
+  startSparkQuery,
+  type SparkQueryView,
+} from "@/utils/lakehouse/sparkQuery.server";
 
 async function resolveCaller(accessToken: string): Promise<string> {
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
@@ -145,6 +153,10 @@ export type LakehouseTableDetail = {
   snapshots: { id: number; time: string | null; changes: string }[];
   /** Partition key columns, in key order. Empty = unpartitioned. */
   partitioned_by: string[];
+  /** Cluster key columns from the table's layout row. Empty = never clustered. */
+  clustered_by: string[];
+  /** The Sheets table sheet that holds its rows, when one does: read-only here. */
+  sheet_owner: { workbook_id: string; workbook: string; sheet: string } | null;
 };
 
 /**
@@ -243,6 +255,15 @@ export const getLakehouseTable = createServerFn({ method: "POST" })
         row_count: rowCount,
         snapshots,
         partitioned_by: await readPartitionColumns(c, data.schema, data.table),
+        clustered_by: await import("@/utils/lakehouse/layout.server").then((m) =>
+          m.clusteredBy(data.schema, data.table),
+        ),
+        sheet_owner: await import("@/utils/sheets/owned.server").then(async (m) => {
+          const o = (await m.sheetOwners([{ schema: data.schema, table: data.table }])).get(
+            `${data.schema.toLowerCase()}.${data.table.toLowerCase()}`,
+          );
+          return o ? { workbook_id: o.workbookId, workbook: o.workbook, sheet: o.sheet } : null;
+        }),
       };
     } finally {
       c.closeSync();
@@ -282,18 +303,74 @@ export const listLakehouseHistory = createServerFn({ method: "POST" })
         cached: boolean;
         retries: number;
         created_at: string;
+        /** duckdb — this worker's engine — or spark. */
+        engine: string;
       }[];
     }> => {
       const userId = await resolveCaller(data.access_token);
       const { data: rows } = await supabaseAdmin
         .from("lakehouse_query_history")
-        .select("id, sql, kind, status, row_count, duration_ms, cached, retries, created_at")
+        .select(
+          "id, sql, kind, status, row_count, duration_ms, cached, retries, created_at, engine",
+        )
         .eq("user_id", userId)
         .order("id", { ascending: false })
         .limit(50);
       return { history: rows ?? [] };
     },
   );
+
+// ── Spark ───────────────────────────────────────────────────────────────────
+// A SELECT can run on the Spark engine instead of this worker: governed the
+// same way, resolved to one snapshot's files, executed by a sandbox on the
+// cluster, polled here until the rows land.
+
+/** Whether the page should offer Spark at all, and where it would run. */
+export const lakehouseSparkStatus = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(
+    async ({
+      data,
+    }): Promise<{ configured: boolean; provider: "static" | "k8s"; host: string | null }> => {
+      await resolveCaller(data.access_token);
+      if (!lakehouseEnabled()) return { configured: false, provider: "static", host: null };
+      const { sparkEngineAvailability } = await import("@/utils/etl/sparkCluster.server");
+      return sparkEngineAvailability();
+    },
+  );
+
+export const startLakehouseSparkQuery = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        access_token: z.string().min(1),
+        sql: z.string().min(1).max(50_000),
+        row_cap: z.number().int().min(1).max(100_000).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }): Promise<{ id: string }> => {
+    const userId = await resolveCaller(data.access_token);
+    return startSparkQuery(userId, data.sql, { rowCap: data.row_cap });
+  });
+
+export const getLakehouseSparkQuery = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ access_token: z.string().min(1), id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data }): Promise<SparkQueryView | null> => {
+    const userId = await resolveCaller(data.access_token);
+    return getSparkQuery(userId, data.id);
+  });
+
+export const cancelLakehouseSparkQuery = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ access_token: z.string().min(1), id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data }): Promise<{ cancelled: boolean }> => {
+    const userId = await resolveCaller(data.access_token);
+    return { cancelled: await cancelSparkQuery(userId, data.id) };
+  });
 
 // ── Schema lifecycle ────────────────────────────────────────────────────────
 
@@ -361,18 +438,51 @@ export const dropLakehouseSchema = createServerFn({ method: "POST" })
     if (!row || row.user_id !== userId) {
       throw new Error("Only the schema's owner can drop it");
     }
+    // Dropping the schema drops every table in it, the ones Sheets holds a
+    // table sheet's rows in too (see sheets/owned.server).
+    const { sheetOwnedInSchema } = await import("@/utils/sheets/owned.server");
+    const held = await sheetOwnedInSchema(data.name);
+    if (held.length) {
+      const named = held
+        .slice(0, 3)
+        .map((h) => `${h.table} (sheet "${h.owner.sheet}" in "${h.owner.workbook}")`)
+        .join(", ");
+      throw new Error(
+        `"${data.name}" holds the rows of ${held.length} Sheets table sheet${held.length === 1 ? "" : "s"}: ${named}${held.length > 3 ? ", …" : ""}. Delete those sheets in Sheets first, or they would lose their rows.`,
+      );
+    }
     const c = await lakehouseConnection();
     try {
       await c.run(`DROP SCHEMA IF EXISTS ${qi(data.name)} CASCADE`);
     } finally {
       c.closeSync();
     }
-    await supabaseAdmin.from("lakehouse_schemas").delete().eq("id", row.id);
-    await supabaseAdmin
+    // FOUND FROM THE UI (R74). The two row deletes below dropped their error
+    // and the drop reported done, so a schema whose catalog row could not be
+    // removed stayed on the Lakehouse page pointing at a schema that no
+    // longer existed. A row that could not be removed is said, with what is
+    // already true — the schema itself is gone.
+    const { error: rowErr } = await supabaseAdmin
+      .from("lakehouse_schemas")
+      .delete()
+      .eq("id", row.id);
+    if (rowErr) {
+      throw new Error(
+        `The schema was dropped, but its catalog entry could not be removed: ${rowErr.message}. ` +
+          `It will still be listed until it is; drop it again to retry.`,
+      );
+    }
+    const { error: grantsErr } = await supabaseAdmin
       .from("iam_resource_grants")
       .delete()
       .eq("resource_type", "lakehouse_schema")
       .eq("resource_id", row.id);
+    if (grantsErr) {
+      throw new Error(
+        `The schema was dropped, but the grants on it could not be removed: ${grantsErr.message}. ` +
+          `They name a schema that no longer exists.`,
+      );
+    }
     auditEvent({
       userId,
       action: "lakehouse.schema.drop",
@@ -425,6 +535,9 @@ export const createLakehouseTable = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Rows one import may pull through the app. Refused, never truncated. */
+const IMPORT_MAX_ROWS = 500_000;
+
 export const importDatasetToLakehouse = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
@@ -439,7 +552,27 @@ export const importDatasetToLakehouse = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ rows: number }> => {
     const userId = await resolveCaller(data.access_token);
     const allowed = await accessibleSchemas(userId);
-    if (!allowed.some((s) => s.name === data.schema)) throw new Error("No access to this schema");
+    const target = allowed.find((s) => s.name === data.schema);
+    if (!target) throw new Error("No access to this schema");
+    // The page offers "New table" only on regular schemas. This write does not
+    // go through runLakehouseStatement's guard, so the server has to say the
+    // same thing, or a direct call writes into a read-only mount.
+    if (target.lake_source_id || target.iceberg_catalog_id) {
+      throw new Error("Data-lake mounts are read-only");
+    }
+    // FOUND IN R102. This is the "Import dataset" half of the "New table"
+    // dialog, and it built with CREATE OR REPLACE TABLE. Given the name of a
+    // table that already existed, it replaced that table's rows and columns
+    // with the dataset and said "Table … ready". The other half of the same
+    // dialog, Define columns, refuses an existing name. A new table is new, so
+    // this now refuses too, before paging a single row out, and the write
+    // below is a plain CREATE TABLE so that a race cannot replace one either.
+    if (await lakehouseTableExists(data.schema, data.table)) {
+      throw new Error(
+        `${data.schema}.${data.table} already exists. Importing would replace its rows with ` +
+          `this dataset. Pick a new name, or drop the table first if replacing it is what you mean.`,
+      );
+    }
     // Owner OR IAM-granted — the same rule the platform's own dataset access
     // uses, so anything the picker can list, the import can read.
     const { data: table } = await supabaseAdmin
@@ -460,19 +593,28 @@ export const importDatasetToLakehouse = createServerFn({ method: "POST" })
 
     // Page the rows out of the platform store and CREATE TABLE AS from a
     // JSON read — types inferred by DuckDB, columns preserved.
-    const rows: Record<string, unknown>[] = [];
-    for (let from = 0; ; from += 1000) {
-      const { data: chunk } = await supabaseAdmin
-        .from("user_data_rows")
-        .select("row")
-        .eq("table_id", data.table_id)
-        .order("id", { ascending: true })
-        .range(from, from + 999);
-      if (!chunk?.length) break;
-      rows.push(...chunk.map((r) => r.row as Record<string, unknown>));
-      if (rows.length >= 500_000) throw new Error("Dataset too large to import (500k row cap)");
-      if (chunk.length < 1000) break;
-    }
+    //
+    // Through selectAllPages rather than by hand, because what this loop did
+    // wrong is written to disk. It dropped the page's error — `const { data:
+    // chunk }` — so a statement timeout became `break`, and the rows collected
+    // so far went straight into `CREATE OR REPLACE TABLE`: an existing
+    // lakehouse table silently REPLACED by a prefix of itself, then read as the
+    // dataset by SQL models, widgets and training runs. It also ended on a
+    // short page, which is only the end when the server returns everything it
+    // is asked for, and db-max-rows belongs to whoever runs the database.
+    const imported = await selectAllPages<{ row: unknown }>(
+      () =>
+        supabaseAdmin
+          .from("user_data_rows")
+          .select("row")
+          .eq("table_id", data.table_id)
+          .order("id", { ascending: true }),
+      IMPORT_MAX_ROWS,
+    );
+    // Refusing beats importing a prefix: the caller can raise the ceiling, but
+    // nothing downstream can tell a short table from a small one.
+    if (imported.truncated) throw new Error("Dataset too large to import (500k row cap)");
+    const rows = imported.rows.map((r) => r.row as Record<string, unknown>);
     if (!rows.length) throw new Error("Dataset has no rows");
 
     // Stage as a server-local temp file and let DuckDB's JSON reader infer
@@ -487,7 +629,7 @@ export const importDatasetToLakehouse = createServerFn({ method: "POST" })
     try {
       await writeFile(file, JSON.stringify(rows), "utf8");
       await c.run(
-        `CREATE OR REPLACE TABLE ${qi(data.schema)}.${qi(data.table)} AS ` +
+        `CREATE TABLE ${qi(data.schema)}.${qi(data.table)} AS ` +
           `SELECT * FROM read_json_auto('${file.replace(/\\/g, "/").replace(/'/g, "''")}')`,
       );
     } finally {
@@ -598,8 +740,11 @@ export const mountLakeSource = createServerFn({ method: "POST" })
       await c.run(`CREATE SCHEMA IF NOT EXISTS ${qi(data.name)}`);
       const prefix = (cfg.prefix ?? "").replace(/^\/+|\/+$/g, "");
       for (const asset of assets) {
-        // fqn is "<dir>/*.<format>" from the crawler's grouping.
-        const m = /^(.*)\/\*\.([a-z0-9]+)$/i.exec(asset.fqn);
+        // fqn is "<dir>/*.<ext>" from the crawler's grouping, and the ext can
+        // carry a `.gz` tail — dlt gzips text output, so a folder of jsonl is
+        // globbed `*.jsonl.gz`. Without the optional group the match failed
+        // and every compressed dataset was silently skipped from the mount.
+        const m = /^(.*)\/\*\.([a-z0-9]+)(?:\.gz)?$/i.exec(asset.fqn);
         const view = asset.name
           .toLowerCase()
           .replace(/[^a-z0-9_]/g, "_")
@@ -621,7 +766,8 @@ export const mountLakeSource = createServerFn({ method: "POST" })
           skipped++;
           continue;
         }
-        const glob = `s3://${cfg.bucket}/${[prefix, dir].filter(Boolean).join("/")}/*`;
+        const scheme = cfg.provider === "azure" ? "az" : "s3";
+        const glob = `${scheme}://${cfg.bucket}/${[prefix, dir].filter(Boolean).join("/")}/*`;
         try {
           await c.run(
             `CREATE OR REPLACE VIEW ${qi(data.name)}.${qi(view)} AS ` +
@@ -672,7 +818,7 @@ export const setLakehousePartitioning = createServerFn({ method: "POST" })
     const allowed = await accessibleSchemas(userId);
     const schemaRow = allowed.find((sch) => sch.name === data.schema);
     if (!schemaRow) throw new Error("No access to this schema");
-    if (schemaRow.lake_source_id) {
+    if (schemaRow.lake_source_id || schemaRow.iceberg_catalog_id) {
       throw new Error("Data-lake mounts are read-only — partitioning belongs to the source");
     }
     const c = await lakehouseConnection();
@@ -696,6 +842,130 @@ export const setLakehousePartitioning = createServerFn({ method: "POST" })
     } finally {
       c.closeSync();
     }
+  });
+
+// ── Layout: clustering and the advisor ──────────────────────────────────────
+
+const layoutInput = z.object({
+  access_token: z.string().min(1),
+  schema: z.string().regex(SCHEMA_NAME),
+  table: z.string().regex(TABLE_NAME),
+});
+
+/**
+ * What the table's files look like and what to do about it: files and
+ * sizes, how many files a lookup on each column opens (from DuckLake's own
+ * per-file statistics), which columns this week's queries filtered on, and
+ * the advice those two signals add up to.
+ */
+export const getLakehouseLayout = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => layoutInput.parse(input))
+  .handler(async ({ data }) => {
+    const userId = await resolveCaller(data.access_token);
+    const allowed = await accessibleSchemas(userId);
+    if (!allowed.some((s) => s.name === data.schema)) throw new Error("No access to this schema");
+    const { readTableLayout } = await import("@/utils/lakehouse/layout.server");
+    const c = await lakehouseConnection();
+    try {
+      return await readTableLayout(c, data.schema, data.table);
+    } finally {
+      c.closeSync();
+    }
+  });
+
+/**
+ * Rewrite a table's files in key order — one transaction, rolled back whole
+ * on any failure — and remember the keys so the badge, the advisor and the
+ * maintenance pass know the table is clustered. Where partitioning decides
+ * which file a new row goes to, this decides the order of what is there.
+ */
+export const rewriteLakehouseLayout = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    layoutInput
+      .extend({
+        columns: z.array(z.string().regex(TABLE_NAME)).min(1).max(4),
+        /** Per-file target; omitted = the platform default. Not capped. */
+        target_file_mb: z.number().positive().optional(),
+        keep_clustered: z.boolean().default(false),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => {
+    const userId = await resolveCaller(data.access_token);
+    const allowed = await accessibleSchemas(userId);
+    const schemaRow = allowed.find((sch) => sch.name === data.schema);
+    if (!schemaRow) throw new Error("No access to this schema");
+    if (schemaRow.lake_source_id || schemaRow.iceberg_catalog_id) {
+      throw new Error("Data-lake mounts are read-only — their layout belongs to the source");
+    }
+    const layout = await import("@/utils/lakehouse/layout.server");
+    const targetBytes = data.target_file_mb
+      ? Math.round(data.target_file_mb * 1024 * 1024)
+      : layout.defaultTargetFileBytes();
+    const c = await lakehouseConnection();
+    try {
+      const result = await layout.rewriteClustered(c, {
+        schema: data.schema,
+        table: data.table,
+        keys: data.columns,
+        targetBytes,
+      });
+      await layout.saveLayoutRow({
+        schema: data.schema,
+        table: data.table,
+        keys: data.columns,
+        targetBytes: data.target_file_mb ? targetBytes : null,
+        keepClustered: data.keep_clustered,
+        userId,
+        result,
+        error: null,
+      });
+      auditEvent({
+        userId,
+        action: "lakehouse.layout.rewrite",
+        resourceType: "lakehouse_schema",
+        resourceId: schemaRow.id,
+        resourceName: `${data.schema}.${data.table}`,
+        detail: {
+          clustered_by: data.columns,
+          keep_clustered: data.keep_clustered,
+          target_file_bytes: targetBytes,
+          files_before: result.files_before,
+          files_after: result.files_after,
+          rows: result.rows,
+          ms: result.ms,
+          touched_before: result.touched_before,
+          touched_after: result.touched_after,
+        },
+      });
+      return { ...result, clustered_by: data.columns };
+    } finally {
+      c.closeSync();
+    }
+  });
+
+/** Forget a table's cluster keys: the files stay as they are, maintenance merges them again. */
+export const clearLakehouseLayout = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => layoutInput.parse(input))
+  .handler(async ({ data }): Promise<{ clustered_by: string[] }> => {
+    const userId = await resolveCaller(data.access_token);
+    const allowed = await accessibleSchemas(userId);
+    const schemaRow = allowed.find((sch) => sch.name === data.schema);
+    if (!schemaRow) throw new Error("No access to this schema");
+    await supabaseAdmin
+      .from("lakehouse_table_layouts")
+      .delete()
+      .eq("schema_name", data.schema)
+      .eq("table_name", data.table);
+    auditEvent({
+      userId,
+      action: "lakehouse.layout.clear",
+      resourceType: "lakehouse_schema",
+      resourceId: schemaRow.id,
+      resourceName: `${data.schema}.${data.table}`,
+      detail: {},
+    });
+    return { clustered_by: [] };
   });
 
 export type LakehouseProfile = {
@@ -835,7 +1105,7 @@ export const setLakehousePolicy = createServerFn({ method: "POST" })
     if (schemaRow.user_id !== userId) {
       throw new Error("Only the schema owner can set a security policy");
     }
-    if (schemaRow.lake_source_id) {
+    if (schemaRow.lake_source_id || schemaRow.iceberg_catalog_id) {
       throw new Error("Data-lake mounts are read-only — secure the source instead");
     }
 
@@ -900,6 +1170,176 @@ export const setLakehousePolicy = createServerFn({ method: "POST" })
       masked_columns: data.masked_columns,
       mask_style: data.mask_style,
     };
+  });
+
+// ── Policies by tag ─────────────────────────────────────────────────────────
+// One rule an owner writes once: mask every column carrying a tag, or filter
+// every table carrying one. Tags live in the Data Catalog (on the asset and on
+// its columns); the rule is folded into the per-table policy at read time.
+
+export type LakehouseTagPolicy = {
+  id: string;
+  tag: string;
+  scope: "column" | "table";
+  mask_style: "null" | "hash";
+  row_filter: string | null;
+  description: string | null;
+  updated_at: string;
+};
+
+const TAG = /^[A-Za-z0-9][A-Za-z0-9_:.-]{0,63}$/;
+
+export const listLakehouseTagPolicies = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(async ({ data }): Promise<LakehouseTagPolicy[]> => {
+    const userId = await resolveCaller(data.access_token);
+    const { data: rows } = await supabaseAdmin
+      .from("lakehouse_tag_policies")
+      .select("id, tag, scope, mask_style, row_filter, description, updated_at")
+      .eq("user_id", userId)
+      .order("tag");
+    return (rows ?? []).map((r) => ({
+      id: r.id,
+      tag: r.tag,
+      scope: r.scope as "column" | "table",
+      mask_style: (r.mask_style as "null" | "hash") ?? "null",
+      row_filter: r.row_filter ?? null,
+      description: r.description ?? null,
+      updated_at: r.updated_at,
+    }));
+  });
+
+/**
+ * Create or update a tag rule. A table rule's filter is validated against
+ * every table currently carrying the tag, the way a table policy's filter is
+ * validated against its table — so a typo bounces here, not off every reader
+ * of every tagged table at once. A tag nothing carries yet is accepted: the
+ * rule waits for the tag.
+ */
+export const setLakehouseTagPolicy = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        access_token: z.string().min(1),
+        tag: z.string().trim().regex(TAG),
+        scope: z.enum(["column", "table"]),
+        mask_style: z.enum(["null", "hash"]).optional(),
+        row_filter: z.string().max(4000).nullable().optional(),
+        description: z.string().max(400).nullable().optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }): Promise<LakehouseTagPolicy> => {
+    const userId = await resolveCaller(data.access_token);
+    const tag = data.tag.trim().toLowerCase();
+    const filter = data.scope === "table" ? data.row_filter?.trim() || null : null;
+    if (data.scope === "table" && !filter) {
+      throw new Error(
+        "A table rule needs the rows they can see — a condition over the table's columns.",
+      );
+    }
+    if (filter) {
+      const { bindFilterPlaceholders, lakehouseAssetTags } =
+        await import("@/utils/lakehouse/policies.server");
+      const { normalizeTag } = await import("@/lib/tagPolicies");
+      // Every lakehouse table of this owner that carries the tag today —
+      // compared the way enforcement compares, so "Restricted" on the asset
+      // is checked by a rule on "restricted".
+      const owned = (await accessibleSchemas(userId)).filter((s) => s.user_id === userId);
+      const { data: assets } = await supabaseAdmin
+        .from("catalog_assets")
+        .select("schema_name, name, tags")
+        .eq("user_id", userId)
+        .eq("asset_type", "table");
+      const candidates = (assets ?? [])
+        .filter(
+          (a) =>
+            owned.some((s) => s.name === a.schema_name) &&
+            (a.tags ?? []).some((t) => normalizeTag(t) === tag),
+        )
+        .map((a) => ({ schema: String(a.schema_name), table: String(a.name) }));
+      const tagged = await lakehouseAssetTags([userId], candidates);
+      if (tagged.size) {
+        const bound = bindFilterPlaceholders(filter, { id: userId, email: "probe@example.com" });
+        const c = await lakehouseConnection();
+        try {
+          for (const t of tagged.values()) {
+            try {
+              await c.run(`SELECT 1 FROM ${qi(t.schema)}.${qi(t.table)} WHERE (${bound}) LIMIT 0`);
+            } catch (e) {
+              throw new Error(
+                `That row filter is not valid on ${t.schema}.${t.table}, which carries "${tag}": ${(e as Error).message}`,
+              );
+            }
+          }
+        } finally {
+          c.closeSync();
+        }
+      }
+    }
+    const { data: row, error } = await supabaseAdmin
+      .from("lakehouse_tag_policies")
+      .upsert(
+        {
+          user_id: userId,
+          tag,
+          scope: data.scope,
+          mask_style: data.scope === "column" ? (data.mask_style ?? "null") : "null",
+          row_filter: filter,
+          description: data.description?.trim() || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,tag,scope" },
+      )
+      .select("id, tag, scope, mask_style, row_filter, description, updated_at")
+      .single();
+    if (error || !row) throw new Error(error?.message ?? "Could not save the rule");
+    auditEvent({
+      userId,
+      action: "lakehouse.tag_policy",
+      resourceType: "lakehouse_tag_policy",
+      resourceId: row.id,
+      resourceName: `${data.scope}:${tag}`,
+      detail: {
+        scope: data.scope,
+        mask_style: data.scope === "column" ? row.mask_style : undefined,
+        row_filter: filter ?? undefined,
+      },
+    });
+    return {
+      id: row.id,
+      tag: row.tag,
+      scope: row.scope as "column" | "table",
+      mask_style: (row.mask_style as "null" | "hash") ?? "null",
+      row_filter: row.row_filter ?? null,
+      description: row.description ?? null,
+      updated_at: row.updated_at,
+    };
+  });
+
+export const deleteLakehouseTagPolicy = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ access_token: z.string().min(1), id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
+    const userId = await resolveCaller(data.access_token);
+    const { data: gone } = await supabaseAdmin
+      .from("lakehouse_tag_policies")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", userId)
+      .select("id, tag, scope")
+      .maybeSingle();
+    if (gone) {
+      auditEvent({
+        userId,
+        action: "lakehouse.tag_policy.delete",
+        resourceType: "lakehouse_tag_policy",
+        resourceId: gone.id,
+        resourceName: `${gone.scope}:${gone.tag}`,
+      });
+    }
+    return { deleted: Boolean(gone) };
   });
 
 // ── Materialized views ──────────────────────────────────────────────────────
@@ -972,51 +1412,8 @@ export const saveLakehouseMatview = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }): Promise<{ id: string; rows: number | null; error?: string }> => {
     const userId = await resolveCaller(data.access_token);
-    const allowed = await accessibleSchemas(userId);
-    const schemaRow = allowed.find((sch) => sch.name === data.schema);
-    if (!schemaRow) throw new Error("No access to this schema");
-    if (schemaRow.user_id !== userId) {
-      throw new Error("A materialized view can only be written into a schema you own");
-    }
-    if (schemaRow.lake_source_id) {
-      throw new Error("Data-lake mounts are read-only");
-    }
-
-    const { nextMatviewRunAt, refreshMaterializedView } =
-      await import("@/utils/lakehouse/matviews.server");
-
-    const { data: saved, error } = await supabaseAdmin
-      .from("lakehouse_materialized_views")
-      .upsert(
-        {
-          user_id: userId,
-          schema_name: data.schema,
-          table_name: data.table,
-          sql: data.sql,
-          schedule: data.schedule,
-          is_active: true,
-          next_run_at: nextMatviewRunAt(data.schedule),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "schema_name,table_name" },
-      )
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-
-    auditEvent({
-      userId,
-      action: "lakehouse.matview.save",
-      resourceType: "lakehouse_matview",
-      resourceId: saved.id,
-      resourceName: `${data.schema}.${data.table}`,
-      detail: { schedule: data.schedule },
-    });
-
-    // Build it now. A failure here is reported but does not undo the save —
-    // the definition is still worth keeping so the user can fix it.
-    const res = await refreshMaterializedView({ ...saved, last_row_count: null } as never, "save");
-    return { id: saved.id as string, rows: res.rows ?? null, error: res.error };
+    const { saveMatviewForUser } = await import("@/utils/lakehouse/matviews.server");
+    return saveMatviewForUser(userId, data, "save");
   });
 
 /** Rebuild one view now. */
@@ -1056,7 +1453,17 @@ export const deleteLakehouseMatview = createServerFn({ method: "POST" })
       .single();
     if (!row) throw new Error("No such materialized view");
     if (row.user_id !== userId) throw new Error("Only its owner can remove this view");
-    await supabaseAdmin.from("lakehouse_materialized_views").delete().eq("id", data.id);
+    // A removal whose row delete fails is a view that keeps refreshing on its
+    // schedule (R74): say so instead of reporting it removed.
+    const { error: delErr } = await supabaseAdmin
+      .from("lakehouse_materialized_views")
+      .delete()
+      .eq("id", data.id);
+    if (delErr) {
+      throw new Error(
+        `Could not remove the materialized view: ${delErr.message}. It is still defined and will still refresh on its schedule.`,
+      );
+    }
     auditEvent({
       userId,
       action: "lakehouse.matview.delete",
@@ -1066,4 +1473,28 @@ export const deleteLakehouseMatview = createServerFn({ method: "POST" })
       detail: { table_kept: true },
     });
     return { ok: true };
+  });
+
+/**
+ * Does the catalog still describe data that exists?
+ *
+ * Separate from getLakehouseOverview on purpose. The overview runs on every
+ * page load and must stay fast; this lists the object store, so it is asked for
+ * rather than assumed. It also must never be the reason the Lakehouse page
+ * fails to render — hence the report's own `error` field instead of a throw.
+ *
+ * Scoped to the caller's accessible schemas, so it cannot be used to enumerate
+ * a lake someone else owns.
+ */
+export const getLakehouseIntegrity = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => z.object({ access_token: z.string().min(1) }).parse(input))
+  .handler(async ({ data }) => {
+    const userId = await resolveCaller(data.access_token);
+    if (!lakehouseEnabled()) {
+      return { ok: true, checked: 0, issues: [], truncated: false };
+    }
+    const allowed = new Set((await accessibleSchemas(userId)).map((s) => s.name));
+    const { lakehouseIntegrity } = await import("./lakehouse/integrity.server");
+    const report = await lakehouseIntegrity();
+    return { ...report, issues: report.issues.filter((i) => allowed.has(i.schema)) };
   });

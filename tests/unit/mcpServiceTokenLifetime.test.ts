@@ -1,17 +1,11 @@
-// AXTN-MCP-RUNTIME-0001 — the sandbox capability token itself.
-//
-// The durable-service-lifecycle fix rotates a service BEFORE its token lapses.
-// That is only a safe thing to build on if the token remains strictly
-// fail-closed: rotation must be an availability measure, never a way of making
-// an expired credential keep working. These tests run the real sign/verify
-// implementation against a real secret — no mocks — so a regression that made
-// verification lenient would fail here rather than being papered over by the
-// rotation that is supposed to make it unnecessary.
+// Runtime capability tokens remain fail-closed at the native AgentSwarms
+// boundary. This test deliberately covers only the generic sign/verify
+// contract; legacy aXtn service-lifetime bookkeeping is not an upstream API.
 import { beforeAll, describe, expect, it } from "vitest";
 
 process.env.NOTEBOOK_RUNTIME_SECRET = "test-runtime-secret-value-0123456789";
 
-const { effectiveSessionTtlSeconds, signSessionToken, verifySessionToken } =
+const { signSessionToken, verifySessionToken } =
   await import("@/utils/notebookRuntime/token.server");
 
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -26,36 +20,6 @@ function claimsOf(token: string): {
 } {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
-
-describe("the recorded lifetime is the lifetime actually minted", () => {
-  it("clamps to one hour, which is the gap the service lifecycle has to cover", () => {
-    // A service asks for "as long as the sandbox lives" and silently gets 3600s.
-    expect(effectiveSessionTtlSeconds(24 * 3600)).toBe(3600);
-  });
-
-  it("clamps upward to a minimum", () => {
-    expect(effectiveSessionTtlSeconds(1)).toBe(60);
-  });
-
-  it("passes a normal value through", () => {
-    expect(effectiveSessionTtlSeconds(900)).toBe(900);
-  });
-
-  it("a minted token expires exactly when the helper says it will", async () => {
-    // This is the invariant that lets a session row record its credential
-    // deadline: if these two could disagree, the lifecycle would rotate at the
-    // wrong moment and the defect would come back.
-    const requested = 24 * 3600;
-    const token = await signSessionToken({
-      userId: USER,
-      sessionId: SESSION,
-      ttlSeconds: requested,
-    });
-    expect(token).toBeTruthy();
-    const c = claimsOf(token!);
-    expect(c.exp - c.iat).toBe(effectiveSessionTtlSeconds(requested));
-  });
-});
 
 describe("an expired capability is still refused", () => {
   let valid: string;

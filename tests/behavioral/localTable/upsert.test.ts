@@ -27,7 +27,7 @@ suite("Local Table MCP upsert", () => {
     userId,
     sb: supabaseAdmin,
     scopeUserId: userId,
-    runtimeSessionId: sessionId,
+    sessionId,
   });
 
   const upsert = (args: {

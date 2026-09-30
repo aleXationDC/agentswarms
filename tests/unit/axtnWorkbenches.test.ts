@@ -29,7 +29,7 @@ const root = resolve(import.meta.dirname, "../..");
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(resolve(root, path), "utf8")) as T;
 
 describe("aXtn Workbenches registry", () => {
-  it("registers the three initial manifests with the common contract", () => {
+  it("registers the two portable workbench manifests with the common contract", () => {
     const registry = readJson<{
       schema_version: string;
       workbenches: Array<{ id: string; manifest: string }>;
@@ -37,7 +37,6 @@ describe("aXtn Workbenches registry", () => {
 
     expect(registry.schema_version).toBe("1.0");
     expect(registry.workbenches.map((entry) => entry.id)).toEqual([
-      "axtn-system-extensions",
       "axtn-reviews",
       "axtn-documents",
     ]);

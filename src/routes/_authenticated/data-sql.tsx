@@ -1,6 +1,7 @@
 // Main IDE route for /data-sql.
 // 3-pane layout: Database Explorer · SQL Editor (light) + Results · Agent Chat
 import { createFileRoute } from "@tanstack/react-router";
+import { summarizeTablesForPrompt } from "@/lib/sqlSchemaSummary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useAuth } from "@/hooks/use-auth";
+import { useTokenRef } from "@/hooks/use-token-ref";
 import { DeleteDatasetDialog } from "@/components/bi/DeleteDatasetDialog";
 import { datasetDependents, type DatasetDependents } from "@/utils/dataPrep.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -153,7 +155,7 @@ function DataCatalogRoute() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+    <div className="flex h-canvas flex-col overflow-hidden">
       <div className="flex items-center gap-3 border-b border-border bg-background px-3 py-1.5">
         <h1 className="text-sm font-semibold">Data Catalog</h1>
         <div className="flex rounded-lg border border-border bg-muted/50 p-0.5">
@@ -291,8 +293,10 @@ function highlightSql(src: string): string {
 
 function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
   const { user, session } = useAuth();
+  const { tokenRef } = useTokenRef(session?.access_token);
   const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
   const [loadingTables, setLoadingTables] = useState(true);
+  const [tablesError, setTablesError] = useState<string | null>(null);
   const [activeTable, setActiveTable] = useState<string | null>(null);
   const [sql, setSql] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -583,6 +587,7 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
         // Load existing tables first so the UI is interactive ASAP.
         let tables = await hydrateFromSupabase();
         setDatasets(tables);
+        setTablesError(null);
         if (tables.length > 0) {
           setActiveTable(tables.find((t) => t.name === SAMPLE_TABLE_NAME)?.name ?? tables[0].name);
         }
@@ -604,6 +609,7 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
         }
       } catch (e) {
         toast.error(`Could not load datasets: ${(e as Error).message}`);
+        setTablesError((e as Error).message);
       } finally {
         setLoadingTables(false);
       }
@@ -612,9 +618,24 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
 
   async function refreshTables() {
     setLoadingTables(true);
-    const tables = await hydrateFromSupabase();
-    setDatasets(tables);
-    setLoadingTables(false);
+    // MEASURED by driving the page with every user_data_rows read rejected:
+    // the mount path above catches a failed hydration and toasts it, but this
+    // handler had no try at all. The rejection went unhandled, the spinner
+    // never cleared, and nothing said the refresh had failed — the datasets
+    // stayed as they were, which was right, but a control that silently does
+    // nothing under failure is a control the user keeps pressing. Datasets are
+    // deliberately left untouched here: a failed refresh is not an empty
+    // account, and the list on screen is still the last good read.
+    try {
+      const tables = await hydrateFromSupabase();
+      setDatasets(tables);
+      setTablesError(null);
+    } catch (e) {
+      toast.error(`Could not refresh datasets: ${(e as Error).message}`);
+      setTablesError((e as Error).message);
+    } finally {
+      setLoadingTables(false);
+    }
   }
 
   async function handleResetSample() {
@@ -731,14 +752,19 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
     void downloadXlsx(result.columns, result.rows, "query-result", { sheet: "Query result" });
   }
 
-  /** Impact list for the delete dialog (server-resolved under the user's JWT). */
+  /**
+   * Impact list for the delete dialog (server-resolved under the user's JWT).
+   * Stable across session refreshes (R125): the dialog reloads it whenever it
+   * changes, which cleared the dataset name being typed to confirm.
+   */
   const loadDependents = useCallback(
     async (tableId: string): Promise<DatasetDependents> => {
-      const token = session?.access_token;
+      const token = tokenRef.current;
       if (!token) throw new Error("Not signed in");
       return (await dependentsFn({ data: { accessToken: token, tableId } })) as DatasetDependents;
     },
-    [session?.access_token, dependentsFn],
+    // tokenRef is the same object for the page's life: listing it reloads nothing.
+    [tokenRef, dependentsFn],
   );
 
   async function confirmDeleteDataset(target: { id: string; name: string }) {
@@ -758,9 +784,8 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
     setChatBusy(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
-      const tableSummary = datasets
-        .map((d) => `${d.name}(${d.columns.map((c) => `${c.name}:${c.type}`).join(", ")})`)
-        .join("; ");
+      // The same budgeted listing the agent tool carries (sqlSchemaSummary.ts).
+      const tableSummary = summarizeTablesForPrompt(datasets).text;
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -1079,9 +1104,27 @@ function DataSqlPage({ seed }: { seed?: WorkbenchSeed | null }) {
             <p className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-muted-foreground px-2 py-1">
               Local Tables
             </p>
+            {tablesError && datasets.length > 0 ? (
+              <p
+                className="px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400"
+                data-testid="tables-stale"
+              >
+                Last refresh failed: {tablesError} — showing the previous list.
+              </p>
+            ) : null}
             {loadingTables && datasets.length === 0 ? (
               <div className="px-2 py-3 text-xs text-slate-500 flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+              </div>
+            ) : datasets.length === 0 && tablesError ? (
+              <div
+                className="px-2 py-3 text-xs text-amber-700 dark:text-amber-400"
+                data-testid="tables-error"
+              >
+                Datasets could not be loaded: {tablesError}{" "}
+                <button type="button" className="underline" onClick={refreshTables}>
+                  Retry
+                </button>
               </div>
             ) : datasets.length === 0 ? (
               <div className="px-2 py-3 text-xs text-slate-500">

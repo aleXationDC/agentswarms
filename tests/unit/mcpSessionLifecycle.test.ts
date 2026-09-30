@@ -284,10 +284,7 @@ describe("a handshake that fails stops there", () => {
 
     const out = await runMcpCallTool(ctxFor(fake.url), CALL_ARGS);
 
-    expect(fake.received.map((r) => r.method)).toEqual([
-      "initialize",
-      "notifications/initialized",
-    ]);
+    expect(fake.received.map((r) => r.method)).toEqual(["initialize", "notifications/initialized"]);
     expect(JSON.parse(out).error).toMatch(/initialized notification failed/i);
   });
 });
@@ -344,7 +341,9 @@ describe("listing tools uses the same lifecycle", () => {
   it("handshakes before tools/list and returns the tool list", async () => {
     const fake = await startFake();
 
-    const parsed = JSON.parse(await runMcpListTools(ctxFor(fake.url), { server_name: "fake-server" }));
+    const parsed = JSON.parse(
+      await runMcpListTools(ctxFor(fake.url), { server_name: "fake-server" }),
+    );
 
     expect(fake.received.map((r) => r.method)).toEqual([
       "initialize",
@@ -357,7 +356,9 @@ describe("listing tools uses the same lifecycle", () => {
   it("stops at a failed handshake instead of listing", async () => {
     const fake = await startFake({ failInitialize: true });
 
-    const parsed = JSON.parse(await runMcpListTools(ctxFor(fake.url), { server_name: "fake-server" }));
+    const parsed = JSON.parse(
+      await runMcpListTools(ctxFor(fake.url), { server_name: "fake-server" }),
+    );
 
     expect(fake.received.map((r) => r.method)).toEqual(["initialize"]);
     expect(parsed.error).toMatch(/initialize failed/i);

@@ -6,7 +6,7 @@ import { HEX24_RE, generateHex24 } from "@/utils/localTableUpsert.server";
 
 const broker = readFileSync("src/utils/localTableUpsert.server.ts", "utf8");
 const migration = readFileSync(
-  "supabase/migrations/20260901000000_axtn_local_table_upsert.sql",
+  "supabase/migrations/20260901000001_axtn_local_table_upsert.sql",
   "utf8",
 );
 const helper = readFileSync("docker/notebook-runtime/agentswarms_helper.py", "utf8");
@@ -15,7 +15,7 @@ const edge = readFileSync("src/routes/api/mcp.s.$slug.ts", "utf8");
 
 describe("native Local Table MCP upsert boundary", () => {
   it("requires a runtime-backed MCP identity and server-side allowlist", () => {
-    expect(broker).toContain("runtimeSessionId");
+    expect(broker).toContain("sessionId");
     expect(broker).toContain("session?.mcp_app_id");
     expect(broker).toContain('DEFAULT_ALLOWED_TABLES = ["axtn_document_registry"]');
     expect(broker).toContain("LOCAL_TABLE_INTEGRATION_ALLOWLIST");

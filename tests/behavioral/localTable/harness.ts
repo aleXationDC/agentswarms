@@ -295,7 +295,7 @@ export async function startStack(): Promise<Stack> {
   // migration cannot load here it cannot load in production either.
   const bootstrap = readFileSync("tests/behavioral/localTable/bootstrap.sql", "utf8");
   const migration = readFileSync(
-    "supabase/migrations/20260901000000_axtn_local_table_upsert.sql",
+    "supabase/migrations/20260901000001_axtn_local_table_upsert.sql",
     "utf8",
   );
   for (const [label, script] of [

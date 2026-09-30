@@ -188,7 +188,7 @@ export async function localTableUpsert(args: {
   outcome: "inserted" | "updated";
   effective_columns: Record<string, string>;
 }> {
-  if (!args.caller.scopeUserId || !args.caller.runtimeSessionId) {
+  if (!args.caller.scopeUserId || !args.caller.sessionId) {
     throw new LocalTableUpsertRequestError(
       "Local Table mutations require an authenticated runtime session.",
     );
@@ -211,7 +211,7 @@ export async function localTableUpsert(args: {
   const { data: session, error: sessionError } = await supabaseAdmin
     .from("notebook_runtime_sessions")
     .select("mcp_app_id, user_id")
-    .eq("id", args.caller.runtimeSessionId)
+    .eq("id", args.caller.sessionId)
     .eq("user_id", args.caller.scopeUserId)
     .maybeSingle();
   if (sessionError) throw new Error(sessionError.message);
@@ -336,7 +336,7 @@ export async function localTableUpsert(args: {
     resourceName: args.tableName,
     detail: {
       mcp_app_id: session.mcp_app_id,
-      runtime_session_id: args.caller.runtimeSessionId,
+      runtime_session_id: args.caller.sessionId,
       key_column: args.keyColumn,
       key_value: args.keyValue,
       outcome: result.outcome,

@@ -358,7 +358,7 @@ function LandingPage() {
                   AgentSwarms
                 </span>
                 <span className="mt-0.5 hidden truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
-                  Unified Agentic AI &amp; Business Intelligence
+                  Unified Agentic AI and Data Platform
                 </span>
               </span>
             </Link>
@@ -957,7 +957,7 @@ function LandingPage() {
               {[
                 {
                   icon: BarChart3,
-                  title: "19 visual types",
+                  title: "26 visual types",
                   body: "Bars to box plots, KPI targets, gauges, funnels, waterfalls, pivots, filled & bubble maps, treemaps, heatmaps — plus the AI-built ontology.",
                 },
                 {
@@ -968,7 +968,7 @@ function LandingPage() {
                 {
                   icon: Database,
                   title: "27 data connectors",
-                  body: "22 databases and warehouses — Postgres, MySQL, SQL Server, Oracle, Snowflake, BigQuery, Databricks, Redshift, Synapse, Trino, Athena, ClickHouse, CockroachDB and more — plus 5 apps: Google Sheets, Stripe, Shopify, HubSpot, Salesforce. Encrypted credentials, strictly read-only.",
+                  body: "22 databases and warehouses — Postgres, MySQL, SQL Server, Oracle, Snowflake, BigQuery, Databricks, Redshift, Synapse, Trino, Athena, ClickHouse, CockroachDB and more — plus 7 apps: Google Sheets, Stripe, Shopify, HubSpot, Salesforce, Jira, Zendesk. Encrypted credentials, strictly read-only.",
                 },
                 {
                   icon: Share2,

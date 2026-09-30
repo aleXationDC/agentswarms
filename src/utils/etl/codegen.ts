@@ -24,7 +24,48 @@
 export type SourceFileFormat = "csv" | "tsv" | "json" | "jsonl" | "parquet" | "xlsx";
 export type TargetFileFormat = "parquet" | "csv" | "jsonl";
 
+/**
+ * What dlt NAMES the files it writes, per loader format.
+ *
+ * Not the same as the format: dlt gzips text output, so a jsonl target leaves
+ * `<load>.jsonl.gz` behind and a csv target `<load>.csv.gz`. The run reports
+ * one of these globs as its target's fqn, catalog lineage joins on that string,
+ * and the crawler derives the same glob from the keys it actually lists — so
+ * all three have to agree or the lineage edge points at nothing. Measured
+ * against dlt 1.30.0 rather than assumed.
+ */
+export const DLT_FILE_EXT: Record<TargetFileFormat, string> = {
+  parquet: "parquet",
+  csv: "csv.gz",
+  jsonl: "jsonl.gz",
+};
+
+import {
+  isStreamSource,
+  streamSourcePython,
+  validateStreamSource,
+  type StreamSourceConfig,
+} from "@/utils/etl/streaming";
+import {
+  catalogAssetLineage,
+  isCatalogAsset,
+  unwrapSourceConfig,
+  type CatalogAssetSourceConfig,
+} from "@/utils/etl/catalogAsset";
+import {
+  SAAS_TARGETS,
+  batchSizeFor,
+  endpointPath,
+  methodFor,
+  validateSaasTarget,
+  type SaasTargetConfig,
+  type SaasTargetVendor,
+} from "@/lib/saasTargets";
+import { continuousWrapper, isAutoIngest } from "./continuous";
+
 export type EtlSourceConfig =
+  | StreamSourceConfig
+  | CatalogAssetSourceConfig
   | {
       type: "object_storage";
       /** Catalog storage source supplying credentials (resolved server-side). */
@@ -36,6 +77,13 @@ export type EtlSourceConfig =
        *  stored watermark survive; the engine persists the new maximum after
        *  each durable load. */
       incremental?: { cursor_column: string };
+      /** Auto-ingest: read only files not loaded before. A ledger of the
+       *  newest modification time loaded, and the keys at that time, rides
+       *  the engine cursor, so the prefix is listed but only new files are
+       *  read. Makes the source drainable, and so continuous-eligible. */
+      new_files_only?: boolean;
+      /** The most files one run (one tick) reads; the rest wait for the next. */
+      max_files_per_run?: number;
     }
   | {
       type: "database";
@@ -45,6 +93,8 @@ export type EtlSourceConfig =
       provider?: string;
       /** cdc: Postgres logical replication (wal2json slot, batch-consumed). */
       mode: "table" | "query" | "cdc";
+      /** The picked schema, kept apart so the picker can restore it; `table` is schema-qualified once both are picked. */
+      schema?: string;
       table?: string;
       query?: string;
       /** cdc only: full table read on first run (slot created first, so no gap). */
@@ -119,6 +169,23 @@ export type EtlTransformConfig =
 
 export type EtlTargetConfig =
   | {
+      /**
+       * Reverse ETL into a SaaS tool, through a connection that already
+       * exists. Named rather than a URL because these APIs answer 200 and
+       * report per-record failures in the body — see @/lib/saasTargets.
+       */
+      type: "saas";
+      /** The SaaS connection to write through; credentials stay server-side. */
+      connection_id?: string;
+      vendor?: "hubspot" | "salesforce";
+      object?: string;
+      /** Column identifying a record — the vendor's unique/external id field. */
+      id_column?: string;
+      /** Columns sent as fields; empty = every column but the id column. */
+      columns?: string[];
+      batch_size?: number;
+    }
+  | {
       type: "object_storage";
       catalog_source_id?: string;
       dataset: string;
@@ -158,6 +225,8 @@ export type EtlTargetConfig =
       method?: "POST" | "PUT" | "PATCH";
       /** Env var carrying a bearer token — bind one via a secret in Settings. */
       auth_env?: string;
+      /** A secret (Settings → Secrets) holding the bearer token; resolved as the owner at run start. */
+      auth_secret?: string;
       batch_size?: number;
       /** Wrap each batch as {<wrap_key>: rows}; bare array when empty. */
       wrap_key?: string;
@@ -242,6 +311,51 @@ const FAMILY_DRIVER: Record<"postgres" | "mysql" | "tds", string> = {
 
 // ── String hygiene ──────────────────────────────────────────────────────────
 
+/**
+ * The spelling a run parameter takes in a node's field: `{{params.NAME}}`.
+ *
+ * Optionally with a default: `{{params.day|2026-01-01}}`. A parameter with no
+ * value and no default compiles to the empty string rather than raising, so a
+ * pipeline whose schedule supplies nothing still runs — the same field then
+ * reads exactly as it did before parameters existed.
+ */
+const PARAM_RE = /\{\{\s*params\.([A-Za-z_][A-Za-z0-9_]*)\s*(?:\|([^}]*))?\}\}/g;
+
+/** True when a field carries at least one parameter reference. */
+export function hasParams(s: string): boolean {
+  PARAM_RE.lastIndex = 0;
+  return PARAM_RE.test(String(s ?? ""));
+}
+
+/**
+ * A field as a Python EXPRESSION, with `{{params.x}}` resolved at run time.
+ *
+ * Returns a plain literal when there is nothing to substitute, so the emitted
+ * program is unchanged for the overwhelming majority of nodes.
+ *
+ * WHY THIS EXISTS. `entrypoint(inputs)` received the run's parameters, passed
+ * them to `_tick(inputs)`, and `_tick` never read them. Nothing in a visual
+ * pipeline could see a parameter, and nothing said so: the Run-with-parameters
+ * dialog calls itself "the backfill door" and "the standard way to backfill a
+ * window or rerun one partition", and the documentation described backfills as
+ * parameterised runs. Re-running July 3-9 started a run, reported success, and
+ * read exactly what the pipeline always reads.
+ */
+export function pyTemplate(s: string): string {
+  const raw = String(s ?? "");
+  if (!hasParams(raw)) return pyStr(raw);
+  const parts: string[] = [];
+  let last = 0;
+  PARAM_RE.lastIndex = 0;
+  for (let m = PARAM_RE.exec(raw); m; m = PARAM_RE.exec(raw)) {
+    if (m.index > last) parts.push(pyStr(raw.slice(last, m.index)));
+    parts.push(`_param(${pyStr(m[1]!)}, ${pyStr(m[2] ?? "")})`);
+    last = m.index + m[0].length;
+  }
+  if (last < raw.length) parts.push(pyStr(raw.slice(last)));
+  return `(${parts.join(" + ")})`;
+}
+
 /** Python string literal — single-quoted, everything meaningful escaped. */
 export function pyStr(s: string): string {
   return (
@@ -282,7 +396,7 @@ export function envKey(nodeId: string): string {
   return `ETL_${clean}`;
 }
 
-function indent(code: string, pad: string): string {
+export function indent(code: string, pad: string): string {
   return code
     .split("\n")
     .map((l) => (l.trim() ? pad + l : l))
@@ -325,6 +439,37 @@ export function analyzeGraph(graph: EtlGraph): Analysis {
     const outs = outgoing.get(n.id)!.length;
     if (n.kind === "source" && ins > 0) throw new Error(`Source "${name(n)}" cannot have inputs`);
     if (n.kind === "source" && outs === 0) throw new Error(`Source "${name(n)}" is not connected`);
+    // AUTO-INGEST AND A ROW CURSOR CANNOT SHARE A NODE.
+    //
+    // They are two different cursors competing for one slot. Auto-ingest
+    // persists a JSON ledger ({mtime, keys, columns}); the row cursor
+    // persists a scalar high-water mark; both write `_watermarks[node]` and
+    // both read ETL_<NODE>_CURSOR. The row cursor is emitted second, so it
+    // overwrites the ledger — and the NEXT run feeds a date or a number to
+    // `json.loads`, which raises inside the sandbox.
+    //
+    // Run one looked perfect. Run two died with a Python JSON error nobody
+    // could map back to "you turned on two switches", and the persisted
+    // cursor was left wrong in a way the pipeline could not recover from
+    // without someone deleting the etl_pipeline_state row by hand.
+    //
+    // Refused rather than merged: `etl_pipeline_state.cursor_value` is capped
+    // at 512 characters, so a ledger of any size would be truncated into
+    // invalid JSON even if the two were given an envelope to share. Making
+    // this combination genuinely work needs its own state slot and a wider
+    // column, which is a change to storage rather than to codegen.
+    if (n.kind === "source" && isAutoIngest(n.config)) {
+      const cur = (n.config as { incremental?: { cursor_column?: string } }).incremental
+        ?.cursor_column;
+      if (cur) {
+        throw new Error(
+          `Source "${name(n)}" uses auto-ingest AND an incremental cursor on "${cur}". ` +
+            `They are two cursors for one source and overwrite each other — the pipeline would ` +
+            `fail on its second run. Keep auto-ingest to load only new FILES, or clear it and ` +
+            `use the cursor to load only new ROWS.`,
+        );
+      }
+    }
     if (n.kind === "target" && ins !== 1)
       throw new Error(`Target "${name(n)}" needs exactly one input`);
     if (n.kind === "target" && outs > 0) throw new Error(`Target "${name(n)}" cannot have outputs`);
@@ -368,10 +513,84 @@ const READERS: Record<SourceFileFormat, string> = {
   xlsx: "pd.read_excel(f)",
 };
 
-function sourceFn(node: EtlNode): string {
+/** A source node's config as the compiler sees it: a catalog asset is what it resolved to. */
+function effectiveConfig(n: EtlNode): Record<string, unknown> {
+  const c = n.config as { type?: string };
+  if (n.kind === "source" && isCatalogAsset(c)) {
+    return unwrapSourceConfig(c) as unknown as Record<string, unknown>;
+  }
+  return c as Record<string, unknown>;
+}
+
+/** The same, without refusing an asset that was never resolved - for feature detection. */
+function effectiveType(n: EtlNode): string | undefined {
+  const c = n.config as { type?: string };
+  return isCatalogAsset(c) ? c.resolved?.type : c.type;
+}
+
+/**
+ * A source node nobody finished configuring is refused BY NAME, at compile.
+ *
+ * Found by leaving a Platform dataset node's picker untouched: the graph
+ * saved, the run started, and it died inside the sandbox with
+ *
+ *   requests.exceptions.HTTPError: 404 Client Error: for url:
+ *   http://agentswarms:8080/api/notebook/runtime/source
+ *
+ * — the app's own internal API, named as if it were the problem, with nothing
+ * to connect it back to the node or to the field that was never filled in.
+ * Targets have had this for as long as they have had `pyIdent` ("Lakehouse
+ * table must be a valid identifier … got ''") and a bucket check that names
+ * the node; sources had it only where a field happened to be run through one
+ * of those.
+ *
+ * The rule is the same for every kind: say which node, and which field.
+ */
+export function assertSourceConfigured(node: EtlNode, c: EtlSourceConfig): void {
+  const who = `Source "${node.label || node.id}"`;
+  const blank = (v: unknown) => typeof v !== "string" || !v.trim();
+  if (c.type === "platform_dataset" && blank(c.table_id)) {
+    throw new Error(`${who} has no dataset picked`);
+  }
+  if (c.type === "object_storage" && blank(c.path)) {
+    throw new Error(`${who} has no file or folder picked`);
+  }
+  if (c.type === "http_api" && blank(c.url)) {
+    throw new Error(`${who} needs a URL`);
+  }
+  if (c.type === "python" && blank(c.code)) {
+    throw new Error(`${who} has no code`);
+  }
+  if (c.type === "lakehouse" && c.mode === "table" && (blank(c.schema) || blank(c.table))) {
+    throw new Error(`${who} has no lakehouse table picked`);
+  }
+  // NOT a missing connection: `resolveRunEnv` already refuses that by name
+  // ("Node \"X\" has no connection selected") for sources AND targets, before
+  // a container starts. Adding a second, differently-worded refusal here would
+  // be two messages for one mistake — the same reason stream sources are left
+  // to their own validator.
+  if (c.type === "database" && c.mode === "table" && blank(c.table)) {
+    throw new Error(`${who} has no table picked`);
+  }
+  if (c.type === "database" && c.mode === "query" && blank(c.query)) {
+    throw new Error(`${who} has no query`);
+  }
+}
+
+export function sourceFn(node: EtlNode): string {
   const c = node.config as EtlSourceConfig;
+  // A catalog asset is read as the source it resolved to when it was picked.
+  if (isCatalogAsset(c)) {
+    return sourceFn({ ...node, config: unwrapSourceConfig(c) as EtlSourceConfig });
+  }
+  assertSourceConfigured(node, c);
   const key = envKey(node.id);
   const head = `def _src_${node.id}():`;
+  if (isStreamSource(c)) {
+    const bad = validateStreamSource(c);
+    if (bad) throw new Error(`Stream source "${node.label || node.id}": ${bad}`);
+    return streamSourcePython(node.id, key, c);
+  }
   if (c.type === "lakehouse") {
     const schema = pyIdent(c.schema, "Lakehouse schema");
     const sql =
@@ -445,13 +664,69 @@ function sourceFn(node: EtlNode): string {
       `        endpoint_url=os.environ.get('${key}_ENDPOINT_URL') or None,`,
       `    )`,
       `    base = os.environ['${key}_BUCKET'].rstrip('/')`,
-      `    path = ${pyStr(c.path)}.lstrip('/')`,
-      `    keys = [p for p in fs.glob(f"{base}/{path}")] or [f"{base}/{path}"]`,
-      `    frames = []`,
-      `    for k in keys:`,
-      `        with fs.open(k, 'rb') as f:`,
-      `            frames.append(${READERS[c.format]})`,
-      `    out = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]`,
+      `    path = ${pyTemplate(c.path)}.lstrip('/')`,
+      ...(c.new_files_only
+        ? [
+            // Auto-ingest. The ledger is small on purpose: the newest
+            // modification time loaded plus the keys stamped with that exact
+            // time, so a listing decides "new" without a growing manifest. A
+            // file uploaded again later carries a newer time and loads again
+            // as a new version — a merge target with keys makes that
+            // idempotent. The columns ride along so an idle tick can hand
+            // downstream an empty frame of the right shape.
+            `    global _files_last_${node.id}`,
+            `    import json as _json`,
+            `    _cur = _json.loads(os.environ.get('${key}_CURSOR') or '{}')`,
+            `    _mark = str(_cur.get('mtime') or '')`,
+            `    _seen = set(_cur.get('keys') or [])`,
+            // fsspec keeps a directory cache per filesystem instance, and the
+            // instance itself is cached by its arguments — in a continuous
+            // run every tick would see the first tick's listing and a file
+            // that landed later would never be new. List fresh each time.
+            `    fs.invalidate_cache()`,
+            // `compression='infer'`: this product's own object-storage
+            // target writes `.jsonl.gz` and `.csv.gz` (dlt gzips text output),
+            // so a pipeline reading what another pipeline wrote is the common
+            // case, not an exotic one. Without it pandas gets gzip bytes and
+            // the run dies with `UnicodeDecodeError: ... byte 0x8b`. Verified
+            // a no-op on uncompressed files.
+            `    _listing = fs.glob(f"{base}/{path}", detail=True)`,
+            `    if not isinstance(_listing, dict):`,
+            `        _listing = {k: fs.info(k) for k in (_listing or [])}`,
+            `    _entries = []`,
+            `    for _k, _info in _listing.items():`,
+            `        if (_info or {}).get('type') == 'directory':`,
+            `            continue`,
+            `        _lm = (_info or {}).get('LastModified') or (_info or {}).get('mtime')`,
+            `        _mt = _lm.isoformat() if hasattr(_lm, 'isoformat') else str(_lm or '')`,
+            `        _entries.append((_mt, _k))`,
+            `    _entries.sort()`,
+            `    _new = [(m, k) for (m, k) in _entries if m > _mark or (m == _mark and k not in _seen)]`,
+            `    _max = max(1, int(${Math.max(1, Math.floor(c.max_files_per_run ?? 500))}))`,
+            `    _new = _new[:_max]`,
+            `    print('[etl] auto-ingest: ' + str(len(_entries)) + ' file(s) listed, ' + str(len(_new)) + ' new')`,
+            `    keys = [k for (m, k) in _new]`,
+            `    frames = []`,
+            `    for k in keys:`,
+            `        with fs.open(k, 'rb', compression='infer') as f:`,
+            `            frames.append(${READERS[c.format]})`,
+            `    if frames:`,
+            `        out = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]`,
+            `        _top = max(m for (m, k) in _new)`,
+            `        _keys = sorted([k for (m, k) in _new if m == _top] + (sorted(_seen) if _top == _mark else []))`,
+            `        _files_last_${node.id} = _json.dumps({'mtime': _top, 'keys': _keys, 'columns': [str(c) for c in out.columns]})`,
+            `    else:`,
+            `        out = pd.DataFrame(columns=[str(c) for c in (_cur.get('columns') or [])])`,
+            `        _files_last_${node.id} = None`,
+          ]
+        : [
+            `    keys = [p for p in fs.glob(f"{base}/{path}")] or [f"{base}/{path}"]`,
+            `    frames = []`,
+            `    for k in keys:`,
+            `        with fs.open(k, 'rb', compression='infer') as f:`,
+            `            frames.append(${READERS[c.format]})`,
+            `    out = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]`,
+          ]),
       ...(c.incremental?.cursor_column
         ? [
             `    # Engine-managed incremental: rows at or below the stored`,
@@ -460,7 +735,15 @@ function sourceFn(node: EtlNode): string {
             `    # so keep incremental storage sources on partitioned paths.`,
             `    cursor = os.environ.get('${key}_CURSOR')`,
             `    if cursor:`,
-            `        out = out[out[${pyStr(c.incremental.cursor_column)}].astype(str) > cursor]`,
+            `        # Compared in the COLUMN's own type. As text, a numeric`,
+            `        # watermark of 9 hides every row from 10 up — and the run`,
+            `        # reports success, so the loss is silent.`,
+            `        _col = out[${pyStr(c.incremental.cursor_column)}]`,
+            `        try:`,
+            `            _cur = pd.Series([cursor]).astype(_col.dtype).iloc[0]`,
+            `        except Exception:`,
+            `            _cur, _col = str(cursor), _col.astype(str)`,
+            `        out = out[_col > _cur]`,
           ]
         : []),
       `    return out`,
@@ -484,6 +767,23 @@ function sourceFn(node: EtlNode): string {
       `    rows = []`,
       `    with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as con:`,
       `        exists = con.execute(sa.text("SELECT 1 FROM pg_replication_slots WHERE slot_name = :s"), {'s': slot}).scalar()`,
+      // A PREVIEW MUST NOT CREATE THE SLOT OR TAKE THE SNAPSHOT.
+      //
+      // Previewing is how anyone checks a source's columns before wiring the
+      // rest of the graph, and the natural order is: add the CDC source,
+      // press Preview data, then build and run. Without this guard the
+      // preview created the slot and consumed the initial snapshot into a
+      // throwaway container. The first REAL run then found the slot already
+      // there, skipped the snapshot branch, peeked only the changes since the
+      // preview, and SUCCEEDED having loaded none of the table's existing
+      // rows. The mirror was silently missing all of its history, and nothing
+      // in the run log said so.
+      //
+      // The ingest source and the Pub/Sub ack already guard on this variable;
+      // CDC was the one that was missed.
+      `        if not exists and os.environ.get('AGENTSWARMS_ETL_PREVIEW') == '1':`,
+      `            print('[etl] cdc: preview only — slot not created, no snapshot taken')`,
+      `            return pd.DataFrame(columns=['_cdc_action', '_cdc_deleted', '_cdc_lsn'])`,
       `        if not exists:`,
       `            con.execute(sa.text("SELECT pg_create_logical_replication_slot(:s, 'wal2json')"), {'s': slot})`,
       `            print('[etl] cdc: created slot ' + slot)`,
@@ -555,7 +855,7 @@ function sourceFn(node: EtlNode): string {
     return [
       head,
       `    import requests`,
-      `    resp = requests.get(${pyStr(c.url)}, timeout=60)`,
+      `    resp = requests.get(${pyTemplate(c.url)}, timeout=60)`,
       `    resp.raise_for_status()`,
       `    data = resp.json()`,
       dig,
@@ -577,7 +877,7 @@ const QUALITY_CHECKS: QualityCheck[] = [
 ];
 
 /** Human-readable rule name, embedded in logs, metrics and error messages. */
-function ruleDesc(r: QualityRule): string {
+export function ruleDesc(r: QualityRule): string {
   if (r.check === "row_count_min") return `row_count_min(${r.min ?? 0})`;
   return `${r.check}(${r.column ?? "?"})`;
 }
@@ -624,7 +924,14 @@ function gateFn(node: EtlNode): string {
     if (r.check !== "row_count_min" && !r.column)
       throw new Error(`Rule ${ruleDesc(r)} in gate "${label}" needs a column`);
     const desc = ruleDesc(r);
-    const sev = r.severity === "drop" || r.severity === "warn" ? r.severity : "fail";
+    let sev = r.severity === "drop" || r.severity === "warn" ? r.severity : "fail";
+    // "DROP BAD ROWS" MEANS NOTHING FOR A ROW COUNT — a frame that is too
+    // short has no offending rows to remove, and the only answers left are
+    // abort or carry on. The generated code already aborted; what it also did
+    // was write `severity: 'drop'` into the run's _quality metric, so the
+    // record of a gate that failed the run said it had dropped rows. The
+    // editor offered the option, so the reader had every reason to believe it.
+    if (r.check === "row_count_min" && sev === "drop") sev = "fail";
     if (r.check === "row_count_min") {
       const min = Math.max(0, Math.floor(r.min ?? 0));
       lines.push(
@@ -666,24 +973,60 @@ function gateFn(node: EtlNode): string {
 }
 
 /**
+ * `_empty(df)` for the emitted program: a read that returned NO ROWS.
+ *
+ * A step that names a column cannot run when the column is not there, and a
+ * source with nothing to return does not always carry the payload's columns.
+ * A Kafka source with no new messages returns its FIVE metadata columns and
+ * zero rows (`_stream_topic`, `_stream_partition`, `_stream_offset`,
+ * `_stream_key`, `_stream_timestamp`), so `df.query("status == 'paid'")`
+ * raises `KeyError: 'status'` — and a caught-up stream pipeline failed on
+ * every quiet tick: on a schedule, a failure every interval; on a continuous
+ * pipeline, every rollover.
+ *
+ * The first attempt at this guard tested for "no rows AND no columns", which
+ * is what a bare `pd.DataFrame()` looks like. It did not fire, because those
+ * five metadata columns are columns. Row count is the honest test: with no
+ * rows, a row-wise step's answer is no rows whatever its expression mentions.
+ *
+ * The lakehouse target has skipped empty batches since it shipped, and its own
+ * comment names the case ("a stream with nothing new"). The steps between the
+ * source and the target had not.
+ */
+export function emptyGuardFn(): string {
+  return [
+    `def _empty(df):`,
+    `    # No rows: a row-wise step's answer is no rows, whatever columns its`,
+    `    # expression names. A source that read nothing may still carry some`,
+    `    # columns (a stream's metadata) but never the ones the step wants.`,
+    `    return len(df.index) == 0`,
+  ].join("\n");
+}
+
+/**
  * The sandbox-side lakehouse attach. Credentials arrive as env (resolved
  * server-side, never in code text) exactly like every other connector; the
  * engine here is the SAME DuckLake catalog the app uses, so a pipeline's
  * writes are ordinary ACID commits other readers see immediately.
  */
-function lakehouseAttachFn(): string {
+export function lakehouseAttachFn(): string {
   return [
     `def _lakehouse_con():`,
     `    import duckdb`,
-    `    # Extension directory. The sandbox's HOME is READ-ONLY (so DuckDB's`,
-    `    # default ~/.duckdb fails) and /tmp is mounted NOEXEC (so a .so there`,
-    `    # downloads fine but cannot be mapped). ~/.local is the one path that`,
-    `    # is both writable and executable — it is where pip --user puts`,
-    `    # compiled wheels, which the interpreter already loads.`,
-    `    _ext = os.path.join(os.path.expanduser('~'), '.local', 'duckdb')`,
-    `    os.makedirs(_ext, exist_ok=True)`,
-    `    con = duckdb.connect(config={'home_directory': _ext, 'extension_directory': _ext})`,
-    `    con.execute("INSTALL ducklake; INSTALL postgres; INSTALL httpfs;")`,
+    `    # Extensions. The runtime image ships them under /opt/agentswarms/`,
+    `    # duckdb-ext, read-only, so nothing is downloaded at run time and an`,
+    `    # air-gapped sandbox works; LOAD needs only to read them. An image built`,
+    `    # without them falls back to installing into ~/.local — the one path`,
+    `    # that is both writable and executable: HOME is read-only and /tmp is`,
+    `    # mounted noexec, so a .so there downloads fine but cannot be mapped.`,
+    `    _baked = '/opt/agentswarms/duckdb-ext'`,
+    `    if os.path.isdir(_baked):`,
+    `        con = duckdb.connect(config={'extension_directory': _baked})`,
+    `    else:`,
+    `        _ext = os.path.join(os.path.expanduser('~'), '.local', 'duckdb')`,
+    `        os.makedirs(_ext, exist_ok=True)`,
+    `        con = duckdb.connect(config={'home_directory': _ext, 'extension_directory': _ext})`,
+    `        con.execute("INSTALL ducklake; INSTALL postgres; INSTALL httpfs;")`,
     `    con.execute("LOAD ducklake; LOAD postgres; LOAD httpfs;")`,
     `    _ep = os.environ.get('ETL_LAKEHOUSE_S3_ENDPOINT')`,
     `    _sec = ["TYPE s3", "KEY_ID '" + os.environ['ETL_LAKEHOUSE_S3_KEY_ID'] + "'",`,
@@ -715,13 +1058,48 @@ function aggArgs(aggs: { column: string; fn: AggFn; as: string }[]): string {
     .join(", ");
 }
 
+/**
+ * The same rule as `assertSourceConfigured`, for the steps in between.
+ *
+ * Each of these reaches pandas as an expression that cannot work, and fails
+ * in pandas' vocabulary rather than the canvas's: `df.query('')` is
+ * "expr cannot be an empty string", `sort_values([])` is
+ * "Length of ascending (1) != length of by (0)", `groupby([])` is
+ * "No group keys passed!", and a join with no right keys is
+ * "len(right_on) must equal len(left_on)". None of them says which of the ten
+ * nodes on the canvas it means.
+ *
+ * Only the fields whose emptiness makes the step IMPOSSIBLE are refused. A
+ * rename with no pairs, a dedupe with no columns and a fill with no columns
+ * all have a defined meaning — no-op, every column, every column — and are
+ * left alone; refusing them would be inventing a rule.
+ */
+export function assertTransformConfigured(node: EtlNode, c: EtlTransformConfig): void {
+  const who = `Transform "${node.label || node.id}"`;
+  const blank = (v: unknown) => typeof v !== "string" || !v.trim();
+  const empty = (v: unknown) => !Array.isArray(v) || v.length === 0;
+  if (c.type === "filter" && blank(c.expr)) throw new Error(`${who} has no filter expression`);
+  if (c.type === "select" && empty(c.columns)) throw new Error(`${who} has no columns selected`);
+  if (c.type === "derive" && blank(c.column)) throw new Error(`${who} has no column name`);
+  if (c.type === "derive" && blank(c.expr)) throw new Error(`${who} has no expression`);
+  if (c.type === "sort" && empty(c.by)) throw new Error(`${who} has no columns to sort by`);
+  if (c.type === "aggregate" && empty(c.group_by))
+    throw new Error(`${who} has no group-by columns`);
+  if (c.type === "aggregate" && empty(c.aggs)) throw new Error(`${who} has no aggregations`);
+  if (c.type === "join" && (empty(c.left_on) || empty(c.right_on))) {
+    throw new Error(`${who} needs a key column on both sides`);
+  }
+  if (c.type === "sql" && blank(c.query)) throw new Error(`${who} has no query`);
+}
+
 function transformExpr(node: EtlNode, ins: string[]): string {
   const c = node.config as EtlTransformConfig;
+  assertTransformConfigured(node, c);
   const f = (id: string) => `f_${id}`;
   const one = f(ins[0]);
   switch (c.type) {
     case "filter":
-      return `${one}.query(${pyStr(c.expr)})`;
+      return `${one}.query(${pyTemplate(c.expr)})`;
     case "select":
       return `${one}[[${c.columns.map((x) => pyStr(x)).join(", ")}]]`;
     case "rename": {
@@ -763,7 +1141,7 @@ function transformExpr(node: EtlNode, ins: string[]): string {
     case "union":
       return `pd.concat([${ins.map((x) => f(x)).join(", ")}], ignore_index=True)`;
     case "sql":
-      return `_sql_over(${one}, ${pyStr(c.query)})`;
+      return `_sql_over(${one}, ${pyTemplate(c.query)})`;
     case "python":
       return `_fn_${node.id}(${one})`;
     case "quality_gate":
@@ -771,7 +1149,71 @@ function transformExpr(node: EtlNode, ins: string[]): string {
   }
 }
 
-function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
+/**
+ * The request body for one batch, as a Python expression over `_chunk`.
+ *
+ * Each vendor has its own envelope, and the id column is lifted out of the
+ * fields: HubSpot names it `idProperty`/`id`, Salesforce puts it beside the
+ * record's `attributes`. Both take `allOrNone: false` semantics — a batch is
+ * not rolled back for one bad record, which is why reading the per-record
+ * result below is not optional.
+ */
+function saasBodyExpr(cfg: SaasTargetConfig, idCol: string): string {
+  const id = pyStr(idCol);
+  if (cfg.vendor === "hubspot") {
+    return (
+      `{'inputs': [{'idProperty': ${id}, 'id': _r.get(${id}), ` +
+      `'properties': {_k: _r.get(_k) for _k in _cols if _r.get(_k) is not None}} for _r in _chunk]}`
+    );
+  }
+  return (
+    `{'allOrNone': False, 'records': [dict({'attributes': {'type': ${pyStr(cfg.object ?? "")}}, ` +
+    `${id}: _r.get(${id})}, **{_k: _r.get(_k) for _k in _cols if _r.get(_k) is not None}) for _r in _chunk]}`
+  );
+}
+
+/**
+ * Read the per-record outcome of one batch.
+ *
+ * Mirrors `readFailures` in @/lib/saasTargets, which is the tested statement
+ * of the same contract — the TypeScript one cannot run in the sandbox and the
+ * Python one cannot run in a unit test, so both exist and a test pins that
+ * they branch on the same fields.
+ */
+function saasFailureLines(cfg: SaasTargetConfig): string[] {
+  if (cfg.vendor === "salesforce") {
+    return [
+      `        if isinstance(_payload, list):`,
+      `            for _r in _payload:`,
+      `                if not (isinstance(_r, dict) and _r.get('success')):`,
+      `                    _failed += 1`,
+      `                    _e = ((_r or {}).get('errors') or [{}])[0]`,
+      `                    if len(_why) < 3:`,
+      `                        _why.append(str(_e.get('message') or 'rejected'))`,
+      `        else:`,
+      // Not an array at all means the request was rejected wholesale. Counting
+      // that as zero failures is exactly the silent success this target exists
+      // to prevent.
+      `            _failed += len(_chunk)`,
+      `            _why.append('Salesforce did not return a per-record result')`,
+    ];
+  }
+  return [
+    `        if isinstance(_payload, dict):`,
+    `            _errs = _payload.get('errors') or []`,
+    `            _n = _payload.get('numErrors')`,
+    `            if _n is None:`,
+    `                _res = _payload.get('results')`,
+    `                _n = len(_errs) if _errs else (max(0, len(_chunk) - len(_res)) if isinstance(_res, list) else 0)`,
+    `            if _n:`,
+    `                _failed += int(_n)`,
+    `                for _e in _errs[:3]:`,
+    `                    if len(_why) < 3:`,
+    `                        _why.append(str((_e or {}).get('message') or 'rejected'))`,
+  ];
+}
+
+export function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
   const c = node.config as EtlTargetConfig;
   if (c.type === "lakehouse") {
     const schema = pyIdent(c.schema, "Lakehouse schema");
@@ -785,34 +1227,101 @@ function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
         ? [`        con.execute('CREATE OR REPLACE TABLE ${fq} AS SELECT * FROM _src')`]
         : c.write_mode === "append"
           ? [
-              `        con.execute('CREATE TABLE IF NOT EXISTS ${fq} AS SELECT * FROM _src WHERE false')`,
-              `        con.execute('INSERT INTO ${fq} SELECT * FROM _src')`,
+              // An empty batch (a stream with nothing new, a filter that kept
+              // nothing) loads nothing and must not shape the table: an empty
+              // frame carries only the columns the source could name. BY NAME
+              // keeps a batch honest when its columns arrive in another order.
+              `        if len(_src):`,
+              `            con.execute('CREATE TABLE IF NOT EXISTS ${fq} AS SELECT * FROM _src WHERE false')`,
+              `            con.execute('INSERT INTO ${fq} BY NAME SELECT * FROM _src')`,
             ]
           : [
               // Upsert: delete the incoming keys, then insert — one transaction,
-              // so a reader never sees the gap between the two.
-              `        con.execute('CREATE TABLE IF NOT EXISTS ${fq} AS SELECT * FROM _src WHERE false')`,
-              `        con.execute('BEGIN TRANSACTION')`,
-              `        con.execute(${pyStr(
+              // so a reader never sees the gap between the two. Inside an
+              // exactly-once tick the shared transaction already covers both.
+              `        if len(_src):`,
+              `            con.execute('CREATE TABLE IF NOT EXISTS ${fq} AS SELECT * FROM _src WHERE false')`,
+              `            if _own:`,
+              `                con.execute('BEGIN TRANSACTION')`,
+              `            con.execute(${pyStr(
                 `DELETE FROM ${fq} WHERE (${(c.primary_key ?? [])
                   .map((k) => `"${pyIdent(k, "Primary key column")}"`)
                   .join(", ")}) IN (SELECT ${(c.primary_key ?? [])
                   .map((k) => `"${pyIdent(k, "Primary key column")}"`)
                   .join(", ")} FROM _src)`,
               )})`,
-              `        con.execute('INSERT INTO ${fq} SELECT * FROM _src')`,
-              `        con.execute('COMMIT')`,
+              `            con.execute('INSERT INTO ${fq} BY NAME SELECT * FROM _src')`,
+              `            if _own:`,
+              `                con.execute('COMMIT')`,
             ];
     return [
       `    # target ${node.id}: lakehouse → ${schema}.${table} (${c.write_mode})`,
       `    _src = ${input}`,
-      `    con = _lakehouse_con()`,
+      // An exactly-once tick holds one open transaction on `_tick_con` and
+      // every lakehouse target loads through it; otherwise the target opens
+      // and closes a connection of its own, as it always did.
+      `    _own = globals().get('_tick_con') is None`,
+      `    con = _lakehouse_con() if _own else _tick_con`,
       `    try:`,
       `        con.register('_src', _src)`,
       ...load,
       `    finally:`,
-      `        con.close()`,
-      `    _loads.append({'target': '${schema}.${table}', 'fqn': '${schema}.${table}', 'rows': int(len(${input})), 'load_id': None})`,
+      `        if _own:`,
+      `            con.close()`,
+      `    _loads.append({'node': '${node.id}', 'target': '${schema}.${table}', 'fqn': '${schema}.${table}', 'rows': int(len(${input})), 'load_id': None})`,
+    ].join("\n");
+  }
+  if (c.type === "saas") {
+    const cfg = c as unknown as SaasTargetConfig;
+    const problem = validateSaasTarget(cfg);
+    if (problem) throw new Error(`SaaS target "${node.label || node.id}": ${problem}`);
+    const spec = SAAS_TARGETS[cfg.vendor as SaasTargetVendor];
+    const batch = batchSizeFor(cfg);
+    const stem = envKey(node.id);
+    const idCol = (cfg.id_column ?? "").trim();
+    const fields = (cfg.columns ?? []).filter((x) => x !== idCol);
+    return [
+      `    # target ${node.id}: reverse ETL → ${spec.label} ${cfg.object}`,
+      `    import requests`,
+      // The host is the tenant's own — HubSpot is fixed, a Salesforce org lives
+      // at its My Domain — and both arrive resolved as the pipeline's owner.
+      `    _base = os.environ['${stem}_BASE'].rstrip('/')`,
+      `    _url = _base + ${pyStr(endpointPath(cfg))}`,
+      `    _hdrs = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + os.environ['${stem}_TOKEN']}`,
+      `    _df = ${input}`,
+      `    if ${pyStr(idCol)} not in _df.columns:`,
+      // Refused before the first request: without it every record would be
+      // rejected one batch at a time, which is a slow way to learn this.
+      `        raise RuntimeError(${pyStr(`${spec.label} target needs a "${idCol}" column to identify records; the frame has: `)} + ', '.join(map(str, _df.columns)))`,
+      fields.length
+        ? `    _cols = [_c for _c in [${fields.map((f) => pyStr(f)).join(", ")}] if _c in _df.columns]`
+        : `    _cols = [_c for _c in _df.columns if _c != ${pyStr(idCol)}]`,
+      `    _records = json.loads(_df.to_json(orient='records', date_format='iso'))`,
+      `    _sent, _failed, _why = 0, 0, []`,
+      `    for _i in range(0, len(_records), ${batch}):`,
+      `        _chunk = _records[_i:_i + ${batch}]`,
+      `        _body = ${saasBodyExpr(cfg, idCol)}`,
+      `        _resp = requests.request(${pyStr(methodFor(cfg))}, _url, json=_body, headers=_hdrs, timeout=120)`,
+      // A transport-level failure fails the run the ordinary way — except for
+      // the one that is nearly always the egress proxy rather than the API. A
+      // 403 whose body is not JSON did not come from a JSON API, and naming
+      // the proxy saves an hour spent looking at CRM permissions.
+      `        if _resp.status_code >= 400:`,
+      `            _hint = ''`,
+      `            if _resp.status_code == 403 and 'json' not in (_resp.headers.get('content-type') or ''):`,
+      `                _hint = ' (this looks like the egress proxy, not ${spec.label}: add ' + _base.split('//')[-1].split('/')[0] + ' to the allow-list under Admin -> Developer runtime)'`,
+      `            raise RuntimeError(${pyStr(`${spec.label} `)} + str(_resp.status_code) + _hint + ': ' + _resp.text[:300])`,
+      `        try:`,
+      `            _payload = _resp.json()`,
+      `        except Exception:`,
+      `            _payload = None`,
+      ...saasFailureLines(cfg),
+      `        _sent += len(_chunk)`,
+      `        print(${pyStr(`[etl] ${spec.label} ${cfg.object}: `)} + str(_sent) + '/' + str(len(_records)) + ' record(s) sent')`,
+      // The whole point: a 200 that rejected records is a failed run.
+      `    if _failed:`,
+      `        raise RuntimeError(${pyStr(`${spec.label} rejected `)} + str(_failed) + ' of ' + str(len(_records)) + ' record(s): ' + '; '.join(_why[:3]))`,
+      `    _loads.append({'node': '${node.id}', 'target': ${pyStr(`${spec.label}:${cfg.object}`)}, 'fqn': ${pyStr(`saas:${cfg.vendor}:${cfg.object}`)}, 'rows': int(len(${input})), 'load_id': None})`,
     ].join("\n");
   }
   if (c.type === "http_api") {
@@ -824,12 +1333,19 @@ function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
       `    # target ${node.id}: reverse ETL → ${method} ${c.url}`,
       `    import requests`,
       `    _hdrs = {'Content-Type': 'application/json'}`,
-      ...(c.auth_env
+      // A secret picked on the node arrives as <STEM>_AUTH_TOKEN, resolved as
+      // the owner at run start; the older env-var binding still works.
+      ...(c.auth_secret
         ? [
-            `    if os.environ.get(${pyStr(c.auth_env)}):`,
-            `        _hdrs['Authorization'] = 'Bearer ' + os.environ[${pyStr(c.auth_env)}]`,
+            `    if os.environ.get('${envKey(node.id)}_AUTH_TOKEN'):`,
+            `        _hdrs['Authorization'] = 'Bearer ' + os.environ['${envKey(node.id)}_AUTH_TOKEN']`,
           ]
-        : []),
+        : c.auth_env
+          ? [
+              `    if os.environ.get(${pyStr(c.auth_env)}):`,
+              `        _hdrs['Authorization'] = 'Bearer ' + os.environ[${pyStr(c.auth_env)}]`,
+            ]
+          : []),
       `    _records = json.loads(${input}.to_json(orient='records', date_format='iso'))`,
       `    _sent = 0`,
       `    for _i in range(0, len(_records), ${batch}):`,
@@ -839,7 +1355,7 @@ function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
       `        _resp.raise_for_status()`,
       `        _sent += len(_chunk)`,
       `        print('[etl] http target: ' + str(_sent) + '/' + str(len(_records)) + ' row(s) sent')`,
-      `    _loads.append({'target': ${pyStr(c.url)}, 'fqn': ${pyStr(`http:${c.url}`)}, 'rows': int(len(${input})), 'load_id': None})`,
+      `    _loads.append({'node': '${node.id}', 'target': ${pyStr(c.url)}, 'fqn': ${pyStr(`http:${c.url}`)}, 'rows': int(len(${input})), 'load_id': None})`,
     ].join("\n");
   }
   const key = envKey(node.id);
@@ -951,19 +1467,61 @@ function targetBlock(node: EtlNode, input: string, cdcInput = false): string {
     `    )`,
     run,
     ...(cdcDeltaApply ? [cdcDeltaApply] : []),
-    `    _loads.append({'target': '${dataset}.${table}', 'fqn': ${
+    `    _loads.append({'node': '${node.id}', 'target': '${dataset}.${table}', 'fqn': ${
       c.type === "object_storage"
         ? tableFormat === "iceberg"
           ? `'${dataset}/${table}/data/*.parquet'`
           : tableFormat === "delta"
             ? `'${dataset}/${table}/*.parquet'`
-            : `'${dataset}/${table}/*.${c.format === "jsonl" ? "ndjson" : c.format}'`
+            : `'${dataset}/${table}/*.${DLT_FILE_EXT[c.format]}'`
         : `'${dataset}.${table}'`
     }, 'rows': int(len(${input})), 'load_id': str(info.loads_ids[0]) if info.loads_ids else None})`,
   ].join("\n");
 }
 
 // ── Compile ─────────────────────────────────────────────────────────────────
+
+/**
+ * What each source reads, the way lineage records it. Shared by both
+ * compilers, so a Spark run and a pandas run of one graph record the same
+ * upstream names.
+ */
+/** The label a source node gets in catalog lineage: what it actually is. */
+export function lineageSourceOf(n: EtlNode): string {
+  const c = n.config as {
+    type: string;
+    path?: string;
+    table?: string;
+    table_id?: string;
+    table_name?: string;
+    schema?: string;
+    mode?: string;
+    url?: string;
+  };
+  if (isCatalogAsset(c)) return catalogAssetLineage(c as CatalogAssetSourceConfig);
+  if (c.type === "object_storage") return c.path ?? "";
+  if (c.type === "database")
+    return c.mode === "table"
+      ? (c.table ?? "")
+      : c.mode === "cdc"
+        ? `cdc:${c.table ?? ""}`
+        : "sql-query";
+  if (c.type === "http_api") return c.url ?? "";
+  if (c.type === "platform_dataset") return `platform:${c.table_name ?? c.table_id ?? ""}`;
+  if (c.type === "ingest") return "webhook-ingest";
+  if (c.type === "kafka") return `kafka:${(c as { topic?: string }).topic ?? ""}`;
+  if (c.type === "kinesis") return `kinesis:${(c as { stream?: string }).stream ?? ""}`;
+  if (c.type === "pubsub") return `pubsub:${(c as { subscription?: string }).subscription ?? ""}`;
+  if (c.type === "lakehouse") return `lakehouse:${c.schema ?? ""}${c.table ? `.${c.table}` : ""}`;
+  return "python";
+}
+
+export function lineageSourcesOf(order: EtlNode[]): string[] {
+  return order
+    .filter((n) => n.kind === "source")
+    .map(lineageSourceOf)
+    .filter(Boolean);
+}
 
 export function compileGraph(graph: EtlGraph): string {
   const { order, incoming } = analyzeGraph(graph);
@@ -983,7 +1541,12 @@ export function compileGraph(graph: EtlGraph): string {
 
   // Refuse unsupported database providers at compile time, not in a container.
   for (const n of order) {
-    const c = n.config as { type?: string; provider?: string; mode?: string; table?: string };
+    const c = effectiveConfig(n) as {
+      type?: string;
+      provider?: string;
+      mode?: string;
+      table?: string;
+    };
     if (c.type !== "database") continue;
     if (n.kind === "source" && c.mode === "cdc") {
       if (dbFamily(c.provider) !== "postgres")
@@ -1022,10 +1585,19 @@ export function compileGraph(graph: EtlGraph): string {
       ``,
       `def _sql_over(df, query):`,
       `    # SQL step: the incoming frame is table 't'.`,
-      `    import ibis`,
-      `    con = ibis.duckdb.connect()`,
-      `    con.create_table('t', df, overwrite=True)`,
-      `    return con.sql(query).to_pandas()`,
+      `    #`,
+      `    # DuckDB directly, not through ibis. ibis 12.0.0 against the`,
+      `    # image's pandas 3 fails inside create_table with`,
+      `    # "Parser Error: syntax error at end of input", so a SQL step could`,
+      `    # not run AT ALL on a fresh sandbox — and the requirement was`,
+      `    # unpinned, so every new run pulled whatever ibis had just released.`,
+      `    # duckdb registers a frame natively, is the engine the lakehouse`,
+      `    # already uses, and ships in the runtime image: this removes a`,
+      `    # dependency rather than pinning one.`,
+      `    import duckdb`,
+      `    con = duckdb.connect()`,
+      `    con.register('t', df)`,
+      `    return con.sql(query).df()`,
       ``,
     );
   }
@@ -1033,7 +1605,7 @@ export function compileGraph(graph: EtlGraph): string {
     const c = n.config as Extract<EtlTransformConfig, { type: "python" }>;
     lines.push(``, `def _fn_${n.id}(df):`, indent(c.code, "    "), `    return df`, ``);
   }
-  if (order.some((n) => (n.config as { type?: string }).type === "lakehouse")) {
+  if (order.some((n) => effectiveType(n) === "lakehouse")) {
     lines.push(``, lakehouseAttachFn());
   }
   const gates = order.filter(
@@ -1057,13 +1629,23 @@ export function compileGraph(graph: EtlGraph): string {
   )) {
     lines.push(`_ingest_last_${n.id} = None`);
   }
+  for (const n of order.filter((x) => x.kind === "source" && isStreamSource(x.config))) {
+    lines.push(`_stream_last_${n.id} = None`);
+  }
+  for (const n of order.filter((x) => x.kind === "source" && isAutoIngest(x.config))) {
+    lines.push(`_files_last_${n.id} = None`);
+  }
 
   const incremental = order.filter(
     (n) =>
       n.kind === "source" &&
       ((n.config as { incremental?: { cursor_column?: string } }).incremental?.cursor_column ||
         (n.config as { mode?: string }).mode === "cdc" ||
-        (n.config as { type?: string }).type === "ingest"),
+        (n.config as { type?: string }).type === "ingest" ||
+        // A storage prefix watched for new files keeps its ledger the same way.
+        isAutoIngest(n.config) ||
+        // A stream node reports its positions the same way.
+        isStreamSource(n.config)),
   );
   const cdcNodes = order.filter(
     (n) => n.kind === "source" && (n.config as { mode?: string }).mode === "cdc",
@@ -1072,37 +1654,29 @@ export function compileGraph(graph: EtlGraph): string {
   // Upstream descriptors for catalog lineage: close enough to the crawler's
   // asset fqns that storage-to-storage flows connect end to end, and honest
   // labels (url, table, "python") where no asset exists to point at.
-  const lineageSources = order
-    .filter((n) => n.kind === "source")
-    .map((n) => {
-      const c = n.config as {
-        type: string;
-        path?: string;
-        table?: string;
-        table_id?: string;
-        table_name?: string;
-        schema?: string;
-        mode?: string;
-        url?: string;
-      };
-      if (c.type === "object_storage") return c.path ?? "";
-      if (c.type === "database")
-        return c.mode === "table"
-          ? (c.table ?? "")
-          : c.mode === "cdc"
-            ? `cdc:${c.table ?? ""}`
-            : "sql-query";
-      if (c.type === "http_api") return c.url ?? "";
-      if (c.type === "platform_dataset") return `platform:${c.table_name ?? c.table_id ?? ""}`;
-      if (c.type === "ingest") return "webhook-ingest";
-      if (c.type === "lakehouse")
-        return `lakehouse:${c.schema ?? ""}${c.table ? `.${c.table}` : ""}`;
-      return "python";
-    })
-    .filter(Boolean);
+  const lineageSources = lineageSourcesOf(order);
 
-  lines.push(``, `def entrypoint(inputs=None):`);
+  // The per-tick body. The wrapper appended below defines `entrypoint`: once
+  // through for an ordinary run, a loop for a continuous one.
+  // The run's parameters, published where every source function can see them.
+  // Source functions are module-level (`def _src_n1()`), so a closure over
+  // `inputs` would not reach them — hence a module global set once per tick.
+  lines.push(
+    ``,
+    `_PARAMS = {}`,
+    ``,
+    `def _param(name, default=''):`,
+    `    # One run parameter, as text. Missing and None both read as the default.`,
+    `    v = _PARAMS.get(name)`,
+    `    # A key present but null must fall back too: a schedule that passes`,
+    `    # {"day": null} means "no value", not "the empty string".`,
+    `    return str(default) if v is None else str(v)`,
+  );
+  lines.push(``, emptyGuardFn());
+  lines.push(``, `def _tick(inputs=None):`);
+  lines.push(`    global _PARAMS`, `    _PARAMS = dict(inputs or {})`);
   if (incremental.length) lines.push(`    _watermarks = {}`);
+  lines.push(`    _cols = {}`);
   for (const n of order) {
     const ins = incoming.get(n.id)!;
     if (n.kind === "source") {
@@ -1125,6 +1699,22 @@ export function compileGraph(graph: EtlGraph): string {
           `        _watermarks['${n.id}'] = _cdc_last_${n.id}`,
         );
       }
+      if (isStreamSource(n.config)) {
+        // The next positions per partition / shard, persisted only when the
+        // run's load commits - so a failed run re-reads the same messages.
+        lines.push(
+          `    if _stream_last_${n.id}:`,
+          `        _watermarks['${n.id}'] = _stream_last_${n.id}`,
+        );
+      }
+      if (isAutoIngest(n.config)) {
+        // The file ledger: reported only when files were read, so an idle
+        // tick keeps the previous position.
+        lines.push(
+          `    if _files_last_${n.id}:`,
+          `        _watermarks['${n.id}'] = _files_last_${n.id}`,
+        );
+      }
       const inc = (n.config as { incremental?: { cursor_column?: string } }).incremental;
       if (inc?.cursor_column) {
         // Report the new high-water mark; on an empty read, report nothing so
@@ -1135,12 +1725,35 @@ export function compileGraph(graph: EtlGraph): string {
         );
       }
     } else if (n.kind === "transform") {
-      lines.push(`    f_${n.id} = ${transformExpr(n, ins)}`);
+      // Two exceptions, both because the step's answer to "no rows" is not
+      // the compiler's to decide:
+      //   UNION — `pd.concat` already keeps the branch that DID have rows;
+      //   PYTHON — the author's own code may build rows out of nothing.
+      const kind_ = (n.config as { type?: string }).type;
+      if (kind_ === "union" || kind_ === "python") {
+        lines.push(`    f_${n.id} = ${transformExpr(n, ins)}`);
+      } else {
+        // The input's columns are the best-known schema, so the skip keeps
+        // them: `iloc[0:0]` is no rows with the shape intact, which cascades
+        // through the rest of the graph and lets the target's own empty-batch
+        // skip do its job.
+        lines.push(
+          `    if ${ins.map((i) => `_empty(f_${i})`).join(" or ")}:`,
+          `        f_${n.id} = f_${ins[0]}.iloc[0:0]`,
+          `    else:`,
+          `        f_${n.id} = ${transformExpr(n, ins)}`,
+        );
+      }
     }
   }
 
   // dlt is imported only when a target actually loads through it — a
   // lakehouse- or HTTP-only pipeline neither installs nor imports it.
+  // Every frame's columns, for column-level lineage: what each node actually
+  // produced, so the tracer works from observed shapes, not the graph's hopes.
+  for (const n of order.filter((x) => x.kind !== "target")) {
+    lines.push(`    _cols['${n.id}'] = [str(_c) for _c in f_${n.id}.columns]`);
+  }
   if (hasStorageTarget || hasDbTarget) lines.push(``, `    import dlt`);
   if (hasStorageTarget) lines.push(`    from dlt.destinations import filesystem`);
   if (hasDbTarget) lines.push(`    from dlt.destinations import sqlalchemy as sqlalchemy_dest`);
@@ -1159,6 +1772,7 @@ export function compileGraph(graph: EtlGraph): string {
     `        'rows_loaded': sum(l['rows'] for l in _loads),`,
     `        'targets': _loads,`,
     `        'schemas': _schemas,`,
+    `        'columns': _cols,`,
     `        'lineage_sources': ${JSON.stringify(lineageSources)},`.replace(/"/g, "'"),
     ...(order.some(
       (n) => n.kind === "transform" && (n.config as { type?: string }).type === "quality_gate",
@@ -1169,6 +1783,10 @@ export function compileGraph(graph: EtlGraph): string {
     `    }`,
     `    print('[etl] ' + json.dumps(metrics))`,
     `    return metrics`,
+  );
+  lines.push(
+    ``,
+    continuousWrapper(Object.fromEntries(incremental.map((n) => [n.id, envKey(n.id)]))),
   );
   return lines.join("\n") + "\n";
 }
@@ -1234,10 +1852,11 @@ export function compilePreview(graph: EtlGraph, nodeId: string): string {
     lines.push(
       ``,
       `def _sql_over(df, query):`,
-      `    import ibis`,
-      `    con = ibis.duckdb.connect()`,
-      `    con.create_table('t', df, overwrite=True)`,
-      `    return con.sql(query).to_pandas()`,
+      `    # DuckDB directly: ibis 12 fails on pandas 3 inside create_table.`,
+      `    import duckdb`,
+      `    con = duckdb.connect()`,
+      `    con.register('t', df)`,
+      `    return con.sql(query).df()`,
       ``,
     );
   }
@@ -1250,7 +1869,7 @@ export function compilePreview(graph: EtlGraph, nodeId: string): string {
   // the same graph ran fine as a pipeline — the preview is a SECOND compiler
   // over the same nodes, and anything the source functions depend on has to be
   // emitted by both.
-  if (slice.some((n) => (n.config as { type?: string }).type === "lakehouse")) {
+  if (slice.some((n) => effectiveType(n) === "lakehouse")) {
     lines.push(``, lakehouseAttachFn());
   }
   if (gates.length) {
@@ -1261,13 +1880,35 @@ export function compilePreview(graph: EtlGraph, nodeId: string): string {
     lines.push(``, sourceFn(n), ``);
   }
 
+  // The steps below guard on `_empty`, so the preview has to emit it as well:
+  // the preview is a second compiler over the same nodes.
+  lines.push(``, emptyGuardFn());
+
   lines.push(``, `def entrypoint(inputs):`);
   for (const n of slice) {
     const ins = incoming.get(n.id)!.filter((x) => keep.has(x));
     if (n.kind === "source") {
       lines.push(`    f_${n.id} = _src_${n.id}().head(${PREVIEW_SAMPLE_ROWS})`);
     } else if (n.kind === "transform") {
-      lines.push(`    f_${n.id} = ${transformExpr(n, ins)}`);
+      // Two exceptions, both because the step's answer to "no rows" is not
+      // the compiler's to decide:
+      //   UNION — `pd.concat` already keeps the branch that DID have rows;
+      //   PYTHON — the author's own code may build rows out of nothing.
+      const kind_ = (n.config as { type?: string }).type;
+      if (kind_ === "union" || kind_ === "python") {
+        lines.push(`    f_${n.id} = ${transformExpr(n, ins)}`);
+      } else {
+        // The input's columns are the best-known schema, so the skip keeps
+        // them: `iloc[0:0]` is no rows with the shape intact, which cascades
+        // through the rest of the graph and lets the target's own empty-batch
+        // skip do its job.
+        lines.push(
+          `    if ${ins.map((i) => `_empty(f_${i})`).join(" or ")}:`,
+          `        f_${n.id} = f_${ins[0]}.iloc[0:0]`,
+          `    else:`,
+          `        f_${n.id} = ${transformExpr(n, ins)}`,
+        );
+      }
     }
   }
   // Every ancestor frame already exists here, so reporting each one's columns
@@ -1305,7 +1946,11 @@ export function requirementsFor(graph: EtlGraph): string {
   const reqs = new Set<string>(["pandas", "pyarrow"]);
   let anyDlt = false;
   for (const n of graph.nodes ?? []) {
-    const c = n.config as { type?: string; format?: string; provider?: string };
+    const c = (
+      n.kind === "source" && isCatalogAsset(n.config as { type?: string })
+        ? ((n.config as CatalogAssetSourceConfig).resolved ?? {})
+        : n.config
+    ) as { type?: string; format?: string; provider?: string };
     if (n.kind === "source") {
       if (c.type === "object_storage") {
         reqs.add("s3fs");
@@ -1321,8 +1966,8 @@ export function requirementsFor(graph: EtlGraph): string {
         if (fam) reqs.add(FAMILY_DRIVER[fam]);
       }
     }
-    if (n.kind === "transform" && c.type === "sql") reqs.add("ibis-framework[duckdb]");
-    if (n.kind === "target" && c.type === "http_api") {
+    if (n.kind === "transform" && c.type === "sql") reqs.add("duckdb>=1.4");
+    if (n.kind === "target" && (c.type === "http_api" || c.type === "saas")) {
       reqs.add("requests");
       continue;
     }
@@ -1356,7 +2001,7 @@ export function requirementsFor(graph: EtlGraph): string {
   const hasNonDltTarget = (graph.nodes ?? []).some(
     (n) =>
       n.kind === "target" &&
-      ["lakehouse", "http_api"].includes((n.config as { type?: string }).type ?? ""),
+      ["lakehouse", "http_api", "saas"].includes((n.config as { type?: string }).type ?? ""),
   );
   if (!anyDlt && !hasNonDltTarget) reqs.add("dlt[filesystem]>=1.3");
   return [...reqs].sort().join("\n");

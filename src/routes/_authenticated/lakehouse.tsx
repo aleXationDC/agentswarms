@@ -2,8 +2,10 @@
 // run governed SQL (typed or NL-generated), inspect snapshots, import
 // platform datasets — all through the server chokepoint that enforces
 // schema access, audits every statement, and writes query history.
+import { confirmAsk } from "@/components/ui/confirm-dialog";
+import { SharesDialog } from "@/components/lakehouse/SharesDialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ChevronDown,
@@ -11,6 +13,9 @@ import {
   Clock3,
   Database as DatabaseIcon,
   Download,
+  AlertTriangle,
+  Boxes,
+  Flame,
   HardDrive,
   Loader2,
   Play,
@@ -25,6 +30,7 @@ import {
   Rows3,
   ShieldCheck,
   Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,22 +54,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { formatBytes } from "@/utils/lakehouse/layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { BiModelSelect } from "@/components/bi/BiModelSelect";
+import { AiFunctionsReference } from "@/components/lakehouse/AiFunctionsReference";
+import {
+  IcebergCatalogsDialog,
+  PublishToIcebergDialog,
+} from "@/components/lakehouse/IcebergDialog";
 import { downloadCsv } from "@/lib/exportData";
 import { useAuth } from "@/hooks/use-auth";
+import { useTokenRef } from "@/hooks/use-token-ref";
 import { supabase } from "@/integrations/supabase/client";
 import { parseModelChoice } from "@/utils/providers/modelChoice";
 import {
   createLakehouseSchema,
   createLakehouseTable,
   dropLakehouseSchema,
+  getLakehouseIntegrity,
   getLakehouseOverview,
   getLakehouseTable,
   importDatasetToLakehouse,
   listLakeMountCandidates,
   listLakehouseHistory,
+  lakehouseSparkStatus,
+  startLakehouseSparkQuery,
+  getLakehouseSparkQuery,
+  cancelLakehouseSparkQuery,
   mountLakeSource,
   getLakehousePolicy,
   listLakehouseMatviews,
@@ -71,7 +90,14 @@ import {
   refreshLakehouseMatview,
   saveLakehouseMatview,
   setLakehousePartitioning,
+  getLakehouseLayout,
+  rewriteLakehouseLayout,
+  clearLakehouseLayout,
   setLakehousePolicy,
+  listLakehouseTagPolicies,
+  setLakehouseTagPolicy,
+  deleteLakehouseTagPolicy,
+  type LakehouseTagPolicy,
   type LakehousePolicy,
   type LakehouseMatview,
   type LakehouseProfile,
@@ -98,8 +124,18 @@ function LakehousePage() {
   const { session } = useAuth();
   const token = session?.access_token ?? "";
   const overviewFn = useServerFn(getLakehouseOverview);
+  const integrityFn = useServerFn(getLakehouseIntegrity);
 
   const [data, setData] = useState<LakehouseOverview | null>(null);
+  // Tables the catalog describes but the object store no longer has.
+  //
+  // This cannot be inferred from the overview: DuckLake answers count(*) from
+  // ducklake_data_file.record_count without reading a single Parquet, so a
+  // table whose data is gone still reports its full row count and looks
+  // healthy. The only way to know is to list the store and compare.
+  const [broken, setBroken] = useState<Map<string, { missing: number; rows: number }>>(new Map());
+  /** Why the overview could not be read, or null. Rendered — see reload(). */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ schema: string; table: string } | null>(null);
   const [tab, setTab] = useState("query");
   const [sql, setSql] = useState("");
@@ -108,7 +144,24 @@ function LakehousePage() {
     if (!token) return;
     try {
       setData(await overviewFn({ data: { access_token: token } }));
+      setLoadError(null);
+      // Best-effort and non-blocking: an integrity check must never be the
+      // reason the page fails to render.
+      integrityFn({ data: { access_token: token } })
+        .then((r) => {
+          const m = new Map<string, { missing: number; rows: number }>();
+          for (const i of r.issues ?? []) {
+            m.set(`${i.schema}.${i.table}`, { missing: i.missing.length, rows: i.missing_rows });
+          }
+          setBroken(m);
+        })
+        .catch(() => setBroken(new Map()));
     } catch (e) {
+      // FOUND FROM THE UI. A toast was the only signal, so a failed load left
+      // the page as a permanent pair of skeletons: the toast expires, and after
+      // that nothing on screen distinguishes "still loading" from "the catalog
+      // is unreachable". The page has to hold the reason, not announce it once.
+      setLoadError((e as Error).message);
       toast.error((e as Error).message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,7 +180,7 @@ function LakehousePage() {
     // scrolls on its own. Stacking these (the old xl-only grid) put the schema
     // tree above the editor on every laptop screen, which is not what a
     // database explorer is.
-    <div className="flex h-[calc(100vh-3.5rem)] w-full flex-col overflow-hidden p-3 lg:p-4">
+    <div className="flex h-canvas w-full flex-col overflow-hidden p-3 lg:p-4">
       <div className="mb-3 flex flex-none flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold">
@@ -142,11 +195,35 @@ function LakehousePage() {
             <RefreshCw className="mr-1 h-4 w-4" /> Refresh
           </Button>
           {data?.enabled && <MountLakeDialog onMounted={reload} />}
+          {data?.enabled && <IcebergCatalogsDialog onChanged={reload} />}
           {data?.enabled && <NewSchemaDialog onCreated={reload} />}
+          {data?.enabled && <TagPoliciesDialog />}
+          {data?.enabled && (
+            <SharesDialog
+              tables={data.tables.map((t) => ({ schema: t.schema, name: t.name }))}
+              ownedSchemas={data.schemas.filter((s) => s.owned).map((s) => s.name)}
+            />
+          )}
         </div>
       </div>
 
-      {data === null ? (
+      {data === null && loadError !== null ? (
+        <Card>
+          <CardContent className="space-y-3 py-8 text-sm">
+            <p className="font-medium">The lakehouse could not be reached.</p>
+            <p className="rounded bg-muted px-2 py-1.5 font-mono text-xs break-all">{loadError}</p>
+            <p className="text-muted-foreground">
+              Both halves have to be reachable from this server: the catalog Postgres (
+              <code className="font-mono">LAKEHOUSE_CATALOG_URL</code>) and the object store (
+              <code className="font-mono">LAKEHOUSE_S3_ENDPOINT</code>). The tables themselves are
+              fine — this is a connection problem, not a data one.
+            </p>
+            <Button variant="outline" size="sm" onClick={reload}>
+              <RefreshCw className="mr-1 h-4 w-4" /> Try again
+            </Button>
+          </CardContent>
+        </Card>
+      ) : data === null ? (
         <div className="flex min-h-0 flex-1 gap-3">
           <Skeleton className="hidden w-64 flex-none lg:block xl:w-72" />
           <Skeleton className="min-w-0 flex-1" />
@@ -162,7 +239,13 @@ function LakehousePage() {
         </Card>
       ) : (
         <div className="flex min-h-0 flex-1 gap-3">
-          <SchemaRail data={data} selected={selected} onOpenTable={openTable} onChanged={reload} />
+          <SchemaRail
+            data={data}
+            broken={broken}
+            selected={selected}
+            onOpenTable={openTable}
+            onChanged={reload}
+          />
           <Tabs
             value={tab}
             onValueChange={setTab}
@@ -223,11 +306,14 @@ function LakehousePage() {
 
 function SchemaRail({
   data,
+  broken,
   selected,
   onOpenTable,
   onChanged,
 }: {
   data: LakehouseOverview;
+  /** schema.table -> files the store is missing. Empty until the check returns. */
+  broken: Map<string, { missing: number; rows: number }>;
   selected: { schema: string; table: string } | null;
   onOpenTable: (schema: string, table: string) => void;
   onChanged: () => void;
@@ -314,9 +400,20 @@ function SchemaRail({
                       lake
                     </Badge>
                   )}
+                  {s.iceberg_catalog_id && (
+                    <Badge
+                      variant="outline"
+                      className="ml-1 text-[10px]"
+                      title={`A read-only mount of the Iceberg namespace ${s.iceberg_namespace ?? ""}`}
+                    >
+                      iceberg
+                    </Badge>
+                  )}
                 </button>
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                  {!s.lake_source_id && <NewTableDialog schema={s.name} onCreated={onChanged} />}
+                  {!s.lake_source_id && !s.iceberg_catalog_id && (
+                    <NewTableDialog schema={s.name} onCreated={onChanged} />
+                  )}
                   {s.owned && (
                     <Button
                       size="icon"
@@ -324,7 +421,14 @@ function SchemaRail({
                       className="h-6 w-6"
                       title="Drop schema and everything in it"
                       onClick={async () => {
-                        if (!confirm(`Drop schema "${s.name}" and all its tables?`)) return;
+                        if (
+                          !(await confirmAsk({
+                            title: `Drop schema "${s.name}"?`,
+                            body: "Every table in it is dropped too. This cannot be undone.",
+                            actionLabel: "Drop schema",
+                          }))
+                        )
+                          return;
                         try {
                           await dropFn({ data: { access_token: token, name: s.name } });
                           toast.success(`Dropped ${s.name}`);
@@ -342,19 +446,35 @@ function SchemaRail({
               {open &&
                 tables.map((t) => {
                   const active = selected?.schema === s.name && selected?.table === t.name;
+                  const hurt = broken.get(`${s.name}.${t.name}`);
                   return (
                     <button
                       key={t.name}
-                      className={`flex w-full items-center justify-between gap-2 rounded-md py-1 pl-7 pr-2 text-left text-[13px] hover:bg-muted ${active ? "bg-muted font-medium" : ""}`}
+                      title={
+                        hurt
+                          ? `${hurt.missing} data file(s) this table refers to are missing from object storage — ${hurt.rows.toLocaleString()} row(s) cannot be read. Re-import the table, or drop it.`
+                          : undefined
+                      }
+                      className={`flex w-full items-center justify-between gap-2 rounded-md py-1 pl-7 pr-2 text-left text-[13px] hover:bg-muted ${active ? "bg-muted font-medium" : ""} ${hurt ? "text-destructive" : ""}`}
                       onClick={() => onOpenTable(s.name, t.name)}
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
                         <Table2 className="h-3.5 w-3.5 flex-none text-muted-foreground" />
                         <span className="truncate">{t.name}</span>
+                        {hurt && (
+                          <AlertTriangle
+                            className="h-3.5 w-3.5 flex-none text-destructive"
+                            aria-label="Missing data files"
+                          />
+                        )}
                       </span>
                       <span className="flex-none font-mono text-[10px] tabular-nums text-muted-foreground">
-                        {t.row_count === null ? "" : `${t.row_count.toLocaleString()} · `}
-                        {fmtBytes(t.size_bytes)}
+                        {/* The row count comes from catalog metadata, so it
+                            still reads full for a table whose Parquet is gone.
+                            Say so here rather than letting the number reassure. */}
+                        {hurt
+                          ? `${hurt.missing} file${hurt.missing === 1 ? "" : "s"} missing`
+                          : `${t.row_count === null ? "" : `${t.row_count.toLocaleString()} · `}${fmtBytes(t.size_bytes)}`}
                       </span>
                     </button>
                   );
@@ -390,6 +510,50 @@ function QueryTab({
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<LakehouseResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Where the statement runs. Spark is offered only when the deployment has
+  // an endpoint or a per-job provider; a SELECT sent there is polled until
+  // its rows land, the same way a training job is.
+  // Remembered per browser: the Query tab unmounts when another tab is
+  // shown, and losing the choice on every tab switch was the first thing
+  // noticed when testing it.
+  const [engine, setEngineState] = useState<"duckdb" | "spark">(() => {
+    try {
+      return localStorage.getItem("lakehouse.engine") === "spark" ? "spark" : "duckdb";
+    } catch {
+      return "duckdb";
+    }
+  });
+  const setEngine = (v: "duckdb" | "spark") => {
+    setEngineState(v);
+    try {
+      localStorage.setItem("lakehouse.engine", v);
+    } catch {
+      /* private mode: the choice lasts for this tab */
+    }
+  };
+  const [spark, setSpark] = useState<{ configured: boolean; provider: string } | null>(null);
+  const sparkStatusFn = useServerFn(lakehouseSparkStatus);
+  const startSparkFn = useServerFn(startLakehouseSparkQuery);
+  const getSparkFn = useServerFn(getLakehouseSparkQuery);
+  const cancelSparkFn = useServerFn(cancelLakehouseSparkQuery);
+  const [sparkJob, setSparkJob] = useState<{
+    id: string;
+    startedAt: number;
+    status: string;
+  } | null>(null);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!token) return;
+    void sparkStatusFn({ data: { access_token: token } })
+      .then(setSpark)
+      .catch(() => setSpark(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+  useEffect(() => {
+    if (!sparkJob) return;
+    const t = setInterval(() => bump((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [sparkJob]);
   const [nl, setNl] = useState("");
   const profileFn = useServerFn(profileLakehouseQuery);
   const [profile, setProfile] = useState<LakehouseProfile | null>(null);
@@ -399,6 +563,30 @@ function QueryTab({
   const [explanation, setExplanation] = useState("");
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
+  const runOnSpark = async (s: string): Promise<LakehouseResult | null> => {
+    const { id } = await startSparkFn({ data: { access_token: token, sql: s } });
+    const startedAt = Date.now();
+    setSparkJob({ id, startedAt, status: "queued" });
+    try {
+      // Two seconds between polls: a sandbox takes ~10 s to start and a
+      // query seconds to minutes, so anything tighter is noise.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const q = await getSparkFn({ data: { access_token: token, id } });
+        if (!q) throw new Error("The query is gone — it may have been cancelled elsewhere.");
+        setSparkJob({ id, startedAt, status: q.status });
+        if (q.status === "succeeded") return q.result;
+        if (q.status === "cancelled") return null;
+        if (q.status === "failed") {
+          const tail = (q.logs ?? "").trim().split("\n").slice(-6).join("\n");
+          throw new Error((q.error ?? "The query failed on Spark.") + (tail ? `\n\n${tail}` : ""));
+        }
+      }
+    } finally {
+      setSparkJob(null);
+    }
+  };
+
   const run = async (statement?: string) => {
     const s = (statement ?? sql).trim();
     if (!s) return;
@@ -406,7 +594,10 @@ function QueryTab({
     setError(null);
     setProfile(null);
     try {
-      const res = await runFn({ data: { access_token: token, sql: s } });
+      const res =
+        engine === "spark"
+          ? await runOnSpark(s)
+          : await runFn({ data: { access_token: token, sql: s } });
       setResult(res);
     } catch (e) {
       setResult(null);
@@ -504,7 +695,21 @@ function QueryTab({
               "SELECT …\n\nOne statement per run. Tables are schema.table. Ctrl+Enter runs."
             }
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {spark?.configured && (
+              <Select value={engine} onValueChange={(v) => setEngine(v as "duckdb" | "spark")}>
+                <SelectTrigger
+                  className="h-9 w-44"
+                  title="Where the statement runs: this worker's lakehouse engine, or the Spark cluster the ETL engine uses — one query spread across the cluster's executors, in Spark's SQL dialect"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="duckdb">Lakehouse engine</SelectItem>
+                  <SelectItem value="spark">Spark cluster</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <Button onClick={() => void run()} disabled={running || !sql.trim()}>
               {running ? (
                 <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -538,6 +743,26 @@ function QueryTab({
               Explain
             </Button>
             <SaveMatviewDialog sql={sql} onSaved={onDataChanged} />
+            <AiFunctionsReference onInsert={(example) => setSql(example)} />
+            {sparkJob && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Flame className="h-3.5 w-3.5 text-orange-500" />
+                {sparkJob.status === "queued" ? "Starting on Spark" : "Running on Spark"} ·{" "}
+                {Math.round((Date.now() - sparkJob.startedAt) / 1000)} s
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  onClick={() =>
+                    void cancelSparkFn({ data: { access_token: token, id: sparkJob.id } }).catch(
+                      (e) => toast.error((e as Error).message),
+                    )
+                  }
+                >
+                  Cancel
+                </Button>
+              </span>
+            )}
             {result && (
               <>
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -550,6 +775,26 @@ function QueryTab({
                       title="Served from the result cache — invalidated automatically by any write"
                     >
                       cached
+                    </Badge>
+                  )}
+                  {result.engine === "spark" && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px]"
+                      title={`Answered by the Spark cluster${result.spark_version ? ` (Spark ${result.spark_version})` : ""}: one query spread across its executors, reading the tables' snapshot files directly`}
+                    >
+                      <Flame className="mr-0.5 h-3 w-3 text-orange-500" />
+                      spark
+                    </Badge>
+                  )}
+                  {result.ai && (result.ai.calls > 0 || result.ai.cached > 0) && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px]"
+                      title={`AI functions (${result.ai.functions.join(", ")}): ${result.ai.calls} model call(s), ${result.ai.cached} from the answer cache${result.ai.cost_usd != null ? ` · $${result.ai.cost_usd.toFixed(4)}` : ""}${result.ai.models.length ? ` · ${result.ai.models.join(", ")}` : ""}`}
+                    >
+                      {result.ai.calls} AI call{result.ai.calls === 1 ? "" : "s"}
+                      {result.ai.cached ? ` · ${result.ai.cached} cached` : ""}
                     </Badge>
                   )}
                 </span>
@@ -718,6 +963,32 @@ function TableTab({
             partitioned by {detail.partitioned_by.join(", ")}
           </Badge>
         )}
+        {detail.clustered_by.length > 0 && (
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            title="Files are in key order, so a filter on these columns opens only the files whose range matches"
+          >
+            clustered by {detail.clustered_by.join(", ")}
+          </Badge>
+        )}
+        <Link
+          to="/data-monitors"
+          search={{ source: "lakehouse", schema, table, create: true }}
+          className="text-xs text-primary hover:underline"
+          title="Watch this table for staleness, volume changes, schema drift, nulls or duplicates"
+        >
+          Monitor this table
+        </Link>
+        <Link
+          to="/semantics"
+          search={{ source: "lakehouse", schema, table, create: true }}
+          className="text-xs text-primary hover:underline"
+          title="Name what these columns mean, so dashboards, the AI Analyst and agents all compute them the same way"
+        >
+          Define metrics on this
+        </Link>
+        <PublishToIcebergDialog schema={schema} table={table} />
         {matview && (
           <Badge
             variant="outline"
@@ -801,6 +1072,12 @@ function TableTab({
             current={detail.partitioned_by}
             onChanged={(cols) => setDetail({ ...detail, partitioned_by: cols })}
           />
+          <LayoutDialog
+            schema={schema}
+            table={table}
+            current={detail.clustered_by}
+            onChanged={(cols) => setDetail({ ...detail, clustered_by: cols })}
+          />
           <Button
             size="sm"
             variant="outline"
@@ -808,26 +1085,48 @@ function TableTab({
           >
             <Play className="mr-1 h-3.5 w-3.5" /> Query
           </Button>
-          <InsertRowDialog schema={schema} table={table} columns={detail.columns} />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-red-500"
-            onClick={async () => {
-              if (!confirm(`Drop table ${schema}.${table}?`)) return;
-              try {
-                await runFn({
-                  data: { access_token: token, sql: `DROP TABLE "${schema}"."${table}"` },
-                });
-                toast.success("Table dropped");
-                onDropped();
-              } catch (e) {
-                toast.error((e as Error).message);
-              }
-            }}
-          >
-            <Trash2 className="mr-1 h-3.5 w-3.5" /> Drop
-          </Button>
+          {detail.sheet_owner ? (
+            <Link
+              to="/sheets/$workbookId"
+              params={{ workbookId: detail.sheet_owner.workbook_id }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+              title="Sheets replaces this table when the sheet refreshes its import, and the sheet's formulas stand on its columns, so it is changed only from Sheets. Query it here like any table."
+              data-testid="sheet-owner"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Held by Sheets · {detail.sheet_owner.workbook} › {detail.sheet_owner.sheet}
+            </Link>
+          ) : (
+            <InsertRowDialog schema={schema} table={table} columns={detail.columns} />
+          )}
+          {!detail.sheet_owner && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-500"
+              onClick={async () => {
+                if (
+                  !(await confirmAsk({
+                    title: `Drop table ${schema}.${table}?`,
+                    body: "The table's rows and its Parquet files go, along with the lakehouse's own record of them. Its entry in the Data Catalog stays until the next crawl. This cannot be undone.",
+                    actionLabel: "Drop table",
+                  }))
+                )
+                  return;
+                try {
+                  await runFn({
+                    data: { access_token: token, sql: `DROP TABLE "${schema}"."${table}"` },
+                  });
+                  toast.success("Table dropped");
+                  onDropped();
+                } catch (e) {
+                  toast.error((e as Error).message);
+                }
+              }}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Drop
+            </Button>
+          )}
         </div>
       </div>
 
@@ -932,6 +1231,11 @@ function HistoryTab({ onPick }: { onPick: (sql: string) => void }) {
             >
               {h.status === "ok" ? h.kind : "error"}
             </Badge>
+            {h.engine === "spark" && (
+              <Badge variant="outline" className="text-[10px]" title="Ran on the Spark cluster">
+                spark
+              </Badge>
+            )}
             <span className="min-w-0 flex-1 truncate font-mono text-xs">{h.sql}</span>
             <span className="flex-none font-mono text-[10px] tabular-nums text-muted-foreground">
               {h.cached ? "cached · " : ""}
@@ -969,9 +1273,12 @@ function SaveMatviewDialog({ sql, onSaved }: { sql: string; onSaved: () => void 
     void (async () => {
       try {
         const data = await overviewFn({ data: { access_token: token } });
-        // Only schemas you own — a view writes a table, and a mount or a
-        // shared schema is not yours to write into.
-        const own = data.schemas.filter((sch) => sch.owned && !sch.lake_source_id);
+        // Only schemas you own — a view writes a table, and a mount (of a lake
+        // source or, since R111, an Iceberg namespace) or a shared schema is
+        // not yours to write into.
+        const own = data.schemas.filter(
+          (sch) => sch.owned && !sch.lake_source_id && !sch.iceberg_catalog_id,
+        );
         setSchemas(own.map((sch) => sch.name));
         setSchema((cur) => cur || own[0]?.name || "");
       } catch {
@@ -1338,6 +1645,272 @@ function PartitionDialog({
   );
 }
 
+const ADVICE_LABEL: Record<string, string> = {
+  cluster: "Cluster",
+  recluster: "Rewrite",
+  compact: "Compact",
+  ok: "OK",
+};
+
+/**
+ * Files in key order: what the catalog says about this table's files, what
+ * queries filtered on, the advice, and the rewrite that acts on it. The
+ * numbers come from DuckLake's own per-file statistics, so "a lookup opens 4
+ * of 4 files" is what the engine would actually do.
+ */
+function LayoutDialog({
+  schema,
+  table,
+  current,
+  onChanged,
+}: {
+  schema: string;
+  table: string;
+  current: string[];
+  onChanged: (cols: string[]) => void;
+}) {
+  const { session } = useAuth();
+  const token = session?.access_token ?? "";
+  const { tokenRef, signedIn } = useTokenRef(token);
+  const readFn = useServerFn(getLakehouseLayout);
+  const rewriteFn = useServerFn(rewriteLakehouseLayout);
+  const clearFn = useServerFn(clearLakehouseLayout);
+  const [open, setOpen] = useState(false);
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof getLakehouseLayout>> | null>(null);
+  const [picked, setPicked] = useState<string[]>(current);
+  const [targetMb, setTargetMb] = useState("");
+  const [keep, setKeep] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Read when the dialog opens (and after a rewrite), not when the session
+  // refreshes (R125): that blanked the open dialog and put the saved keys,
+  // target size and "keep clustered" back over the ones being chosen.
+  const load = useCallback(async () => {
+    try {
+      const r = await readFn({ data: { access_token: tokenRef.current, schema, table } });
+      setInfo(r);
+      setPicked(r.layout?.cluster_columns.length ? r.layout.cluster_columns : current);
+      // Shown in MB with up to two decimals: a demo table's 100 KB target
+      // must read 0.1, not round up to 1 and rewrite into one file.
+      setTargetMb(String(Math.max(0.01, Math.round((r.target_file_bytes / 1048576) * 100) / 100)));
+      setKeep(r.layout?.keep_clustered ?? false);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedIn, schema, table]);
+  useEffect(() => {
+    if (open) {
+      setInfo(null);
+      void load();
+    }
+  }, [open, load]);
+
+  const columns = info?.columns ?? [];
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" title="Clustering and the layout advisor">
+          <Boxes className="mr-1 h-3.5 w-3.5" /> Layout
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            Layout of {schema}.{table}
+          </DialogTitle>
+        </DialogHeader>
+        {!info ? (
+          <Skeleton className="h-48 w-full" />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground" data-testid="layout-summary">
+              {info.files} file(s) · {formatBytes(info.bytes)} · {info.rows.toLocaleString()} row(s)
+              · target {formatBytes(info.target_file_bytes)} per file
+              {info.layout?.cluster_columns.length ? (
+                <>
+                  {" "}
+                  · clustered by{" "}
+                  <span className="font-mono">{info.layout.cluster_columns.join(", ")}</span>
+                  {info.layout.last_rewrite_at
+                    ? ` · rewritten ${new Date(info.layout.last_rewrite_at).toLocaleString()} in ${info.layout.last_rewrite_ms ?? 0} ms (${info.layout.last_rewrite_files_before ?? "?"} → ${info.layout.last_rewrite_files_after ?? "?"} files)`
+                    : ""}
+                  {info.files_since_rewrite > 0
+                    ? ` · ${info.files_since_rewrite} file(s) written since`
+                    : ""}
+                  {info.layout.last_error
+                    ? ` · last maintenance rewrite failed: ${info.layout.last_error}`
+                    : ""}
+                </>
+              ) : null}
+            </p>
+            <div className="space-y-1" data-testid="layout-advice">
+              {info.advice.map((a) => (
+                <div
+                  key={a.title}
+                  className="flex items-start gap-2 rounded-md border px-2 py-1.5 text-xs"
+                >
+                  <Badge
+                    variant={a.kind === "ok" ? "secondary" : "outline"}
+                    className="mt-0.5 flex-none text-[10px]"
+                  >
+                    {ADVICE_LABEL[a.kind] ?? a.kind}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{a.title}</div>
+                    <div className="text-muted-foreground">{a.detail}</div>
+                  </div>
+                  {a.columns && a.columns.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 flex-none px-2 text-[11px]"
+                      onClick={() => setPicked(a.columns ?? [])}
+                    >
+                      Use
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 border-b bg-muted/40 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span>Column · click to pick a key, in order</span>
+                <span title="Files a lookup on this column opens, on average, out of the table's files">
+                  lookup opens
+                </span>
+                <span title="SELECTs that filtered on this column in the last 7 days">
+                  filtered · 7d
+                </span>
+              </div>
+              <div className="max-h-44 overflow-y-auto">
+                {columns.length === 0 && (
+                  <p className="px-2 py-2 text-xs text-muted-foreground">
+                    No file statistics yet — the table has no Parquet files (empty, still inlined in
+                    the catalog, or a mount).
+                  </p>
+                )}
+                {columns.map((col) => {
+                  const on = picked.includes(col.name);
+                  return (
+                    <button
+                      key={col.name}
+                      className={`grid w-full grid-cols-[1fr_auto_auto] items-center gap-x-3 px-2 py-1 text-left text-xs ${on ? "bg-primary/5" : "hover:bg-muted"}`}
+                      onClick={() =>
+                        setPicked(
+                          on
+                            ? picked.filter((x) => x !== col.name)
+                            : [...picked, col.name].slice(0, 4),
+                        )
+                      }
+                    >
+                      <span className="truncate">
+                        <span className="font-mono">{col.name}</span>
+                        <span className="ml-1 text-muted-foreground">{col.type.toLowerCase()}</span>
+                        {on && (
+                          <span className="ml-1 text-[10px] text-primary">
+                            key {picked.indexOf(col.name) + 1}
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {col.files >= 2 ? `${col.touched} of ${col.files}` : "—"}
+                      </span>
+                      <span className="font-mono text-muted-foreground">
+                        {info.filtered[col.name] ?? 0}×
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Target file size (MB)</Label>
+                <Input
+                  className="h-8"
+                  type="number"
+                  min={1}
+                  value={targetMb}
+                  onChange={(e) => setTargetMb(e.target.value)}
+                />
+              </div>
+              <div className="flex items-end gap-2 pb-1">
+                <Switch id="layout-keep" checked={keep} onCheckedChange={setKeep} />
+                <Label htmlFor="layout-keep" className="text-xs">
+                  Keep clustered
+                </Label>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              The rewrite ranges rows on the first key and sorts every range by all keys, one
+              transaction, one file per target size — so a filter on a key opens only the files
+              whose range matches. Keep clustered lets the hourly maintenance pass rewrite the table
+              again when new files land; clustered tables are left out of file merging either way.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={busy || picked.length === 0}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const mb = Number(targetMb);
+                    const res = await rewriteFn({
+                      data: {
+                        access_token: token,
+                        schema,
+                        table,
+                        columns: picked,
+                        target_file_mb: Number.isFinite(mb) && mb > 0 ? mb : undefined,
+                        keep_clustered: keep,
+                      },
+                    });
+                    onChanged(res.clustered_by);
+                    toast.success(
+                      `Rewritten in ${res.ms} ms: ${res.files_before} → ${res.files_after} file(s); a lookup on ${picked[0]} opens ${res.touched_after} file(s), was ${res.touched_before}`,
+                    );
+                    await load();
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                Rewrite now
+              </Button>
+              {info.layout && (
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  title="Forget the cluster keys; files stay as they are and maintenance merges them again"
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      const res = await clearFn({ data: { access_token: token, schema, table } });
+                      onChanged(res.clustered_by);
+                      toast.success("Layout forgotten");
+                      await load();
+                    } catch (e) {
+                      toast.error((e as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Forget layout
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MountLakeDialog({ onMounted }: { onMounted: () => void }) {
   const { session } = useAuth();
   const token = session?.access_token ?? "";
@@ -1438,6 +2011,186 @@ function MountLakeDialog({ onMounted }: { onMounted: () => void }) {
             {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
             Mount
           </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Policies by tag: one rule, written once, applied wherever the tag is. Only
+ * an owner's own rules are shown; readers never see them, as with a table's
+ * policy.
+ */
+function TagPoliciesDialog() {
+  const { session } = useAuth();
+  const token = session?.access_token ?? "";
+  const listFn = useServerFn(listLakehouseTagPolicies);
+  const setFn = useServerFn(setLakehouseTagPolicy);
+  const deleteFn = useServerFn(deleteLakehouseTagPolicy);
+  const [open, setOpen] = useState(false);
+  const [rules, setRules] = useState<LakehouseTagPolicy[] | null>(null);
+  const [tag, setTag] = useState("");
+  const [scope, setScope] = useState<"column" | "table">("column");
+  const [style, setStyle] = useState<"null" | "hash">("null");
+  const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    try {
+      setRules(await listFn({ data: { access_token: token } }));
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (open) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await setFn({
+        data: {
+          access_token: token,
+          tag: tag.trim(),
+          scope,
+          mask_style: style,
+          row_filter: scope === "table" ? filter : null,
+        },
+      });
+      toast.success(`Rule saved for "${tag.trim().toLowerCase()}"`);
+      setTag("");
+      setFilter("");
+      await load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          title="Rules by tag: mask every column carrying a tag, or filter every table carrying one"
+        >
+          <ShieldCheck className="mr-1 h-4 w-4" /> Tag policies
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Policies by tag</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Tag columns and tables in the Data Catalog; a rule here applies wherever the tag is, for
+            everyone you share a schema with. You are never filtered. A table&apos;s own Security
+            policy still applies; the two are combined, the stricter mask winning.
+          </p>
+          <div className="space-y-1">
+            {rules === null ? (
+              <Skeleton className="h-8 w-full" />
+            ) : rules.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No rules yet.</p>
+            ) : (
+              rules.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs"
+                >
+                  <Badge variant="secondary" className="font-mono">
+                    {r.tag}
+                  </Badge>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {r.scope === "column"
+                      ? `columns with this tag are ${r.mask_style === "hash" ? "scrambled" : "blanked"}`
+                      : `tables with this tag show only rows where ${r.row_filter}`}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    title="Remove this rule"
+                    onClick={async () => {
+                      try {
+                        await deleteFn({ data: { access_token: token, id: r.id } });
+                        await load();
+                      } catch (e) {
+                        toast.error((e as Error).message);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Tag</Label>
+                <Input
+                  value={tag}
+                  onChange={(e) => setTag(e.target.value)}
+                  placeholder="pii"
+                  className="h-8 font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Applies to</Label>
+                <Select value={scope} onValueChange={(v) => setScope(v as "column" | "table")}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="column">Columns with the tag — mask them</SelectItem>
+                    <SelectItem value="table">Tables with the tag — filter rows</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {scope === "column" ? (
+              <div className="space-y-1">
+                <Label className="text-xs">How</Label>
+                <Select value={style} onValueChange={(v) => setStyle(v as "null" | "hash")}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="null">Blank — empties the value, any type</SelectItem>
+                    <SelectItem value="hash">
+                      Scramble — hashes text so it stays groupable and joinable
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label className="text-xs">Rows they can see</Label>
+                <Input
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="region = 'east'  or  owner_email = @me"
+                  className="h-8 font-mono text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Checked against every table carrying the tag when you save. @me is the
+                  reader&apos;s email, @user_id their id.
+                </p>
+              </div>
+            )}
+            <Button
+              size="sm"
+              onClick={() => void save()}
+              disabled={busy || !tag.trim() || (scope === "table" && !filter.trim())}
+            >
+              {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Save rule
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

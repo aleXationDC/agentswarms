@@ -4,6 +4,7 @@ import {
   Callout,
   DocsHeader,
   H2,
+  H3,
   NextPrev,
   P,
   Steps,
@@ -114,6 +115,22 @@ function LakehouseDocsPage() {
         applied from the SQL editor shows up here too.
       </P>
       <P>
+        Partitioning decides which file a new row goes to; <strong>clustering</strong> decides the
+        order of what is already there. <strong>Layout</strong> on a table&apos;s toolbar shows what
+        DuckLake&apos;s own per-file statistics say — for every column, how many of the table&apos;s
+        files a lookup on it opens — beside which columns this week&apos;s queries filtered on, and
+        advises: cluster by the column people filter on whose files overlap, compact when files are
+        small, rewrite again when files landed since the last rewrite. <strong>Rewrite now</strong>{" "}
+        puts the files in key order — rows ranged on the first key at row-count quantiles, one range
+        per target-sized file, each range sorted by all keys — in one transaction that rolls back
+        whole on any failure, with time travel to the previous snapshot intact. A filter on the key
+        then opens only the files whose range matches, and the toast says how many it opened before
+        and after. The target file size is per table (default <C>LAKEHOUSE_CLUSTER_FILE_BYTES</C>,
+        else 128 MiB, never capped). <strong>Keep clustered</strong> hands the table to the hourly
+        maintenance pass, which rewrites it again when files were written since and leaves it out of
+        file merging, since merging would fold the ranges back together.
+      </P>
+      <P>
         A repeated SELECT is served from memory and marked <C>cached</C> in the toolbar and in
         history. The cache key includes the catalog snapshot id, so{" "}
         <strong>any write invalidates it automatically</strong> — no TTL to tune, and no way to read
@@ -136,6 +153,12 @@ function LakehouseDocsPage() {
         rewrites a data file: a write adds new paths and the catalog decides which are live, so what
         sits behind a cached path can&apos;t change. Files behind a lake mount can be overwritten,
         and the engine validates those.
+      </P>
+      <P>
+        Memory and threads are editable under{" "}
+        <strong>Admin → Developer runtime → Data platform</strong>, which wins over the environment
+        variables below — so a running deployment can be retuned without a redeploy, and neither is
+        capped by the app.
       </P>
       <P>
         Each engine gets <C>LAKEHOUSE_MEMORY_LIMIT</C> (default 2GB) and spills past it to disk
@@ -199,6 +222,18 @@ function LakehouseDocsPage() {
         blocking every reader at once.
       </P>
 
+      <H3 id="tag-policies">Policies by tag</H3>
+      <P>
+        A policy names one table; a <strong>tag policy</strong> is one rule written once, applied
+        wherever the tag is. Tag columns and tables in the Data Catalog (a column&apos;s tags sit in
+        the asset drawer&apos;s Columns table and survive re-crawls), then under the lakehouse
+        page&apos;s <em>Tag policies</em> button say that every column tagged <C>pii</C> is blanked
+        or scrambled, or that every table tagged <C>restricted</C> shows only rows where a condition
+        holds. At read time the rules are folded into the same per-table policy the rewrite enforces
+        — masks union, filters AND, a blank beats a scramble — so a table with no policy of its own
+        but a tagged column gets one. The owner is never filtered.
+      </P>
+
       <H2 id="concurrency">Concurrent writes</H2>
       <P>
         Two replicas writing at once is the case a shared catalog has to get right, so it was
@@ -225,6 +260,34 @@ function LakehouseDocsPage() {
         Parquet, merge adjacent small files (the biggest lever on scan speed), expire snapshots
         older than 7 days, then delete the files only those snapshots referenced. Steps are
         independent — one failing is logged and the rest still run.
+      </P>
+
+      <H2 id="integrity">When the catalog and the object store disagree</H2>
+      <P>
+        A table here is two things: rows of metadata in the catalog Postgres, and Parquet objects in
+        your object storage. <strong>Nothing keeps them together.</strong> Replace the object store,
+        empty a bucket, or restore a catalog backup from a different day, and the catalog goes on
+        describing files that are gone.
+      </P>
+      <Callout kind="warn" title="A broken table looks healthy">
+        <C>count(*)</C> is answered from the catalog&rsquo;s own <C>record_count</C> —{" "}
+        <strong>without reading a single Parquet</strong> — so a table whose data has vanished still
+        reports its full row count. Measured on an instance whose object store had been replaced:{" "}
+        <C>f1_standings</C> reported 21 rows and <C>orders</C> 4, and both returned HTTP 404 the
+        moment anyone opened them. The row count was the thing saying everything was fine.
+      </Callout>
+      <P>
+        So the Lakehouse checks. After the table list loads it lists the object store once, compares
+        it against the data files the catalog claims, and marks any affected table — showing how
+        many <em>unreadable rows</em> are behind the missing files instead of the metadata count. It
+        runs after the page renders and never blocks it.
+      </P>
+      <P>
+        Two deliberate limits: superseded files are ignored, since they are supposed to disappear
+        after compaction and flagging them would mark every compacted table broken; and if the
+        listing hits its ceiling the check reports nothing rather than guessing. There is no
+        automatic repair, because there is no correct one — the rows are gone. Re-import the table
+        from its source, or drop it.
       </P>
 
       <H2 id="governance">Governance and access</H2>
@@ -275,6 +338,93 @@ function LakehouseDocsPage() {
         the platform&apos;s connections follow.
       </P>
 
+      <H2 id="sharing">Sharing tables outside the platform</H2>
+      <P>
+        A grant shares a schema with someone who has an account here. <strong>Shares</strong> hand
+        tables to people who do not, over the Delta Sharing protocol — the delta-sharing Python
+        package, Spark, Power BI. On the lakehouse page, <strong>Shares</strong>: create a share,
+        add the tables you own (each with an optional row filter and masked columns on top of the
+        table&apos;s own policy), mint a recipient token and give them the profile it shows once.
+      </P>
+      <Steps
+        items={[
+          {
+            title: "What a recipient receives is a governed snapshot, never your files",
+            body: "The lakehouse's Parquet keeps deleted rows and a presigned URL bypasses every policy, so each read serves a SELECT through the same policy rewrite as any reader here, written to Parquet beside the lake with deletes applied. An unchanged table is written once; a change bumps the version the client sees.",
+          },
+          {
+            title: "The recipient's side",
+            body: (
+              <>
+                <C>
+                  delta_sharing.load_as_pandas(&quot;finance.share#finance.analytics.revenue&quot;)
+                </C>{" "}
+                — files arrive through presigned URLs signed for <C>LAKEHOUSE_S3_PUBLIC_ENDPOINT</C>
+                , valid for <C>SHARE_URL_EXPIRY_SECONDS</C>. Revoking a token stops the next
+                request; every read is audited under the token&apos;s label.
+              </>
+            ),
+          },
+        ]}
+      />
+
+      <H2 id="iceberg">Iceberg interop</H2>
+      <P>
+        The lakehouse speaks Apache Iceberg in both directions through the engine&apos;s iceberg
+        extension, so a table built here is readable by Spark, Trino, Flink, Snowflake or
+        Databricks, and a table they own is queryable here without a copy.
+      </P>
+      <UL>
+        <li>
+          <strong>Register a catalog.</strong> Under Lakehouse → <strong>Iceberg</strong>, add an
+          Iceberg REST catalog: its endpoint, the warehouse it serves, and how to authenticate
+          (none, a bearer token, or OAuth2 client credentials) given as secret names from{" "}
+          <strong>Integrations → Secrets</strong>. Lakekeeper, Apache Polaris, Nessie, Glue, Unity
+          Catalog and Snowflake Open Catalog speak this protocol. The catalog is attached and asked
+          for its namespaces before it is saved; registered catalogs attach when the engine boots,
+          and one that fails is marked on its row and skipped, then tried again every five minutes.
+        </li>
+        <li>
+          <strong>Mount a namespace.</strong> A namespace becomes a lakehouse schema: one read-only
+          view per table, owned by you, shareable through IAM, read through the per-user statement
+          guard. Nothing is copied. <em>Refresh</em> brings the views level with the namespace. A
+          statement can never name an attached catalog directly; the only way to an Iceberg table is
+          a mount you can see.
+        </li>
+        <li>
+          <strong>Publish a table.</strong> On a table tab, <em>Publish to Iceberg</em> writes a
+          copy into a catalog namespace as an Iceberg table; replace drops and recreates, refuse
+          keeps an existing one. Import is the reverse: an Iceberg table copied into a schema you
+          created, as a real lakehouse table.
+        </li>
+        <li>
+          <strong>Audited:</strong> catalog definitions through the <C>iceberg_catalog</C> row
+          trigger; <C>lakehouse.iceberg.mount</C>, <C>lakehouse.iceberg.refresh</C>,{" "}
+          <C>lakehouse.iceberg.publish</C> and <C>lakehouse.iceberg.import</C> with the catalog,
+          namespace, table and row counts.
+        </li>
+      </UL>
+
+      <H2 id="spark">Running a query on Spark</H2>
+      <P>
+        Every query runs on DuckDB inside one app worker — fast per core, spilling to disk, but
+        never spanning machines. When the deployment has a Spark engine (the endpoint or per-job
+        Kubernetes provider ETL pipelines use, under Admin → Developer runtime), the Query tab
+        offers a second place to run a <C>SELECT</C>: <strong>Spark cluster</strong>. The statement
+        is governed exactly as on DuckDB, the catalog&apos;s inlined rows are flushed and a snapshot
+        pinned, and every table it reads is resolved to that snapshot&apos;s files. A sandbox then
+        builds one view per table on the cluster straight from those files — deletes applied by
+        position, the catalog&apos;s internal columns dropped — runs the statement in Spark&apos;s
+        SQL dialect, and the rows land in the same grid with a <C>spark</C> badge. The cluster never
+        opens a catalog session.
+      </P>
+      <Callout kind="warn" title="What stays on DuckDB">
+        A mounted schema (its views read raw files Spark cannot see), a table under another
+        owner&apos;s security policy (Spark cannot apply the filter, and an unfiltered read is never
+        the answer), an encrypted lakehouse, and every write. The page names the reason. A query
+        holds its cluster for at most <C>LAKEHOUSE_SPARK_QUERY_MINUTES</C> (default 30).
+      </Callout>
+
       <H2 id="scaling">Scaling and limits</H2>
       <P>
         Stateless by construction: replicas need no coordination, and writes serialise through the
@@ -282,15 +432,76 @@ function LakehouseDocsPage() {
         Concurrent writes). All replicas share the same <C>LAKEHOUSE_*</C> config and can reach the
         catalog Postgres and object store. The ceilings are the same single-node honesty as ETL —
         one query&apos;s working set lives on one replica (vectorised execution and file pruning are
-        the speed story, not a cluster), and cold reads pay object-storage latency. Small inserts
-        are held inlined in the catalog until flushed, so a fresh table can show real row counts
-        with little Parquet yet written.
+        the speed story, not a cluster) unless it is sent to Spark, and cold reads pay
+        object-storage latency. Small inserts are held inlined in the catalog until flushed, so a
+        fresh table can show real row counts with little Parquet yet written.
       </P>
       <Callout>
         Configure the engine with <C>LAKEHOUSE_CATALOG_URL</C> and the <C>LAKEHOUSE_*</C> storage
         variables (see <C>docs/LAKEHOUSE.md</C> and <C>.env.example</C>). Unconfigured, the page
         says so instead of half-working.
       </Callout>
+
+      <Callout kind="warn" title="ETL targets: the catalog must sit on the kernel network">
+        A pipeline whose target is a lakehouse table attaches the catalog from inside a{" "}
+        <strong>notebook kernel</strong>, and kernels run on an <C>internal</C> Docker network whose
+        only way out is the HTTP egress proxy. Parquet is HTTP and travels through it; the catalog
+        is a raw Postgres connection and cannot. Name the catalog by its service (
+        <C>lakehouse-catalog:5432</C>) rather than a host IP or published port — Compose already
+        puts it on that network. For a catalog outside Docker, move kernels somewhere with a route
+        using <C>NOTEBOOK_NETWORK</C>, accepting the weaker isolation. The symptom otherwise is{" "}
+        <C>Network is unreachable</C> in the run log, and it appears only once the app runs in a
+        container: under <C>npm run dev</C> kernels get a routable network instead.
+      </Callout>
+
+      <H2 id="use-cases">Use cases</H2>
+      <H3 id="use-case-plain-language">A plain-language question, with the SQL kept</H3>
+      <Steps
+        items={[
+          {
+            title: "Pick the table, open Query",
+            body: "The search box filters schemas and tables. Type the question in the ask-in-plain-language box — total amount by customer, largest first — and the generated SQL is shown and run. Edit it like any statement.",
+          },
+          {
+            title: "Read the plan when something is slow",
+            body: "Show the plan the engine chose and what it actually cost. Results served from the result cache are marked, and the cache is invalidated by any write, so a cached answer is never stale.",
+          },
+        ]}
+      />
+      <H3 id="use-case-missing-files">A table whose files are gone</H3>
+      <Steps
+        items={[
+          {
+            title: "The schema list marks it: Missing data files",
+            body: "Integrity, above, explains what the marker means and what can still be recovered.",
+          },
+          {
+            title: "Open the table tab and choose Drop",
+            body: "A dialog asks to confirm the drop of that exact table. It proceeds through the catalog even though the files cannot be read — the catalog is what says a table exists. Rows that are still needed come back from a backup, not from the catalog.",
+          },
+        ]}
+      />
+      <H3 id="use-case-as-of">Answer as of last week</H3>
+      <Steps
+        items={[
+          {
+            title: "Open the trace of the original answer under Traces",
+            body: "Its Provenance section names the lakehouse snapshot that was current when the answer was given.",
+          },
+          {
+            title: "Use the Replay control",
+            body: "The recorded reads run again as of that snapshot — the result must match the recorded fingerprint — and against today, where a difference means the data moved on. The History tab lists the snapshots a table has been through.",
+          },
+        ]}
+      />
+      <H3 id="use-case-backup">Back it up and prove the backup</H3>
+      <P>
+        The catalog and the Parquet are two things; a backup of one without the other is a lakehouse
+        that cannot be read. <C>npm run backup</C> captures both plus the application database, and{" "}
+        <C>npm run restore -- backups/&lt;timestamp&gt; --drill</C> restores them into scratch
+        targets, compares, cleans up and prints DRILL PASSED. The full runbook is in the
+        self-hosting guide.
+      </P>
 
       <NextPrev current="/docs/lakehouse" />
     </>

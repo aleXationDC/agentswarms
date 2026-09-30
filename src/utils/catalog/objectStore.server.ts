@@ -4,6 +4,7 @@
 // Spaces, Backblaze B2 and any other S3-compatible endpoint.
 // Only the two read operations the crawler needs: ListObjectsV2 and
 // ranged GetObject (for schema sampling).
+import { azureListObjects, azureSampleObject, azureTestObjectStore } from "./azureBlob.server";
 import { createHash, createHmac } from "node:crypto";
 import zlib from "node:zlib";
 
@@ -11,7 +12,15 @@ import Papa from "papaparse";
 
 export type ObjectStoreConfig = {
   /** Display label only — the wire protocol is identical for all of them. */
-  provider: "aws" | "gcs" | "r2" | "minio" | "spaces" | "b2" | "custom";
+  /**
+   * "azure" is the one provider here that does NOT speak S3: Blob Storage /
+   * ADLS Gen2 has its own REST surface and signature scheme, served by
+   * azureBlob.server.ts. The three operations below dispatch on it so nothing
+   * downstream learns a new shape -- for Azure, `bucket` is the container,
+   * `access_key_id` the storage account, `secret_access_key` an account key
+   * or a SAS token.
+   */
+  provider: "aws" | "gcs" | "r2" | "minio" | "spaces" | "b2" | "custom" | "azure";
   /** Custom endpoint origin (https://…). Empty = AWS (derived from region). */
   endpoint?: string;
   region: string;
@@ -186,6 +195,7 @@ async function readError(res: Response): Promise<string> {
 
 /** List objects under the configured prefix (paginated, capped). */
 export async function listObjects(cfg: ObjectStoreConfig, cap = 2000): Promise<StoredObject[]> {
+  if (cfg.provider === "azure") return azureListObjects(cfg, cap);
   const out: StoredObject[] = [];
   let token: string | undefined;
   while (out.length < cap) {
@@ -216,6 +226,7 @@ export async function listObjects(cfg: ObjectStoreConfig, cap = 2000): Promise<S
 
 /** Cheap connectivity + credential check: list a single key. */
 export async function testObjectStore(cfg: ObjectStoreConfig): Promise<void> {
+  if (cfg.provider === "azure") return azureTestObjectStore(cfg);
   const query: Record<string, string> = { "list-type": "2", "max-keys": "1" };
   if (cfg.prefix) query.prefix = cfg.prefix;
   const res = await s3Get(cfg, "", query);
@@ -228,6 +239,7 @@ export async function sampleObject(
   key: string,
   bytes = 128 * 1024,
 ): Promise<Buffer> {
+  if (cfg.provider === "azure") return azureSampleObject(cfg, key, bytes);
   const res = await s3Get(cfg, key, {}, { range: `bytes=0-${bytes - 1}` });
   // 206 = partial content; 200 = whole object smaller than the range.
   if (!res.ok && res.status !== 206) {
@@ -266,6 +278,26 @@ export function fileFormat(key: string): string | null {
   if (ext === "parquet") return "parquet";
   if (["orc", "avro"].includes(ext)) return ext;
   return null;
+}
+
+/**
+ * The extension a key actually CARRIES, `.gz` tail included.
+ *
+ * `fileFormat` answers what a file IS — "orders.jsonl.gz" is ndjson. This
+ * answers what it is CALLED, which is what a glob has to match. The two part
+ * company for compressed text, and dlt gzips text output by default, so a
+ * dataset globbed as `*.ndjson` matched none of the `*.jsonl.gz` files in its
+ * own folder and every read of it failed with "No files found that match".
+ *
+ * Returns "" for a key with no extension at all.
+ */
+export function objectExt(key: string): string {
+  const base = (key.split("/").pop() ?? key).toLowerCase();
+  const parts = base.split(".");
+  if (parts.length < 2) return "";
+  const last = parts[parts.length - 1];
+  if (last === "gz" && parts.length > 2) return `${parts[parts.length - 2]}.gz`;
+  return last;
 }
 
 function valueType(v: unknown): string {
