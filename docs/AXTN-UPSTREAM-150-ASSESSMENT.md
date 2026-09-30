@@ -272,6 +272,33 @@ Candidate is ready for host integration review only when:
 - restart/persistence succeeds
 - no secrets or retained production state were changed
 
+
+## Existing n8n workflow continuity
+
+Canonical n8n source: `aXtn/aXtn-n8n@24de6248f13b5fc250482dc8c3b3ef483c91cb55`.
+
+The following six versioned workflows are part of the functional aXtn platform state and must be preserved across the AgentSwarms upgrade:
+
+- `aXtn-Drive-Document-Intake.json`
+- `aXtn-Drive-Filing-Executor.json`
+- `aXtn-Mail-Filing.json`
+- `aXtn-Mail-Ingress-Google-Workspace.json`
+- `aXtn-Mail-Ingress-IMAP.json`
+- `aXtn-Mail-Materialization.json`
+
+Continuity rule:
+
+- migrate/recreate the workflow definitions and deterministic behavior,
+- preserve trigger/webhook semantics and AgentSwarms integration contracts,
+- preserve generator/source-of-truth relationships such as `workflows/lib/mail-ingress-core.js` and `tools/build-workflows.mjs`,
+- preserve inactive/fail-closed state until target bindings are verified,
+- **do not migrate or copy n8n credential objects, credential IDs, OAuth tokens, passwords, API keys or encryption-key-protected credential state**,
+- create or re-authorize credentials cleanly in the target runtime and bind workflows only after read/health verification,
+- keep repository exports free of secrets and use explicit placeholders/logical names,
+- activate each workflow only after its target AgentSwarms endpoint, provider access and expected response contract have been verified.
+
+Credential continuity is therefore configuration re-provisioning, not credential migration.
+
 ## Host follow-up
 
 Only after candidate acceptance should `aXtn-host` be reconciled around the actual AgentSwarms 1.5 operating model.
