@@ -1,0 +1,174 @@
+# Codex task: upgrade aXtn AgentSwarms to current upstream
+
+Status: READY_FOR_EXECUTION
+Repository: `aXtn/aXtn-agentswarms`
+Working branch: `work/AXTN-AGENTSWARMS-UPSTREAM-150-0001`
+Starting aXtn commit: `cb50394e1b0647862b85bce224a30934d96a59da`
+Verified upstream repository: `AgentSwarms-fyi/agentswarms`
+Verified upstream head at preparation time: `05df309fbabfa3612e3b86f1860d76c6d95f22b3`
+Verified upstream package version at preparation time: `1.5.0`
+
+## Objective
+
+Bring the aXtn AgentSwarms fork onto the current verified upstream while preserving only the aXtn-specific capabilities that still add value.
+
+AgentSwarms is the leading application/runtime. Prefer current upstream-native functionality, contracts, deployment patterns, integrations, developer runtime, draft/published semantics, backup/restore and operational mechanisms over maintaining parallel aXtn implementations.
+
+Do not redesign the host in this task. Produce a tested AgentSwarms candidate that can become the new platform baseline.
+
+## Source policy
+
+- Gitea is authoritative for the aXtn fork and aXtn-specific work.
+- GitHub `AgentSwarms-fyi/agentswarms` is the verified upstream source.
+- Re-resolve upstream `main` at task start and record its exact SHA. If it moved beyond `05df309f...`, inspect the delta before selecting the target SHA; use the newest verified compatible revision, not floating latest by assumption.
+- Do not rewrite or modify existing working branches or dirty worktrees.
+- Use the dedicated task worktree and this branch only.
+- No merge to `main`, no release, no deployment, no production mutation.
+
+## Existing aXtn delta to preserve/classify
+
+At minimum inspect and classify:
+
+- `axtn/**`
+- `src/axtn/**`
+- `src/components/axtn/**`
+- `src/routes/api/axtn/**`
+- `src/lib/axtnExtensionAccess.ts`
+- `src/utils/axtnExtensionAccess.server.ts`
+- `src/utils/axtnSystemExtensions.functions.ts`
+- `src/utils/axtnWorkbenchEdits.functions.ts`
+- `deploy/axtn/**`
+- aXtn MCP/local-table integration
+- aXtn workbench registry and workbenches
+- security fixes and stream/protocol compatibility changes recorded in `docs/AXTN-ISSUE3-COMPATIBILITY.yaml`
+- prepared Engagement Control Plane material on existing aXtn branches/issues
+
+For each delta classify:
+- still_required
+- replaced_by_upstream
+- needs_port
+- obsolete
+- architecture_review_required
+
+Do not preserve a fork change merely because it exists. Prefer upstream-native behavior where equivalent or better.
+
+## Upgrade strategy
+
+1. Verify repository, worktree, remotes, branch and HEAD.
+2. Fetch the authoritative aXtn branch state from local Gitea.
+3. Fetch the verified public upstream repository.
+4. Determine:
+   - exact upstream target SHA,
+   - merge base,
+   - upstream delta since the currently tested base,
+   - aXtn-only delta,
+   - likely conflict zones.
+5. Integrate the selected upstream revision into this branch using the least disruptive method that preserves traceability.
+6. Resolve conflicts by preserving upstream behavior first, then porting only justified aXtn deltas.
+7. Do not reintroduce removed upstream profile/operating assumptions unless an aXtn requirement proves they are still necessary.
+8. Keep aXtn extensions modular and clearly namespaced; do not move native AgentSwarms functionality behind aXtn-specific control planes.
+
+## Required compatibility review
+
+Explicitly review current upstream behavior for:
+
+- self-hosting and Docker deployment
+- `setup.sh --dev` / local development flow
+- stateless app + Supabase persistence model
+- draft/published swarm behavior
+- Developer Workspace / notebooks / sandboxing
+- n8n integration
+- MCP integration
+- backup and restore
+- migrations
+- IAM / approvals / audit behavior
+- health/readiness
+- deployment and scaling contracts
+
+Record where existing aXtn host assumptions are now obsolete or duplicated by native AgentSwarms functionality.
+
+## Validation
+
+Run the strongest relevant upstream-native checks available at the selected revision, including at minimum:
+
+- dependency install from lockfile
+- typecheck
+- lint
+- docs/infra checks where part of upstream `npm run check`
+- full unit test suite
+- integration tests
+- production build
+- migration compatibility against an isolated test database
+- targeted aXtn regression tests
+- workbench registry/load tests
+- MCP/SSE protocol tests
+- local-table integration tests
+- extension-access security tests
+
+Use upstream's own canonical `npm run check` where feasible, then add aXtn-specific checks.
+
+If the current upstream test suite materially changed, adapt the aXtn compatibility evidence rather than weakening upstream checks.
+
+## Runtime smoke
+
+After static/test acceptance, start the upgraded candidate in an isolated runtime using the upstream-native supported path as far as possible.
+
+Verify:
+- UI reachable
+- login/auth path
+- primary health/readiness
+- database connectivity
+- one agent/small swarm smoke
+- draft/published behavior
+- one n8n integration path if testable without production mutation
+- one MCP integration path
+- restart/persistence
+- no secret leakage
+
+Do not activate public production routing or change retained production services.
+
+## Evidence and deliverables
+
+Version on this branch:
+
+1. `docs/AXTN-UPSTREAM-150-ASSESSMENT.md`
+   - exact selected upstream SHA/version
+   - aXtn delta classification
+   - upstream-native capabilities replacing old aXtn/host assumptions
+   - conflicts and resolutions
+   - remaining architecture decisions
+
+2. Updated machine-readable compatibility evidence replacing stale upstream references in `docs/AXTN-ISSUE3-COMPATIBILITY.yaml` or a successor document.
+
+3. All required code ports/fixes.
+
+4. Secret-free runtime/test evidence.
+
+5. A concise result stating:
+   - selected upstream SHA
+   - resulting candidate SHA
+   - tests/build/migrations/runtime status
+   - which aXtn deltas remain
+   - which were retired because upstream superseded them
+   - blockers, if any
+   - whether the candidate is ready for host integration review
+
+## Stop conditions
+
+Stop for user decision only if:
+- a material aXtn capability would need to be dropped without an upstream equivalent,
+- preserving an aXtn capability requires a new security or data-boundary architecture,
+- migration would require destructive production data changes,
+- secrets or retained production state would be at risk,
+- a major upstream licensing/operational change materially changes the platform decision.
+
+Ordinary merge conflicts, test failures and compatibility fixes inside this repository are part of the task and should be resolved autonomously.
+
+## Not authorized
+
+- merge to `main`
+- release/tag
+- production deployment
+- host cutover
+- destructive production data migration
+- changing retained Matrix, n8n, Gitea or Supabase production state
