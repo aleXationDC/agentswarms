@@ -20,14 +20,22 @@ Do not redesign the host in this task. Produce a tested AgentSwarms candidate th
 
 - Gitea is authoritative for the aXtn fork and aXtn-specific work.
 - GitHub `AgentSwarms-fyi/agentswarms` is the verified upstream source.
-- Re-resolve upstream `main` at task start and record its exact SHA. If it moved beyond `05df309f...`, inspect the delta before selecting the target SHA; use the newest verified compatible revision, not floating latest by assumption.
+- Use the architect-selected upstream target `05df309fbabfa3612e3b86f1860d76c6d95f22b3`. Record if upstream `main` has moved, but do not change the selected target during this execution.
 - Do not rewrite or modify existing working branches or dirty worktrees.
 - Use the dedicated task worktree and this branch only.
 - No merge to `main`, no release, no deployment, no production mutation.
 
-## Existing aXtn delta to preserve/classify
+## Architecture authority
 
-At minimum inspect and classify:
+The architecture assessment is already complete and authoritative for this task:
+
+- `docs/AXTN-UPSTREAM-150-ASSESSMENT.md`
+
+Do not redo or override its architectural classifications. Implement them mechanically and report any concrete contradiction discovered in source or tests.
+
+## Existing aXtn delta to implement
+
+Apply the classifications in the architecture assessment. At minimum inspect the following paths while porting:
 
 - `axtn/**`
 - `src/axtn/**`
@@ -43,34 +51,30 @@ At minimum inspect and classify:
 - security fixes and stream/protocol compatibility changes recorded in `docs/AXTN-ISSUE3-COMPATIBILITY.yaml`
 - prepared Engagement Control Plane material on existing aXtn branches/issues
 
-For each delta classify:
-- still_required
-- replaced_by_upstream
-- needs_port
-- obsolete
-- architecture_review_required
-
-Do not preserve a fork change merely because it exists. Prefer upstream-native behavior where equivalent or better.
+Required decisions already made:
+- aXtn Workbenches: port
+- aXtn Local Table MCP integration: port using current native MCP lifecycle
+- aXtn Document Intake swarm: port business logic; use native publish/deploy contract
+- SSE/SDK protocol patch: retire as aXtn delta because it is already upstream-identical
+- aXtn System Extension Access: do not port in the first candidate
+- deploy/axtn helpers: port only what remains necessary after current upstream composition
+- Engagement Control Plane: do not implement in this upgrade
+- security fixes: port only where an exact current upstream comparison still shows a gap
 
 ## Upgrade strategy
 
 1. Verify repository, worktree, remotes, branch and HEAD.
 2. Fetch the authoritative aXtn branch state from local Gitea.
 3. Fetch the verified public upstream repository.
-4. Determine:
-   - exact upstream target SHA,
-   - merge base,
-   - upstream delta since the currently tested base,
-   - aXtn-only delta,
-   - likely conflict zones.
-5. Integrate the selected upstream revision into this branch using the least disruptive method that preserves traceability.
+4. Confirm the selected upstream target SHA and determine merge base, aXtn-only delta and likely conflict zones.
+5. Integrate the architect-selected upstream revision into this branch using the least disruptive method that preserves traceability.
 6. Resolve conflicts by preserving upstream behavior first, then porting only justified aXtn deltas.
 7. Do not reintroduce removed upstream profile/operating assumptions unless an aXtn requirement proves they are still necessary.
 8. Keep aXtn extensions modular and clearly namespaced; do not move native AgentSwarms functionality behind aXtn-specific control planes.
 
-## Required compatibility review
+## Required implementation compatibility checks
 
-Explicitly review current upstream behavior for:
+Verify during implementation that the already-reviewed native contracts still behave as expected for:
 
 - self-hosting and Docker deployment
 - `setup.sh --dev` / local development flow
@@ -85,7 +89,7 @@ Explicitly review current upstream behavior for:
 - health/readiness
 - deployment and scaling contracts
 
-Record where existing aXtn host assumptions are now obsolete or duplicated by native AgentSwarms functionality.
+Do not redesign the host here. If implementation reveals a contradiction with the architecture assessment, record exact source/test evidence and stop only if it crosses a documented stop condition.
 
 ## Validation
 
@@ -103,7 +107,7 @@ Run the strongest relevant upstream-native checks available at the selected revi
 - workbench registry/load tests
 - MCP/SSE protocol tests
 - local-table integration tests
-- extension-access security tests
+- extension-access tests only as read-only regression evidence if they still apply; the extension-access feature is not part of this first upgraded candidate
 
 Use upstream's own canonical `npm run check` where feasible, then add aXtn-specific checks.
 
