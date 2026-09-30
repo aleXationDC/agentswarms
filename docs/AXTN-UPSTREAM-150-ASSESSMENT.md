@@ -110,16 +110,22 @@ If a workbench feature is now provided natively by AgentSwarms, the native surfa
 Paths:
 - `axtn/mcp-servers/axtn-local-table-integration/**`
 
-Classification: **STILL_REQUIRED BUSINESS CAPABILITY / NEEDS_PORT**
+Classification: **REASSESS / NATIVE_REPLACEMENT_PREFERRED**
 
 Reason:
-The specific controlled `local_table_upsert` contract, allowlist, ownership checks and document-registry semantics are aXtn-specific. Upstream has Local Tables and a mature MCP Builder but does not expose this exact aXtn tool contract.
+The business need is controlled, auditable writing of document-intake state into AgentSwarms-managed data. The legacy `local_table_upsert` MCP service is only one historical implementation of that need and is not itself an architectural requirement. AgentSwarms 1.5 now has materially expanded native data, MCP Builder/runtime, scoped-key and runtime-session capabilities, so the first task is to prove whether the business contract can be satisfied natively.
 
 Target:
-Rebuild/revalidate this as a native current MCP Builder application. Reuse current upstream session, key, tool-approval and sandbox contracts. Do not preserve obsolete transport/session code.
+Prefer an upstream-native AgentSwarms data/write path. Retain an aXtn MCP application only if a concrete functional or security gap remains after testing current upstream behavior. Do not add aXtn-specific lifecycle/token helpers to native upstream core merely to satisfy legacy tests.
+
+Decision rule:
+- legacy aXtn tests are compatibility evidence, not requirements;
+- if a failing test exposes a general defect in current upstream behavior, fix upstream minimally and add an upstream-oriented regression test;
+- if it only encodes an obsolete aXtn implementation contract, adapt or retire that test;
+- if the document-intake business invariant cannot be met by native AgentSwarms, document the exact gap before porting the old service.
 
 Security:
-The sandbox must never receive Supabase service-role credentials. Table/tool/owner allowlists remain fail-closed.
+Whatever implementation remains must keep credentials server-side, preserve fail-closed authorization, and avoid direct service-role exposure to sandboxes or external callers.
 
 ### 3. aXtn Document Intake swarm
 
@@ -213,6 +219,21 @@ Known protocol delta already landed upstream. For each remaining security patch:
 - port only demonstrated gaps
 - preserve targeted regression tests where useful
 
+
+## Legacy-test interpretation rule
+
+During this upgrade, a failing aXtn regression test does not by itself justify restoring an old implementation contract.
+
+For every failing legacy test:
+
+1. identify the business/security invariant it protects;
+2. compare that invariant with current AgentSwarms 1.5 native behavior;
+3. if upstream already satisfies the invariant, update or retire the legacy test;
+4. if upstream violates a generally valid invariant, fix the native helper minimally and test that native behavior;
+5. only preserve an aXtn-specific implementation when no native path satisfies the requirement.
+
+In particular, missing aXtn-only token/lifecycle helpers are not defects in upstream unless a current native AgentSwarms contract independently requires that behavior.
+
 ## Data and migration consequence
 
 The selected upstream candidate contains 269 migration files; the last accepted aXtn runtime reconciled 191.
@@ -247,7 +268,7 @@ The mechanical upgrade shall use these architecture decisions:
 1. Pin the upgrade attempt to upstream `05df309fbabfa3612e3b86f1860d76c6d95f22b3`. Do not chase a moving `main` during this run.
 2. Start from the dedicated aXtn upgrade branch.
 3. Integrate upstream first.
-4. Port aXtn Workbenches and the business-specific Local Table / Document Intake capabilities.
+4. Port aXtn Workbenches and the Document Intake business logic; reassess the legacy Local Table MCP implementation against current native AgentSwarms before carrying it forward.
 5. Do not port the old system-extension-access mechanism in the first candidate.
 6. Do not implement ECP in this upgrade.
 7. Do not restore old Compose/profile semantics merely to reduce merge conflicts.
@@ -268,7 +289,7 @@ Candidate is ready for host integration review only when:
 - isolated login/UI/agent/swarm smoke succeeds
 - draft/published behavior is verified
 - native n8n integration contract is verified at least synthetically
-- native MCP path plus aXtn Local Table tool is verified
+- native data/MCP path satisfies the Document Intake write contract; an aXtn Local Table tool is required only if a documented native gap remains
 - restart/persistence succeeds
 - no secrets or retained production state were changed
 
