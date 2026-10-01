@@ -11,21 +11,72 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+async function auditRejectedOpen(actor: string | null, reason: string): Promise<boolean> {
+  const endpoint = process.env.AXTN_MAINTENANCE_URL;
+  const secret = process.env.AXTN_MAINTENANCE_TOKEN;
+  if (!endpoint || !secret) return false;
+  try {
+    const result = await fetch(`${endpoint.replace(/\/+$/, "")}/reject`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + secret,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ actor, reason }),
+      signal: AbortSignal.timeout(3000),
+    });
+    return result.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function deniedOpen(
+  status: number,
+  error: string,
+  actor: string | null,
+  reason: string,
+): Promise<Response> {
+  if (!(await auditRejectedOpen(actor, reason))) {
+    return json(503, { error: "Unable to record the rejected maintenance request" });
+  }
+  return json(status, { error });
+}
+
 async function handle(request: Request, action: Action): Promise<Response> {
   const bearer = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-  if (!bearer) return json(401, { error: "Unauthorized" });
+  if (!bearer) {
+    if (action === "open") return deniedOpen(401, "Unauthorized", null, "unauthenticated");
+    return json(401, { error: "Unauthorized" });
+  }
 
   const { data: auth, error: authError } = await supabaseAdmin.auth.getUser(bearer);
   const userId = auth.user?.id;
-  if (authError || !userId) return json(401, { error: "Unauthorized" });
+  if (authError || !userId) {
+    if (action === "open") return deniedOpen(401, "Unauthorized", null, "invalid_session");
+    return json(401, { error: "Unauthorized" });
+  }
   let assurance: { aal?: string };
   try {
     assurance = JSON.parse(Buffer.from(bearer.split(".")[1] ?? "", "base64url").toString("utf8"));
   } catch {
+    if (action === "open") {
+      return deniedOpen(401, "Invalid authenticated session", userId, "invalid_session");
+    }
     return json(401, { error: "Invalid authenticated session" });
   }
   if (assurance.aal !== "aal2") {
-    return json(403, { error: "Complete multi-factor authentication before managing maintenance access" });
+    if (action === "open") {
+      return deniedOpen(
+        403,
+        "Complete multi-factor authentication before managing maintenance access",
+        userId,
+        "mfa_required",
+      );
+    }
+    return json(403, {
+      error: "Complete multi-factor authentication before managing maintenance access",
+    });
   }
 
   const { data: role, error: roleError } = await supabaseAdmin
@@ -39,9 +90,22 @@ async function handle(request: Request, action: Action): Promise<Response> {
     bootstrapAdminEmail !== "" &&
     auth.user.email?.toLowerCase() === bootstrapAdminEmail.toLowerCase();
   if (roleError) {
+    if (action === "open") {
+      return deniedOpen(
+        503,
+        "Unable to verify administrator authorization",
+        userId,
+        "role_unavailable",
+      );
+    }
     return json(503, { error: "Unable to verify administrator authorization" });
   }
-  if (!role && !bootstrapAdmin) return json(403, { error: "Administrator authorization required" });
+  if (!role && !bootstrapAdmin) {
+    if (action === "open") {
+      return deniedOpen(403, "Administrator authorization required", userId, "admin_required");
+    }
+    return json(403, { error: "Administrator authorization required" });
+  }
 
   const endpoint = process.env.AXTN_MAINTENANCE_URL;
   const secret = process.env.AXTN_MAINTENANCE_TOKEN;
