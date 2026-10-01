@@ -2,6 +2,10 @@
   "schema_version": "1.0",
   "workbenches": [
     {
+      "id": "axtn-supacase",
+      "manifest": "axtn-supacase/manifest.json"
+    },
+    {
       "id": "axtn-reviews",
       "manifest": "axtn-reviews/manifest.json"
     },
