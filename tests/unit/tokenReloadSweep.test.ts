@@ -225,6 +225,7 @@ describe("loads that replace what the user edits do not follow the token", () =>
  * raise the count here.
  */
 const REVIEWED: Record<string, number> = {
+  "src/routes/_authenticated/admin/axtn-maintenance.tsx": 4,
   "src/components/admin/GroupBudgetsTab.tsx": 1,
   "src/components/admin/VectorStorePanel.tsx": 1,
   "src/components/bi/BiBuilderPane.tsx": 1,

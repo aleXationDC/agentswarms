@@ -181,6 +181,7 @@ export const ADMIN_GROUP: NavGroup = {
   items: [
     { title: "IAM", url: "/admin/iam", icon: ShieldCheck },
     { title: "Developer runtime", url: "/admin/runtime", icon: Server },
+    { title: "Maintenance access", url: "/admin/axtn-maintenance", icon: ShieldCheck },
   ],
 };
 

@@ -75,7 +75,12 @@ describe("every VITE_ setting survives the Docker build", () => {
     // `${VAR}` with no default makes compose warn and pass an empty string;
     // `${VAR:-}` states the intent. Required settings (Supabase) are
     // deliberately left bare so a missing one is noisy.
-    for (const name of ["VITE_BI_SNAPSHOT_ROWS_CAP", "VITE_GA_ID", "VITE_GTM_ID"]) {
+    for (const name of [
+      "VITE_BI_SNAPSHOT_ROWS_CAP",
+      "VITE_GA_ID",
+      "VITE_GTM_ID",
+      "VITE_SUPABASE_SAME_ORIGIN",
+    ]) {
       expect(COMPOSE, `${name} should be optional in compose`).toContain(`\${${name}:-}`);
     }
   });
