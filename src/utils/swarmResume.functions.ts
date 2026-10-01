@@ -11,8 +11,37 @@ import type { Database } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
+import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
 
 type Fail = { ok: false; error: string };
+
+function acceptanceContext(
+  input: string,
+): { documentId: string; canonical: Record<string, unknown> } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  const walk = (value: unknown): Record<string, unknown> | null => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    const documentId = record.document_id ?? record.documentId;
+    if (typeof documentId === "string" && documentId.trim()) {
+      return { ...record, document_id: documentId };
+    }
+    for (const child of Object.values(record)) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const found = walk(parsed);
+  return found?.document_id && typeof found.document_id === "string"
+    ? { documentId: found.document_id, canonical: found }
+    : null;
+}
 
 /**
  * Continue the run behind an approval, using the decision already recorded on
@@ -64,7 +93,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         // approver's.
         const { data: run } = await supabaseAdmin
           .from("swarm_runs")
-          .select("id, user_id, status")
+          .select("id, user_id, status, input_prompt")
           .eq("id", approval.swarm_run_id)
           .maybeSingle();
         if (!run) return { ok: false, error: "Run not found" };
@@ -99,6 +128,27 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           decision: { approved: approval.status === "approved" },
         });
         if (!result) return { ok: false, error: "This run can no longer be resumed" };
+        if (result.status === "success" && result.output.includes("READY_FOR_FILING")) {
+          const acceptance = acceptanceContext(run.input_prompt ?? "");
+          if (!acceptance) {
+            return { ok: false, error: "Filing acceptance had no document identity." };
+          }
+          try {
+            await ensureCaseForAcceptance({
+              userId: run.user_id,
+              documentId: acceptance.documentId,
+              canonical: acceptance.canonical,
+            });
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? `Case acceptance failed: ${error.message}`
+                  : "Case acceptance failed",
+            };
+          }
+        }
         return { ok: true, status: result.status, runId: result.runId, output: result.output };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : "Resume failed" };
