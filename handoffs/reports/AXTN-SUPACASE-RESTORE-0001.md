@@ -91,6 +91,22 @@ Canonical Gitea read-only database verification, reported by the host-side check
 
 No protected branch was updated and no merge was performed.
 
+## Disposable-user Document and Review smoke fixtures
+
+`/documents/$documentId` and `listWorkbenchDocuments()` do not read `knowledge_documents`. The Documents Workbench reads only the signed-in user's `user_data_tables` row named `axtn_document_registry`, then its `user_data_rows` where `table_id` matches. The Review queue/detail reads the signed-in user's native `approvals` rows under approvals-table RLS. `useRegisteredDocument()` resolves a registration approval's document id through that same registry lookup.
+
+For a disposable authenticated user, the minimal registry fixture is:
+
+1. One owner-scoped `user_data_tables` row with `user_id = <disposable user UUID>`, `name = 'axtn_document_registry'`, `is_sample = false`, and `columns` declaring at least `document_id` and `record_kind` (for an intake-shaped fixture, also declare `source_ref`, `source_type`, `processing_status`, `privacy_status`, and `original_filename`).
+2. One `user_data_rows` row referencing that table id. Its `row` JSON needs `record_kind: "document"` and a unique 24-character lowercase hex `document_id`. For a realistic registered document include `source_ref: "drive:<synthetic-file-id>"`, `source_type: "google_drive"`, `processing_status: "registered"`, `privacy_status: "UNRESOLVED"`, and `original_filename: "<synthetic-name>.pdf"`.
+3. Open `/documents/<document_id>` using that same signed-in disposable user. The detail page should resolve the registry record; its Case / Relations panel can create-and-assign a Case. Reusing that id on an unowned table, a table with another name, a `schema_seed` row, or a row without `document_id` will not resolve.
+
+The canonical current DMS write path is the versioned Document Intake graph's `nodes/validate-envelope.js` → `local_table_upsert` MCP operation. It targets `axtn_document_registry` by `source_ref`, asks the broker to generate `document_id` with `generate_columns: { document_id: "hex24" }`, and keeps that identity immutable on replay. The server accepts writes only from an authorized, platform-created MCP runtime session and an owned, allow-listed Local Table; do not simulate this with `knowledge_documents`.
+
+For the Review browser smoke, create a native `approvals` row owned by the same disposable user with `status: "pending"`, a synthetic `agent_name`, `action_title: "Review Intake Registration"`, `action_type: "swarm_step"`, `risk_level: "medium"`, and `payload: { last_output: JSON.stringify(ack) }`, where `ack` contains the exact same `document_id`, plus `source_ref: "drive:<synthetic-file-id>"` and `processing_status: "registered"`. A JSON-string `description` containing the same acknowledgement is a supported fallback. Keep `swarm_run_id` null for a display/assign smoke that must not resume any run. Then open `/review/<approval-uuid>`; the detail resolves the same registered document and shows Case / Relations. The identity match between `ack.document_id` and the registry row is required.
+
+The existing Documents registry and Review presentation tests cover these shapes and the `registrationContext()` parsing contract. The live smoke mismatch was the fixture table, not a source defect; no application code or live/runtime data was changed for this finding.
+
 ## Validation still required before host pin promotion
 
 Required:
