@@ -2,11 +2,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { auditEvent } from "@/utils/audit.server";
 import {
+  CASE_STATUSES,
   reopenOnRelevantActivity,
   validateCaseDraft,
   type CaseActor,
   type CaseDraft,
+  type CaseStatus,
 } from "./caseContract";
+
+type JsonObject = { [key: string]: Json | undefined };
 
 const DATASETS = {
   cases: {
@@ -45,6 +49,14 @@ const DATASETS = {
   },
 } as const;
 
+function isJsonObject(value: Json): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCaseStatus(value: Json | undefined): value is CaseStatus {
+  return typeof value === "string" && CASE_STATUSES.some((status) => status === value);
+}
+
 async function ensureDataset(userId: string, key: keyof typeof DATASETS): Promise<string> {
   const definition = DATASETS[key];
   const { data: current, error: readError } = await supabaseAdmin
@@ -77,9 +89,10 @@ async function rowsFor(userId: string, key: keyof typeof DATASETS) {
     .select("id, row")
     .eq("table_id", tableId);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((entry) =>
-    typeof entry.row === "object" && entry.row !== null ? entry.row : {},
-  ) as Record<string, unknown>[];
+  return (data ?? []).map((entry) => {
+    if (!isJsonObject(entry.row)) throw new Error(`Invalid row in ${DATASETS[key].name}.`);
+    return entry.row;
+  });
 }
 async function insertRow(userId: string, key: keyof typeof DATASETS, row: Record<string, unknown>) {
   const tableId = await ensureDataset(userId, key);
@@ -164,11 +177,10 @@ export async function updateCaseForUser(
     .eq("table_id", tableId);
   if (error) throw new Error(error.message);
   const current = (rows ?? []).find(
-    (entry) => (entry.row as Record<string, unknown>)?.case_id === data.case_id,
+    (entry) => isJsonObject(entry.row) && entry.row.case_id === data.case_id,
   );
-  if (!current || typeof current.row !== "object" || current.row === null)
-    throw new Error("Case not found.");
-  const before = current.row as Record<string, unknown>;
+  if (!current || !isJsonObject(current.row)) throw new Error("Case not found.");
+  const before = current.row;
   const {
     case_id,
     actor,
@@ -181,21 +193,19 @@ export async function updateCaseForUser(
     relevant_activity?: boolean;
     access_token?: string;
   };
-  const currentStatus = typeof before.status === "string" ? before.status : "NEW";
+  const currentStatus = isCaseStatus(before.status) ? before.status : "NEW";
   const reopened =
     relevant_activity && currentStatus === "CLOSED" ? reopenOnRelevantActivity("CLOSED") : null;
+  const nextStatus = reopened?.status ?? patch.status ?? currentStatus;
   const next = {
     ...before,
     ...patch,
     case_id,
-    status: reopened?.status ?? patch.status ?? currentStatus,
+    status: nextStatus,
     status_reason: reopened?.status_reason ?? patch.status_reason ?? before.status_reason ?? null,
     priority: patch.priority ?? (typeof before.priority === "number" ? before.priority : 3),
     updated_at: new Date().toISOString(),
-    closed_at:
-      (reopened?.status ?? patch.status ?? currentStatus) === "CLOSED"
-        ? (before.closed_at ?? new Date().toISOString())
-        : null,
+    closed_at: nextStatus === "CLOSED" ? (before.closed_at ?? new Date().toISOString()) : null,
   } as Record<string, unknown>;
   if (actor === "automation" && before.priority === 0 && next.priority !== 0)
     throw new Error("Automation cannot overwrite Human Critical priority 0.");
@@ -205,7 +215,7 @@ export async function updateCaseForUser(
     .update({ row: next as Json })
     .eq("id", current.id);
   if (updateError) throw new Error(updateError.message);
-  return { caseId: data.case_id, status: next.status };
+  return { caseId: data.case_id, status: nextStatus };
 }
 
 export async function createAccountForUser(
@@ -248,19 +258,44 @@ export async function ensureCaseForAcceptance(args: {
   documentId: string;
   canonical: Record<string, unknown>;
 }) {
-  const relations = await rowsFor(args.userId, "relations");
+  const [relations, cases] = await Promise.all([
+    rowsFor(args.userId, "relations"),
+    rowsFor(args.userId, "cases"),
+  ]);
   const existingRelation = relations.find(
     (row) => row.target_kind === "document" && row.target_id === args.documentId,
   );
-  if (
-    typeof existingRelation?.case_id === "string" &&
-    typeof existingRelation.relation_id === "string"
-  )
+  if (existingRelation) {
+    if (
+      typeof existingRelation.case_id !== "string" ||
+      typeof existingRelation.relation_id !== "string"
+    ) {
+      throw new Error("Document Case relation is incomplete.");
+    }
+    if (!cases.some((row) => row.case_id === existingRelation.case_id)) {
+      throw new Error("Document Case relation points to a missing Case.");
+    }
     return {
       caseId: existingRelation.case_id,
       relationId: existingRelation.relation_id,
       created: false,
     };
+  }
+  const existingCase = cases.find(
+    (row) => row.source_kind === "dms_document" && row.source_id === args.documentId,
+  );
+  if (typeof existingCase?.case_id === "string") {
+    const relationId = crypto.randomUUID();
+    await insertRow(args.userId, "relations", {
+      relation_id: relationId,
+      case_id: existingCase.case_id,
+      relation_type: "related_document",
+      target_id: args.documentId,
+      target_kind: "document",
+      created_at: new Date().toISOString(),
+    });
+    return { caseId: existingCase.case_id, relationId, created: false };
+  }
   const now = new Date().toISOString();
   const caseId = crypto.randomUUID();
   const draft: CaseDraft = {

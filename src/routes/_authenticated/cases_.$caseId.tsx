@@ -58,7 +58,25 @@ function CaseDetailPage() {
   const item = result?.cases.find((row) => row.case_id === caseId) as
     | Record<string, unknown>
     | undefined;
-  const relations = result?.relations.filter((row) => row.case_id === caseId) ?? [];
+  const relations = (result?.relations ?? []).flatMap((row) => {
+    if (
+      row.case_id === caseId &&
+      typeof row.relation_id === "string" &&
+      typeof row.relation_type === "string" &&
+      typeof row.target_id === "string" &&
+      typeof row.target_kind === "string"
+    ) {
+      return [
+        {
+          relation_id: row.relation_id,
+          relation_type: row.relation_type,
+          target_id: row.target_id,
+          target_kind: row.target_kind,
+        },
+      ];
+    }
+    return [];
+  });
   return (
     <div className="space-y-6 p-6">
       <Link className="text-sm underline underline-offset-4" to="/cases">

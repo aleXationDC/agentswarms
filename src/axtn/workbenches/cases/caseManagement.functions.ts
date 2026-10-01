@@ -45,7 +45,10 @@ const CaseInput = AccessInput.extend({
   related_entity: z.string().max(500).nullable().optional(),
   actor: z.enum(["human", "automation"]).optional(),
 });
-const CaseUpdateInput = CaseInput.extend({ case_id: z.string().uuid(), relevant_activity: z.boolean().optional() });
+const CaseUpdateInput = CaseInput.extend({
+  case_id: z.string().uuid(),
+  relevant_activity: z.boolean().optional(),
+});
 
 async function requireUser(accessToken: string) {
   const url = process.env.SUPABASE_URL;
@@ -83,7 +86,7 @@ export const assignDocumentToCase = createServerFn({ method: "POST" })
     const userId = await requireUser(data.access_token);
     const { assignDocument } = await import("./caseManagement.server");
     return assignDocument(userId, data.case_id, data.document_id);
-});
+  });
 
 export const updateCase = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => CaseUpdateInput.parse(input))
