@@ -302,17 +302,22 @@ describe("publish server functions", () => {
   const src = readFileSync(resolve("src/utils/swarmDeploy.functions.ts"), "utf-8");
 
   it("both check ownership under the service role", () => {
+    const sharedPublisher = src.slice(
+      src.indexOf("export async function publishSwarmForOwner"),
+      src.indexOf("export const publishSwarm"),
+    );
     const bodies = src.split("export const").filter((b) => /^\s*(publish|unpublish)Swarm/.test(b));
     expect(bodies.length).toBe(2);
+    expect(sharedPublisher).toContain("swarm.user_id !== userId");
     for (const b of bodies) {
-      expect(b).toContain("swarm.user_id !== userId");
+      expect(b).toContain("userFromToken(data.access_token)");
     }
   });
 
   it("publish copies the SAVED draft rather than trusting client-sent nodes", () => {
     const body = src.slice(
+      src.indexOf("export async function publishSwarmForOwner"),
       src.indexOf("export const publishSwarm"),
-      src.indexOf("export const unpublishSwarm"),
     );
     expect(body).toContain("published_nodes: swarm.nodes");
     expect(body).not.toMatch(/data\.nodes/);

@@ -91,7 +91,9 @@ function MaintenanceAccessPage() {
         <Card className="mx-auto mt-12 max-w-lg border-destructive/40">
           <CardHeader>
             <CardTitle>Restricted area</CardTitle>
-            <CardDescription>Only AgentSwarms superadmins can manage maintenance access.</CardDescription>
+            <CardDescription>
+              Only AgentSwarms superadmins can manage maintenance access.
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -131,7 +133,11 @@ function MaintenanceAccessPage() {
               Idle expiry: {new Date(lease.expires_at).toLocaleString()}
             </p>
           )}
-          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <Button
             variant={lease?.open ? "destructive" : "default"}
             disabled={busy || !lease}
