@@ -54,7 +54,7 @@ describe("secrets are generated, not derived from anything guessable", () => {
 });
 
 describe("minting a key is owner-only", () => {
-  const src = readFileSync("src/utils/swarmDeploy.functions.ts", "utf8");
+  const src = readFileSync("src/utils/swarmDeploy/operations.server.ts", "utf8");
 
   it("stores only the hash and a display prefix, never the key", () => {
     expect(src).toContain("key_hash");

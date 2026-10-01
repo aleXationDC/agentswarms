@@ -299,25 +299,32 @@ describe("deployment pins the graph in the database", () => {
 });
 
 describe("publish server functions", () => {
-  const src = readFileSync(resolve("src/utils/swarmDeploy.functions.ts"), "utf-8");
+  const clientSrc = readFileSync(resolve("src/utils/swarmDeploy.functions.ts"), "utf-8");
+  const serverSrc = readFileSync(resolve("src/utils/swarmDeploy/operations.server.ts"), "utf-8");
 
-  it("both check ownership under the service role", () => {
-    const sharedPublisher = src.slice(
-      src.indexOf("export async function publishSwarmForOwner"),
-      src.indexOf("export const publishSwarm"),
+  it("keeps service-role operations in a server-only module", () => {
+    expect(clientSrc).not.toContain("client.server");
+    expect(clientSrc).toContain('import("./swarmDeploy/operations.server")');
+  });
+
+  it("both publish paths check ownership under the service role", () => {
+    const sharedPublisher = serverSrc.slice(
+      serverSrc.indexOf("export async function publishSwarmForOwner"),
+      serverSrc.indexOf("export async function publishSwarm("),
     );
-    const bodies = src.split("export const").filter((b) => /^\s*(publish|unpublish)Swarm/.test(b));
-    expect(bodies.length).toBe(2);
+    const bodies = serverSrc.split("export async function");
+    const publishFunctions = bodies.filter((b) => /^\s*(publishSwarm|unpublishSwarm)\(/.test(b));
+    expect(publishFunctions.length).toBe(2);
     expect(sharedPublisher).toContain("swarm.user_id !== userId");
-    for (const b of bodies) {
-      expect(b).toContain("userFromToken(data.access_token)");
+    for (const b of publishFunctions) {
+      expect(b).toContain("userFromToken(accessToken)");
     }
   });
 
   it("publish copies the SAVED draft rather than trusting client-sent nodes", () => {
-    const body = src.slice(
-      src.indexOf("export async function publishSwarmForOwner"),
-      src.indexOf("export const publishSwarm"),
+    const body = serverSrc.slice(
+      serverSrc.indexOf("export async function publishSwarmForOwner"),
+      serverSrc.indexOf("export async function publishSwarm("),
     );
     expect(body).toContain("published_nodes: swarm.nodes");
     expect(body).not.toMatch(/data\.nodes/);

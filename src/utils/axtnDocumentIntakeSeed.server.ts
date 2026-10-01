@@ -3,7 +3,7 @@ import {
   seedDocumentIntake,
 } from "../../axtn/swarms/axtn-document-intake/seed-contract.mjs";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { publishSwarmForOwner } from "@/utils/swarmDeploy.functions";
+import { publishSwarmForOwner } from "@/utils/swarmDeploy/operations.server";
 import type { Json } from "@/integrations/supabase/types";
 
 function requireNoError(error: { message: string; code?: string } | null): void {

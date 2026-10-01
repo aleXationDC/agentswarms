@@ -9,7 +9,7 @@ import {
   type GatewayOverride,
 } from "@/utils/providers/credentials.server";
 import type { ProviderId } from "@/utils/providers/types";
-import { notifyN8nWebhook } from "@/utils/integrations.functions";
+import { notifyN8nWebhook } from "@/utils/integrations/operations.server";
 import { resolveAgentTools, TOOLABLE_IDS, type ToolableId } from "@/utils/tools/registry.server";
 import { enabledToolsFromToggles } from "@/utils/tools/agentToggles";
 import { streamChatWithTools, type ToolEvent } from "@/utils/tools/loop.server";
