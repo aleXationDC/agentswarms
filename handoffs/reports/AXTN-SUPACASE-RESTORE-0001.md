@@ -10,7 +10,8 @@ Authoritative repository: aXtn/aXtn-agentswarms on Gitea
 Base branch: work/AXTN-D09-MAINTENANCE-0001
 Base commit: 21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8
 Restore branch: work/AXTN-SUPACASE-RESTORE-0001
-Restore head at report creation: da13831d767953ed391fc2188c6fed173fe9d4bb
+Restore source commit tested: 49f79e0392a268d9ff88b19aa0c97f1094e0fc34
+Restore branch head before this report-only status update: 04dd3a26409dd83e44b929c386c5c848e0744832
 
 ## Recovered accepted capability
 
@@ -78,7 +79,17 @@ Validated source commit: `49f79e0392a268d9ff88b19aa0c97f1094e0fc34`
 - `npm run build`: passed.
 - D09 base branch remained at `21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8`; its checkpoint, resume, cancel, auth and RLS paths were not replaced.
 
-The Gitea `work/AXTN-SUPACASE-RESTORE-0001` and `refs/pull/5/head` refs both point to the validated code commit. The PR page and unauthenticated API returned HTTP 404, so its open/closed state and actual target metadata could not be verified through HTTP. No protected branch was updated and no merge was performed.
+## Gitea pull request status
+
+Canonical Gitea read-only database verification, reported by the host-side check at 2026-10-01 21:20 UTC:
+
+- PR #5 (`aXtn/aXtn-agentswarms`): open (`issue.is_closed=false`), unmerged (`has_merged=false`).
+- Head at verification: `work/AXTN-SUPACASE-RESTORE-0001`, `04dd3a26409dd83e44b929c386c5c848e0744832` (before this report-only update).
+- Base: `work/AXTN-D09-MAINTENANCE-0001`, at `21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8`.
+- The source branch and Gitea `refs/pull/5/head` were independently confirmed to match that head.
+- Related host PR #6 was also reported open and unmerged, targeting the native-bootstrap work branch; it is separate from this AgentSwarms source PR.
+
+No protected branch was updated and no merge was performed.
 
 ## Validation still required before host pin promotion
 
@@ -89,6 +100,5 @@ Required:
 - Document assign/create-and-assign
 - restart/persistence
 - synthetic smoke cleanup verification
-- authenticated Gitea PR state/target confirmation
 
 No merge, release, deployment or runtime mutation is claimed by this report.
