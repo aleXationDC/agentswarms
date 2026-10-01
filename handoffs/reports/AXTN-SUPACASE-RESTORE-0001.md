@@ -4,7 +4,7 @@
 
 aXtn SupaCase has been restored onto the current AgentSwarms 1.5 D09 maintenance baseline as a complete capability candidate.
 
-Status: SOURCE_RESTORED_VALIDATION_PENDING
+Status: SOURCE_VALIDATED_HOST_ACCEPTANCE_PENDING
 
 Authoritative repository: aXtn/aXtn-agentswarms on Gitea
 Base branch: work/AXTN-D09-MAINTENANCE-0001
@@ -37,6 +37,8 @@ The historical business semantics are preserved, but the restored implementation
 In particular:
 - current D09 checkpoint-based resume and cancellation behavior is retained;
 - SupaCase filing acceptance was added after successful resumed execution without replacing the newer resume logic;
+- a completed READY_FOR_FILING run can retry Case creation from its persisted final output, and a partial Case-without-relation write is repaired without creating a duplicate Case;
+- Case server-function results use JSON-serializable row types, while dataset access remains scoped to the authenticated owner;
 - the generic user_data_tables / user_data_rows persistence seam remains available in AgentSwarms 1.5;
 - no physical Supabase schema, second persistence plane or n8n control plane was added.
 
@@ -56,21 +58,33 @@ In particular:
 - axtn/workbenches/registry.json
 - tests/unit/caseContract.test.ts
 - tests/unit/caseManagement.test.ts
+- tests/unit/caseManagementPersistence.test.ts
+- tests/unit/supacaseResumeAcceptance.test.ts
 - tests/unit/axtnWorkbenches.test.ts
 
-## Validation required before host pin promotion
+## Source validation
+
+Validated source commit: `f8d18a9826b9a6f99d2620fa5f8e1328d5e24e57`
+
+- `npm run typecheck`: passed.
+- `npm run lint`: passed.
+- `npm run check:docs`, `check:md-docs`, `check:doc-commands`, and `check:infra`: passed; the infrastructure check skipped PowerShell parsing because PowerShell is unavailable.
+- Focused SupaCase, workbench registry, D09 resume/cancel tests: passed.
+- Full AgentSwarms unit suite: 546 test files passed; 8,962 tests passed and 40 skipped.
+- `npm run build`: passed.
+- D09 base branch remained at `21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8`; its checkpoint, resume, cancel, auth and RLS paths were not replaced.
+
+The Gitea source branch for PR #5 contains the validated code commit. The PR page and unauthenticated API returned HTTP 404, so its open/closed state and actual target metadata could not be verified through HTTP. No protected branch was updated and no merge was performed.
+
+## Validation still required before host pin promotion
 
 Required:
-- typecheck
-- focused SupaCase unit tests
-- full relevant AgentSwarms unit suite
-- production build
 - authenticated UI smoke: /cases, /cases/:id, /accounts, /contacts
 - parent/child Case create
 - Account/Contact create and Case references
 - Document assign/create-and-assign
-- idempotent READY_FOR_FILING Case creation
 - restart/persistence
 - synthetic smoke cleanup verification
+- authenticated Gitea PR state/target confirmation
 
 No merge, release, deployment or runtime mutation is claimed by this report.
