@@ -88,6 +88,20 @@ export const assignDocumentToCase = createServerFn({ method: "POST" })
     return assignDocument(userId, data.case_id, data.document_id);
   });
 
+export const createCaseRelation = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    AccessInput.extend({
+      case_id: z.string().uuid(),
+      target_kind: z.enum(["case", "account", "contact"]),
+      target_id: z.string().uuid(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const userId = await requireUser(data.access_token);
+    const { createCaseRelationForUser } = await import("./caseManagement.server");
+    return createCaseRelationForUser(userId, data.case_id, data.target_kind, data.target_id);
+  });
+
 export const updateCase = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => CaseUpdateInput.parse(input))
   .handler(async ({ data }) => {

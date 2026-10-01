@@ -102,6 +102,33 @@ async function insertRow(userId: string, key: keyof typeof DATASETS, row: Record
   if (error) throw new Error(error.message);
 }
 
+async function validateCaseReferences(userId: string, draft: CaseDraft) {
+  const checks = [
+    draft.parent_case_id
+      ? rowsFor(userId, "cases").then((items) => {
+          if (!items.some((row) => row.case_id === draft.parent_case_id)) {
+            throw new Error("Parent Case not found.");
+          }
+        })
+      : Promise.resolve(),
+    draft.account_id
+      ? rowsFor(userId, "accounts").then((items) => {
+          if (!items.some((row) => row.account_id === draft.account_id)) {
+            throw new Error("Account not found.");
+          }
+        })
+      : Promise.resolve(),
+    draft.primary_contact_id
+      ? rowsFor(userId, "contacts").then((items) => {
+          if (!items.some((row) => row.contact_id === draft.primary_contact_id)) {
+            throw new Error("Contact not found.");
+          }
+        })
+      : Promise.resolve(),
+  ];
+  await Promise.all(checks);
+}
+
 export async function listCaseManagementData(userId: string) {
   const [cases, accounts, contacts, relations] = await Promise.all([
     rowsFor(userId, "cases"),
@@ -114,6 +141,7 @@ export async function listCaseManagementData(userId: string) {
 
 export async function createCaseForUser(userId: string, data: CaseDraft & { actor?: CaseActor }) {
   validateCaseDraft(data, data.actor ?? "human");
+  await validateCaseReferences(userId, data);
   const now = new Date().toISOString();
   const caseId = crypto.randomUUID();
   await insertRow(userId, "cases", {
@@ -166,6 +194,49 @@ export async function assignDocument(userId: string, caseId: string, documentId:
   return { ok: true };
 }
 
+export async function createCaseRelationForUser(
+  userId: string,
+  caseId: string,
+  targetKind: "case" | "account" | "contact",
+  targetId: string,
+) {
+  if (targetKind === "case" && targetId === caseId) {
+    throw new Error("A Case cannot be related to itself.");
+  }
+  const datasetKey =
+    targetKind === "case" ? "cases" : targetKind === "account" ? "accounts" : "contacts";
+  const idField =
+    targetKind === "case" ? "case_id" : targetKind === "account" ? "account_id" : "contact_id";
+  const [cases, targets, relations] = await Promise.all([
+    rowsFor(userId, "cases"),
+    rowsFor(userId, datasetKey),
+    rowsFor(userId, "relations"),
+  ]);
+  if (!cases.some((row) => row.case_id === caseId)) throw new Error("Case not found.");
+  if (!targets.some((row) => row[idField] === targetId)) {
+    throw new Error(`${targetKind[0].toUpperCase()}${targetKind.slice(1)} not found.`);
+  }
+  const existing = relations.find(
+    (row) => row.case_id === caseId && row.target_kind === targetKind && row.target_id === targetId,
+  );
+  if (existing) {
+    if (typeof existing.relation_id !== "string") {
+      throw new Error("Case relation is incomplete.");
+    }
+    return { relationId: existing.relation_id, created: false };
+  }
+  const relationId = crypto.randomUUID();
+  await insertRow(userId, "relations", {
+    relation_id: relationId,
+    case_id: caseId,
+    relation_type: `related_${targetKind}`,
+    target_id: targetId,
+    target_kind: targetKind,
+    created_at: new Date().toISOString(),
+  });
+  return { relationId, created: true };
+}
+
 export async function updateCaseForUser(
   userId: string,
   data: CaseDraft & { case_id: string; actor?: CaseActor; relevant_activity?: boolean },
@@ -202,7 +273,9 @@ export async function updateCaseForUser(
     ...patch,
     case_id,
     status: nextStatus,
-    status_reason: reopened?.status_reason ?? patch.status_reason ?? before.status_reason ?? null,
+    status_reason:
+      reopened?.status_reason ??
+      (patch.status_reason !== undefined ? patch.status_reason : (before.status_reason ?? null)),
     priority: patch.priority ?? (typeof before.priority === "number" ? before.priority : 3),
     updated_at: new Date().toISOString(),
     closed_at: nextStatus === "CLOSED" ? (before.closed_at ?? new Date().toISOString()) : null,
@@ -210,6 +283,7 @@ export async function updateCaseForUser(
   if (actor === "automation" && before.priority === 0 && next.priority !== 0)
     throw new Error("Automation cannot overwrite Human Critical priority 0.");
   validateCaseDraft(next as CaseDraft, actor ?? "human");
+  await validateCaseReferences(userId, next as CaseDraft);
   const { error: updateError } = await supabaseAdmin
     .from("user_data_rows")
     .update({ row: next as Json })
@@ -240,6 +314,12 @@ export async function createContactForUser(
   email: string | null,
   accountId: string | null,
 ) {
+  if (
+    accountId &&
+    !(await rowsFor(userId, "accounts")).some((row) => row.account_id === accountId)
+  ) {
+    throw new Error("Account not found.");
+  }
   const contactId = crypto.randomUUID();
   const now = new Date().toISOString();
   await insertRow(userId, "contacts", {
@@ -317,6 +397,7 @@ export async function ensureCaseForAcceptance(args: {
       typeof args.canonical.related_entity === "string" ? args.canonical.related_entity : null,
   };
   validateCaseDraft(draft, "automation");
+  await validateCaseReferences(args.userId, draft);
   await insertRow(args.userId, "cases", {
     case_id: caseId,
     parent_case_id: null,

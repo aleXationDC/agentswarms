@@ -99,9 +99,13 @@ class QueryBuilder {
 fromMock.mockImplementation((table) => new QueryBuilder(table));
 
 import {
+  createAccountForUser,
   createCaseForUser,
+  createCaseRelationForUser,
+  createContactForUser,
   ensureCaseForAcceptance,
   listCaseManagementData,
+  updateCaseForUser,
 } from "@/axtn/workbenches/cases/caseManagement.server";
 
 describe("SupaCase acceptance persistence", () => {
@@ -141,5 +145,98 @@ describe("SupaCase acceptance persistence", () => {
 
     expect(ownerOne.cases).toHaveLength(1);
     expect(ownerOne.cases[0].subject).toBe("Owner one");
+  });
+
+  it("creates explicit, owner-scoped Case relations idempotently", async () => {
+    const { caseId } = await createCaseForUser("owner-1", { subject: "Primary" });
+    const { caseId: relatedCaseId } = await createCaseForUser("owner-1", {
+      subject: "Related",
+    });
+    const { accountId } = await createAccountForUser("owner-1", "Acme", null);
+    const { contactId } = await createContactForUser("owner-1", "Ada", null, accountId);
+
+    const relatedCase = await createCaseRelationForUser("owner-1", caseId, "case", relatedCaseId);
+    const sameCase = await createCaseRelationForUser("owner-1", caseId, "case", relatedCaseId);
+    const relatedAccount = await createCaseRelationForUser("owner-1", caseId, "account", accountId);
+    const relatedContact = await createCaseRelationForUser("owner-1", caseId, "contact", contactId);
+
+    expect(relatedCase.created).toBe(true);
+    expect(sameCase).toEqual({ relationId: relatedCase.relationId, created: false });
+    expect(relatedAccount.created).toBe(true);
+    expect(relatedContact.created).toBe(true);
+    const ownerOne = await listCaseManagementData("owner-1");
+    expect(ownerOne.relations).toHaveLength(3);
+
+    await expect(
+      createCaseRelationForUser("owner-2", caseId, "case", relatedCaseId),
+    ).rejects.toThrow("Case not found.");
+    await expect(createCaseRelationForUser("owner-1", caseId, "case", caseId)).rejects.toThrow(
+      "cannot be related to itself",
+    );
+  });
+
+  it("supports manual close and reopen updates while preserving the Case contract", async () => {
+    const { caseId } = await createCaseForUser("owner-1", {
+      subject: "Follow up",
+      priority: 2,
+    });
+    const common = {
+      case_id: caseId,
+      subject: "Follow up",
+      actor: "human" as const,
+    };
+
+    await updateCaseForUser("owner-1", {
+      ...common,
+      status: "CLOSED",
+      status_reason: "Resolved",
+    });
+    const closed = await listCaseManagementData("owner-1");
+    expect(closed.cases[0].status).toBe("CLOSED");
+    expect(closed.cases[0].closed_at).toEqual(expect.any(String));
+
+    await updateCaseForUser("owner-1", {
+      ...common,
+      status: "OPEN",
+      status_reason: "Reopened by user",
+    });
+    const reopened = await listCaseManagementData("owner-1");
+    expect(reopened.cases[0].status).toBe("OPEN");
+    expect(reopened.cases[0].closed_at).toBeNull();
+    expect(reopened.cases[0].status_reason).toBe("Reopened by user");
+
+    await updateCaseForUser("owner-1", { ...common, status: "OPEN", status_reason: null });
+    const cleared = await listCaseManagementData("owner-1");
+    expect(cleared.cases[0].status_reason).toBeNull();
+  });
+
+  it("requires an owned Contact and follow-up before entering WAITING_CONTACT", async () => {
+    const { caseId } = await createCaseForUser("owner-1", { subject: "Contact required" });
+    await expect(
+      updateCaseForUser("owner-1", {
+        case_id: caseId,
+        subject: "Contact required",
+        status: "WAITING_CONTACT",
+      }),
+    ).rejects.toThrow("WAITING_CONTACT requires a primary Contact");
+    await expect(
+      updateCaseForUser("owner-1", {
+        case_id: caseId,
+        subject: "Contact required",
+        status: "WAITING_CONTACT",
+        primary_contact_id: crypto.randomUUID(),
+        follow_up: "2026-10-02",
+      }),
+    ).rejects.toThrow("Contact not found.");
+    const { contactId } = await createContactForUser("owner-1", "Ada", null, null);
+    await expect(
+      updateCaseForUser("owner-1", {
+        case_id: caseId,
+        subject: "Contact required",
+        status: "WAITING_CONTACT",
+        primary_contact_id: contactId,
+        follow_up: "2026-10-02",
+      }),
+    ).resolves.toMatchObject({ caseId, status: "WAITING_CONTACT" });
   });
 });
