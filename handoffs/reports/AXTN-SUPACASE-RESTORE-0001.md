@@ -39,6 +39,9 @@ In particular:
 - SupaCase filing acceptance was added after successful resumed execution without replacing the newer resume logic;
 - a completed READY_FOR_FILING run can retry Case creation from its persisted final output, and a partial Case-without-relation write is repaired without creating a duplicate Case;
 - Case server-function results use JSON-serializable row types, while dataset access remains scoped to the authenticated owner;
+- Case detail supports editing Case fields and status, explicit Close/Reopen actions, and primary Account/Contact references;
+- owner-authenticated Case relation creation now supports related Cases, Accounts and Contacts, with same-owner target validation, self-link rejection, and idempotent duplicate handling;
+- parent/child Case creation remains supported, and Case detail resolves explicit related records to their management surfaces;
 - the generic user_data_tables / user_data_rows persistence seam remains available in AgentSwarms 1.5;
 - no physical Supabase schema, second persistence plane or n8n control plane was added.
 
@@ -59,22 +62,23 @@ In particular:
 - tests/unit/caseContract.test.ts
 - tests/unit/caseManagement.test.ts
 - tests/unit/caseManagementPersistence.test.ts
+- tests/unit/caseDetailCapabilities.test.ts
 - tests/unit/supacaseResumeAcceptance.test.ts
 - tests/unit/axtnWorkbenches.test.ts
 
 ## Source validation
 
-Validated source commit: `f8d18a9826b9a6f99d2620fa5f8e1328d5e24e57`
+Validated source commit: `49f79e0392a268d9ff88b19aa0c97f1094e0fc34`
 
 - `npm run typecheck`: passed.
-- `npm run lint`: passed.
+- `npm run lint`: passed with 0 errors; repository-wide lint reports 235 existing warnings.
 - `npm run check:docs`, `check:md-docs`, `check:doc-commands`, and `check:infra`: passed; the infrastructure check skipped PowerShell parsing because PowerShell is unavailable.
-- Focused SupaCase, workbench registry, D09 resume/cancel tests: passed.
-- Full AgentSwarms unit suite: 546 test files passed; 8,962 tests passed and 40 skipped.
+- Focused SupaCase, Case detail, relation persistence, Workbench registry, DMS filing and D09 resume/cancel tests: 42 passed.
+- Full AgentSwarms unit suite: 547 test files passed; 8,967 tests passed and 40 skipped.
 - `npm run build`: passed.
 - D09 base branch remained at `21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8`; its checkpoint, resume, cancel, auth and RLS paths were not replaced.
 
-The Gitea source branch for PR #5 contains the validated code commit. The PR page and unauthenticated API returned HTTP 404, so its open/closed state and actual target metadata could not be verified through HTTP. No protected branch was updated and no merge was performed.
+The Gitea `work/AXTN-SUPACASE-RESTORE-0001` and `refs/pull/5/head` refs both point to the validated code commit. The PR page and unauthenticated API returned HTTP 404, so its open/closed state and actual target metadata could not be verified through HTTP. No protected branch was updated and no merge was performed.
 
 ## Validation still required before host pin promotion
 
