@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "id": "axtn-supacase",
+  "name": "aXtn SupaCase Management",
+  "version": "0.1.0",
+  "category": "operations",
+  "description": "Lightweight persistent business-work and case-management capability with hierarchical cases, accounts, contacts and explicit relations to documents and other cases.",
+  "routes": [
+    "/cases",
+    "/cases/$caseId",
+    "/accounts",
+    "/contacts"
+  ],
+  "navigation": {
+    "group": "Overview",
+    "label": "aXtn SupaCase Management"
+  },
+  "permissions": [
+    "authenticated user; case datasets are user-owned and access remains scoped to the authenticated owner"
+  ],
+  "tested_agentswarms_upstream_sha": "05df309fbabfa3612e3b86f1860d76c6d95f22b3",
+  "axtn_base_sha": "21a435d5f7f306f41d01c2c5e7dc504ccd1e46d8",
+  "native_capabilities_consumed": [
+    "user_data_tables",
+    "user_data_rows",
+    "native authentication",
+    "native audit",
+    "native swarm approval/resume path"
+  ],
+  "axtn_dependencies": [
+    "axtn-documents",
+    "axtn-reviews"
+  ],
+  "data_contracts": [
+    "Case is the persistent business work object; Swarm Runs remain technical execution records.",
+    "Logical user-owned datasets: axtn_cases, axtn_accounts, axtn_contacts and axtn_case_relations.",
+    "Cases support nullable parent_case_id with arbitrary hierarchy depth; children use the same Case contract.",
+    "Case relations are explicit and can target document, contact, account or case without duplicating the target object.",
+    "Case lifecycle fields include subject, type, status, reason, priority, due date, follow-up, account, primary contact, related entity, source kind/id and timestamps.",
+    "READY_FOR_FILING completion ensures exactly one Case plus explicit Document relation for the accepted document, idempotently.",
+    "Accounts and Contacts remain intentionally thin identity/context records rather than a parallel CRM."
+  ],
+  "database_migrations": [],
+  "source_paths": [
+    "src/axtn/workbenches/cases/",
+    "src/components/axtn/CaseRelationsPanel.tsx",
+    "src/routes/_authenticated/cases.tsx",
+    "src/routes/_authenticated/cases_.$caseId.tsx",
+    "src/routes/_authenticated/accounts.tsx",
+    "src/routes/_authenticated/contacts.tsx",
+    "src/utils/swarmResume.functions.ts"
+  ],
+  "implementation_commits": [
+    "2cd54c27a9ef0fe8df0e5f2fcc77360c45531b54",
+    "8cc16b8d1c5e67304f61b432bd8d36294606de6c"
+  ],
+  "release_tag": "workbench/axtn-supacase/v0.1.0",
+  "portable": true,
+  "known_limitations": [
+    "Account and Contact management is intentionally minimal and not a full CRM.",
+    "The restored implementation continues to use generic user datasets rather than a dedicated physical SupaCase schema.",
+    "Host/runtime acceptance is required before this restored capability is treated as deployed."
+  ]
+}
