@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
+import { CaseRelationsPanel } from "@/components/axtn/CaseRelationsPanel";
 import { useServerFn } from "@tanstack/react-start";
 import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 
@@ -145,6 +146,7 @@ function DocumentDetailPage() {
               ["Privacy class", document.privacyClass],
             ]}
           />
+          <CaseRelationsPanel documentId={document.id} />
           <Card>
             <CardHeader>
               <CardTitle>History / Related</CardTitle>
