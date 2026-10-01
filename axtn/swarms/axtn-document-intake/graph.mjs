@@ -2,6 +2,7 @@
 // 7123d0ef167e72b39ee39a944e418003a253f50f and adapted to the current
 // accepted AgentSwarms candidate.
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 export const SWARM_ID = "62bbd9a0-2fb3-4241-828d-584fa76edc74";
 export const SWARM_NAME = "aXtn Document Intake";
@@ -68,11 +69,11 @@ return JSON.stringify({
   original_filename: typeof row.original_filename === "string" ? row.original_filename : null,
 });`;
 
-const intakeValidate = readFileSync(
-  new URL("./nodes/validate-envelope.js", import.meta.url),
-  "utf8",
-);
-const intakeAck = readFileSync(new URL("./nodes/registration-ack.js", import.meta.url), "utf8");
+// Vite bundles this module into dist/server/assets; the versioned node files
+// remain in the application root for both the server and the seed CLI.
+const nodeSource = (name) => resolve("axtn/swarms/axtn-document-intake/nodes", name);
+const intakeValidate = readFileSync(nodeSource("validate-envelope.js"), "utf8");
+const intakeAck = readFileSync(nodeSource("registration-ack.js"), "utf8");
 
 function node(id, type, data, x, y) {
   return { id, type, position: { x, y }, data: { id, ...data } };

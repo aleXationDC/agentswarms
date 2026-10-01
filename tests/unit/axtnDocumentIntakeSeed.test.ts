@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 import path from "node:path";
@@ -53,6 +54,12 @@ function emptyStore() {
 }
 
 describe("fresh Document Intake install", () => {
+  it("loads versioned node bodies from the app root, not the relocated server bundle", () => {
+    const graph = readFileSync("axtn/swarms/axtn-document-intake/graph.mjs", "utf8");
+    expect(graph).toContain('resolve("axtn/swarms/axtn-document-intake/nodes", name)');
+    expect(graph).not.toContain("import.meta.url");
+  });
+
   it("creates on an empty database, then runs apply.mjs idempotently", async () => {
     const store = emptyStore();
     const publish = store.publish.bind(store);
