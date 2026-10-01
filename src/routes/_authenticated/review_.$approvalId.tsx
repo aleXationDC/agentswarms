@@ -16,6 +16,7 @@ import { MetadataEditDialog } from "@/components/axtn/MetadataEditDialog";
 import { useApprovalDecision } from "@/hooks/use-approval-decision";
 import { useAuth } from "@/hooks/use-auth";
 import { ReviewContextPanel } from "@/components/axtn/ReviewContextPanel";
+import { CaseRelationsPanel } from "@/components/axtn/CaseRelationsPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { saveAxtnWorkbenchMetadata } from "@/utils/axtnWorkbenchEdits.functions";
 import { useServerFn } from "@tanstack/react-start";
@@ -113,6 +114,7 @@ function ReviewDetailPage() {
               </div>
             )}
             <ReviewContextPanel approval={approval} />
+            {document && <CaseRelationsPanel documentId={document.id} />}
             {hasEditableReviewProposal(approval) && (
               <Button onClick={() => setEditing(true)} variant="outline">
                 <Pencil className="mr-1 h-4 w-4" /> Edit proposal / Human Override
