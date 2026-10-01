@@ -23,6 +23,9 @@ import {
   Brain,
   BrainCircuit,
   ClipboardCheck,
+  BriefcaseBusiness,
+  Building2,
+  Contact,
   Code2,
   Columns,
   Database,
@@ -63,6 +66,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+      { title: "aXtn SupaCase Management", url: "/cases", icon: BriefcaseBusiness },
+      { title: "Accounts", url: "/accounts", icon: Building2 },
+      { title: "Contacts", url: "/contacts", icon: Contact },
       { title: "aXtn Reviews", url: "/review", icon: ClipboardCheck },
       { title: "aXtn Documents", url: "/documents", icon: Files },
       // The handbook was reachable from the marketing site only, which is the
