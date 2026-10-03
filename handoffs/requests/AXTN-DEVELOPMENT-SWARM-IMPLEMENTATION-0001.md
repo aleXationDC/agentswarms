@@ -23,11 +23,12 @@ Führe die Arbeit ohne weitere Planungs- oder Zwischenfreigabeschleifen bis zur 
 
 Vor jeder Änderung vollständig lesen:
 
-1. `docs/architecture/axtn-development-swarm/HANDOFF.md`
-2. `docs/architecture/axtn-development-swarm/V1-IMPLEMENTATION-CONTRACT.md`
-3. `docs/architecture/axtn-development-swarm/SUPACASE-CASE-MODEL.md`
-4. `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
-5. Repository-Anweisungen und aktuelle Source-/Runtime-/Host-Verträge in allen betroffenen Gitea-Repositories
+1. `AGENTS.md`
+2. `docs/architecture/axtn-development-swarm/HANDOFF.md`
+3. `docs/architecture/axtn-development-swarm/V1-IMPLEMENTATION-CONTRACT.md`
+4. `docs/architecture/axtn-development-swarm/SUPACASE-CASE-MODEL.md`
+5. `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
+6. Repository-Anweisungen und aktuelle Source-/Runtime-/Host-Verträge in allen betroffenen Gitea-Repositories
 
 Repository- und Runtime-Wahrheit haben Vorrang. Keine GitHub-Abhängigkeit einführen.
 
