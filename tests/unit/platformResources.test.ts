@@ -97,7 +97,7 @@ describe("every consumer reads the setting", () => {
     expect(docker).not.toContain("size=512m");
     expect(docker).toContain("size=${tmpfsMb}m");
     expect(read("src/utils/notebookRuntime/service.server.ts")).toContain(
-      "tmpfsMb: settings.sandboxTmpfsMb",
+      "tmpfsMb: development ? 64 : settings.sandboxTmpfsMb",
     );
   });
 });

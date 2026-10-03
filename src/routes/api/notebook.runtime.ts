@@ -62,6 +62,28 @@ async function handle(request: Request): Promise<Response> {
     return json(400, { error: "Invalid JSON body" });
   }
   const action = body.action;
+  if (action === "verify") {
+    const { runDevelopmentVerification, DevelopmentRuntimeError } =
+      await import("@/utils/notebookRuntime/development.server");
+    try {
+      const result = await runDevelopmentVerification(userId, body.inputs);
+      return json(result.status === "PENDING" ? 202 : 200, result);
+    } catch (error) {
+      console.warn("[development-runtime] request rejected", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      return json(
+        error instanceof DevelopmentRuntimeError
+          ? error.status
+          : error instanceof Error && error.name === "ZodError"
+            ? 400
+            : 500,
+        {
+          error: error instanceof DevelopmentRuntimeError ? error.code : "VERIFICATION_REJECTED",
+        },
+      );
+    }
+  }
 
   const settings = await getRuntimeSettings();
   if (!settings.enabled) {
@@ -163,6 +185,9 @@ async function handle(request: Request): Promise<Response> {
     if (!body.sessionId) return json(400, { error: "sessionId is required" });
     const s = await getSession(userId, body.sessionId);
     if (!s) return json(404, { error: "Session not found" });
+    if (s.entrypoint === "axtn-development-verify-v1") {
+      return json(403, { error: "Native verification sessions have no callback credentials" });
+    }
     if (["stopped", "error", "succeeded"].includes(s.status)) {
       return json(400, { error: "Session is no longer live" });
     }

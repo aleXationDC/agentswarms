@@ -21,6 +21,16 @@ export const Route = createFileRoute("/api/notebook/runtime/result")({
         const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
         const claims = await verifySessionToken(token);
         if (!claims) return json(401, { error: "Invalid or expired session token" });
+        const { data: receipt, error: receiptError } = await supabaseAdmin
+          .from("notebook_runtime_sessions")
+          .select("entrypoint")
+          .eq("id", claims.sid)
+          .eq("user_id", claims.sub)
+          .maybeSingle();
+        if (receiptError) return json(503, { error: "Runtime receipt unavailable" });
+        if (receipt?.entrypoint === "axtn-development-verify-v1") {
+          return json(403, { error: "Native verification does not accept sandbox callbacks" });
+        }
 
         let body: {
           status?: string;

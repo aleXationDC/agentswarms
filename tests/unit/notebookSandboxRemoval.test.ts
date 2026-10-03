@@ -72,7 +72,10 @@ describe("a kernel that ended on its own", () => {
 
   it("keeps the failure's logs before the sandbox that holds them goes", () => {
     const errBranch = refresh.slice(refresh.indexOf('patch.error = st.message ?? "kernel error";'));
-    expect(errBranch.slice(0, 260)).toContain("patch.logs = await orch.logs(containerRef)");
+    const evidence = errBranch.indexOf("patch.logs =");
+    expect(evidence).toBeGreaterThan(-1);
+    expect(errBranch).toContain("await orch.logs(containerRef)");
+    expect(evidence).toBeLessThan(errBranch.search(/await orch\s*\.stop\(containerRef\)/));
   });
 });
 

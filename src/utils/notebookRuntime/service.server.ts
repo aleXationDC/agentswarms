@@ -8,6 +8,8 @@ import { getOrchestrator, type KernelKind } from "./orchestrator";
 import { getRuntimeSettings } from "./config.server";
 import { signSessionToken } from "./token.server";
 import { appInContainer } from "./docker.server";
+import { credentiallessDevelopmentEnv, type DevelopmentVerification } from "./developmentContract";
+import { developmentRuntimeImage } from "./developmentImage.server";
 
 export type SessionRow = Database["public"]["Tables"]["notebook_runtime_sessions"]["Row"];
 
@@ -140,16 +142,26 @@ export async function startSession(opts: {
   maxMinutes?: number;
   /** Batch only: GPUs to request for the sandbox. */
   gpus?: number;
+  developmentVerification?: DevelopmentVerification;
 }): Promise<{ session: SessionRow; token: string; gatewayUrl: string }> {
   const settings = await getRuntimeSettings();
+  const development = opts.developmentVerification;
+  if (!development && opts.entrypoint === "axtn-development-verify-v1") {
+    throw new Error("The native verification profile cannot be launched as a generic notebook");
+  }
+  if (development && (opts.kind !== "batch" || settings.backend !== "docker")) {
+    throw new Error("Native Development verification requires the existing Docker batch backend");
+  }
   const batch = opts.kind === "batch";
   const service = opts.kind === "service";
-  const cpu = batch ? settings.batchCpuLimit : settings.cpuLimit;
-  const mem =
-    ((batch || service) && opts.memLimitMb) ||
-    (batch ? settings.batchMemLimitMb : settings.memLimitMb);
-  const maxMin =
-    (batch && opts.maxMinutes) || (batch ? settings.batchMaxMinutes : settings.sessionMaxMinutes);
+  const cpu = development ? "0.5" : batch ? settings.batchCpuLimit : settings.cpuLimit;
+  const mem = development
+    ? 256
+    : ((batch || service) && opts.memLimitMb) ||
+      (batch ? settings.batchMemLimitMb : settings.memLimitMb);
+  const maxMin = development
+    ? 1
+    : (batch && opts.maxMinutes) || (batch ? settings.batchMaxMinutes : settings.sessionMaxMinutes);
   const nowIso = new Date().toISOString();
   // A published MCP server is supposed to stay up: a hard expiry would take it
   // offline on a timer for no reason. Idleness (or an explicit stop) ends it
@@ -174,11 +186,12 @@ export async function startSession(opts: {
       kind: opts.kind,
       status: batch ? "running" : "starting",
       backend: settings.backend,
-      image: settings.image,
+      image: development ? developmentRuntimeImage() : settings.image,
       cpu_limit: cpu,
       mem_limit_mb: mem,
-      entrypoint: opts.entrypoint ?? null,
-      inputs: (opts.inputs ??
+      entrypoint: development ? "axtn-development-verify-v1" : (opts.entrypoint ?? null),
+      inputs: (development ??
+        opts.inputs ??
         null) as Database["public"]["Tables"]["notebook_runtime_sessions"]["Insert"]["inputs"],
       started_at: nowIso,
       last_active_at: nowIso,
@@ -188,12 +201,14 @@ export async function startSession(opts: {
     .single();
   if (error || !row) throw new Error(error?.message ?? "Failed to create runtime session");
 
-  const token = await signSessionToken({
-    userId: opts.userId,
-    sessionId: row.id,
-    ttlSeconds: maxMin * 60,
-  });
-  if (!token) {
+  const token = development
+    ? ""
+    : await signSessionToken({
+        userId: opts.userId,
+        sessionId: row.id,
+        ttlSeconds: maxMin * 60,
+      });
+  if (token === null || (!token && !development)) {
     const { error: markErr } = await supabaseAdmin
       .from("notebook_runtime_sessions")
       .update({ status: "error", error: "NOTEBOOK_RUNTIME_SECRET not configured" })
@@ -206,28 +221,31 @@ export async function startSession(opts: {
     throw new Error("NOTEBOOK_RUNTIME_SECRET is not configured on the server");
   }
 
-  const env = buildKernelEnv({
-    sessionId: row.id,
-    token,
-    kind: opts.kind,
-    serviceMode: opts.serviceMode,
-    entrypoint: opts.entrypoint,
-    inputs: opts.inputs,
-  });
+  const env = development
+    ? credentiallessDevelopmentEnv(row.id, development)
+    : buildKernelEnv({
+        sessionId: row.id,
+        token,
+        kind: opts.kind,
+        serviceMode: opts.serviceMode,
+        entrypoint: opts.entrypoint,
+        inputs: opts.inputs,
+      });
   const orch = await getOrchestrator(settings);
   try {
     const { ref } = await orch.create({
       sessionId: row.id,
       userId: opts.userId,
       kind: opts.kind,
-      image: settings.image,
+      image: row.image ?? settings.image,
       cpuLimit: cpu,
       memLimitMb: mem,
-      tmpfsMb: settings.sandboxTmpfsMb,
-      gpus: batch ? opts.gpus || 0 : 0,
+      tmpfsMb: development ? 64 : settings.sandboxTmpfsMb,
+      gpus: development ? 0 : batch ? opts.gpus || 0 : 0,
       // 0 = no wall-clock ceiling, which is what a long-lived service needs.
       timeoutSeconds: service ? 0 : maxMin * 60,
       env,
+      networkDisabled: Boolean(development),
       restartOnFailure: service ? Boolean(opts.restartOnFailure) : false,
     });
     const { error: refErr } = await supabaseAdmin
@@ -313,7 +331,10 @@ export async function refreshSession(row: SessionRow): Promise<SessionRow> {
     // to a dead container.
     patch.status = row.kind === "service" ? "stopped" : "succeeded";
     patch.stopped_at = new Date().toISOString();
-    patch.logs = await orch.logs(containerRef).catch(() => "");
+    patch.logs =
+      row.entrypoint === "axtn-development-verify-v1"
+        ? await orch.logs(containerRef)
+        : await orch.logs(containerRef).catch(() => "");
   } else if (st.state === "gone") {
     patch.status = row.status === "ready" || row.status === "running" ? "stopped" : "error";
     patch.stopped_at = new Date().toISOString();
@@ -323,7 +344,10 @@ export async function refreshSession(row: SessionRow): Promise<SessionRow> {
     patch.stopped_at = new Date().toISOString();
     // Take the evidence before the sandbox goes: once it is removed there is
     // nowhere left to read why it failed.
-    patch.logs = await orch.logs(containerRef).catch(() => "");
+    patch.logs =
+      row.entrypoint === "axtn-development-verify-v1"
+        ? await orch.logs(containerRef)
+        : await orch.logs(containerRef).catch(() => "");
   }
 
   // FOUND FROM THE SURVEY (R93). A kernel that ends ON ITS OWN only ever comes

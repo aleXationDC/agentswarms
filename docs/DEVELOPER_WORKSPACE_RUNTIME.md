@@ -577,3 +577,51 @@ owns it from then on. Two reasons this matters:
 
 Change what a **new** install starts with by editing the `.default` files.
 Change what **this** install allows in Admin → Developer runtime.
+
+## Native aXtn Development verification profile
+
+`POST /api/notebook/runtime` also accepts `action: "verify"` with strict
+`axtn.development.verify/v1` inputs. This is not an arbitrary shell/notebook
+entrypoint. It requires an enabled Docker runtime, `require_grant=true`, a direct
+user grant, and an existing Case in the authenticated owner's dataset.
+There is no superadmin bypass for this verification profile.
+
+The server reads both immutable revisions through the existing owner-scoped
+`aXtn Development Gitea` broker. Complete bounded regular-file snapshots must
+match the submitted inputs exactly; a caller cannot label unrelated code with a
+Git SHA. The current scope is `aXtn/development-swarm-acceptance`, at most 20 files,
+64 KiB per file and 128 KiB per request.
+
+The host must supply **server-only** `AXTN_DEVELOPMENT_RUNTIME_IMAGE`, an exact
+installed `sha256:<64 hex>` ImageID, and `AXTN_DEVELOPMENT_HARNESS_SHA256`, the
+SHA-256 of the image's immutable `verify.py`. Neither belongs in public browser
+configuration. The wrapper in `docker/development-runtime` derives from a pinned
+notebook-runtime digest and installs no packages. It preserves other notebook
+entrypoints.
+
+Native verification uses a non-root, read-only container, no host mounts, no
+capabilities, `no-new-privileges`, **network none**, 0.5 CPU, 256 MiB memory,
+32 PIDs and one 64 MiB ephemeral `/tmp` workspace. No callback token, provider
+credential, Supabase key or proxy environment is supplied. Assertions execute
+in the trusted parent; candidate imports run in separate credentialless
+subprocesses. Each command has a three-second timeout and a 16 KiB output limit;
+the harness has a 30-second deadline. Docker log reads are bounded to 512 KiB
+and native log failures are explicit, not empty success evidence.
+
+The profiles are `python-normalization-v1` (compileall plus external unittest
+assertions) and `documentation-v1` (compileall plus three required README
+sections). Other work requires a versioned profile, not runtime command
+injection. The service returns separate baseline/candidate results; candidate
+failure cannot become PASS through probabilistic scoring.
+
+Receipts remain in `notebook_runtime_sessions`, keyed by owner and effect
+identity. Identical replay returns the same validated image/harness/input-bound
+receipt; conflicting replay fails. Pending work returns HTTP 202 and a session
+ID, never PASS. Authenticated owners cannot insert, edit or delete native
+receipts, even by changing their entrypoint; generic source/result/token
+callbacks cannot mint native proof. No parallel job store is introduced.
+
+Focused tests are `developmentRuntime*.test.ts`; hermetic Python tests are in
+`tests/development-runtime/test_verify.py` and run in the pinned base image with
+the source and test directories mounted read-only. This source profile does
+not by itself enable production runtime settings, grants or Squid ACLs.

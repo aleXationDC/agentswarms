@@ -154,7 +154,7 @@ export class DockerOrchestrator implements NotebookOrchestrator {
         Memory: memBytes,
         MemorySwap: memBytes, // no swap
         NanoCpus: nanoCpus,
-        PidsLimit: 256,
+        PidsLimit: spec.networkDisabled ? 32 : 256,
         // A GPU sandbox: the same request `docker run --gpus N` makes.
         ...(spec.gpus
           ? { DeviceRequests: [{ Driver: "nvidia", Count: spec.gpus, Capabilities: [["gpu"]] }] }
@@ -162,7 +162,7 @@ export class DockerOrchestrator implements NotebookOrchestrator {
         ReadonlyRootfs: true,
         CapDrop: ["ALL"],
         SecurityOpt: ["no-new-privileges"],
-        NetworkMode: network(),
+        NetworkMode: spec.networkDisabled ? "none" : network(),
         // Lets a kernel reach an app running on the host (local dev). Harmless
         // in compose, where the app is reached by service name instead.
         ExtraHosts: ["host.docker.internal:host-gateway"],
@@ -173,21 +173,25 @@ export class DockerOrchestrator implements NotebookOrchestrator {
         // kernel runs as uid 1000, so without it every write fails with
         // "Permission denied" (and runtime pip install breaks). Sticky world-write
         // is safe here — each container is a single-tenant, ephemeral sandbox.
-        Tmpfs: {
-          // Sized from Admin -> Developer runtime. 512 MB was hardcoded, and a
-          // pipeline that uses both the SQL transform and a lakehouse node
-          // installs ~447 MB of wheels plus DuckDB extensions into ~/.local —
-          // close enough to the ceiling to fail intermittently, reported as a
-          // bare pip exit code.
-          "/home/runner/work": `rw,exec,size=${tmpfsMb}m,mode=1777`,
-          "/home/runner/.local": `rw,exec,size=${tmpfsMb}m,mode=1777`,
-          "/tmp": "rw,size=256m,mode=1777",
-        },
+        Tmpfs: spec.networkDisabled
+          ? {
+              "/tmp": "rw,noexec,nosuid,nodev,size=64m,mode=1777",
+            }
+          : {
+              // Sized from Admin -> Developer runtime. 512 MB was hardcoded, and a
+              // pipeline that uses both the SQL transform and a lakehouse node
+              // installs ~447 MB of wheels plus DuckDB extensions into ~/.local —
+              // close enough to the ceiling to fail intermittently, reported as a
+              // bare pip exit code.
+              "/home/runner/work": `rw,exec,size=${tmpfsMb}m,mode=1777`,
+              "/home/runner/.local": `rw,exec,size=${tmpfsMb}m,mode=1777`,
+              "/tmp": "rw,size=256m,mode=1777",
+            },
         // When the app runs on the HOST (dev), Docker Desktop cannot route to
         // container IPs — so publish the kernel port on loopback purely so the
         // app can probe readiness. In compose the app is a container on the same
         // network and needs no published port.
-        ...(appInContainer()
+        ...(appInContainer() || spec.networkDisabled
           ? {}
           : { PortBindings: { "8888/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }] } }),
         // Long-lived services opt into a BOUNDED restart so a transient crash
@@ -198,6 +202,9 @@ export class DockerOrchestrator implements NotebookOrchestrator {
           ? { Name: "on-failure", MaximumRetryCount: 3 }
           : { Name: "no" },
         AutoRemove: false, // we remove explicitly so batch logs survive until read
+        ...(spec.networkDisabled
+          ? { LogConfig: { Type: "json-file", Config: { "max-size": "1m", "max-file": "1" } } }
+          : {}),
       },
     };
 
@@ -320,9 +327,32 @@ export class DockerOrchestrator implements NotebookOrchestrator {
     const res = await dockerFetch(
       `/containers/${encodeURIComponent(ref)}/logs?stdout=true&stderr=true&tail=2000`,
     );
-    if (!res.ok) return "";
+    if (!res.ok) throw new Error(`Docker logs returned HTTP ${res.status}`);
     // Docker multiplexes logs with an 8-byte header per frame; strip it best-effort.
-    const buf = new Uint8Array(await res.arrayBuffer());
+    if (!res.body) throw new Error("Docker log stream is missing");
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > 524288) {
+          await reader.cancel();
+          throw new Error("Docker runtime log output exceeds 512 KiB");
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const buf = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buf.set(chunk, offset);
+      offset += chunk.length;
+    }
     let out = "";
     let i = 0;
     while (i + 8 <= buf.length) {

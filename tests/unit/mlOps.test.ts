@@ -234,7 +234,7 @@ describe("settings", () => {
   it("carry GPUs from the training job through both orchestrators", () => {
     expect(rd("src/utils/ml/train.server.ts")).toContain("gpus: limits.mlTrainGpus || undefined,");
     expect(rd("src/utils/notebookRuntime/service.server.ts")).toContain(
-      "gpus: batch ? opts.gpus || 0 : 0,",
+      "gpus: development ? 0 : batch ? opts.gpus || 0 : 0,",
     );
     expect(rd("src/utils/notebookRuntime/orchestrator.ts")).toContain("gpus?: number;");
     expect(rd("src/utils/notebookRuntime/docker.server.ts")).toContain(

@@ -67,12 +67,16 @@ async function handle(request: Request): Promise<Response> {
   const claims = await verifySessionToken(token);
   if (!claims) return json(401, { error: "Invalid or expired session token" });
 
-  const { data: session } = await supabaseAdmin
+  const { data: session, error: sessionError } = await supabaseAdmin
     .from("notebook_runtime_sessions")
     .select("notebook_id, mcp_app_id, etl_run_id, entrypoint, inputs")
     .eq("id", claims.sid)
     .eq("user_id", claims.sub)
     .maybeSingle();
+  if (sessionError) return json(503, { error: "Runtime source authority lookup failed" });
+  if (session?.entrypoint === "axtn-development-verify-v1") {
+    return json(403, { error: "Native verification has no source or credential callback" });
+  }
 
   // ETL batch sessions have two parts: the default returns the run's script
   // (prelude + pinned code); {"part":"etl_env"} returns the resolved secret

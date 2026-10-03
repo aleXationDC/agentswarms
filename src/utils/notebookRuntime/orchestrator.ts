@@ -34,6 +34,8 @@ export type KernelSpec = {
   timeoutSeconds: number;
   /** injected into the container environment (session token, callback URL, proxy…) */
   env: Record<string, string>;
+  /** Native deterministic verification has neither credentials nor network. */
+  networkDisabled?: boolean;
   /**
    * Services only: restart the sandbox if the user's process dies. Bounded
    * rather than unlimited — code that crashes on boot must not restart-loop.
