@@ -76,10 +76,14 @@ All options share the same two prerequisites.
    | `RESEND_API_KEY` **or** `SMTP_*` + `EMAIL_FROM` | Outbound app email (welcome, budget alerts, BI alerts, scheduled reports, approvals, contact form). `EMAIL_FROM` must be on a **verified** domain — see [Email delivery](#email-delivery). Without a transport, sends are skipped and logged. |
    | `BI_CRON_TOKEN`                                 | Lets an external scheduler drive background jobs — see [Scheduling](#scheduling--background-jobs).                                                                                                                                            |
    | `OPENROUTER_API_KEY`                            | Optional but recommended — makes the app usable with zero per-user key setup.                                                                                                                                                                 |
-   | `AXTN_MAINTENANCE_URL`                           | Optional host-private lease service used by the aXtn D09 maintenance control; never points to a public endpoint.                                                                                                                                 |
-   | `AXTN_MAINTENANCE_TOKEN`                        | Secret for server-to-server calls to the aXtn D09 lease service. Keep it server-side; never use a `VITE_` variable or expose it to the browser.                                                                                                 |
-   | `AXTN_AGENTSWARMS_BOOTSTRAP_URL`                | Optional internal base URL for the one-shot Document Intake seed/apply scripts; defaults to `http://127.0.0.1:8080` inside the AgentSwarms container.                                                                                          |
-   | `VITE_SUPABASE_SAME_ORIGIN`                     | Optional host-edge mode: when `true`, the browser uses `<current origin>/supabase`; the edge must route only Auth, REST, Storage and Realtime API paths.                                                                                          |
+   | `AXTN_MAINTENANCE_URL`                          | Optional host-private lease service used by the aXtn D09 maintenance control; never points to a public endpoint.                                                                                                                              |
+   | `AXTN_MAINTENANCE_TOKEN`                        | Secret for server-to-server calls to the aXtn D09 lease service. Keep it server-side; never use a `VITE_` variable or expose it to the browser.                                                                                               |
+   | `N8N_BASE_URL` + `N8N_API_KEY`                  | Optional aXtn-host-managed n8n binding. The endpoint and read-scoped API key are server-only; never add a `VITE_` prefix or enter this platform binding as a user-owned integration.                                                          |
+   | `AXTN_N8N_OPERATOR_URL`                         | Optional private Tailscale HTTPS launcher for n8n.                                                                                                                                                                                            |
+   | `AXTN_GITEA_OPERATOR_URL`                       | Optional private Tailscale HTTPS launcher for canonical Gitea.                                                                                                                                                                                |
+   | `AXTN_MATRIX_OPERATOR_URL`                      | Optional private Tailscale HTTPS launcher for Matrix Admin.                                                                                                                                                                                   |
+   | `AXTN_AGENTSWARMS_BOOTSTRAP_URL`                | Optional internal base URL for the one-shot Document Intake seed/apply scripts; defaults to `http://127.0.0.1:8080` inside the AgentSwarms container.                                                                                         |
+   | `VITE_SUPABASE_SAME_ORIGIN`                     | Optional host-edge mode: when `true`, the browser uses `<current origin>/supabase`; the edge must route only Auth, REST, Storage and Realtime API paths.                                                                                      |
    | _(no embeddings key)_                           | Knowledge Base vector search uses whichever model provider is connected; `OPENROUTER_API_KEY` covers it with no per-user setup.                                                                                                               |
 
    ```bash
@@ -88,6 +92,12 @@ All options share the same two prerequisites.
 
    `.env` is git-ignored. **Never** put the service-role key behind a `VITE_`
    prefix — that ships a database-bypassing secret to every browser.
+
+   On the native aXtn host, these platform bindings are generated in the
+   protected host runtime environment, not in the component checkout's `.env`.
+   Managed n8n is read/list-only and its host API key is never returned by a
+   server function or saved in a per-user integration row. User-configured
+   external n8n instances remain separate in Integrations.
 
 ---
 

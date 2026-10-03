@@ -1,13 +1,25 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Clock3, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Clock3, ExternalLink, LockKeyhole, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsSuperadmin } from "@/hooks/use-iam";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  getAxtnMaintenanceSettings,
+  getManagedN8nStatus,
+} from "@/utils/axtnMaintenanceSettings.functions";
+import type { ManagedWorkflow } from "@/utils/integrations/nativeN8n.server";
 
 type Lease = { open: boolean; expires_at: string | null };
+type ManagedStatus = {
+  configured: boolean;
+  connected: boolean;
+  workflows: ManagedWorkflow[];
+  detail: string;
+};
 
 export const Route = createFileRoute("/_authenticated/admin/axtn-maintenance")({
   head: () => ({
@@ -26,6 +38,62 @@ function MaintenanceAccessPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const token = session?.access_token;
+  const [mfa, setMfa] = useState<{ level: string | null; enrolled: boolean } | null>(null);
+  const [operators, setOperators] = useState<{ label: string; url: string | null }[] | null>(null);
+  const [managedN8n, setManagedN8n] = useState<ManagedStatus | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMfa(null);
+    setOperators(null);
+    setManagedN8n(null);
+    setSettingsError(null);
+    if (!isSuperadmin || !token) return;
+    let cancelled = false;
+    void Promise.all([
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      supabase.auth.mfa.listFactors(),
+    ])
+      .then(([assurance, factors]) => {
+        if (cancelled) return;
+        if (assurance.error || factors.error) {
+          setSettingsError("Unable to read MFA status. Manage MFA in Account settings.");
+          return;
+        }
+        setMfa({
+          level: assurance.data.currentLevel,
+          enrolled: factors.data.totp.some((factor) => factor.status === "verified"),
+        });
+      })
+      .catch(() => {
+        if (!cancelled)
+          setSettingsError("Unable to read MFA status. Manage MFA in Account settings.");
+      });
+    void getAxtnMaintenanceSettings({ data: { access_token: token } })
+      .then((settings) => {
+        if (!cancelled) setOperators(settings.operators);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setSettingsError("Private operator links require a current superadmin AAL2 session.");
+      });
+    void getManagedN8nStatus({ data: { access_token: token } })
+      .then((status) => {
+        if (!cancelled) setManagedN8n(status);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setManagedN8n({
+            configured: false,
+            connected: false,
+            workflows: [],
+            detail: "Native n8n status requires a current superadmin AAL2 session.",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperadmin, token]);
 
   const request = useCallback(
     async (action?: "open" | "close" | "touch") => {
@@ -56,8 +124,8 @@ function MaintenanceAccessPage() {
   useEffect(() => {
     if (!isSuperadmin || !token || !lease?.open) return;
     let lastTouch = 0;
-    const onActivity = () => {
-      if (document.visibilityState !== "visible") return;
+    const onActivity = (event: Event) => {
+      if (!event.isTrusted || document.visibilityState !== "visible") return;
       const now = Date.now();
       if (now - lastTouch < 60_000) return;
       lastTouch = now;
@@ -115,6 +183,95 @@ function MaintenanceAccessPage() {
           Tailscale path.
         </p>
       </div>
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Multi-factor authentication</CardTitle>
+          <CardDescription>
+            Maintenance requires a current AAL2 session, not only an enrolled authenticator.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm">
+            {mfa
+              ? `Authenticator ${mfa.enrolled ? "enrolled" : "not enrolled"} · Session ${mfa.level?.toUpperCase() ?? "unknown"}`
+              : "MFA status unavailable or loading."}
+          </p>
+          <Link to="/account" className="text-sm font-medium text-primary hover:underline">
+            Manage MFA in Account settings
+          </Link>
+          {settingsError && (
+            <p role="alert" className="text-sm text-destructive">
+              {settingsError}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Private operator services</CardTitle>
+          <CardDescription>
+            These private links do not pass through the public maintenance route. Opening D09 does
+            not expose n8n, Gitea, Matrix Admin, databases, or other operator services.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!operators && (
+            <p className="text-sm text-muted-foreground">
+              Operator links are available after superadmin AAL2 verification.
+            </p>
+          )}
+          {operators?.map(({ label, url }) => (
+            <div key={label} className="text-sm">
+              {url ? (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  Open {label} (private) <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : (
+                <span className="text-muted-foreground">
+                  {label}: private operator URL not configured
+                </span>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Native aXtn n8n</CardTitle>
+          <CardDescription>
+            Platform-managed workflow access. The endpoint and API key remain server-side; no
+            per-user integration credential or internal URL is required.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm" role="status">
+            {!managedN8n
+              ? "Checking native n8n status…"
+              : managedN8n.connected
+                ? `Authenticated · ${managedN8n.workflows.length} workflows readable`
+                : managedN8n.configured
+                  ? `Configured but unavailable · ${managedN8n.detail}`
+                  : `Not configured · ${managedN8n.detail}`}
+          </p>
+          {managedN8n?.connected && managedN8n.workflows.length > 0 && (
+            <ul className="space-y-1 text-sm">
+              {managedN8n.workflows.map((workflow) => (
+                <li key={workflow.id} className="flex justify-between gap-4">
+                  <span>{workflow.name}</span>
+                  <span className="text-muted-foreground">
+                    {workflow.active ? "Active" : "Inactive"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
       <Card className="max-w-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
