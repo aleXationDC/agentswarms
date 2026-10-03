@@ -1,7 +1,7 @@
 # aXtn Development Swarm V1 – Implementierungsauftrag
 
 **Stand:** 03.10.2026  
-**Status:** Zur Umsetzung vorbereitet; noch nicht gestartet  
+**Status:** Phase A read-only abgeschlossen; Eintrittsbedingungen blockiert  
 **Ziel:** Einen minimalen, real ausführbaren Development Swarm in AgentSwarms bereitstellen und ausschließlich mit synthetischen Daten in `aXtn/development-swarm-acceptance` abnehmen.
 
 ## 1. Verbindliches Zielbild
@@ -31,9 +31,9 @@ Aktuell belegte Ausgangspunkte:
 
 | Quelle | Beobachteter Stand |
 |---|---|
-| `aXtn/aXtn-agentswarms` | Component-Branch `work/AXTN-D09-MAINTENANCE-0001` bei `86d10fe9f871a0a12dab2de788f52f5bc68423c8` |
-| `aXtn/aXtn-host` | Maintenance-Candidate bei `b3257a2eb92f2c9c7001846d497f4194e1e48331` |
-| `aXtn/aXtn-git` | Gitea-MCP Source bei `dfbb45ad6ee546e4b84cea35a106a0bce20c7070` |
+| `aXtn/aXtn-agentswarms` | deployter Branch `work/AXTN-MAINTENANCE-BINDINGS-0001` bei `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e` |
+| `aXtn/aXtn-host` | deployter Host-Vertrag bei `5a437f454cf984238d554e26eadf43851c9624f2` |
+| `aXtn/aXtn-git` | Live-MCP meldet Source `dfbb45ad…`; Host-Manifest nennt `a85a333…` – Provenienz vor Implementierung verbindlich auflösen |
 | `aXtn/development-swarm-acceptance` | Private Fixture, `main` bei `0a38f20ccea94d937a5d4fa2ad18b37ae6439c09` |
 
 Der Preflight muss:
@@ -261,6 +261,6 @@ V1 ist erst fertig, wenn:
 9. aktualisierte Capability-/Gap-Matrix mit `nachgewiesen`, `teilweise`, `blockiert`;
 10. kurze Betriebsanleitung für Taskstart, Approval, Fehleranalyse und Wiederaufnahme.
 
-## 13. Startentscheidung
+## 13. Aktueller Gate-Status
 
-Mit diesem Auftrag ist die Umsetzung fachlich vorbereitet. Der nächste autorisierte Schritt ist Phase A: aktueller Source-/Runtime-Preflight und anschließend die Implementierung auf neuen Working Branches. Kein Teil dieses Dokuments selbst autorisiert Merge, Release, Deployment oder PROD-Veränderungen.
+Phase A wurde am 03.10.2026 read-only ausgeführt. AgentSwarms kann den Gitea-MCP intern derzeit nicht auflösen beziehungsweise erreichen; die MCP-Source-/Image-Provenienz ist zwischen Live-Image und Host-Manifest inkonsistent; die Notebook Runtime ist deaktiviert und ihre Squid-Konfiguration verweist auf fehlende generierte ACL-Dateien. Vor Phase B sind die vollständige Preflight-Evidence zu versionieren und diese Eintrittsblocker gemäß Gitea-Issue #7 aufzulösen. Kein Teil dieses Dokuments autorisiert Merge, Release, Deployment oder PROD-Veränderungen.
