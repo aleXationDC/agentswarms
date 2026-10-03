@@ -27,7 +27,7 @@ Do not copy or revive:
 - the development_work stage dispatcher;
 - a graph that models all lifecycle stages as the same custom Tool;
 - custom sequencing, fan-out, retry, checkpoint, approval or acceptance logic;
-- ChatGPT/OpenAI-plan authentication or provider-specific integration;
+- unaccepted provider/authentication code from the superseded branch without a fresh source/runtime fit check;
 - any second workflow, Case or state control plane.
 
 Do not delete or rewrite the previous branch.
@@ -99,7 +99,7 @@ If a row cannot be implemented with a proven native contract, stop at that row a
 - All write tools are allowlisted by repository, branch/effect and path.
 - Every external write requires an idempotency key derived from Case, attempt and operation.
 - A resumed run must not repeat a successful write node.
-- Provider selection remains configurable and provider-neutral. Do not add or modify OpenAI integration. Do not silently assign Gemini or any other provider.
+- Provider selection remains configurable. Preserve existing provider integrations and credentials. Do not silently add, remove, replace or reassign OpenAI, Gemini or any other provider. Provider/authentication changes require source/runtime fit evidence and must remain separate from orchestration.
 
 ## SupaCase contract
 
