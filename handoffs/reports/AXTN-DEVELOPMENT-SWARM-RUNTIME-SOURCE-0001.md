@@ -81,3 +81,8 @@ Its native server-side resolver and `/models` request were previously verified
 with HTTP 200; credentials remain unchanged and never enter the verifier.
 The executable OpenAI-default graph is a later pending Work Package, not part
 of this source-gate deployment claim.
+
+The first wrapper replay found that Docker COPY's file mode also left the new
+`/opt/axtn` directory non-traversable for UID 1000. The wrapper explicitly restores
+directory mode 0755 while keeping harness files read-only. Production deployment
+remains gated on replay against the corrected exact-candidate image.

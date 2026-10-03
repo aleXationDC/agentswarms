@@ -4,5 +4,6 @@ LABEL org.opencontainers.image.revision=$AXTN_SOURCE_COMMIT
 USER root
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/axtn-development-entrypoint
 COPY --chmod=0444 verify.py invoke.py /opt/axtn/
+RUN chmod 0755 /opt/axtn
 USER 1000:1000
 ENTRYPOINT ["/usr/local/bin/axtn-development-entrypoint"]
