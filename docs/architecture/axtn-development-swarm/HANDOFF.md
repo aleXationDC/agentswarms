@@ -115,6 +115,8 @@ The workstreams may run in parallel where dependencies allow. Do not pause merel
 - Validate directed dependency types, cycles and status transitions.
 - Record durable processing-mode and takeover transitions for semantic, deterministic and human processing.
 - Make Acceptance-relevant audit events durable and usable for automation, intervention, rework, depth and duration measurements.
+- Track PR creation/update, checks, review/approval, merge, deployment/canary and rollback as idempotent Case lifecycle transitions bound to typed references and the exact Candidate SHA.
+- Keep Gitea/PR, Runtime and Evidence authoritative for technical detail; do not duplicate CI jobs, tool calls or logs as Cases. Create an integration-repair Child Case only for independently accountable work.
 
 ### 4. Executable Development Swarm V1
 
@@ -145,6 +147,7 @@ Acceptance requires:
 - probabilistic evaluation reported separately;
 - approval/takeover behavior;
 - reviewable PR and integration evidence;
+- Case-visible integration lifecycle through the configured endpoint (`PR_READY`, `MERGED`, `DEPLOYED_VERIFIED` or `ABANDONED`), without duplicating technical step detail;
 - measurement events for automation depth, human interventions, retries/rework and elapsed time;
 - negative security tests;
 - current test, typecheck, lint, docs, infrastructure and production-build results as applicable.
