@@ -4,8 +4,16 @@
 **Canonical branch:** `work/AXTN-DEVELOPMENT-SWARM-0001`  
 **Branch base:** deployed AgentSwarms `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e`  
 **Tracking issue:** `aXtn/aXtn-agentswarms#7`  
-**Status:** `IMPLEMENTATION_AND_PRODUCTION_ACCEPTANCE_AUTHORIZED`  
+**Status:** `READY_FOR_EXECUTION`  
 **Authorization date:** 2026-10-03
+
+## Current executable assignment
+
+Copilot must now execute:
+
+`handoffs/requests/AXTN-DEVELOPMENT-SWARM-IMPLEMENTATION-0001.md`
+
+The assignment is authorized for direct implementation, production deployment, in-place repair, persistent SupaCase tracking and end-to-end acceptance. It supersedes the former documentation-only continuation. No out-of-band prompt or Issue content is required.
 
 ## Authority and operating model
 
