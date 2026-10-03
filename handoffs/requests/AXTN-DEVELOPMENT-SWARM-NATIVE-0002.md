@@ -162,20 +162,26 @@ Only after Slice 1 passes runtime acceptance may advisory evaluate and Learn be 
 14. Evidence binds Case, run, attempt, graph hash, candidate SHA, runtime digest and test receipt.
 15. Provider errors block honestly without fabricated output.
 
-## Deployment gate
+## Direct Greenfield PROD implementation and acceptance
 
-Before any PROD mutation, provide in the branch:
+Implementation, deployment, live testing and bounded repair in the existing Greenfield PROD system are explicitly authorized by this request. Do not stop merely to ask again for deployment permission.
 
-- node-by-node native-conformance matrix with exact source files;
-- file-level salvage list from the superseded branch;
-- test results for the first executable slice;
-- screenshot or exported graph proving native nodes are visible;
-- headless run trace;
-- suspend/resume trace;
-- one PASS acceptance run and one intentional FAIL run;
-- exact candidate image/source pin and rollback command.
+Required sequence:
 
-Deployment is not authorized by this request. Stop after tested source and the deployment-ready evidence pack. A separate explicit instruction is required for PROD.
+1. record the current App source pin, image digest, schema ledger, mounts and relevant data fingerprints without secrets;
+2. implement and test the native first executable slice on this branch;
+3. produce the node-by-node native-conformance matrix and file-level salvage list;
+4. build an immutable candidate image and record its digest;
+5. deploy only the AgentSwarms App changes and additive migrations required by this slice; preserve SupaCase data, Cases, integrations, MCP configuration, users and existing mounts;
+6. seed/publish the native Development Swarm so it is visible in the AgentSwarms UI;
+7. execute and retain in SupaCase at least one intentional FAIL run and one PASS run, including Child Cases, transitions, evidence links and human/semantic/deterministic execution modes;
+8. prove headless execution and durable approval suspend/resume in PROD;
+9. repair failures in the same bounded scope and rerun acceptance;
+10. close completed implementation/test Child Cases and leave genuine unresolved blockers OPEN/BLOCKED;
+11. update aXtn-host to the exact immutable AgentSwarms pin and rollback contract;
+12. push all source and secret-free evidence to Gitea.
+
+No merge to main, release, destructive data migration or unrelated platform change is authorized. Roll back the App image if the bounded slice cannot be made healthy without expanding scope. Do not remove retained test Cases: they are operational and measurement evidence.
 
 ## Completion response
 
@@ -186,4 +192,8 @@ Report only:
 - native node inventory actually used;
 - tests and results;
 - remaining platform gaps;
-- explicit statement that PROD was not changed.
+- previous and deployed PROD source/image pins;
+- retained SupaCase Case IDs for implementation and acceptance runs;
+- live PASS/FAIL, headless and suspend/resume results;
+- rollback status;
+- remaining genuine platform gaps.
