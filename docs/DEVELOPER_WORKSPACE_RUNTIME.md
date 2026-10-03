@@ -372,6 +372,14 @@ Kernel containers are **Linux containers** (the frameworks are Linux-first). On 
 
 ## 13. How to test
 
+The opt-in native aXtn Development profile has a separate retained production
+acceptance driver, `tests/development-runtime/native_acceptance.mjs`, and
+rollback-only receipt policy proof, `tests/development-runtime/receipt_policy.py`.
+See [native Runtime acceptance](../handoffs/reports/AXTN-DEVELOPMENT-SWARM-RUNTIME-ACCEPTANCE-0001.md)
+for the protected-host invocation and exact source/image/evidence references.
+It uses existing notebook sessions, immutable Git snapshots and external assertions;
+it does not grant the generic notebook callback or network capability to candidates.
+
 Testing has five layers. **The security suite (13.3) is the gate** — the feature must not ship a phase past #2 until every check passes.
 
 ### 13.1 Unit tests (CI, no Docker needed)
