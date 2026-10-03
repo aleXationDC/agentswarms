@@ -25,11 +25,12 @@ Issue API access is not required by an executor that can read this branch. Do no
 
 ## Mandatory reads
 
-1. `docs/architecture/axtn-development-swarm/V1-IMPLEMENTATION-CONTRACT.md`
-2. `docs/architecture/axtn-development-swarm/SUPACASE-CASE-MODEL.md`
-3. `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
-4. applicable repository instructions
-5. current Host execution, image, network and pin contracts referenced by those documents
+1. `AGENTS.md`
+2. `docs/architecture/axtn-development-swarm/V1-IMPLEMENTATION-CONTRACT.md`
+3. `docs/architecture/axtn-development-swarm/SUPACASE-CASE-MODEL.md`
+4. `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
+5. applicable repository instructions
+6. current Host execution, image, network and pin contracts referenced by those documents
 
 ## Accepted Phase-A baseline
 
