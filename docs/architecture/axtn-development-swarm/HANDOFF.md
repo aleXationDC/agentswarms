@@ -25,7 +25,7 @@ Do not reuse its:
 - `src/axtn/development/controller.server.ts` orchestration;
 - graph made primarily from repeated custom Tool nodes;
 - custom lifecycle/sequencing/fan-out/retry/checkpoint/acceptance logic;
-- ChatGPT/OpenAI-plan integration.
+- unaccepted provider/authentication code from that branch without a fresh source/runtime fit check.
 
 ## Mandatory execution order
 
@@ -49,7 +49,7 @@ Do not pause for another generic deployment approval. Do not create a parallel s
 
 The Development Swarm itself remains limited to a task branch and reviewable PR. It receives no merge, release, deletion, protected-branch or target-PROD capability.
 
-No OpenAI/ChatGPT-plan integration is in scope. Provider selection must remain configurable and must not be silently assigned.
+Preserve existing provider integrations and credentials. Provider selection must remain configurable and must not be silently added, removed, replaced or reassigned. Provider/authentication changes require source/runtime fit evidence and remain separate from orchestration.
 
 ## Genuine stop conditions
 
