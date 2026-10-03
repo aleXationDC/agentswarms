@@ -8,6 +8,8 @@ These instructions apply to the entire repository unless a more specific nested 
 - Before material work, read the current repository handoff and any assignment it names.
 - Do not substitute GitHub, chat excerpts or local assumptions for Gitea contracts.
 - Work in a clean task branch/worktree and preserve unrelated changes.
+- Use the existing working Copilot CLI MCP configuration as provided. Do not modify, replace or troubleshoot its local MCP configuration, credentials or startup unless the current explicit assignment specifically authorizes that local change.
+- Distinguish Copilot's working local MCP access from product-side AgentSwarms MCP/tool integration.
 
 ## Mandatory SupaCase work protocol
 
