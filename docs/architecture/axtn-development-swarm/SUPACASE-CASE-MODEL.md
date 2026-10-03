@@ -125,13 +125,18 @@ Nicht jeder Node-Wechsel wird persistiert. Pro Case werden nur verantwortungs- u
 - Ergebnis bereitgestellt;
 - Case blockiert, zurückgegeben, wieder geöffnet oder abgeschlossen;
 - Human Approval angefordert und entschieden;
+- Pull Request angelegt oder auf eine neue Candidate-Revision aktualisiert;
+- Integrationsprüfung gestartet, bestanden oder fehlgeschlagen;
+- Review/Approval erteilt, abgelehnt oder zurückgezogen;
+- Merge vorbereitet, ausgeführt, abgebrochen oder zurückgerollt;
+- Deployment/Canary gestartet, verifiziert, fehlgeschlagen oder zurückgerollt;
 - Improvement Candidate erzeugt oder zur Bearbeitung promoviert.
 
 Ein Übergangsereignis benötigt mindestens:
 
-`caseId`, `eventType`, `fromMode`, `toMode`, `actorType`, `reasonCode`, `candidateSHA`, `evidenceRef`, `timestamp`, `transitionKey`.
+`caseId`, `eventType`, `fromMode`, `toMode`, `actorType`, `reasonCode`, `candidateSHA`, `repositoryRef`, `pullRequestRef`, `integrationPhase`, `evidenceRef`, `timestamp`, `transitionKey`.
 
-Es enthält keine vollständigen fachlichen Inhalte. `transitionKey` macht Wiederholung idempotent; abweichender Inhalt unter demselben Schlüssel ist ein Konflikt.
+Es enthält keine vollständigen fachlichen Inhalte. Der Case führt damit den Integrationsprozess fachlich mit, während Gitea/PR, Runtime und Evidence die autoritativen technischen Details behalten. Einzelne CI-Jobs, Tool-Aufrufe und Logzeilen werden nicht als Case-Schritte kopiert. Ein Integrationsfehler erzeugt nur dann einen neuen Child Case, wenn daraus ein eigenständig verantwortbares Arbeitspaket entsteht. `transitionKey` macht Wiederholung idempotent; abweichender Inhalt unter demselben Schlüssel ist ein Konflikt.
 
 Vorrang hat der bestehende native Audit-Mechanismus. Nur wenn der Preflight belegt, dass dessen Struktur, Abfrage oder Retention für die erforderlichen Messungen nicht ausreicht, ist eine kleine append-only Case-Event-Projektion gerechtfertigt. Sie wäre Evidence/Reporting, keine zweite Workflow-Autorität.
 
@@ -153,6 +158,9 @@ Die Case-Hierarchie und die schlanken Übergangsereignisse sollen folgende Kennz
 | Durchlaufzeit | Parent- und Child-Zeit vom bearbeitbar bis abgeschlossen |
 | Blockierungszeit | Dauer in blockiertem Zustand nach Grundcode |
 | Improvement Yield | Improvement Candidates pro Root Case sowie später promoviert/geschlossen |
+| Integrationsdurchlaufzeit | Zeit von PR-Erstellung bis verifizierter Integration je Candidate-SHA |
+| Integrationsrework | fehlgeschlagene Checks, neue Candidate-Revisions und erneute Reviews pro Case |
+| Rollout-Stabilität | erfolgreiche Canaries/Deployments, Rollbacks und Wiederherstellungszeit pro Root Case |
 
 Kennzahlen werden aus Hierarchie und Events berechnet. Redundante, fortlaufend zu synchronisierende Zähler im Case sind zu vermeiden.
 
@@ -161,8 +169,9 @@ Kennzahlen werden aus Hierarchie und Events berechnet. Redundante, fortlaufend z
 - Parent und Children verwenden den bestehenden SupaCase-Status `NEW`, `OPEN`, `WAITING_CONTACT`, `CLOSED`.
 - Fachliche Feinzustände werden als kontrollierte `status_reason`-/Outcome-Codes geführt, nicht als zweites Lifecycle-System.
 - `WAITING_CONTACT` wird nur genutzt, wenn Primary Contact und Follow-up vorhanden sind; nicht als generisches Approval-Warten.
-- V1 schließt den Parent nicht automatisch, weil es keinen Merge ausführt.
-- Menschlich bestätigte Integration oder bewusste Aufgabe kann schließen.
+- Der Parent verfolgt den vereinbarten Integrationsendpunkt (`PR_READY`, `MERGED`, `DEPLOYED_VERIFIED` oder `ABANDONED`) über typisierte Referenzen und idempotente Übergangsereignisse.
+- Ein erfolgreicher Merge allein schließt den Parent nicht. Abschluss erfordert unabhängige Acceptance und den für den Auftrag vereinbarten, verifizierten Integrationsendpunkt.
+- Fehlgeschlagene Integration oder Rollback öffnet denselben Case wieder; nur eigenständig zu bearbeitende Reparaturarbeit wird als Child Case angelegt.
 - Neue relevante Aktivität darf nach bestehendem Contract wieder öffnen.
 - Automation darf Priorität 0 weder setzen noch überschreiben.
 - Ein Improvement Candidate bleibt nach Anlage unverarbeitet, bis seine Promotion autorisiert ist.
@@ -220,7 +229,11 @@ PASS erfordert:
 15. kein Access Token erscheint in Prompt, Trace, Log, Git oder Evidence;
 16. bestehende DMS-/Document-SupaCase-Verträge bleiben regressionsfrei;
 17. Restart/Persistenz erhält Hierarchie, Abhängigkeiten, Modi, Status und Referenzen;
-18. keine zweite Control Plane oder parallele Workflow-Autorität wird eingeführt.
+18. keine zweite Control Plane oder parallele Workflow-Autorität wird eingeführt;
+19. der Parent Case führt PR-, Review-, Merge-, Deployment-, Canary- und Rollback-Übergänge mit typisierten Referenzen und derselben Candidate-Revision mit;
+20. CI-Jobs, Tool-Aufrufe, Logs und einzelne technische Checks werden nicht als Cases dupliziert;
+21. ein Integrationsfehler erzeugt nur bei eigenständig verantwortbarer Reparaturarbeit einen Child Case;
+22. ein Merge ohne unabhängige Acceptance und verifizierten vereinbarten Integrationsendpunkt schließt den Parent nicht.
 
 ## 13. Ergänzung für den laufenden Copilot-Preflight
 
