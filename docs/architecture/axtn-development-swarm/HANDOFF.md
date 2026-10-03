@@ -3,82 +3,149 @@
 **Canonical repository:** `aXtn/aXtn-agentswarms`  
 **Canonical branch:** `work/AXTN-DEVELOPMENT-SWARM-0001`  
 **Branch base:** deployed AgentSwarms `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e`  
-**Tracking issue:** `aXtn/aXtn-agentswarms#7` – optional for the executor; the Git contract below is complete and does not require Issue API access.  
-**Status:** `PREFLIGHT_PARTIAL_BLOCKED`
+**Tracking issue:** `aXtn/aXtn-agentswarms#7`  
+**Status:** `IMPLEMENTATION_AUTHORIZED`  
+**Authorization date:** 2026-10-03
 
-## Authority and access model
+## Authority and operating model
 
-Gitea repository and runtime truth are authoritative. This repository-backed handoff is the complete execution contract for a server-side executor whose credential can use Git but intentionally lacks `read:issue`.
+Gitea repository and verified runtime behavior are authoritative. This repository-backed handoff is the complete execution contract for the server-side executor. Git branches, commits and pull requests remain the integration and source-of-truth boundary.
 
-Do not request or widen the `axtn-codex` token solely to read Issue #7. Do not infer missing instructions from an inaccessible Issue. Read this file and both referenced contracts from the canonical branch.
+The user has explicitly authorized Copilot to implement the greenfield system end to end. The Phase-A findings are implementation backlog, not approval gates. Do not create repeated authorization loops between the workstreams. Continue through repair, implementation, deterministic verification, isolated runtime acceptance and integration preparation unless a genuine stop condition below occurs.
+
+Issue API access is not required by an executor that can read this branch. Do not widen credentials merely to read the tracking Issue.
 
 ## Mandatory reads
 
 1. `docs/architecture/axtn-development-swarm/V1-IMPLEMENTATION-CONTRACT.md`
 2. `docs/architecture/axtn-development-swarm/SUPACASE-CASE-MODEL.md`
-3. applicable repository instructions
-4. current Host execution/pin contracts named by the V1 contract
+3. `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
+4. applicable repository instructions
+5. current Host execution, image, network and pin contracts referenced by those documents
 
-## Completed read-only findings to preserve
+## Accepted Phase-A baseline
 
-- Live AgentSwarms and Host pin agree on AgentSwarms `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e`.
-- Current Host task state reported at `5a437f454cf984238d554e26eadf43851c9624f2`.
-- SupaCase source ancestry is present: deployed `844eddf5…` contains required base `86d10fe9…` as an ancestor.
-- 63 focused SupaCase tests passed.
-- Live smoke for Cases, Accounts and Contacts returned HTTP 200; the inspected owner-scoped data areas were empty.
-- No source, configuration, product database, branch or runtime mutation was made by the read-only preflight.
-- AgentSwarms cannot currently resolve/reach Gitea-MCP through Docker DNS/network.
-- Live Gitea-MCP image reports source `dfbb45ad…`, while the Host manifest names `a85a333…`; provenance is inconsistent.
-- Notebook Runtime is disabled, has no Grants or Sessions, and Squid reports absent generated ACL files.
-- Existing staged changes in the current `aXtn-git` checkout are unrelated and must remain untouched. Use a separate clean worktree for any later authorized work.
+Phase A is complete at report commit `d0c070df6738ac520606bcfb170f6ee74973620f`.
 
-## Authorized immediate continuation
+Preserve these verified facts:
 
-The next action is documentation-only:
+- AgentSwarms and the live application use `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e`.
+- The inspected Host state was `5a437f454cf984238d554e26eadf43851c9624f2`.
+- SupaCase source ancestry and the server-derived Run owner seam exist.
+- The current SupaCase functions are not yet exposed as safe headless tools.
+- AgentSwarms does not yet have a working internal Gitea-MCP binding or registry entry.
+- Live Gitea-MCP source/image provenance and the Host manifest pin disagree.
+- Current MCP owner scoping is too broad for the Development Swarm; tool/action and repository boundaries are missing.
+- Notebook Runtime is disabled, uses an unpinned effective image setting, and lacks materialized Squid ACL files.
+- The existing dirty `aXtn-git` checkout is unrelated and must remain untouched.
+- The prior 63-test result is historical evidence. The clean-worktree replay did not start because the test dependency was absent; produce a current hermetic replay.
 
-1. Fetch and check out this exact canonical branch in a separate clean worktree.
-2. Read the mandatory contracts completely.
-3. Complete the remaining read-only Phase-A analysis, including the SupaCase questions in `SUPACASE-CASE-MODEL.md` section 13.
-4. Version the complete secret-free preflight report at:
-   `handoffs/reports/AXTN-DEVELOPMENT-SWARM-PREFLIGHT-0001.md`
-5. The report must contain exact commands/evidence references, full PASS/PARTIAL/BLOCKED matrix, root causes, affected repositories/files, proposed clean task branches, and the smallest safe ordered continuation.
-6. Commit and push only that report and any strictly necessary correction to these architecture documents to this branch.
+These are tasks to resolve. They do not by themselves authorize another stop-before-implementation report.
 
-This continuation does **not** authorize source implementation, configuration mutation, product database mutation, runtime mutation, PROD change, merge, tag or release.
+## Authorized implementation scope
 
-## Required analysis before implementation authorization
+Copilot is authorized to make and test the source, configuration, schema/migration, deployment-manifest and greenfield runtime changes necessary to deliver the executable V1 across:
 
-### Gitea-MCP
+- `aXtn/aXtn-agentswarms`
+- `aXtn/aXtn-host`
+- `aXtn/aXtn-git`
+- `aXtn/development-swarm-acceptance`
 
-- reconcile actual runtime source/image with all Host manifest pins;
-- determine the exact Docker network/DNS and AgentSwarms MCP-registry gap;
-- prove the smallest repo-/tool-scoped internal binding;
-- preserve direct-main and generic-merge denial;
-- do not touch the unrelated dirty checkout.
+Use clean, dedicated worktrees and task branches. Preserve unrelated dirty worktrees and existing non-greenfield data. Never place tokens, secrets or credentials in Git, graph payloads, prompts, traces, logs or evidence.
 
-### Notebook Runtime
+Suggested branch topology:
 
-- identify the exact enablement, IAM/Grant, image pin, resource-limit and egress contracts;
-- explain why generated Squid ACL files are absent;
-- distinguish disabled-by-policy from incomplete generation/configuration;
-- propose a safe repair and acceptance sequence without enabling broad egress.
+- AgentSwarms: continue `work/AXTN-DEVELOPMENT-SWARM-0001`
+- Host: clean `work/AXTN-DEVELOPMENT-SWARM-0001`
+- aXtn-git: clean `work/AXTN-DEVELOPMENT-SWARM-GITEA-MCP-0001`
+- acceptance repository: task/attempt branch from the freshly resolved default-branch SHA
 
-### SupaCase
+Branches and pull requests may be created and advanced without another planning approval. Integration must still satisfy repository protection and the Development Swarm rule that the builder cannot declare its own work accepted. Acceptance must be supported by deterministic checks and an independent review/approval role.
 
-- identify headless Case CRUD/relation access actually available to a Swarm;
-- verify server-side Run-Owner binding without tokens in graph payloads;
-- check for generic idempotent ensure-by-source behavior;
-- assess directed Child-Case dependencies, work/result contracts and Human takeover;
-- verify whether native audit supports the required measurement events and retention;
-- identify minimal typed references for repository, issue, PR, run and evidence;
-- preserve all DMS/Document/Resume behavior.
+## Required delivery sequence
 
-## Stop rules
+The workstreams may run in parallel where dependencies allow. Do not pause merely to request approval between them.
 
-Stop and report rather than workaround if:
+### 1. Gitea-MCP boundary
 
-- a required source/runtime fact cannot be verified;
-- a repair would introduce a second control plane;
-- a token or secret would enter Git, logs, prompts, traces or evidence;
-- a protected/default branch or unrelated dirty worktree would be modified;
-- implementation would begin before the documented stop gates receive an explicit continuation authorization.
+- Reconcile commit ancestry, exact source and image provenance for `dfbb45ad…`, `a85a333…` and the active Host manifest.
+- Build and pin one canonical image by immutable digest.
+- Add exact repository scoping plus server-enforced tool and action scoping.
+- Preserve denial of direct protected/default-branch writes and generic merge.
+- The V1 graph must not receive `integrate_pull_request`, `stage_file_deletion`, merge, delete or admin capability.
+- Prove positive operations and negative cases for foreign repositories, forbidden actions, protected branches, deletion and merge.
+- Establish the native Host network alias/binding and AgentSwarms registry entry.
+
+### 2. Developer Runtime
+
+- Build or select a reproducible, immutable runtime image; do not use `latest`.
+- Materialize Squid ACLs deterministically.
+- Keep deny-by-default egress and prove both allowed and denied destinations.
+- Require explicit IAM/grant semantics and enforce workspace, CPU, memory, timeout and output isolation.
+- Establish a hermetic dependency/test path from a lockfile or pinned image.
+- Enable only the scoped greenfield runtime needed for the synthetic acceptance drill.
+
+### 3. SupaCase work contract
+
+- Implement headless Case access using trusted server-derived `userId`/`scopeUserId`; never accept an owner ID or access token from graph input.
+- Add generic idempotent parent/child work identity without changing existing DMS/Document/Resume behavior.
+- Create Child Cases only for independently accountable sub-work, parallel work, escalation or Improvement Candidates—not for every node/tool call.
+- Add validated typed references for repository, issue, pull request, run and evidence.
+- Validate directed dependency types, cycles and status transitions.
+- Record durable processing-mode and takeover transitions for semantic, deterministic and human processing.
+- Make Acceptance-relevant audit events durable and usable for automation, intervention, rework, depth and duration measurements.
+
+### 4. Executable Development Swarm V1
+
+Implement and execute:
+
+`Task → Build → Break → Verify → Integrate → Learn`
+
+- Start Break/Review from the native Code Review Pipeline pattern.
+- Use independent Security, Architecture/Contract and Maintainability breakers where the actual node/runtime contracts permit.
+- Separate deterministic build/test/contract gates from probabilistic `evaluate` evidence.
+- Use native baseline-vs-candidate/regression capabilities.
+- Bind findings, evidence, approval and integration state to one immutable candidate revision.
+- The Builder may provide evidence but may not mark its own result accepted.
+- Preserve suspend/resume and a manually operable path through the same Case/work contracts.
+- Learn must use Finding → Root Cause → Improvement Candidate → verified change; no uncontrolled self-modification.
+
+### 5. End-to-end acceptance
+
+Run the complete flow against synthetic content in `aXtn/development-swarm-acceptance`.
+
+Acceptance requires:
+
+- Case and Child-Case lineage;
+- parallel work where applicable;
+- branch and candidate revision binding;
+- breaker findings and dispositions;
+- deterministic build/test/contract evidence;
+- probabilistic evaluation reported separately;
+- approval/takeover behavior;
+- reviewable PR and integration evidence;
+- measurement events for automation depth, human interventions, retries/rework and elapsed time;
+- negative security tests;
+- current test, typecheck, lint, docs, infrastructure and production-build results as applicable.
+
+Do not substitute another planning report for this runnable acceptance.
+
+## Reporting and handoff discipline
+
+Commit implementation and evidence to the appropriate Gitea branches. Update this handoff only when the executable contract or cross-repository continuation changes. Use Issue #7 as status/index, not as the sole execution contract.
+
+Progress reports are non-blocking. A report marked PARTIAL or BLOCKED must identify an actual remaining external blocker and must include everything already completed. Ordinary implementation defects are to be fixed and retested.
+
+## Genuine stop conditions
+
+Stop only when continuing would require one of the following:
+
+- exposing or committing a token, secret or credential;
+- destructively changing unrelated or established non-greenfield data;
+- modifying the unrelated dirty `aXtn-git` checkout instead of using a clean worktree;
+- exercising privileges that are genuinely unavailable and cannot be provided by the authorized greenfield configuration;
+- introducing a second control plane;
+- proceeding despite an irreconcilable source/runtime fact after the relevant repositories and runtime have been checked;
+- bypassing repository protection or allowing the Builder to self-accept.
+
+Missing pins, bindings, ACLs, dependencies, tests, migrations, registrations and greenfield runtime configuration are implementation work, not stop conditions.
