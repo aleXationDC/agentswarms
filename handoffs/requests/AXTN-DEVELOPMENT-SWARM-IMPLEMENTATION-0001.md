@@ -32,6 +32,14 @@ Vor jeder Änderung vollständig lesen:
 
 Repository- und Runtime-Wahrheit haben Vorrang. Keine GitHub-Abhängigkeit einführen.
 
+## Bestehender Copilot-MCP
+
+Der lokale MCP-Zugang von Copilot CLI funktioniert und ist nicht Gegenstand einer Reparatur oder Neukonfiguration. Seine lokale MCP-Konfiguration, Credentials und Startmechanik bleiben unangetastet. Copilot nutzt diesen vorhandenen Zugang für Gitea/Handoff-Arbeit.
+
+Die im Preflight beschriebene MCP-Lücke betrifft ausschließlich die interne Nutzung durch AgentSwarms und die dafür erforderliche sichere Tool-/Repository-Grenze. Sie darf nicht mit Copilots funktionierendem lokalen MCP verwechselt werden.
+
+Ziel der Case-Arbeit ist, dass Copilot CLI über die native aXtn/SupaCase-Tooloberfläche dieselben Parent-/Child-Cases, Übergänge, Links und KPIs führt wie der Swarm oder ein Mensch. Dafür darf die Produktfunktion ergänzt werden; es darf jedoch keine zweite Control Plane und kein Ersatz für den bestehenden Copilot-MCP entstehen.
+
 ## Arbeitsweise und Branches
 
 Arbeite ausschließlich in sauberen, dedizierten Worktrees:
