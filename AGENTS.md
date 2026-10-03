@@ -11,6 +11,16 @@ These instructions apply to the entire repository unless a more specific nested 
 - Use the existing working Copilot CLI MCP configuration as provided. Do not modify, replace or troubleshoot its local MCP configuration, credentials or startup unless the current explicit assignment specifically authorizes that local change.
 - Distinguish Copilot's working local MCP access from product-side AgentSwarms MCP/tool integration.
 
+## Mandatory native-first protocol
+
+- Native capability > standard > reuse > configure > integrate > custom build.
+- For AgentSwarms graph work, every lifecycle stage must be represented by a source-verified native node or an existing native template/composition mechanism wherever one exists.
+- A native Tool node does not make a custom dispatcher native. Do not hide sequencing, fan-out, retries, checkpoints, approvals, routing, acceptance or lifecycle state inside one Tool, Function, controller or service.
+- Custom code may implement only one bounded external capability that no verified native contract provides. Before implementing it, document the exact source/runtime gap and obtain explicit user authorization for that specific extension.
+- UI presence and documentation are not proof of runtime capability. Verify canvas and headless execution contracts in source and, where material, runtime behavior.
+- Do not create a second orchestration, Case, state, approval or evidence control plane.
+- The current assignment's explicit PROD authority is authoritative. Do not introduce additional approval gates or reduce granted scope unless an actual stop condition in the handoff occurs.
+
 ## Mandatory SupaCase work protocol
 
 Material implementation or operational work must be conducted through SupaCase. Material work includes source, schema/migration, configuration, runtime, deployment, integration or multi-step repair work.
