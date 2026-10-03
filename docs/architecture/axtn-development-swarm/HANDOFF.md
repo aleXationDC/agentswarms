@@ -62,6 +62,20 @@ Suggested branch topology:
 
 Branches and pull requests may be created and advanced without another planning approval. Integration must still satisfy repository protection and the Development Swarm rule that the builder cannot declare its own work accepted. Acceptance must be supported by deterministic checks and an independent review/approval role.
 
+## Case obligation for Copilot execution
+
+Copilot must conduct this implementation through the same SupaCase model that the finished Development Swarm will use.
+
+- After the safe server-derived headless Case binding is available, create exactly one idempotent Parent Case for this implementation assignment.
+- Create Child Cases for independently accountable, dependent, parallelizable or separately measurable sub-work. Do not create Cases for individual nodes, commands, tool calls or CI jobs.
+- At minimum represent the Gitea-MCP boundary, Developer Runtime, SupaCase work contract, executable Swarm and Production Acceptance/Integration as explicit work packages unless a better responsibility-preserving decomposition is evidenced.
+- Keep status, dependencies, Actor, Processing Mode, Git/PR/Run/Evidence references and integration transitions current while working.
+- Copilot may close a Child Case it has completed once its Work/Result Contract and Evidence are present. That closure means work completion, not self-acceptance.
+- Close the Parent only after required Children are closed, dependencies are satisfied, independent Acceptance is positive and the configured integration endpoint is verified.
+- A Swarm or human takeover continues the same Case and changes Actor/Mode; it does not create a parallel process.
+
+Because the headless binding is part of the implementation, bootstrap it first, then idempotently materialize the Parent, Children and already-created Git/Run/Evidence lineage for work performed since authorization. Do not create a temporary Case store or a Copilot-specific workflow.
+
 ## Production-first execution authorization
 
 Use the existing production AgentSwarms, Host, Gitea and SupaCase environment as the implementation and acceptance plane. Do not create a parallel staging/control plane merely to avoid working in the real system.
