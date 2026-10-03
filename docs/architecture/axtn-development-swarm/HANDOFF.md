@@ -71,6 +71,14 @@ Suggested branch topology:
 
 Branches and pull requests may be created and advanced without another planning approval. Integration must still satisfy repository protection and the Development Swarm rule that the builder cannot declare its own work accepted. Acceptance must be supported by deterministic checks and an independent review/approval role.
 
+## Existing Copilot MCP boundary
+
+Copilot CLI's existing local MCP access is working and must be used as-is. Do not modify or replace its local MCP configuration, credentials or session startup as part of this assignment.
+
+The Phase-A Gitea-MCP findings concern the product-side AgentSwarms binding and its repository/tool/action boundaries, not Copilot's working local connector. Keep those scopes separate.
+
+The required change is behavioral and product-facing: Copilot CLI must conduct its work through the same SupaCase Parent/Child, transition, link and KPI contracts as Swarm and human execution. Implement the missing native headless Case capability without creating a second control plane or a parallel Copilot-specific Case store.
+
 ## Case obligation for Copilot execution
 
 Copilot must conduct this implementation through the same SupaCase model that the finished Development Swarm will use.
