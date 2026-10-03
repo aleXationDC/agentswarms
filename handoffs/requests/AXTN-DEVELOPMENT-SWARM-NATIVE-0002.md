@@ -94,7 +94,7 @@ If a row cannot be implemented with a proven native contract, stop at that row a
 - Deterministic verify is authoritative for build, tests and contract checks.
 - evaluate is probabilistic and advisory; it cannot turn a deterministic failure into PASS.
 - Integrate means create/update a task branch and reviewable PR only.
-- No merge, release, deployment or PROD write is part of V1.
+- The Development Swarm itself may create a task branch and reviewable PR only; it may not merge, release, deploy or write to target PROD systems. This restriction does not prohibit deploying and testing the AgentSwarms product change under the explicit Greenfield PROD authorization below.
 - No PROD credentials are available to Builder or Breakers.
 - All write tools are allowlisted by repository, branch/effect and path.
 - Every external write requires an idempotency key derived from Case, attempt and operation.
