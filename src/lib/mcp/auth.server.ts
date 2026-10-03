@@ -5,6 +5,7 @@
 // existed still carry a plaintext auth_token, so the resolver reads whichever
 // is present — new saves encrypt, old rows keep working until re-saved.
 import { encryptJson, decryptJson } from "@/utils/providers/crypto.server";
+import { nativeMcpAccessToken } from "@/utils/tools/nativeMcp.server";
 
 type EncBlob = { ciphertext?: string; iv?: string } | null | undefined;
 
@@ -19,14 +20,21 @@ export async function encryptMcpAuthToken(
 
 /**
  * Resolve the usable bearer token for a server row: decrypt auth_token_enc when
- * present, else fall back to the legacy plaintext auth_token. Never throws — a
+ * present, else fall back to the legacy plaintext auth_token. For generic rows, a
  * decrypt failure resolves to null so the caller just proceeds unauthenticated
  * rather than failing the whole probe/call.
  */
 export async function resolveMcpAuthToken(row: {
+  id?: string;
+  user_id?: string;
+  name?: string;
+  endpoint?: string;
+  auth_type?: string;
   auth_token_enc?: EncBlob | unknown;
   auth_token?: string | null;
 }): Promise<string | null> {
+  const native = nativeMcpAccessToken(row);
+  if (native) return native;
   const enc = row.auth_token_enc as EncBlob;
   if (enc && typeof enc === "object" && enc.ciphertext && enc.iv) {
     try {

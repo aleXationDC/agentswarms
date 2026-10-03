@@ -1406,7 +1406,7 @@ async function loadMcpServer(ctx: AgentToolContext, name: string) {
     ctx,
     ctx.sb
       .from("mcp_servers")
-      .select("name, endpoint, auth_type, auth_token, auth_token_enc, status")
+      .select("id, user_id, name, endpoint, auth_type, auth_token, auth_token_enc, status")
       .eq("name", name),
   ).maybeSingle();
   if (!data) return null;

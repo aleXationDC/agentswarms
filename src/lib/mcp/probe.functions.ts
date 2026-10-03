@@ -52,7 +52,7 @@ export const probeMcpServer = createServerFn({ method: "POST" })
     const { supabase } = context;
     const { data: row, error } = await supabase
       .from("mcp_servers")
-      .select("id, endpoint, auth_type, auth_token, auth_token_enc, tools_count")
+      .select("id, user_id, name, endpoint, auth_type, auth_token, auth_token_enc, tools_count")
       .eq("id", data.id)
       .maybeSingle();
     if (error || !row) {
@@ -90,10 +90,14 @@ export const probeMcpServer = createServerFn({ method: "POST" })
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": PROTOCOL_VERSION,
     };
-    if (row.auth_type === "token") {
+    try {
       const { resolveMcpAuthToken } = await import("./auth.server");
       const token = await resolveMcpAuthToken(row);
-      if (token) baseHeaders.Authorization = `Bearer ${token}`;
+      if (row.auth_type === "token" && token) baseHeaders.Authorization = `Bearer ${token}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "MCP credential resolution failed";
+      console.warn("[mcp-probe] credential rejected:", message);
+      return { ok: false, toolsCount: 0, tools: [], status: "error", message };
     }
 
     const post = async (body: unknown, sessionId?: string | null, timeoutMs?: number) => {
