@@ -151,7 +151,10 @@ export const probeMcpServer = createServerFn({ method: "POST" })
       const sessionId = initRes.headers.get("Mcp-Session-Id");
       // Drain the initialize response (some servers require it), up to the
       // answer only: a server may keep the stream open after replying (R98).
-      await readRpcBody(initRes).catch(() => null);
+      const initialized = (await readRpcBody(initRes)).message;
+      if (initialized?.error || !initialized?.result) {
+        throw new Error("MCP initialize returned no successful protocol result");
+      }
 
       // 2) notifications/initialized — best-effort, ignore response.
       await post(
@@ -168,10 +171,16 @@ export const probeMcpServer = createServerFn({ method: "POST" })
       let toolsCount = 0;
       let tools: ProbeTool[] = [];
       let listMsg: string | undefined;
+      let validList = false;
       if (listRes.ok) {
         const parsed = (await readRpcBody(listRes)).message;
         const arr = parsed?.result?.tools;
-        if (Array.isArray(arr)) {
+        if (
+          !parsed?.error &&
+          Array.isArray(arr) &&
+          arr.every((t) => t && typeof t.name === "string")
+        ) {
+          validList = true;
           toolsCount = arr.length;
           tools = arr
             .filter((t: any) => t && typeof t.name === "string")
@@ -183,12 +192,14 @@ export const probeMcpServer = createServerFn({ method: "POST" })
             }));
         } else if (parsed?.error?.message) {
           listMsg = `tools/list → ${parsed.error.message}`;
+        } else {
+          listMsg = "tools/list returned a malformed protocol result";
         }
       } else {
         listMsg = `tools/list → HTTP ${listRes.status}`;
       }
 
-      const status = listRes.ok ? "connected" : "error";
+      const status = validList ? "connected" : "error";
       await supabase
         .from("mcp_servers")
         .update({
@@ -200,7 +211,7 @@ export const probeMcpServer = createServerFn({ method: "POST" })
         .eq("id", row.id);
 
       return {
-        ok: listRes.ok,
+        ok: validList,
         toolsCount,
         tools,
         status,

@@ -8,17 +8,19 @@ The existing MCP broker now resolves the managed native credential on the
 server, bound to the exact Host-configured registry ID, owner, name, endpoint
 and authentication type. Registry loading and the existing UI probe use the
 same resolver. Generic user-owned MCP authentication is preserved.
+The probe fails closed for HTTP-200 JSON-RPC errors, malformed tool lists and
+failed initialization; protocol success is required before `connected`.
 Neither the registry payload nor client build contains the protected native
 access credential. This access credential is separate from the Gitea PAT.
 
 Source validation on 2026-10-03:
 
 - `npm run typecheck`: PASS.
-- Native MCP focused suite: 8 tests PASS.
+- Native MCP and protocol-probe focused suite: 12 tests PASS.
 - `npm run lint`: PASS, no errors; existing warnings retained.
 - Docs, Markdown docs, documented commands and infrastructure checks: PASS.
   PowerShell parsing was skipped because the tool is unavailable.
-- Full unit suite: 551 files PASS; 8,997 tests PASS, 40 SKIP.
+- Full unit suite: 552 files PASS; 9,001 tests PASS, 40 SKIP.
 - `npm run build`: PASS.
 - Native credential environment names/resolver absent from client assets: PASS.
 
