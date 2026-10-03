@@ -268,6 +268,7 @@ export const DOCS_INDEX: DocsIndexPage[] = [
       "assistant",
       "async",
       "callback_url",
+      "cases",
       "expires_at",
       "history",
       "input",
@@ -811,6 +812,7 @@ export const DOCS_INDEX: DocsIndexPage[] = [
     "description": "The words this platform uses, and what each one corresponds to mechanically. Worth twenty minutes — most agent problems are really a misunderstanding of one of these.",
     "terms": [
       "calculator",
+      "case_work",
       "datetime",
       "kb_graph_search",
       "kb_search",

@@ -48,6 +48,11 @@ function ApiPage() {
       {/* ── KEYS ── */}
       <H2 id="keys">API keys</H2>
       <P>
+        The <C>cases</C> scope authorizes <C>POST /api/cases/work</C> for the key's owner. Ownership
+        is resolved server-side: never include an owner ID or access token in the work payload. The
+        work execution endpoint cannot declare independent Acceptance.
+      </P>
+      <P>
         Create one from the swarm's <strong>Deploy</strong> dialog. Keys look like <C>sk_swarm_…</C>{" "}
         and the secret is shown <strong>once</strong> — it is stored hashed and cannot be recovered,
         only rotated.
@@ -58,7 +63,7 @@ function ApiPage() {
           [
             <C key="a">scopes</C>,
             <>
-              <C key="r">run</C>, <C key="rr">read_runs</C>
+              <C key="r">run</C>, <C key="rr">read_runs</C>, <C key="cw">cases</C>
             </>,
             <>
               Defaults to <C key="d">['run']</C>. A database constraint rejects any other value, so

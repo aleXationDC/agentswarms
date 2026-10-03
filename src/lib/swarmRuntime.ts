@@ -107,6 +107,7 @@ export type SwarmToolId =
   | "web_browse"
   | "n8n_run_workflow"
   | "mcp_call_tool"
+  | "case_work"
   | "calculator"
   | "datetime"
   | "weather"

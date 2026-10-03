@@ -78,6 +78,7 @@ export const TOOL_NODE_IDS = [
   "datetime",
   "weather",
   "mcp_call_tool",
+  "case_work",
   // "Score with model": the ML scoring the agent tool does, with no model
   // deciding to do it. Headless-safe because runMlPredict re-derives grants
   // from scopeUserId, exactly as the agent-node tool does.
@@ -110,6 +111,11 @@ export async function runToolNodeCore(
     const sql = await import("@/utils/tools/sql.server");
     let result: string;
     switch (p.tool_id) {
+      case "case_work": {
+        const { executeCaseWork } = await import("@/axtn/workbenches/cases/work.server");
+        result = JSON.stringify(await executeCaseWork(ctx.userId, JSON.parse(a.request ?? "")));
+        break;
+      }
       case "sql_query": {
         const allow = p.sql_tables && p.sql_tables.length > 0 ? new Set(p.sql_tables) : null;
         result = await sql.runSqlQuery(ctx, { sql: a.sql ?? "" }, allow);

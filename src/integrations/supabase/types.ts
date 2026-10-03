@@ -8323,6 +8323,14 @@ export type Database = {
         };
         Returns: boolean;
       };
+      axtn_case_work: {
+        Args: {
+          p_user_id: string;
+          p_operation: string;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
       axtn_get_extension_access_status: {
         Args: {
           _created_by: string;

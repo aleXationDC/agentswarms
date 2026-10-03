@@ -138,6 +138,11 @@ function ConceptsPage() {
             "Any arithmetic at all — never let the model do it in its head",
           ],
           [
+            <C key="case-work">case_work</C>,
+            "Owner-scoped SupaCase work and durable audit transitions",
+            "A deterministic Swarm Tool node tracks work without granting independent Acceptance",
+          ],
+          [
             <C key="h">kb_graph_search</C>,
             "Multi-hop search over entities and their relationships",
             "The answer joins facts across documents rather than sitting in one passage",

@@ -2669,6 +2669,11 @@ const TOOL_NODE_OPTIONS: {
   label: string;
   args: { key: string; placeholder: string; textarea?: boolean }[];
 }[] = [
+  {
+    id: "case_work",
+    label: "SupaCase Work Contract",
+    args: [{ key: "request", placeholder: '{"operation":"list"}', textarea: true }],
+  },
   { id: "web_search", label: "Web Search", args: [{ key: "query", placeholder: "{{input}}" }] },
   { id: "web_browse", label: "Web Browse", args: [{ key: "url", placeholder: "https://…" }] },
   {

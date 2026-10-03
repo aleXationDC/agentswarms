@@ -10,7 +10,7 @@ export async function sha256Hex(input: string): Promise<string> {
 }
 
 /** Scopes a swarm API key can carry. `run` is the only one that grants work. */
-export const SWARM_KEY_SCOPES = ["run", "read_runs"] as const;
+export const SWARM_KEY_SCOPES = ["run", "read_runs", "cases"] as const;
 export type SwarmKeyScope = (typeof SWARM_KEY_SCOPES)[number];
 
 export const createSwarmApiKey = createServerFn({ method: "POST" })

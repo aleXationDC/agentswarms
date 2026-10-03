@@ -80,9 +80,10 @@ describe("one implementation", () => {
 });
 
 describe("the tool node", () => {
-  it("offers ml_predict beside the other eight", () => {
+  it("offers ml_predict beside the other tools including SupaCase work", () => {
     expect([...TOOL_NODE_IDS]).toContain("ml_predict");
-    expect(TOOL_NODE_IDS.length).toBe(9);
+    expect([...TOOL_NODE_IDS]).toContain("case_work");
+    expect(TOOL_NODE_IDS.length).toBe(10);
   });
 
   it("parses keys and rows as JSON arrays and refuses anything else", () => {

@@ -8,7 +8,7 @@ type CreateSwarmApiKeyInput = {
   name: string;
   reject_approvals?: boolean;
   expires_in_days?: number | null;
-  scopes?: ("run" | "read_runs")[];
+  scopes?: ("run" | "read_runs" | "cases")[];
   rotated_from?: string;
   callback_url?: string | null;
 };
