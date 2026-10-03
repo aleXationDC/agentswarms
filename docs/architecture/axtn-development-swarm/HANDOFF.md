@@ -73,7 +73,7 @@ Apply the changes progressively in the same production plane:
 1. Before each production mutation, record the exact current commit/image/config/schema revision and a tested rollback action.
 2. Use backward-compatible and additive migrations. Do not destructively rewrite or remove established data.
 3. Pin every deployed source/image/config revision; do not deploy mutable tags.
-4. Activate the new capability first for one dedicated SupaCase Parent Case and `aXtn/development-swarm-acceptance`, using synthetic fixtures but the real production services, IAM, network, persistence, tracing and approval path.
+4. Activate the new capability first for one dedicated SupaCase Parent Case and `aXtn/development-swarm-acceptance`, using synthetic fixtures but the real production services, IAM, network, persistence, tracing and approval path. Mark all resulting Cases as synthetic Acceptance/Regression Cases and retain them after execution.
 5. Keep repository, tool/action, egress, Case-owner and runtime grants narrowly scoped during this canary.
 6. Run positive and negative security tests in production without targeting unrelated repositories, Cases, credentials or data.
 7. Repair failures in place on the authorized task branches, redeploy pinned candidates and repeat the same acceptance contract. Ordinary defects are not reasons to return for another authorization.
@@ -150,7 +150,8 @@ Acceptance requires:
 - Case-visible integration lifecycle through the configured endpoint (`PR_READY`, `MERGED`, `DEPLOYED_VERIFIED` or `ABANDONED`), without duplicating technical step detail;
 - measurement events for automation depth, human interventions, retries/rework and elapsed time;
 - negative security tests;
-- current test, typecheck, lint, docs, infrastructure and production-build results as applicable.
+- current test, typecheck, lint, docs, infrastructure and production-build results as applicable;
+- persistent, restart-safe synthetic Acceptance/Regression Cases whose Parent/Child lineage, Scenario identity, Candidate SHA, attempt/run history, integration events and Evidence references remain queryable after completion and are filterable from normal business KPIs.
 
 Do not substitute another planning report for this runnable acceptance.
 
