@@ -4,7 +4,7 @@
 **Canonical branch:** `work/AXTN-DEVELOPMENT-SWARM-0001`  
 **Branch base:** deployed AgentSwarms `844eddf5fc60ca6cef8fcc948e293eecc2d6b22e`  
 **Tracking issue:** `aXtn/aXtn-agentswarms#7`  
-**Status:** `IMPLEMENTATION_AUTHORIZED`  
+**Status:** `IMPLEMENTATION_AND_PRODUCTION_ACCEPTANCE_AUTHORIZED`  
 **Authorization date:** 2026-10-03
 
 ## Authority and operating model
@@ -61,6 +61,27 @@ Suggested branch topology:
 - acceptance repository: task/attempt branch from the freshly resolved default-branch SHA
 
 Branches and pull requests may be created and advanced without another planning approval. Integration must still satisfy repository protection and the Development Swarm rule that the builder cannot declare its own work accepted. Acceptance must be supported by deterministic checks and an independent review/approval role.
+
+## Production-first execution authorization
+
+Use the existing production AgentSwarms, Host, Gitea and SupaCase environment as the implementation and acceptance plane. Do not create a parallel staging/control plane merely to avoid working in the real system.
+
+Copilot is authorized to deploy, test, observe and repair the Development Swarm directly in production, including required service/network configuration, additive database migrations, immutable image updates, scoped runtime enablement and service restarts, subject to the controls below.
+
+Apply the changes progressively in the same production plane:
+
+1. Before each production mutation, record the exact current commit/image/config/schema revision and a tested rollback action.
+2. Use backward-compatible and additive migrations. Do not destructively rewrite or remove established data.
+3. Pin every deployed source/image/config revision; do not deploy mutable tags.
+4. Activate the new capability first for one dedicated SupaCase Parent Case and `aXtn/development-swarm-acceptance`, using synthetic fixtures but the real production services, IAM, network, persistence, tracing and approval path.
+5. Keep repository, tool/action, egress, Case-owner and runtime grants narrowly scoped during this canary.
+6. Run positive and negative security tests in production without targeting unrelated repositories, Cases, credentials or data.
+7. Repair failures in place on the authorized task branches, redeploy pinned candidates and repeat the same acceptance contract. Ordinary defects are not reasons to return for another authorization.
+8. After the synthetic production canary passes, execute one low-risk real Development task through the same Parent/Child Case, Swarm, Evidence and PR boundaries.
+9. Expand availability only from verified evidence; retain immediate disable/rollback capability throughout.
+10. The Builder still cannot self-accept. Deterministic gates and an independent review/approval role must bind Acceptance to the exact deployed candidate revision.
+
+Production operation must remain manually operable if AI execution is unavailable. A human takeover continues the same Case/work contract; it must not create a duplicate process or a second source of truth.
 
 ## Required delivery sequence
 
