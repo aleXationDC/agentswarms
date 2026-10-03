@@ -5,11 +5,129 @@ Authority: `37e79a23a55a62aa7f796878fd52239ef59e4128`.
 Both `HANDOFF.md` and the complete referenced assignment were reread after
 fast-forwarding the clean task worktree.
 
-**Status: NOT IMPLEMENTED / NOT DEPLOYED.**
-The first unfulfilled native contract is Candidate materialization:
-existing scoped Git write operations lack the mandatory Case/attempt/operation
-idempotency binding and recovery contract. No adapter, dispatcher, controller,
-provider change or placeholder execution graph was introduced.
+**Current status: scoped Git effect capability IMPLEMENTED / TESTED /
+DEPLOYED / RUNTIME_VERIFIED; native Slice 1 NOT IMPLEMENTED / NOT ACCEPTED.**
+The original materialization gap below was specifically authorized by the
+operator at 2026-10-03T20:44:29Z and is now closed through the existing native
+AgentSwarms MCP Tool connector. No workflow dispatcher, controller, provider
+change or placeholder execution graph was introduced.
+
+## Authorized continuation result
+
+The operator explicitly clarified that the existing native AgentSwarms MCP
+connector is native implementation and authorized only the minimal external
+effect contract. Existing Cases are retained, with a responsibility event
+reopening the rebuild Child before this implementation.
+
+Canonical `aXtn/aXtn-git` candidate:
+`6e18b49a46327a56a21444fd6ebb6aeac745718d`,
+branch `work/AXTN-DEVELOPMENT-SWARM-NATIVE-0002`.
+Changed files:
+
+- `mcp/src/axtn_gitea_mcp/server.py`;
+- `mcp/tests/test_effects.py`;
+- `mcp/README.md`.
+
+The three existing operations now accept Case/attempt/operation `effect`.
+The minimal PR effect surface is `pull_request(action="create")`;
+unrelated update/review/merge semantics are not reimplemented.
+Native Gitea branch names, commit messages and PR bodies store recovery evidence.
+There is no effect database, general retry engine, scheduler or Case/Approval
+authority in the MCP.
+
+The exact candidate passes **49 full MCP unit/SDK/policy/effect tests**.
+Fixtures cover lost responses, restart without ephemeral locks, concurrent
+duplicates, conflicting payloads, malformed effect identities, protected
+scope and bounded readback failure. Existing unscoped operations remain compatible.
+The deployed profile remains one private non-root/read-only MCP process with no
+host ports or persistent mounts. Multi-process write replicas are not supported.
+
+Previous scoped image:
+`sha256:ced79756b3248cc1473fcf105f6388301c52a96f95af348ad1c9d442475b3c67`.
+Final scoped image:
+`sha256:bd248c3fae4c0512292f20e737cc72c23b246858c77e039912e9f566a5962f7e`.
+The image's revision label equals the exact canonical candidate.
+Only `development-gitea-mcp` was recreated/restarted. The existing App was not
+recreated; source/image and mounts remain the baseline recorded below.
+
+Actual PROD calls used the existing authenticated native
+`executeToolNode -> mcp_call_tool` RPC, not a replacement connector.
+Observed PASS:
+
+- effect-bound branch creation and replay;
+- exact commit/content readback and replay;
+- exact PR readback and replay;
+- changed-payload conflict denial for all three operations;
+- forbidden path, foreign repository and merge denial;
+- same results after actual scoped MCP restart;
+- unchanged default branch and unchanged App/provider integrations.
+
+Retained deterministic fixture:
+`aXtn/development-swarm-acceptance#6`, open/unmerged;
+Candidate `1cdd213157afe6f7dc919f969f60c2b8246f14c5`;
+base `0a38f20ccea94d937a5d4fa2ad18b37ae6439c09`;
+branch
+`work/native-effects-v1-effect-a03080cecc305674ecadd8adecedf647-a4617fc3c16b089c7353348736cde204`.
+This is capability evidence, **not** a semantic Builder/Breaker run,
+independent Approval, or V1 PASS.
+
+Live defects were repaired rather than bypassed: Gitea rejects branch names
+over 100 characters, so branch markers use 128-bit prefixes of SHA-256 identity
+and payload hashes; commit/PR markers retain full hashes. Branch replay now
+returns a stable original base envelope even after downstream commits.
+Native-readiness checks precede post-restart calls. No write-retry loop was added.
+
+## Next proven stop: independent native Approval
+
+Continuing the node-contract inspection reveals a separate native gap:
+
+- Both native Approval branches persist only
+  `payload: { last_output: content.slice(0, 4000) }`.
+  Source: `src/lib/swarmRuntime.ts:1192-1203` and
+  `src/utils/swarmExecute.server.ts:218-235`.
+- Routing a different approver does not remove the owner's decision right.
+  The actual permissive owner policy remains OR'd with routed-approver policies:
+  `supabase/migrations/20260724100000_swarm_approvals_and_runs.sql:45-58`.
+- The existing SupaCase anti-self-approval/immutable-binding guard is activated
+  only for server-created `payload.axtnDevelopment` requests:
+  `supabase/migrations/20260929030000_axtn_work_contract.sql:82-129`.
+  Native Approval has no configured payload-binding input for this guard.
+- The existing Case Acceptance operation validates receipt, graph, Candidate
+  and PR, but is not a replacement for the preceding native Approval node.
+  It cannot retroactively prevent a generic self-approved node from creating PR.
+
+This was verified against the **actual PROD PostgreSQL roles and policies** in
+one completely rolled-back transaction. A generic native `swarm_step` Approval
+was routed to a different reviewer UUID; its authenticated owner successfully
+changed it to `approved`. The fixture printed
+`GENERIC_NATIVE_APPROVAL_OWNER_CAN_APPROVE_WITH_OTHER_ROUTED_REVIEWER:approved`.
+`ROLLBACK` removed all fixture effects. This is observed failure of the required
+independence invariant, not an allegation inferred only from UI.
+
+No graph was published that could use that bypass. No custom Approval controller,
+second inbox or new Acceptance logic was built. The exact remaining decision is
+whether to extend/wire the **existing native Approval creation/resume surface**
+to the existing guarded SupaCase Case/Candidate/receipt binding, consistently
+for canvas and headless execution. That is distinct from the single external
+Git capability already authorized. The handoff's explicit stop condition and
+Builder-self-acceptance prohibition apply here.
+
+There are also still unimplemented deterministic gate/failure-branch composition
+and canvas/headless durable resume acceptance. They are not claimed solved by
+the successful Git capability test.
+
+Post-change preservation: ledger 277, one user, four datasets, two integrations,
+ten retained Cases. Dataset and integration fingerprints below are unchanged.
+App, Gitea, n8n and Matrix health each PASS (HTTP 200).
+No full App unit/build run is claimed: no product App source was changed.
+Host pin/syntax/Python/Compose gates are recorded in
+`aXtn/aXtn-host:evidence/development-swarm/20261003T-native-0002-effects.md`.
+Actual protected credential scan passed across 2,446 task source/evidence files,
+task logs and relevant App/MCP runtime logs. No protected value was printed.
+
+The remainder of this report is the **historical initial preflight** retained
+to explain the originally authorized materialization gap, not current blocker
+status.
 
 ## Execution and retained work
 
