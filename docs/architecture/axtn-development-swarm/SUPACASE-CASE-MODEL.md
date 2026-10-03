@@ -235,7 +235,21 @@ PASS erfordert:
 21. ein Integrationsfehler erzeugt nur bei eigenständig verantwortbarer Reparaturarbeit einen Child Case;
 22. ein Merge ohne unabhängige Acceptance und verifizierten vereinbarten Integrationsendpunkt schließt den Parent nicht.
 
-## 13. Ergänzung für den laufenden Copilot-Preflight
+## 13. Persistente Acceptance- und Regression-Cases
+
+Die im produktiven Acceptance- und Canary-Betrieb entstehenden Cases bleiben als nachvollziehbare Test-, Evidence- und Regressionsträger erhalten.
+
+- Kennzeichne sie explizit als synthetische Acceptance-/Regression-Cases und binde sie an Scenario-ID, Repository, Candidate-SHA, Swarm-Version und Evidence-Referenzen.
+- Lösche Parent Cases, Child Cases, Übergangsereignisse, Findings-Dispositionen oder Integrationsreferenzen nach erfolgreichem oder fehlgeschlagenem Lauf nicht.
+- Schließe abgeschlossene Test-Cases regulär und halte sie aus normalen fachlichen Betriebs-KPIs über die synthetische Klassifikation filterbar.
+- Ein Retry/Resume desselben Versuchs verwendet denselben Case und eine neue idempotente Attempt-/Run-Referenz; er erzeugt keine Dublette.
+- Eine neue Candidate-Revision oder bewusst neue Acceptance-Kampagne erhält eine neue eindeutig referenzierte Ausführung in derselben Scenario-Linie, sodass Baseline-vs-Candidate und Regressionen historisch vergleichbar bleiben.
+- Git bleibt für Fixture, erwartete Ergebnisse und ausführbaren Testvertrag autoritativ. SupaCase hält fachliche Testlinie, Status, Übergänge und stabile Referenzen; Evidence hält Logs, Traces und Artefakte.
+- Aufbewahrung folgt der festgelegten Audit-/Evidence-Retention. Eine spätere Bereinigung darf nur über eine explizite, referenzsichere Retention Policy erfolgen, nicht als automatisches Run-Cleanup.
+
+Acceptance verlangt zusätzlich, dass die Test-Cases nach Restart weiterhin auffindbar sind und ihre Case-Hierarchie, Candidate-Bindung, Runs, Integrationsereignisse und Evidence-Referenzen vollständig rekonstruierbar bleiben.
+
+## 14. Ergänzung für den laufenden Copilot-Preflight
 
 Der laufende Phase-A-Preflight soll read-only zusätzlich klären:
 
