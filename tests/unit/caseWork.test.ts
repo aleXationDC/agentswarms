@@ -88,4 +88,93 @@ describe("trusted-owner headless Case work", () => {
       "Work identity conflict",
     );
   });
+
+  it.each(["processingMode", "executionChannel"])(
+    "does not let a machine forge Human %s",
+    async (field) => {
+      await expect(
+        executeCaseWork("trusted-owner", {
+          operation: "ensure",
+          work: { ...work, [field]: "HUMAN" },
+        }),
+      ).rejects.toThrow("authenticated user session");
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it("overrides a caller's Human actor label with actual authenticated identity", async () => {
+    await executeCaseWork(
+      "trusted-owner",
+      {
+        operation: "ensure",
+        work: {
+          ...work,
+          processingMode: "HUMAN",
+          executionChannel: "HUMAN",
+          actorRef: "invented-user",
+        },
+      },
+      { kind: "user_session", id: "actual-auth-user" },
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "axtn_case_work",
+      expect.objectContaining({
+        p_payload: expect.objectContaining({
+          actorRef: "actual-auth-user",
+          _principal: { kind: "user_session", id: "actual-auth-user" },
+        }),
+      }),
+    );
+  });
+
+  it("rejects credential URLs, traversal, and malformed typed external identities", () => {
+    for (const reference of [
+      {
+        kind: "evidence",
+        repository: "aXtn/aXtn-host",
+        id: "https://user:password@example.invalid",
+      },
+      { kind: "contract", repository: "aXtn/aXtn-host", id: "../credentials" },
+      { kind: "pull_request", repository: "aXtn/aXtn-host", id: "merge-main" },
+      { kind: "run", repository: "aXtn/aXtn-host", id: "not-a-run" },
+    ]) {
+      expect(
+        WorkRequest.safeParse({ operation: "ensure", work: { ...work, references: [reference] } })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("requires native approval identity, never an approved flag or fake actor", () => {
+    expect(
+      WorkRequest.safeParse({
+        operation: "accept",
+        caseId: "11111111-1111-4111-8111-111111111111",
+        approvalId: "22222222-2222-4222-8222-222222222222",
+        candidateSHA: "a".repeat(40),
+        transitionKey: "approval",
+        approved: true,
+        actorRef: "independent-reviewer",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts directed dependency contracts, not an arbitrary relation name", () => {
+    const input = {
+      operation: "dependencies",
+      caseId: "11111111-1111-4111-8111-111111111111",
+      transitionKey: "dependencies",
+      actorRef: "copilot",
+      dependencies: [
+        { caseId: "22222222-2222-4222-8222-222222222222", kind: "REQUIRES_CANDIDATE" },
+      ],
+    };
+    expect(WorkRequest.safeParse(input).success).toBe(true);
+    expect(
+      WorkRequest.safeParse({
+        ...input,
+        dependencies: [{ ...input.dependencies[0], kind: "uncontrolled" }],
+      }).success,
+    ).toBe(false);
+  });
 });

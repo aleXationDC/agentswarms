@@ -27,66 +27,76 @@ const File = z.object({
 const safePath =
   /^(?:src\/[A-Za-z0-9_-]+\.py|tests\/[A-Za-z0-9_-]+\.py|docs\/[A-Za-z0-9_-]+\.md|README\.md)$/;
 
-export async function assertDevelopmentSnapshots(userId: string, request: DevelopmentVerification) {
+export async function readDevelopmentGit(
+  userId: string,
+  tool: "fetch" | "repository_tree" | "pull_request",
+  args: Record<string, unknown>,
+): Promise<unknown> {
   const ctx = { userId, scopeUserId: userId, sb: supabaseAdmin };
   const server = "aXtn Development Gitea";
-  async function call(tool: string, args: Record<string, unknown>): Promise<unknown> {
-    const wire = Wire.parse(
-      JSON.parse(
-        await runMcpCallTool(
-          ctx,
-          {
-            server_name: server,
-            tool_name: tool,
-            arguments: { owner: "aXtn", repository: "development-swarm-acceptance", ...args },
-          },
-          [server],
-        ),
+  const wire = Wire.parse(
+    JSON.parse(
+      await runMcpCallTool(
+        ctx,
+        {
+          server_name: server,
+          tool_name: tool,
+          arguments: { ...args, owner: "aXtn", repository: "development-swarm-acceptance" },
+        },
+        [server],
       ),
-    );
-    if (wire.error || !wire.result || wire.result.isError) {
-      throw new Error("Native immutable Git snapshot read failed");
-    }
-    if (wire.result.structuredContent !== undefined) return wire.result.structuredContent;
-    const content = wire.result.content;
-    if (!content || content.length !== 1 || content[0].type !== "text" || !content[0].text) {
-      throw new Error("Native immutable Git snapshot response is malformed");
-    }
-    return JSON.parse(content[0].text);
+    ),
+  );
+  if (wire.error || !wire.result || wire.result.isError) {
+    throw new Error("Native immutable Git snapshot read failed");
   }
+  if (wire.result.structuredContent !== undefined) return wire.result.structuredContent;
+  const content = wire.result.content;
+  if (!content || content.length !== 1 || content[0].type !== "text" || !content[0].text) {
+    throw new Error("Native immutable Git snapshot response is malformed");
+  }
+  return JSON.parse(content[0].text);
+}
+
+export async function loadDevelopmentSnapshot(userId: string, revision: string) {
+  if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error("Immutable Git revision required");
+  const call = (tool: "fetch" | "repository_tree", args: Record<string, unknown>) =>
+    readDevelopmentGit(userId, tool, args);
+  const tree = Tree.parse(await call("repository_tree", { ref: revision, recursive: true }));
+  if (tree.sha !== revision || tree.truncated)
+    throw new Error("Native Git tree revision is incomplete");
+  const paths = tree.tree.filter((entry) => safePath.test(entry.path));
+  if (
+    paths.length > 20 ||
+    paths.some((entry) => entry.type !== "blob" || !["100644", "100755"].includes(entry.mode))
+  ) {
+    throw new Error("Native Git snapshot exceeds the bounded regular-file profile");
+  }
+  const actual: Array<{ path: string; content: string }> = [];
+  for (const entry of paths) {
+    const file = File.parse(
+      await call("fetch", {
+        target: "file",
+        identifier: entry.path,
+        ref: revision,
+      }),
+    );
+    const bytes = Buffer.from(file.content.replace(/\s/g, ""), "base64");
+    if (bytes.length !== file.size || !bytes.equals(Buffer.from(bytes.toString("utf8"), "utf8"))) {
+      throw new Error("Native Git snapshot must be complete UTF-8 text");
+    }
+    actual.push({ path: entry.path, content: bytes.toString("utf8") });
+  }
+  return actual.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+export async function assertDevelopmentSnapshots(userId: string, request: DevelopmentVerification) {
+  const byPath = (a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path);
   for (const [revision, supplied] of [
     [request.baseSHA, request.baseline],
     [request.candidateSHA, request.candidate],
   ] as const) {
-    const tree = Tree.parse(await call("repository_tree", { ref: revision, recursive: true }));
-    if (tree.sha !== revision || tree.truncated)
-      throw new Error("Native Git tree revision is incomplete");
-    const paths = tree.tree.filter((entry) => safePath.test(entry.path));
-    if (
-      paths.length > 20 ||
-      paths.some((entry) => entry.type !== "blob" || !["100644", "100755"].includes(entry.mode))
-    ) {
-      throw new Error("Native Git snapshot exceeds the bounded regular-file profile");
-    }
-    const actual: Array<{ path: string; content: string }> = [];
-    for (const entry of paths) {
-      const file = File.parse(
-        await call("fetch", {
-          target: "file",
-          identifier: entry.path,
-          ref: revision,
-        }),
-      );
-      const bytes = Buffer.from(file.content.replace(/\s/g, ""), "base64");
-      if (
-        bytes.length !== file.size ||
-        !bytes.equals(Buffer.from(bytes.toString("utf8"), "utf8"))
-      ) {
-        throw new Error("Native Git snapshot must be complete UTF-8 text");
-      }
-      actual.push({ path: entry.path, content: bytes.toString("utf8") });
-    }
-    const byPath = (a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path);
+    const actual = await loadDevelopmentSnapshot(userId, revision);
     if (canonicalJson(actual.sort(byPath)) !== canonicalJson([...supplied].sort(byPath))) {
       throw new Error("Native verification content differs from the immutable Git revision");
     }

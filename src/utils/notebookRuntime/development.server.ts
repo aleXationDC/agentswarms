@@ -39,7 +39,7 @@ const Envelope = z
     gateVerdict: z.enum(["PASS", "FAIL"]),
   })
   .strict();
-const Receipt = Envelope.extend({
+export const DevelopmentReceipt = Envelope.extend({
   image: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   sessionId: z.string().uuid(),
 });
@@ -204,7 +204,7 @@ export async function runDevelopmentVerification(userId: string, value: unknown)
       if (!persisted) throw new Error("Native verification receipt disappeared after persistence");
       session = persisted;
     }
-    const evidence = Receipt.parse(session.result);
+    const evidence = DevelopmentReceipt.parse(session.result);
     if (
       evidence.inputHash !== inputHash ||
       evidence.harnessHash !== harness ||

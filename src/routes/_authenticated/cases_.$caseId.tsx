@@ -10,6 +10,7 @@ import {
   type CaseRecord,
 } from "@/axtn/workbenches/cases/caseManagement.functions";
 import type { CaseDraft } from "@/axtn/workbenches/cases/caseContract";
+import { CaseWorkPanel } from "@/axtn/workbenches/cases/CaseWorkPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -109,6 +110,9 @@ function CaseDetailPage() {
   }, [caseId, listFn]);
 
   const record = caseRecord(rows(result, "cases").find((row) => row.case_id === caseId));
+  const isDevelopmentWork = rows(result, "cases").some(
+    (row) => row.case_id === caseId && row.source_kind === "development_work",
+  );
   const relations: DisplayRelation[] = (result?.relations ?? []).flatMap((row) => {
     if (
       row.case_id === caseId &&
@@ -249,30 +253,36 @@ function CaseDetailPage() {
               {record.status} · priority {record.priority} · {record.case_type}
             </p>
           </div>
-          <CaseEditor
-            accounts={rows(result, "accounts")}
-            contacts={rows(result, "contacts")}
-            key={`${record.case_id}:${record.updated_at}`}
-            record={record}
-            saving={saving}
-            onSave={save}
-          />
-          <Card>
-            <CardHeader>
-              <CardTitle>New Child Case</CardTitle>
-            </CardHeader>
-            <CardContent className="flex gap-2">
-              <Input
-                aria-label="Child Case Subject"
-                onChange={(event) => setChildSubject(event.target.value)}
-                placeholder="Child Case Subject"
-                value={childSubject}
-              />
-              <Button disabled={saving || !childSubject.trim()} onClick={() => void addChild()}>
-                Create
-              </Button>
-            </CardContent>
-          </Card>
+          {isDevelopmentWork ? (
+            <CaseWorkPanel caseId={caseId} onChanged={load} />
+          ) : (
+            <CaseEditor
+              accounts={rows(result, "accounts")}
+              contacts={rows(result, "contacts")}
+              key={`${record.case_id}:${record.updated_at}`}
+              record={record}
+              saving={saving}
+              onSave={save}
+            />
+          )}
+          {!isDevelopmentWork && (
+            <Card>
+              <CardHeader>
+                <CardTitle>New Child Case</CardTitle>
+              </CardHeader>
+              <CardContent className="flex gap-2">
+                <Input
+                  aria-label="Child Case Subject"
+                  onChange={(event) => setChildSubject(event.target.value)}
+                  placeholder="Child Case Subject"
+                  value={childSubject}
+                />
+                <Button disabled={saving || !childSubject.trim()} onClick={() => void addChild()}>
+                  Create
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Related Cases, Accounts and Contacts</CardTitle>
