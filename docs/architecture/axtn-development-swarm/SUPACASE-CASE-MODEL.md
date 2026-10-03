@@ -235,7 +235,32 @@ PASS erfordert:
 21. ein Integrationsfehler erzeugt nur bei eigenständig verantwortbarer Reparaturarbeit einen Child Case;
 22. ein Merge ohne unabhängige Acceptance und verifizierten vereinbarten Integrationsendpunkt schließt den Parent nicht.
 
-## 13. Persistente Acceptance- und Regression-Cases
+## 13. Akteursneutrale Arbeitsführung für Copilot, Swarm und Mensch
+
+Copilot CLI, ein Development Swarm und ein menschlicher Bearbeiter führen ihre Arbeit nach demselben Case-Vertrag. Der Erzeuger oder Bearbeiter bestimmt nicht das fachliche Modell.
+
+Für den aktuellen Implementierungsauftrag gilt:
+
+- Lege genau einen idempotenten Parent Case für den Development-Swarm-Auftrag an.
+- Lege Child Cases an, sobald ein Unterauftrag fachlich eigenständig verantwortbar, separat abhängig, parallel bearbeitbar oder eigenständig messbar wird.
+- Die erwarteten initialen Work Packages sind mindestens Gitea-MCP-Boundary, Developer Runtime, SupaCase Work Contract, ausführbarer Swarm sowie Production Acceptance/Integration. Eine andere Zerlegung ist zulässig, wenn dieselben Verantwortungs- und Abhängigkeitsgrenzen erhalten bleiben.
+- Copilot führt den Parent und die von ihm bearbeiteten Children mit `executionChannel=COPILOT_CLI`, dem tatsächlichen Actor, Processing Mode, Candidate-Revision und Evidence-Referenzen.
+- Beginnt ein Swarm oder Mensch dieselbe Arbeit oder übernimmt sie, wird derselbe Case fortgeführt; nur Actor und Bearbeitungsmodus wechseln.
+- Der Bearbeiter darf einen eigenen Work Case nach erfülltem Work-/Result-Contract und hinterlegter Evidence auf `CLOSED` setzen. Dies erklärt ausschließlich die Bearbeitung für abgeschlossen.
+- Eine unabhängige Acceptance bleibt ein eigener Übergang beziehungsweise eine eigene Gate-Evidence. `CLOSED` durch den Bearbeiter darf nicht als selbst erteilte Acceptance interpretiert werden.
+- Der Parent Case wird erst geschlossen, wenn alle erforderlichen Children geschlossen, ihre Abhängigkeiten erfüllt, die unabhängige Acceptance positiv und der vereinbarte Integrationsendpunkt verifiziert ist.
+- Werden nach Abschluss relevante Fehler oder ein Rollback festgestellt, wird der betroffene Case idempotent wieder geöffnet; eigenständig verantwortbare Reparaturarbeit kann als Child Case entstehen.
+
+Da der sichere headless SupaCase-Zugang selbst Teil dieses Auftrags ist, gilt für den Bootstrap:
+
+1. Implementiere und deploye zuerst den serverseitig owner-gebundenen Case-Zugang.
+2. Erzeuge danach den idempotenten Parent Case und die bis dahin bereits erkennbaren Child Cases.
+3. Materialisiere die seit Auftragsbeginn entstandene Bootstrap-Arbeit mit ihren Git-, Run- und Evidence-Referenzen rückwirkend in dieser Case-Linie.
+4. Ab diesem Zeitpunkt werden alle weiteren Übergänge unmittelbar am Case geführt.
+
+Der Bootstrap darf keine parallele Case-Datenbank, kein Token im Graphen und keine dauerhafte Sonderlogik für Copilot einführen.
+
+## 14. Persistente Acceptance- und Regression-Cases
 
 Die im produktiven Acceptance- und Canary-Betrieb entstehenden Cases bleiben als nachvollziehbare Test-, Evidence- und Regressionsträger erhalten.
 
@@ -249,7 +274,7 @@ Die im produktiven Acceptance- und Canary-Betrieb entstehenden Cases bleiben als
 
 Acceptance verlangt zusätzlich, dass die Cases nach Restart weiterhin auffindbar sind und ihre Case-Hierarchie, Candidate-Bindung, Runs, Integrationsereignisse und Evidence-Referenzen vollständig rekonstruierbar bleiben. Identische KPI-Definitionen müssen unabhängig davon gelten, ob ein Case durch Copilot CLI, den Swarm oder einen Menschen erzeugt oder bearbeitet wurde; Auswertungen dürfen diese Dimensionen vergleichen, aber die Daten nicht strukturell trennen.
 
-## 14. Ergänzung für den laufenden Copilot-Preflight
+## 15. Ergänzung für den laufenden Copilot-Preflight
 
 Der laufende Phase-A-Preflight soll read-only zusätzlich klären:
 
