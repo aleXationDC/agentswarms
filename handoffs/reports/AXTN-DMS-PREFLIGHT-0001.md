@@ -11,6 +11,7 @@ This is execution evidence, not a replacement assignment or DMS acceptance.
 |---|---|---|---|
 | App | `/home/alex/aXtn-agentswarms-dms-recovery-worktree` | `work/AXTN-DMS-RESTORE-0001` | `6bf776ef7c9abb59224f0477dc7257f94f93f4ca` |
 | Host | `/home/alex/aXtn-host-dms-recovery-worktree` | `work/AXTN-HOST-DMS-RESTORE-0001` | `85dbb7227e04a6a1406697a8b660bb1c8804d13e` |
+| n8n | `/home/alex/aXtn-n8n-dms-executors-worktree` | `work/AXTN-DMS-EXECUTORS-0001` | `381e706176dc53b536139424240d0824569a91d7` |
 
 Previously existing DMS heads `86d10fe9f871a0a12dab2de788f52f5bc68423c8`
 and `5cfd74912d420793ebf65db1c6ac2dde67fb82a6` were strict ancestors of
@@ -19,6 +20,20 @@ The App/Host Development worktrees and scoped MCP worktree remain untouched.
 No reset, force push, merge, tag, release, or default-branch write.
 Only the three authoritative planning documents were imported from the exact
 plan commit, not its older product tree.
+
+Follow-up n8n preflight on 2026-10-05: its clean existing source worktree on
+`change/DMS-FILING-TARGET-RESOLUTION-0001-R2` is preserved. Source 381 is a
+verified descendant of live/default pin 24de, and its existing native executor
+tests pass 84/84 in the new own worktree. The own DMS executor branch did not
+exist canonically before creation. No n8n source instruction file was present.
+The newer source is **not deployed** and its workflows retain inactive,
+unverified provider placeholders. No read-only maintenance key was expanded.
+The standalone Delete verifier presently conflates arbitrary provider errors
+and mismatched identity with `not_found`; its 84-test baseline does not prove
+safe deletion readback. Recovery must reject unknown/error outcomes rather
+than manufacture physical success, without changing provider operation types
+or activating/importing a workflow. Full protected effect/receipt/rights
+binding remains a separate, incomplete package.
 
 Read the current root `AGENTS.md`, Development Case/Work contracts, Host
 execution/access/network/credential/pin contracts, complete DMS assignment,
