@@ -1,5 +1,6 @@
 import {
   buildIntakeGraph,
+  buildCaseBoundIntakeGraph,
   canonicalEdgeIds,
   canonicalNodeIds,
   intakeEdgeIds,
@@ -46,7 +47,17 @@ function assertKnownShape(nodes, edges) {
   const edgeIds = Array.isArray(edges) ? edges.map((edge) => edge?.id) : [];
   const intake = sameSet(nodeIds, intakeNodeIds()) && sameSet(edgeIds, intakeEdgeIds());
   const lifecycle = sameSet(nodeIds, canonicalNodeIds()) && sameSet(edgeIds, canonicalEdgeIds());
-  if (!intake && !lifecycle) {
+  const bound = buildCaseBoundIntakeGraph();
+  const caseIntake =
+    sameSet(
+      nodeIds,
+      bound.nodes.map((node) => node.id),
+    ) &&
+    sameSet(
+      edgeIds,
+      bound.edges.map((edge) => edge.id),
+    );
+  if (!intake && !lifecycle && !caseIntake) {
     throw new Error(
       "Document Intake graph shape is not a known version; refusing to overwrite it.",
     );
@@ -54,10 +65,12 @@ function assertKnownShape(nodes, edges) {
 }
 
 function versionedNodes(nodes) {
-  const graphNodes = buildIntakeGraph().nodes;
+  const graphNodes = nodes.some((node) => node.id === "intake_case")
+    ? buildCaseBoundIntakeGraph().nodes
+    : buildIntakeGraph().nodes;
   const bodies = new Map(
     graphNodes
-      .filter((node) => node.id === "intake_validate" || node.id === "intake_ack")
+      .filter((node) => node.type === "function")
       .map((node) => [node.id, node.data.functionCode]),
   );
   let changed = false;
@@ -132,4 +145,32 @@ export async function applyDocumentIntake({ userId, store, publish }) {
   if (draft.changed) await store.updateDraft(SWARM_ID, draft.nodes);
   if (needsPublish) await publish(SWARM_ID, userId);
   return { changed: draft.changed, published: needsPublish };
+}
+
+export async function seedDocumentCaseIntake({ userId, store, publish }) {
+  const graph = buildCaseBoundIntakeGraph();
+  let row = await store.get(SWARM_ID);
+  let created = false;
+  if (!row) {
+    try {
+      row = await store.insert({ ...seedRow(userId), nodes: graph.nodes, edges: graph.edges });
+      created = true;
+    } catch (error) {
+      if (error?.code !== "23505") throw error;
+      row = await store.get(SWARM_ID);
+      if (!row) throw error;
+    }
+  }
+  assertIdentity(row, userId);
+  assertKnownShape(row.nodes, row.edges);
+  if (row.nodes.length === canonicalNodeIds().length)
+    throw new Error("Recover the standalone Parent before replacing a full lifecycle Intake.");
+  if (row.published_nodes || row.published_edges)
+    assertKnownShape(row.published_nodes, row.published_edges);
+  const changed = !equal(row.nodes, graph.nodes) || !equal(row.edges, graph.edges);
+  const needsPublish =
+    changed || !equal(row.published_nodes, graph.nodes) || !equal(row.published_edges, graph.edges);
+  if (changed) await store.updateDraft(SWARM_ID, graph.nodes, graph.edges);
+  if (needsPublish) await publish(SWARM_ID, userId);
+  return { created, changed, published: needsPublish };
 }

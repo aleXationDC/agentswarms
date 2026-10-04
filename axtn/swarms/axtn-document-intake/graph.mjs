@@ -74,6 +74,8 @@ return JSON.stringify({
 const nodeSource = (name) => resolve("axtn/swarms/axtn-document-intake/nodes", name);
 const intakeValidate = readFileSync(nodeSource("validate-envelope.js"), "utf8");
 const intakeAck = readFileSync(nodeSource("registration-ack.js"), "utf8");
+const intakeWorkRequest = readFileSync(nodeSource("work-request.js"), "utf8");
+const intakeRegistryPlan = readFileSync(nodeSource("registry-plan.js"), "utf8");
 
 function node(id, type, data, x, y) {
   return { id, type, position: { x, y }, data: { id, ...data } };
@@ -572,6 +574,64 @@ export const LEGACY_NODE_IDS = Object.freeze([
   "intake_ack",
   "intake_out",
 ]);
+
+export function buildCaseBoundIntakeGraph() {
+  const graph = buildIntakeGraph();
+  const nodes = [
+    ...graph.nodes.slice(0, 2),
+    node(
+      "intake_work_request",
+      "function",
+      {
+        kind: "function",
+        label: "Build minimized document Work input",
+        inputs: ["envelope"],
+        outputVar: "intake_work_request",
+        functionCode: intakeWorkRequest,
+        functionTimeoutMs: 3000,
+      },
+      480,
+      0,
+    ),
+    node(
+      "intake_case",
+      "tool",
+      {
+        kind: "tool",
+        label: "Atomic native document Case ensure",
+        inputs: ["intake_work_request"],
+        outputVar: "intake_case",
+        toolId: "case_work",
+        toolArgs: { request: "{{intake_work_request}}" },
+      },
+      720,
+      0,
+    ),
+    node(
+      "intake_registry_plan",
+      "function",
+      {
+        kind: "function",
+        label: "Bind persisted Case and document before registration",
+        inputs: ["intake_case"],
+        outputVar: "envelope",
+        functionCode: intakeRegistryPlan,
+        functionTimeoutMs: 3000,
+      },
+      960,
+      0,
+    ),
+    ...graph.nodes
+      .slice(2)
+      .map((item, index) => ({ ...item, position: { x: 1200 + index * 240, y: 0 } })),
+  ];
+  return {
+    nodes,
+    edges: nodes
+      .slice(1)
+      .map((item, index) => edge(`case-intake-${index + 1}`, nodes[index].id, item.id)),
+  };
+}
 
 export function canonicalNodeIds() {
   return [

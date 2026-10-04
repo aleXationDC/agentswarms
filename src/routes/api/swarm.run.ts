@@ -36,6 +36,7 @@ import { clientIp, clientUserAgent } from "@/utils/requestMeta.server";
 import { budgetMessage, getBudgetDecision } from "@/utils/budgetGuard.server";
 import { deliverRunCallback, hashBody } from "@/utils/swarmWebhook.server";
 import { idempotencyVerdict, type IdempotencyRow } from "@/utils/swarmIdempotency";
+import { documentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -168,7 +169,13 @@ export const Route = createFileRoute("/api/swarm/run")({
               );
             }
             if (verdict.action === "replay") {
-              return json(verdict.response as Record<string, unknown>);
+              const response = verdict.response as Record<string, unknown>;
+              return json({
+                ...response,
+                ...(response.status !== "suspended" && !response.error
+                  ? documentRegistrationAck(key.swarm_id, response.output)
+                  : {}),
+              });
             }
             if (verdict.action === "in_progress") {
               return json(
@@ -337,6 +344,9 @@ export const Route = createFileRoute("/api/swarm/run")({
                   output: result.output,
                   error: result.error,
                   swarmId: swarm.id,
+                  ...(result.status !== "error" && result.status !== "suspended"
+                    ? documentRegistrationAck(swarm.id, result.output)
+                    : {}),
                 };
                 // A suspended run is NOT complete: leaving the idempotency
                 // record open lets the same request be retried after the
@@ -385,7 +395,11 @@ export const Route = createFileRoute("/api/swarm/run")({
             await finishIdempotency("in_progress", body);
             return json(body);
           }
-          const body = { output: result.output, runId: result.runId };
+          const body = {
+            output: result.output,
+            runId: result.runId,
+            ...documentRegistrationAck(swarm.id, result.output),
+          };
           await finishIdempotency("completed", body);
           return json(body);
         } finally {

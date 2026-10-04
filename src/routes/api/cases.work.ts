@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeCaseWork, type WorkPrincipal } from "@/axtn/workbenches/cases/work.server";
-import { WorkRequest } from "@/axtn/workbenches/cases/workContract";
+import { CaseRequest } from "@/axtn/workbenches/documents/documentWorkContract";
 import { rateLimitedGlobal } from "@/utils/rateLimit.server";
 
 export const Route = createFileRoute("/api/cases/work")({
@@ -44,7 +44,7 @@ export const Route = createFileRoute("/api/cases/work")({
         if (await rateLimitedGlobal(`case-work:${userId}`, 120))
           return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
         const body: unknown = await request.json().catch(() => null);
-        const parsed = WorkRequest.safeParse(body);
+        const parsed = CaseRequest.safeParse(body);
         if (!parsed.success)
           return Response.json({ error: "Invalid Case work contract" }, { status: 400 });
         try {

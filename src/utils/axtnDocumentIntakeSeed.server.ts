@@ -1,6 +1,7 @@
 import {
   applyDocumentIntake,
   seedDocumentIntake,
+  seedDocumentCaseIntake,
 } from "../../axtn/swarms/axtn-document-intake/seed-contract.mjs";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { publishSwarmForOwner } from "@/utils/swarmDeploy/operations.server";
@@ -41,8 +42,11 @@ const store = {
     if (!data) throw new Error("Swarm seed insert returned no row.");
     return data;
   },
-  async updateDraft(id: string, nodes: Json) {
-    const { error } = await supabaseAdmin.from("swarms").update({ nodes }).eq("id", id);
+  async updateDraft(id: string, nodes: Json, edges?: Json) {
+    const { error } = await supabaseAdmin
+      .from("swarms")
+      .update({ nodes, ...(edges ? { edges } : {}) })
+      .eq("id", id);
     requireNoError(error);
   },
 };
@@ -58,4 +62,7 @@ export async function seedAxtnDocumentIntake(userId: string) {
 
 export async function applyAxtnDocumentIntake(userId: string) {
   return applyDocumentIntake({ userId, store, publish });
+}
+export async function seedAxtnDocumentCaseIntake(userId: string) {
+  return seedDocumentCaseIntake({ userId, store, publish });
 }

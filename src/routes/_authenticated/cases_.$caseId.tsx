@@ -11,6 +11,7 @@ import {
 } from "@/axtn/workbenches/cases/caseManagement.functions";
 import type { CaseDraft } from "@/axtn/workbenches/cases/caseContract";
 import { CaseWorkPanel } from "@/axtn/workbenches/cases/CaseWorkPanel";
+import { DocumentWorkPanel } from "@/axtn/workbenches/documents/DocumentWorkPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,9 @@ function CaseDetailPage() {
   const record = caseRecord(rows(result, "cases").find((row) => row.case_id === caseId));
   const isDevelopmentWork = rows(result, "cases").some(
     (row) => row.case_id === caseId && row.source_kind === "development_work",
+  );
+  const isDocumentWork = rows(result, "cases").some(
+    (row) => row.case_id === caseId && row.source_kind === "document_work",
   );
   const relations: DisplayRelation[] = (result?.relations ?? []).flatMap((row) => {
     if (
@@ -255,6 +259,8 @@ function CaseDetailPage() {
           </div>
           {isDevelopmentWork ? (
             <CaseWorkPanel caseId={caseId} onChanged={load} />
+          ) : isDocumentWork ? (
+            <DocumentWorkPanel caseId={caseId} onChanged={load} />
           ) : (
             <CaseEditor
               accounts={rows(result, "accounts")}
@@ -265,7 +271,7 @@ function CaseDetailPage() {
               onSave={save}
             />
           )}
-          {!isDevelopmentWork && (
+          {!isDevelopmentWork && !isDocumentWork && (
             <Card>
               <CardHeader>
                 <CardTitle>New Child Case</CardTitle>

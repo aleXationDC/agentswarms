@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   applyAxtnDocumentIntake,
   seedAxtnDocumentIntake,
+  seedAxtnDocumentCaseIntake,
 } from "@/utils/axtnDocumentIntakeSeed.server";
 import { requireSuperadmin } from "@/utils/iam.server";
 
@@ -40,11 +41,18 @@ async function handle(request: Request): Promise<Response> {
   }
   const action =
     payload && typeof payload === "object" && "action" in payload ? payload.action : undefined;
-  if (action !== "seed" && action !== "apply") {
+  if (action !== "seed" && action !== "apply" && action !== "seed_case") {
     return json(400, { error: "Unsupported Document Intake action" });
   }
 
   try {
+    if (action === "seed_case") {
+      const result = await seedAxtnDocumentCaseIntake(auth.user.id);
+      return json(200, {
+        ...result,
+        message: "Case-bound Document Intake reconciled through native publish.",
+      });
+    }
     if (action === "seed") {
       const result = await seedAxtnDocumentIntake(auth.user.id);
       return json(200, {

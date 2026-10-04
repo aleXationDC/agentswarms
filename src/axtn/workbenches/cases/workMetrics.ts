@@ -32,7 +32,9 @@ export function workMetrics(state: WorkState) {
     const dimensions = {
       executionChannel: row.execution_channel ?? "UNSPECIFIED",
       processingMode: row.processing_mode ?? "UNSPECIFIED",
-      scenarioClass: row.work_identity?.scenarioClass ?? "UNSPECIFIED",
+      scenarioClass:
+        row.work_identity?.scenarioClass ??
+        (typeof row.scenario_class === "string" ? row.scenario_class : "UNSPECIFIED"),
       actorRef: row.actor_ref ?? "UNSPECIFIED",
     };
     const key = JSON.stringify(dimensions);

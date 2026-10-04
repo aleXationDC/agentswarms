@@ -1,16 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { store, fromMock } = vi.hoisted(() => ({
+const { store, fromMock, rpc } = vi.hoisted(() => ({
   store: {
     tables: [] as Array<Record<string, unknown>>,
     rows: [] as Array<Record<string, unknown>>,
     failNextRelationInsert: false,
   },
   fromMock: vi.fn<(table: string) => QueryBuilder>(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: fromMock },
+  supabaseAdmin: { from: fromMock, rpc },
 }));
 vi.mock("@/utils/audit.server", () => ({ auditEvent: vi.fn() }));
 
@@ -99,6 +100,7 @@ class QueryBuilder {
 fromMock.mockImplementation((table) => new QueryBuilder(table));
 
 import {
+  assignDocument,
   createAccountForUser,
   createCaseForUser,
   createCaseRelationForUser,
@@ -113,28 +115,107 @@ describe("SupaCase acceptance persistence", () => {
     store.tables.length = 0;
     store.rows.length = 0;
     store.failNextRelationInsert = false;
+    rpc.mockReset().mockResolvedValue({ data: { ok: true }, error: null });
   });
 
-  it("recovers a partial filing write and replays idempotently", async () => {
+  it("routes protected document assignment through the shared authenticated native profile", async () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const caseId = "33333333-3333-4333-8333-333333333333";
+    await listCaseManagementData(owner);
+    const casesTable = store.tables.find((table) => table.name === "axtn_cases")!;
+    store.rows.push({
+      id: "work-row",
+      table_id: casesTable.id,
+      row: {
+        case_id: caseId,
+        source_kind: "document_work",
+        document_id: "opaque-document",
+      },
+    });
+    const before = structuredClone(store.rows);
+    expect(await assignDocument(owner, caseId, "opaque-document")).toEqual({ ok: true });
+    expect(store.rows).toEqual(before);
+    expect(rpc).toHaveBeenCalledWith(
+      "axtn_case_document",
+      expect.objectContaining({
+        p_user_id: owner,
+        p_operation: "document_assign",
+        p_payload: expect.objectContaining({
+          caseId,
+          documentId: "opaque-document",
+          _principal: { kind: "user_session", id: owner },
+        }),
+      }),
+    );
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: "DOCUMENT_PRIMARY_BUSINESS_RELATION_CONFLICT" },
+    });
+    await expect(assignDocument(owner, caseId, "opaque-document")).rejects.toThrow(
+      "DOCUMENT_PRIMARY_BUSINESS_RELATION_CONFLICT",
+    );
+  });
+  it("reuses the Intake Work Case without replacing its primary Business Case relation", async () => {
     const args = {
       userId: "owner-1",
       documentId: "document-1",
       canonical: { subject: "Accepted document" },
     };
-    store.failNextRelationInsert = true;
-
-    await expect(ensureCaseForAcceptance(args)).rejects.toThrow("simulated relation write failure");
-    const casesTable = store.tables.find((table) => table.name === "axtn_cases");
-    expect(store.rows.filter((row) => row.table_id === casesTable?.id)).toHaveLength(1);
-
-    const repaired = await ensureCaseForAcceptance(args);
+    await expect(ensureCaseForAcceptance(args)).rejects.toThrow("DOCUMENT_INTAKE_CASE_REQUIRED");
+    const casesTable = store.tables.find((table) => table.name === "axtn_cases")!;
+    const relationsTable = store.tables.find((table) => table.name === "axtn_case_relations")!;
+    store.rows.push(
+      { id: "business-row", table_id: casesTable.id, row: { case_id: "business-1" } },
+      {
+        id: "intake-row",
+        table_id: casesTable.id,
+        row: {
+          case_id: "intake-1",
+          case_type: "DOCUMENT_PROCESSING",
+          source_kind: "document_work",
+          document_id: args.documentId,
+        },
+      },
+      {
+        id: "relation-row",
+        table_id: relationsTable.id,
+        row: {
+          relation_id: "primary-1",
+          case_id: "business-1",
+          relation_type: "related_document",
+          target_kind: "document",
+          target_id: args.documentId,
+        },
+      },
+    );
+    const before = structuredClone(store.rows);
+    const reused = await ensureCaseForAcceptance(args);
     const replayed = await ensureCaseForAcceptance(args);
-
-    expect(repaired.created).toBe(false);
-    expect(replayed).toEqual(repaired);
-    expect(store.rows.filter((row) => row.table_id === casesTable?.id)).toHaveLength(1);
-    const relationsTable = store.tables.find((table) => table.name === "axtn_case_relations");
-    expect(store.rows.filter((row) => row.table_id === relationsTable?.id)).toHaveLength(1);
+    expect(reused).toEqual({
+      caseId: "intake-1",
+      primaryCaseId: "business-1",
+      relationId: "primary-1",
+      created: false,
+    });
+    expect(replayed).toEqual(reused);
+    expect(store.rows).toEqual(before);
+    store.rows.push({
+      id: "other-work",
+      table_id: casesTable.id,
+      row: {
+        case_id: "intake-2",
+        case_type: "DOCUMENT_PROCESSING",
+        source_kind: "document_work",
+        document_id: args.documentId,
+      },
+    });
+    await expect(ensureCaseForAcceptance(args)).rejects.toThrow("DOCUMENT_INTAKE_CASE_AMBIGUOUS");
+    expect(
+      await ensureCaseForAcceptance({
+        ...args,
+        canonical: { intake_case_id: "intake-1" },
+      }),
+    ).toEqual(reused);
   });
 
   it("keeps case datasets scoped to their authenticated owner", async () => {

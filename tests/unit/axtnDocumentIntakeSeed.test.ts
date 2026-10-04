@@ -9,10 +9,12 @@ import {
   buildIntakeGraph,
   SWARM_ID,
   SWARM_NAME,
+  buildCaseBoundIntakeGraph,
 } from "../../axtn/swarms/axtn-document-intake/graph.mjs";
 import {
   applyDocumentIntake,
   seedDocumentIntake,
+  seedDocumentCaseIntake,
 } from "../../axtn/swarms/axtn-document-intake/seed-contract.mjs";
 
 function emptyStore() {
@@ -37,10 +39,11 @@ function emptyStore() {
       operations.push("insert");
       return created;
     },
-    async updateDraft(id: string, nodes: unknown) {
+    async updateDraft(id: string, nodes: unknown, edges?: unknown) {
       const row = rows.get(id);
       if (!row) throw new Error("missing swarm");
       row.nodes = nodes;
+      if (edges) row.edges = edges;
       operations.push("update-draft");
     },
     async publish(id: string, userId: string) {
@@ -78,7 +81,9 @@ describe("fresh Document Intake install", () => {
         const result =
           action === "seed"
             ? await seedDocumentIntake({ userId, store, publish })
-            : await applyDocumentIntake({ userId, store, publish });
+            : action === "seed_case"
+              ? await seedDocumentCaseIntake({ userId, store, publish })
+              : await applyDocumentIntake({ userId, store, publish });
         response.end(JSON.stringify(result));
         return;
       }
@@ -124,12 +129,24 @@ describe("fresh Document Intake install", () => {
       expect(firstApply.status, firstApply.output).toBe(0);
       const secondApply = await run("apply.mjs");
       expect(secondApply.status, secondApply.output).toBe(0);
+      const caseSeed = await run("seed-case.mjs");
+      expect(caseSeed.status, caseSeed.output).toBe(0);
+      expect(row.nodes).toEqual(buildCaseBoundIntakeGraph().nodes);
+      expect(row.edges).toEqual(buildCaseBoundIntakeGraph().edges);
+      expect(row.published_nodes).toEqual(row.nodes);
+      expect((await run("apply.mjs")).status).toBe(0);
+      expect((await run("seed-case.mjs")).status).toBe(0);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
     }
-    expect(store.operations).toEqual(["insert", "native-publish"]);
+    expect(store.operations).toEqual([
+      "insert",
+      "native-publish",
+      "update-draft",
+      "native-publish",
+    ]);
   });
 
   it("refuses to overwrite a seed owned by another account", async () => {

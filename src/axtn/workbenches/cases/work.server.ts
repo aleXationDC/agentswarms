@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { WorkRequest, WorkState } from "./workContract";
 import { workMetrics } from "./workMetrics";
+import { DocumentWorkRequest } from "../documents/documentWorkContract";
 
 export type WorkPrincipal = {
   kind: "user_session" | "swarm_api_key" | "swarm";
@@ -13,6 +14,11 @@ export async function executeCaseWork(
   input: unknown,
   principal: WorkPrincipal = { kind: "swarm", id: userId },
 ) {
+  const documentRequest = DocumentWorkRequest.safeParse(input);
+  if (documentRequest.success) {
+    const { executeDocumentWork } = await import("../documents/documentWork.server");
+    return executeDocumentWork(userId, documentRequest.data, principal);
+  }
   const request = WorkRequest.parse(input);
   if (request.operation === "verify") {
     const { verifyCaseWork } = await import("./workVerification.server");

@@ -1,0 +1,224 @@
+{
+  "schemaVersion": "axtn-dms-recovery-inventory-v1",
+  "requestRevision": "dad9629ae1ae98465beefa63deccd6c76aa42031",
+  "historicalRevision": "7123d0ef167e72b39ee39a944e418003a253f50f",
+  "ownerBinding": "authenticated-bootstrap-owner; no sample-owner substitution",
+  "deploymentState": "NOT_DEPLOYED",
+  "objects": [
+    {
+      "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
+      "kind": "swarm",
+      "name": "Document Management",
+      "source": "axtn/swarms/axtn-document-management/graph.mjs",
+      "sourceSHA256": "e4740e0b187e302d091ce0b4175c7b329761387a227e1f6b30226750b26b9c31",
+      "dependencies": [
+        "intake",
+        "privacy",
+        "triage",
+        "processing",
+        "local-table",
+        "case-profile",
+        "filing",
+        "cleanup"
+      ],
+      "recovered": true,
+      "implemented": "historical native composition plus bounded filing-readback repair; protected DMS Approval/effects still required",
+      "tested": "Function fixtures only; not full Parent execution",
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "id": "62bbd9a0-2fb3-4241-828d-584fa76edc74",
+      "kind": "swarm",
+      "name": "intake",
+      "source": "axtn/swarms/axtn-document-intake/graph.mjs",
+      "dependencies": ["case-profile", "local-table"],
+      "recovered": true,
+      "implemented": "explicit eight-node Case-bound native composition; compatibility five-node seed retained",
+      "tested": "seed/reseed/publish/apply empty-store fixtures and technical-envelope/ACK fixtures",
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "id": "6dcd7938-f9fb-4254-be9e-6f9a06793f0e",
+      "kind": "swarm",
+      "name": "privacy",
+      "source": "axtn/swarms/axtn-document-management/graph.mjs",
+      "dependencies": ["privacy-preflight", "local-ocr"],
+      "recovered": true,
+      "implemented": "historical native graph only; service/rights binding pending",
+      "tested": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "id": "d0c6b64b-6a54-4db3-93ab-11be9d8d93a5",
+      "kind": "swarm",
+      "name": "cleanup",
+      "source": "axtn/swarms/axtn-blacklisted-file-cleanup/graph.mjs",
+      "sourceSHA256": "f307b0ef542b4494aee98a91e5c49b728b754fdb5460e530cb8127d4b7af6640",
+      "dependencies": ["local-table", "deletion", "case-profile", "protected-approval"],
+      "recovered": true,
+      "implemented": "historical native graph; implicit all-selection removed; protected deletion receipt still required",
+      "tested": "explicit selection/binding fixtures only",
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "id": "54edaad4-4726-4781-ae07-5df795434837",
+      "kind": "agent",
+      "name": "triage",
+      "recovered": false,
+      "dependencies": ["skills", "knowledge-bases"],
+      "proposed": false,
+      "implemented": false,
+      "tested": false,
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Exact later Gemini model, prompt, temperature, tools, guardrails, Skill and KB bindings absent from checked authoritative Source/runtime/backups. Earlier differently identified agent is not a replacement."
+    },
+    {
+      "id": "02482fe8-1970-447a-97d7-8898ab8abaae",
+      "kind": "agent",
+      "name": "processing",
+      "recovered": false,
+      "dependencies": ["skills", "knowledge-bases"],
+      "proposed": false,
+      "implemented": false,
+      "tested": false,
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Exact later provider/model/prompt/temperature/tools/guardrails and Skill/KB bindings not recovered. No sample or Development-provider substitution."
+    },
+    {
+      "name": "skills",
+      "kind": "skill",
+      "recovered": false,
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "No native Skills in observed production; exact referenced later IDs/content unresolved."
+    },
+    {
+      "name": "knowledge-bases",
+      "kind": "knowledge-base",
+      "recovered": false,
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Observed KBs/documents are platform samples, not authoritative DMS definitions or bindings."
+    },
+    {
+      "name": "local-table",
+      "kind": "native-mcp",
+      "source": "axtn/mcp-servers/axtn-local-table-integration/server.py",
+      "sourceSHA256": "925c5324f7fd4c1a5e66e9972fd18b0a58212dc350a83722fb6cf98ed21a5c68",
+      "dependencies": ["document-registry", "recognition", "taxonomy", "identity"],
+      "recovered": "exact historical server.py already retained in compatible current basis",
+      "implemented": "existing native SDK/broker template; app/key/runtime provisioning pending",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Native Local Table product MCP absent; do not change working local Copilot MCP."
+    },
+    {
+      "name": "document-registry",
+      "kind": "dataset",
+      "logicalName": "axtn_document_registry",
+      "implemented": "Case-bound Intake writes minimized registration using existing native broker",
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "recognition",
+      "kind": "dataset-contract",
+      "logicalName": "axtn_document_recognition_patterns",
+      "source": "src/axtn/workbenches/documents/documentRecognition.ts",
+      "sourceSHA256": "bbc8c00f9dbda43d8756e6911943ad4f9b50d0f3f85bf20d603332266d84d597",
+      "recovered": true,
+      "implemented": "pure exact/fuzzy contains/not_contains AND/OR basis",
+      "tested": "pure deterministic fixtures",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Native persisted registry/editor and protected privacy binding pending."
+    },
+    {
+      "name": "taxonomy",
+      "kind": "dataset-contract",
+      "logicalName": "axtn_document_classification_values",
+      "recovered": "historical Source available",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "identity",
+      "kind": "dataset-contract",
+      "recovered": "historical contracts available",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "case-profile",
+      "kind": "registered-native-domain",
+      "source": "supabase/migrations/20261004080000_document_work_profile.sql",
+      "sourceSHA256": "c85fef078b11f1b3bb11d3e896543141d8fc1b99b17437ce428261749519138f",
+      "dependencies": [],
+      "implemented": "shared atomic owner-bound ensure, audit, Human fencing, primary assignment, untrusted-reference clarification and immutable minimized Decision proposals",
+      "tested": "isolated PostgreSQL migration/roles/projection recovery, proposal revision/identity/owner fences and sixteen concurrent sessions",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Protected DMS domain receipts/closure and independent Approval still pending."
+    },
+    {
+      "name": "protected-approval",
+      "kind": "native-approval-domain",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Existing Development native guard must be extended with narrow DMS bindings, not bypassed."
+    },
+    {
+      "name": "privacy-preflight",
+      "kind": "service",
+      "recovered": "historical local Presidio contracts",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "local-ocr",
+      "kind": "service",
+      "recovered": "historical contracts",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "filing",
+      "kind": "n8n-executor",
+      "id": "axtnDriveFilingExecutor",
+      "recovered": "pinned inactive export exists",
+      "implemented": "historical graph requires actual exact provider id/name/parent readback",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Real OAuth/source rights/folders/naming/ingress and bounded execution binding not established; maintenance read key remains read-only."
+    },
+    {
+      "name": "deletion",
+      "kind": "n8n-executor",
+      "id": "axtnDriveDeletionExecutor",
+      "recovered": "later canonical Source export exists; absent from active Host pin",
+      "implemented": false,
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "trace-checkpoint",
+      "kind": "native-persistence",
+      "recovered": "existing swarm_runs, swarm_run_steps and swarm_run_checkpoints",
+      "implemented": "native persistence retained",
+      "tested": "existing full Component suite",
+      "runtimeVerified": "Development suspended checkpoint remains preserved",
+      "gap": "DMS-specific minimized payload, leakage and retention acceptance not delivered. Raw context can be persisted; no no-persistence claim."
+    }
+  ]
+}

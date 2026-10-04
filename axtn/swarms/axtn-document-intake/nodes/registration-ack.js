@@ -94,6 +94,15 @@ const ack = {
   processing_route: route,
   registry_outcome: outcome,
 };
+if (ctx.vars.intake_case) {
+  let work;
+  try { work = JSON.parse(String(ctx.vars.intake_case)); }
+  catch (error) { throw new Error("DOCUMENT_INTAKE_CASE_ACK_INVALID"); }
+  if (!work || work.document_id !== document_id || typeof work.case_id !== "string")
+    throw new Error("DOCUMENT_INTAKE_CASE_ACK_MISMATCH");
+  ack.case_id = work.case_id;
+  ack.input_hash = work.input_hash;
+}
 const MAIL_SOURCES = { imap: 1, gmail: 1, mail: 1 };
 if (Object.prototype.hasOwnProperty.call(MAIL_SOURCES, source_type)) {
   ack.next_location = "00_Review";

@@ -176,6 +176,21 @@ export async function createCaseForUser(userId: string, data: CaseDraft & { acto
 export async function assignDocument(userId: string, caseId: string, documentId: string) {
   const cases = await rowsFor(userId, "cases");
   if (!cases.some((row) => row.case_id === caseId)) throw new Error("Case not found.");
+  if (
+    cases.some(
+      (row) =>
+        row.source_kind === "document_work" &&
+        (row.document_id === documentId || row.case_id === caseId),
+    )
+  ) {
+    const { executeDocumentWork } = await import("../documents/documentWork.server");
+    await executeDocumentWork(
+      userId,
+      { operation: "document_assign", assignment: { caseId, documentId } },
+      { kind: "user_session", id: userId },
+    );
+    return { ok: true };
+  }
   const relations = await rowsFor(userId, "relations");
   const existing = relations.find(
     (row) => row.target_kind === "document" && row.target_id === documentId,
@@ -342,83 +357,36 @@ export async function ensureCaseForAcceptance(args: {
     rowsFor(args.userId, "relations"),
     rowsFor(args.userId, "cases"),
   ]);
-  const existingRelation = relations.find(
-    (row) => row.target_kind === "document" && row.target_id === args.documentId,
+  const requestedCase = args.canonical.intake_case_id;
+  const candidates = cases.filter(
+    (row) =>
+      row.source_kind === "document_work" &&
+      row.case_type === "DOCUMENT_PROCESSING" &&
+      row.document_id === args.documentId &&
+      (requestedCase === undefined || row.case_id === requestedCase),
   );
-  if (existingRelation) {
-    if (
-      typeof existingRelation.case_id !== "string" ||
-      typeof existingRelation.relation_id !== "string"
-    ) {
-      throw new Error("Document Case relation is incomplete.");
-    }
-    if (!cases.some((row) => row.case_id === existingRelation.case_id)) {
-      throw new Error("Document Case relation points to a missing Case.");
-    }
-    return {
-      caseId: existingRelation.case_id,
-      relationId: existingRelation.relation_id,
-      created: false,
-    };
+  if (candidates.length !== 1 || typeof candidates[0].case_id !== "string") {
+    throw new Error(
+      candidates.length > 1 ? "DOCUMENT_INTAKE_CASE_AMBIGUOUS" : "DOCUMENT_INTAKE_CASE_REQUIRED",
+    );
   }
-  const existingCase = cases.find(
-    (row) => row.source_kind === "dms_document" && row.source_id === args.documentId,
+  const primary = relations.filter(
+    (row) =>
+      row.relation_type === "related_document" &&
+      row.target_kind === "document" &&
+      row.target_id === args.documentId,
   );
-  if (typeof existingCase?.case_id === "string") {
-    const relationId = crypto.randomUUID();
-    await insertRow(args.userId, "relations", {
-      relation_id: relationId,
-      case_id: existingCase.case_id,
-      relation_type: "related_document",
-      target_id: args.documentId,
-      target_kind: "document",
-      created_at: new Date().toISOString(),
-    });
-    return { caseId: existingCase.case_id, relationId, created: false };
+  if (
+    primary.length !== 1 ||
+    typeof primary[0].relation_id !== "string" ||
+    !cases.some((row) => row.case_id === primary[0].case_id)
+  ) {
+    throw new Error("DOCUMENT_PRIMARY_RELATION_REQUIRED");
   }
-  const now = new Date().toISOString();
-  const caseId = crypto.randomUUID();
-  const draft: CaseDraft = {
-    subject: String(
-      args.canonical.subject ??
-        args.canonical.canonical_filename ??
-        args.canonical.filename ??
-        `Document ${args.documentId}`,
-    ),
-    case_type: "TODO",
-    status: "OPEN",
-    priority: 3,
-    account_id: typeof args.canonical.account_id === "string" ? args.canonical.account_id : null,
-    primary_contact_id:
-      typeof args.canonical.primary_contact_id === "string"
-        ? args.canonical.primary_contact_id
-        : null,
-    related_entity:
-      typeof args.canonical.related_entity === "string" ? args.canonical.related_entity : null,
+  return {
+    caseId: candidates[0].case_id,
+    primaryCaseId: primary[0].case_id,
+    relationId: primary[0].relation_id,
+    created: false,
   };
-  validateCaseDraft(draft, "automation");
-  await validateCaseReferences(args.userId, draft);
-  await insertRow(args.userId, "cases", {
-    case_id: caseId,
-    parent_case_id: null,
-    ...draft,
-    status_reason: "Created at filing acceptance",
-    due_date: null,
-    follow_up: null,
-    created_at: now,
-    updated_at: now,
-    closed_at: null,
-    source_kind: "dms_document",
-    source_id: args.documentId,
-  });
-  const relationId = crypto.randomUUID();
-  await insertRow(args.userId, "relations", {
-    relation_id: relationId,
-    case_id: caseId,
-    relation_type: "related_document",
-    target_id: args.documentId,
-    target_kind: "document",
-    created_at: now,
-  });
-  return { caseId, relationId, created: true };
 }

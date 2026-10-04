@@ -8331,6 +8331,14 @@ export type Database = {
         };
         Returns: Json;
       };
+      axtn_case_document: {
+        Args: {
+          p_user_id: string;
+          p_operation: string;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
       decide_swarm_approval: {
         Args: { p_approval_id: string; p_decision: string };
         Returns: string;
