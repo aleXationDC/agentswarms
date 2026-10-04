@@ -118,9 +118,8 @@ function correctContentTypes(handler) {
     const ext = new URL(request.url).pathname.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
     const want = ext && CONTENT_TYPE_FIXES[ext];
     if (!want || res.headers.get("content-type") === want) return res;
-    const headers = new Headers(res.headers);
-    headers.set("content-type", want);
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+    res.headers.set("content-type", want);
+    return res;
   };
 }
 
@@ -138,10 +137,21 @@ function correctContentTypes(handler) {
  * Compressing on the fly rather than at build time keeps this self-contained;
  * assets are content-hashed and immutable, so a browser pays it once.
  */
-const COMPRESSIBLE = /^(?:text\/|image\/svg|application\/(?:javascript|json|wasm|xml))/i;
+const GZIP_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".mjs",
+  ".json",
+  ".txt",
+  ".xml",
+  ".svg",
+  ".wasm",
+]);
 
 /**
- * The same request object, reporting `identity` for Accept-Encoding.
+ * The same request object, allowing only fast native gzip or identity.
  *
  * A PROXY, not `new Request(request, { headers })`. srvx's static handler reads
  * `req._url` — its own cached parsed URL, not part of the Request interface —
@@ -150,15 +160,20 @@ const COMPRESSIBLE = /^(?:text\/|image\/svg|application\/(?:javascript|json|wasm
  * here to fix. The proxy changes one header lookup and leaves the object
  * otherwise itself.
  */
-function asIdentityRequest(request) {
+function asStaticEncodingRequest(request) {
+  const ext = new URL(request.url).pathname.match(/\.[a-z0-9]+$/i)?.[0]?.toLowerCase();
+  const encoding =
+    (!ext || GZIP_EXTENSIONS.has(ext)) &&
+    /\bgzip\b/.test(request.headers.get("accept-encoding") ?? "")
+      ? "gzip"
+      : "identity";
   const headers = new Proxy(request.headers, {
     get(target, prop) {
       const value = Reflect.get(target, prop);
       if (typeof value !== "function") return value;
       const bound = value.bind(target);
       if (prop !== "get") return bound;
-      return (name) =>
-        String(name).toLowerCase() === "accept-encoding" ? "identity" : bound(name);
+      return (name) => (String(name).toLowerCase() === "accept-encoding" ? encoding : bound(name));
     },
   });
   return new Proxy(request, {
@@ -171,41 +186,10 @@ function asIdentityRequest(request) {
 }
 
 function compressStatic(handler) {
-  return async (request, next) => {
-    // ASK THE INNER HANDLER FOR AN UNCOMPRESSED BODY.
-    //
-    // MEASURED, and the reason this wrapper exists at all: srvx's static
-    // handler compresses with `createBrotliCompress()` — brotli at its default
-    // quality 11 — whenever the client's Accept-Encoding mentions `br`, which
-    // every browser's does. On the 32.7 MB WebAssembly engine that took
-    // **157 seconds per request**, so the download never finished, the browser
-    // SQL engine never started, and the Data Catalog reported "Local tables: 0"
-    // on a workspace holding 33 of them. The same file with Accept-Encoding
-    // identity: 644 ms.
-    //
-    // Brotli at that quality is for build-time compression, not per-request.
-    // Stripping the header here keeps srvx out of the compression business and
-    // lets the gzip below — fast, and 4.4x on this file — do the job.
-    const res = await handler(asIdentityRequest(request), next);
-
-    // 200 only: compressing a 206 would misreport the byte range, and a body
-    // that is already encoded must be left alone.
-    if (!res?.body || res.status !== 200 || res.headers.get("content-encoding")) return res;
-    if (!/\bgzip\b/.test(request.headers.get("accept-encoding") ?? "")) return res;
-    if (!COMPRESSIBLE.test(res.headers.get("content-type") ?? "")) return res;
-
-    const headers = new Headers(res.headers);
-    headers.set("content-encoding", "gzip");
-    // The compressed length is not known until it is written, and a stale
-    // Content-Length is worse than none: the client truncates the body.
-    headers.delete("content-length");
-    headers.set("vary", "accept-encoding");
-    return new Response(res.body.pipeThrough(new CompressionStream("gzip")), {
-      status: res.status,
-      statusText: res.statusText,
-      headers,
-    });
-  };
+  // Native gzip avoids slow quality-11 brotli and preserves srvx's Node stream.
+  // Reading FastResponse.body invokes Undici's async-iterator bridge, whose
+  // queued EOF close races cancellation and can terminate the worker.
+  return (request, next) => handler(asStaticEncodingRequest(request), next);
 }
 
 async function startWorker() {
@@ -229,8 +213,7 @@ async function startWorker() {
     reusePort: true,
     // Client assets are hashed and immutable; the SSR handler should never see
     // a request for one.
-    // Order matters: the type fix runs first (innermost) so the compressor
-    // sees the corrected Content-Type when deciding what is compressible.
+    // Keep native stream bodies intact; correct only headers and encoding.
     middleware: [
       compressStatic(correctContentTypes(serveStatic({ dir: path.join(HERE, "dist", "client") }))),
     ],

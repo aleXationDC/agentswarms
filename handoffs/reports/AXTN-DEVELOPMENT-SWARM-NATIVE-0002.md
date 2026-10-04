@@ -24,7 +24,7 @@ headless continuation resume that exact snapshot. Protected resume validates
 current authority and claims the suspended run once. No second Approval engine,
 workflow dispatcher, retry engine or Acceptance plane was added.
 
-Source validation: full repaired unit suite **9,121 PASS, 40 skipped**, 561 files PASS;
+Source validation: full repaired unit suite **9,129 PASS, 40 skipped**, 561 files PASS;
 production client/server build PASS.
 Actual PostgreSQL role fixture **PASS**, completely rolled back: owner,
 unrelated reviewer, routed Builder, duplicate decision, binding edits and
@@ -83,6 +83,21 @@ use Node 22.23.2 / Undici 6.28.0. The existing worker supervisor restored
 service; later sequential native semantic runs reached real receipts/gates.
 The interrupted run is retained as failure evidence, not claimed successful.
 No exception suppression, provider fallback or retry engine was introduced.
+
+The recurring HTTP failure was reproduced in an isolated Node process using
+the installed `srvx` FastResponse, a real Node Readable and cancellation at
+EOF: the exact Undici `ReadableByteStreamController.close` exception exits
+the process. The custom static wrappers were forcing Node bodies through that
+async-iterator bridge, including delegated application responses.
+The repair removes body access/rebuilding and custom Web-stream compression.
+Existing srvx performs native gzip; the request proxy excludes slow brotli
+and retains the original request, native URL cache and next callback.
+WASM MIME correction mutates only the existing headers.
+No dependency upgrade, private adapter access, exception suppression or new
+HTTP routing was introduced. Eight additional behavioral tests cover response
+identity/body preservation, delegated partial/already-encoded responses and
+a real isolated Node HTTP server with gzip/identity, correct length/Vary/MIME
+and 40 cancelled asset requests.
 
 ### Native conformance and reviewed reuse
 

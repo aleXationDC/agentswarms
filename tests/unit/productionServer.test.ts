@@ -12,6 +12,7 @@
 // know SSR is the bottleneck and the HTTP layer is not.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
@@ -144,7 +145,8 @@ describe("static assets are served with the type the browser requires", () => {
   });
 
   it("preserves the response body and status while replacing the header", () => {
-    expect(server).toContain("new Response(res.body, { status: res.status");
+    expect(server).toContain('res.headers.set("content-type", want)');
+    expect(server).not.toContain("new Response(res.body");
   });
 });
 
@@ -161,13 +163,13 @@ describe("static compression", () => {
   //     br  (srvx's own default)  157,213 ms   <- the download never finished
   //     gzip (this code)            1,774 ms
   //
-  // So the fix is not "add compression", it is "stop srvx compressing" and do
-  // it at a quality meant for per-request work.
+  // Keep native gzip, but never let the adapter choose quality-11 brotli.
   const server = read("server.mjs");
 
-  it("keeps srvx out of the compression business", () => {
-    expect(server).toContain("asIdentityRequest(request)");
-    expect(server).toContain('"accept-encoding" ? "identity"');
+  it("limits native compression to gzip or identity", () => {
+    expect(server).toContain("asStaticEncodingRequest(request)");
+    expect(server).toContain('? "gzip"');
+    expect(server).toContain(': "identity"');
   });
 
   it("uses a proxy rather than rebuilding the request", () => {
@@ -183,20 +185,151 @@ describe("static compression", () => {
   });
 
   it("gzips compressible bodies when the client accepts it", () => {
-    expect(server).toContain('new CompressionStream("gzip")');
-    expect(server).toContain("COMPRESSIBLE");
+    expect(server).toContain("GZIP_EXTENSIONS.has(ext)");
+    expect(server).not.toContain("CompressionStream");
   });
 
-  it("drops Content-Length and sets Vary when it re-encodes", () => {
-    // A stale Content-Length truncates the body; a missing Vary poisons any
-    // shared cache for clients that did not ask for gzip.
-    expect(server).toContain('headers.delete("content-length")');
-    expect(server).toContain('headers.set("vary", "accept-encoding")');
+  it("delegates encoding headers and stream lifetime to the native handler", () => {
+    expect(server).toContain("handler(asStaticEncodingRequest(request), next)");
+    expect(server).not.toContain("res.body");
   });
 
-  it("never compresses a partial or already-encoded response", () => {
-    expect(server).toContain("res.status !== 200");
-    expect(server).toContain('res.headers.get("content-encoding")');
+  it("does not re-encode delegated application responses", () => {
+    expect(server).not.toContain("pipeThrough");
+  });
+});
+
+type StaticHandler = (request: Request, next: () => Promise<Response>) => Promise<Response>;
+
+function staticWrappers() {
+  const source = read("server.mjs");
+  return new Function(
+    `${source.slice(source.indexOf("const CONTENT_TYPE_FIXES"), source.indexOf("async function startWorker()"))}
+     return { correctContentTypes, compressStatic };`,
+  )() as Record<
+    "correctContentTypes" | "compressStatic",
+    (handler: StaticHandler) => StaticHandler
+  >;
+}
+
+describe("native static stream preservation", () => {
+  it("serves native gzip and survives cancelled asset requests in a real Node server", () => {
+    const source = read("server.mjs");
+    const wrappers = source.slice(
+      source.indexOf("const CONTENT_TYPE_FIXES"),
+      source.indexOf("async function startWorker()"),
+    );
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import assert from "node:assert/strict";
+      import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+      import { tmpdir } from "node:os";
+      import { join } from "node:path";
+      import { randomBytes } from "node:crypto";
+      import { serve } from "srvx";
+      import { serveStatic } from "srvx/static";
+      ${wrappers}
+      const directory = mkdtempSync(join(tmpdir(), "agentswarms-stream-test-"));
+      writeFileSync(join(directory, "engine.wasm"), randomBytes(1024 * 1024));
+      const server = serve({
+        port: 0, hostname: "127.0.0.1", silent: true,
+        middleware: [compressStatic(correctContentTypes(serveStatic({ dir: directory })))],
+        fetch: () => new Response("fallback"),
+      });
+      try {
+        await server.ready();
+        const asset = new URL("/engine.wasm", server.url);
+        const response = await fetch(asset, { headers: { "accept-encoding": "gzip, br" } });
+        assert.equal(response.headers.get("content-type"), "application/wasm");
+        assert.equal(response.headers.get("content-encoding"), "gzip");
+        assert.equal(response.headers.get("content-length"), null);
+        assert.match(response.headers.get("vary"), /accept-encoding/i);
+        assert.equal((await response.arrayBuffer()).byteLength, 1024 * 1024);
+        for (let i = 0; i < 40; i++) {
+          const response = await fetch(asset, { headers: { "accept-encoding": i % 2 ? "gzip, br" : "identity" } });
+          const reader = response.body.getReader();
+          await reader.read();
+          await reader.cancel();
+        }
+        const identity = await fetch(asset, { headers: { "accept-encoding": "identity" } });
+        assert.equal(identity.headers.get("content-encoding"), null);
+        assert.equal(identity.headers.get("content-length"), String(1024 * 1024));
+        assert.equal((await identity.arrayBuffer()).byteLength, 1024 * 1024);
+        console.log("NATIVE_STREAM_OK");
+      } finally {
+        await server.close(true);
+        rmSync(directory, { recursive: true });
+      }
+    `,
+      ],
+      { encoding: "utf8", timeout: 20000 },
+    );
+    expect(child.error).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+    expect(child.stdout).toContain("NATIVE_STREAM_OK");
+  });
+
+  it.each([
+    ["/engine.wasm", "gzip, br", "gzip"],
+    ["/asset.js", "gzip, br", "gzip"],
+    ["/", "gzip, br", "gzip"],
+    ["/asset.png", "gzip, br", "identity"],
+    ["/asset.js", "br", "identity"],
+    ["/asset.js", "", "identity"],
+  ])(
+    "negotiates %s without reading or rebuilding the response body",
+    async (pathname, accept, want) => {
+      const response = new Response(null, { status: 200 });
+      Object.defineProperty(response, "body", {
+        get() {
+          throw new Error("Native stream must not enter the Undici iterable bridge");
+        },
+      });
+      const request = new Request(`http://localhost${pathname}`, {
+        headers: { "accept-encoding": accept, authorization: "fixture" },
+      });
+      const { correctContentTypes, compressStatic } = staticWrappers();
+      const handler: StaticHandler = async (incoming) => {
+        expect(incoming.headers.get("accept-encoding")).toBe(want);
+        expect(incoming.headers.get("authorization")).toBe("fixture");
+        expect(incoming.url).toBe(request.url);
+        return response;
+      };
+      const result = await compressStatic(correctContentTypes(handler))(
+        request,
+        async () => response,
+      );
+      expect(result).toBe(response);
+      expect(result.status).toBe(200);
+      if (pathname.endsWith(".wasm"))
+        expect(result.headers.get("content-type")).toBe("application/wasm");
+      expect(request.headers.get("accept-encoding")).toBe(accept);
+    },
+  );
+
+  it("preserves the delegated response and native next callback", async () => {
+    const response = new Response(null, {
+      status: 206,
+      headers: { "content-encoding": "br", "content-range": "bytes 0-1/4" },
+    });
+    Object.defineProperty(response, "body", {
+      get: () => {
+        throw new Error("Unexpected body access");
+      },
+    });
+    const next = async () => response;
+    const { compressStatic } = staticWrappers();
+    const result = await compressStatic(async (_request, callback) => {
+      expect(callback).toBe(next);
+      return callback();
+    })(new Request("http://localhost/api/chat", { headers: { "accept-encoding": "gzip" } }), next);
+    expect(result).toBe(response);
+    expect(result.headers.get("content-encoding")).toBe("br");
+    expect(result.headers.get("content-range")).toBe("bytes 0-1/4");
   });
 });
 
