@@ -239,10 +239,14 @@
     {
       "name": "local-ocr",
       "kind": "service",
-      "recovered": "historical contracts",
-      "implemented": false,
+      "source": "services/local-ocr/server.py",
+      "sourceSHA256": "a1ac364d0554ae67ebb68f0c92982b9508f21a58317217143df01b0c16bfe9b5",
+      "recovered": "historical native local service adapted without provider or semantic authority",
+      "implemented": "bounded original-byte hash verification, exact complete-page extraction, per-request ephemeral storage, eng/deu OCR and existing n8n source-metadata compatibility",
+      "tested": "Python unit/HTTP contracts plus actual isolated network-none read-only container: native tools, invalid/mismatch/oversized PDF failures, restart, no raw log/file retention",
       "deployed": false,
-      "runtimeVerified": false
+      "runtimeVerified": false,
+      "gap": "Only isolated fixture service verified. Native Host private-network immutable-image wiring, genuine source/execution bindings and protected privacy receipt remain pending."
     },
     {
       "name": "filing",

@@ -21,7 +21,8 @@ branch `work/AXTN-DMS-RESTORE-0001`, compatible base
 `7b4807734ecd7dc113c7ada0f178f31b8490f944`.
 Own Host worktree `/home/alex/aXtn-host-dms-recovery-worktree`,
 branch `work/AXTN-HOST-DMS-RESTORE-0001`, unchanged
-`85dbb7227e04a6a1406697a8b660bb1c8804d13e`.
+compatible base `85dbb7227e04a6a1406697a8b660bb1c8804d13e`, tested source-only
+OCR overlay commit `c1a25fefd9934424d4023ad5ead12004d18007a8`.
 No merge/tag/release, default-branch write, n8n mutation or Host convergence.
 Working local Copilot MCP, existing providers and Development worktrees preserved.
 
@@ -240,8 +241,87 @@ Targeted Registry/bootstrap/Intake/inventory subset: **25 tests PASS**.
 Protected credential scan passed across 2,457 source/evidence files,
 browser assets and runtime logs. Production readback remains App `10df3a869`,
 image `1f3e476e`, ledger 278 and the same suspended Development run.
-Native local OCR restoration has started separately in uncommitted source;
-it is not part of this Registry seed commit or a deployed capability.
+Native local OCR restoration started separately; it was not part of this
+Registry seed commit or a deployed capability.
+
+### Local deterministic OCR recovery increment
+
+Registry seed increment is committed/pushed at
+`894ab4479a5e268a1fdc001d87eb7446a9457caf`, retained by the same OPEN
+Parent/Inventory/Case.
+Existing App mirror completion was verified at `2026-10-05T00:30:43+02:00`.
+PR #11 remains draft against the compatible Development base.
+
+Historical local PDF OCR is restored under `services/local-ocr/`, adapted
+without granting source rights or semantic/privacy authority. SHA-256 is
+computed from actual received bytes and must match the declared original.
+Existing n8n transport source ID/name/mime fields are retained but are not
+provider-authoritative metadata. Unknown source metadata fails rather than
+inventing an ID/name. There is no raw document logging or persistent volume.
+
+Maximum 20 MiB/20 pages, two concurrent requests, 120-second whole-extraction
+deadline, 1,000,000 output characters. Exact page count is checked before
+rendering; excess pages fail instead of silently truncating. All pages must
+render and yield text, numerically ordered. English/German OCR models are
+installed explicitly (the historical Dockerfile omitted the German model).
+Malformed framing, duplicate Content-Length, wrong hash/type, incomplete
+render/empty page/tool failure and saturation return explicit failures.
+
+The actual synthetic container proof built and ran image
+`sha256:db5b6647a13ccc0e6a077f9c00041776e95eb6430337a38cd7b5b1fdbea5a54c`.
+It used `network=none`, no mounts/ports, read-only filesystem, user nobody,
+no-new-privileges, ALL caps dropped, 128 PIDs, 1 GiB/2 CPUs and 256 MiB tmpfs.
+Actual Poppler/Tesseract eng/deu extracted a self-generated PDF with exact
+original hash. A 21-page PDF, wrong hash and malformed PDFs failed explicitly.
+Owned test-container restart returned the same extraction, transient files
+were removed and raw text was absent from logs. The uniquely named test
+container was removed; no live n8n/App/Host composition was changed.
+
+Native source SHA256:
+`a1ac364d0554ae67ebb68f0c92982b9508f21a58317217143df01b0c16bfe9b5`;
+Dockerfile SHA256:
+`ae73ce5092680069c4d92b7bc61998c2a29f57060fb86d787019c43fb7b3c822`.
+The Vitest suite executes isolated Python extraction/HTTP tests as well;
+actual external-tool/HTTP/restart proof is `services/local-ocr/test_container.py`.
+This is not full DMS privacy/source/empty-state PASS. Native private-network
+wiring candidate is now present in the own Host worktree; immutable production
+image pin, genuine provider/source/execution bindings, protected privacy receipt
+and full native graph remain pending.
+
+The own Host candidate adds only an opt-in overlay to existing native n8n
+Compose invocation. Default behavior is unchanged. It requires an immutable
+image ID, exact clean matching Component source commit, and image provenance
+label; mutable/missing/mismatched/dirty source and unlabelled images are denied.
+The fixture image above has no committed-source provenance label and is
+**not deployable** through that gate. A build labelled with the actual tested
+committed Component source is required before any future activation.
+Native n8n API/internal connections remain, with only a dedicated internal
+OCR network added; OCR joins no other network, publishes no host ports and
+has no persistent mount. Native Host tests/static contracts pass.
+Actual Docker Compose rendering used n8n base
+`24de6248f13b5fc250482dc8c3b3ef483c91cb55`, proving every existing n8n
+field, volume and connection unchanged except the added private network.
+An initial fixture assertion compared Compose's string memory size with a
+number; the assertion was corrected to verify the exact numeric byte limit
+and rerun PASS. No production config or network was changed.
+Stable full Component gate passed typecheck, lint (warnings only), docs,
+infra, **572 files / 9,270 tests PASS / 40 skipped**, and client/server build.
+The 16 Python extraction/HTTP tests are executed by the Vitest wrapper.
+A subsequent standalone repetition exposed a fixture race: the client can
+receive the error body just before the server's finally releases its semaphore.
+The assertion now waits at most two seconds for each released slot and cleans
+any acquired slots in finally. All 16 tests then passed five consecutive runs,
+the Vitest wrapper/inventory subset and final docs/infra passed again.
+No production behavior was changed to hide that race, and the failed
+standalone fixture is not counted as PASS.
+The tested Host overlay is committed/pushed/mirrored at
+`c1a25fefd9934424d4023ad5ead12004d18007a8`, immediate mirror completion verified
+at `2026-10-05T00:45:13+02:00`. Canonical prior DMS Host head `5cfd749` was
+verified a strict ancestor of the compatible `85dbb722` base before pushing;
+there was no competing branch history or forced update.
+Credential scan passed across 2,463 source/evidence files plus browser assets
+and runtime logs. Missing PowerShell and the 40 existing skips are not
+claimed as runtime gates. Full DMS remains NOT_DEPLOYED/IN_PROGRESS.
 
 ### Current Decision and privacy revision increment
 
