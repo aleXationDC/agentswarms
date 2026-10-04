@@ -15,6 +15,63 @@ import { z } from "zod";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendMail } from "@/lib/email/mailer.server";
+import { createNativeWorkApproval } from "@/utils/swarmWorkApproval.server";
+import { saveCheckpoint } from "@/utils/swarmCheckpoint.server";
+import type { SwarmCheckpoint } from "@/lib/swarmCheckpoint";
+
+export const createWorkSwarmApproval = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        access_token: z.string().min(1),
+        run_id: z.string().uuid(),
+        node_id: z.string().min(1),
+        context: z.record(z.string(), z.string()),
+        content: z.string().max(200_000),
+        checkpoint: z.object({
+          ctx: z.record(z.string(), z.string()),
+          lastOutput: z.string(),
+          completedNodeIds: z.array(z.string()),
+          skippedNodeIds: z.array(z.string()),
+          deadEdgeIds: z.array(z.string()),
+          levelIndex: z.number().int().nonnegative(),
+          suspendedNodeId: z.string(),
+        }),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data }) => {
+    const auth = await validateUser(data.access_token);
+    if (!auth.ok) throw new Error(auth.error);
+    if (
+      data.checkpoint.suspendedNodeId !== data.node_id ||
+      data.checkpoint.completedNodeIds.includes(data.node_id)
+    ) {
+      throw new Error("NATIVE_APPROVAL_CHECKPOINT_NODE_MISMATCH");
+    }
+    const created = await createNativeWorkApproval({
+      userId: auth.userId,
+      runId: data.run_id,
+      nodeId: data.node_id,
+      context: data.context,
+      content: data.content,
+    });
+    await saveCheckpoint({
+      userId: auth.userId,
+      runId: data.run_id,
+      source: "canvas",
+      depth: 0,
+      checkpoint: data.checkpoint satisfies SwarmCheckpoint,
+      required: true,
+    });
+    const { error } = await supabaseAdmin
+      .from("swarm_runs")
+      .update({ status: "suspended" })
+      .eq("id", data.run_id)
+      .eq("user_id", auth.userId);
+    if (error) throw new Error(`Native Approval suspension failed: ${error.message}`);
+    return created;
+  });
 
 export type ApproverDirectoryUser = {
   user_id: string;

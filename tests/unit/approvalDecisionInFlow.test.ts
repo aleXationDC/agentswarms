@@ -36,7 +36,7 @@ const clientRuntime = readFileSync(resolve("src/lib/swarmRuntime.ts"), "utf8");
 function approvedBranch(): string {
   const i = executor.indexOf("if (decision.approved) {");
   expect(i, "the approval branch moved; this test needs re-anchoring").toBeGreaterThan(0);
-  return executor.slice(i, i + 1200);
+  return executor.slice(i, executor.indexOf("throw new Error(", i));
 }
 
 describe("the approval decision reaches flow state", () => {

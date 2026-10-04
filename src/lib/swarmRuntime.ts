@@ -231,6 +231,9 @@ export type SwarmNodeData = {
   // themselves, or a group they belong to).
   approverUserIds?: string[];
   approverGroupIds?: string[];
+  // Protected SupaCase binding; references resolve against flow state, while
+  // routing and authority are loaded from the persisted run on the server.
+  approvalWork?: { caseId: string; runtimeSessionId: string; operationId: string };
   // a2a_remote — delegates to a remote A2A-compliant agent server
   a2aEndpoint?: string;
   a2aAgentCard?: AgentCard;
@@ -387,6 +390,7 @@ export type SwarmRunEvent =
       model: string;
     }
   | { type: "approval_pending"; nodeId: string; approvalId: string }
+  | { type: "run_suspended"; nodeId: string; approvalId: string }
   // Snapshot of the shared flow state after a node runs — powers the variable
   // inspector. Values are truncated for transport.
   | { type: "state_snapshot"; state: Record<string, string> }
@@ -1104,6 +1108,8 @@ export async function runSwarm(
     const graphIndex = indexEdges(edges);
     const outgoingEdges = graphIndex.outgoing;
     const flow = new SkipTracker(graphIndex);
+    const completed = new Set<string>();
+    const suspension: { at: { nodeId: string; approvalId: string } | null } = { at: null };
     // Nodes skipped because a condition/router routed away from them. This is
     // the tracker's own set, not a copy — two sets would drift the moment one
     // of them was updated without the other.
@@ -1114,7 +1120,7 @@ export async function runSwarm(
     // of each other (all dependencies are in prior levels), so we can
     // execute them in parallel with Promise.all for a significant speedup
     // on fan-out patterns (e.g. 4 parallel analysts → 1 synthesizer).
-    for (const level of levels) {
+    for (const [levelIndex, level] of levels.entries()) {
       if (signal?.aborted) throw new Error("Run aborted");
 
       // Helper to execute a single node — extracted so we can call it from
@@ -1187,24 +1193,55 @@ export async function runSwarm(
           const approverGroupIds = Array.isArray(node.data.approverGroupIds)
             ? node.data.approverGroupIds
             : [];
-          const { data: created, error } = await supabase
-            .from("approvals")
-            .insert({
-              user_id: userData.user.id,
-              agent_name: node.data.label || "Approval gate",
-              agent_avatar: node.data.avatar || "🛡️",
-              action_type: "swarm_step",
-              action_title: node.data.approvalTitle || `Approve step: ${node.data.label}`,
-              description: approvalContent.slice(0, 1000),
-              risk_level: node.data.approvalRisk || "medium",
-              payload: { last_output: approvalContent.slice(0, 4000) },
-              approver_user_ids: approverUserIds,
-              approver_group_ids: approverGroupIds,
-              swarm_run_id: dbRunId ?? null,
-            })
-            .select("id")
-            .single();
-          if (error || !created) throw new Error(error?.message || "Could not create approval");
+          let created: { id: string };
+          if (node.data.approvalWork) {
+            const { data: session } = await supabase.auth.getSession();
+            if (!session.session?.access_token || !dbRunId) {
+              throw new Error("Protected native Approval requires an authenticated persisted run");
+            }
+            const { createWorkSwarmApproval } = await import("@/utils/swarmApprovals.functions");
+            const { captureCheckpoint } = await import("@/lib/swarmCheckpoint");
+            created = await createWorkSwarmApproval({
+              data: {
+                access_token: session.session.access_token,
+                run_id: dbRunId,
+                node_id: node.id,
+                context: ctx,
+                content: approvalContent,
+                checkpoint: {
+                  ...captureCheckpoint({
+                    ctx,
+                    lastOutput,
+                    completed,
+                    flow,
+                    levelIndex,
+                    suspendedNodeId: node.id,
+                  }),
+                  suspendedNodeId: node.id,
+                },
+              },
+            });
+          } else {
+            const { data: row, error } = await supabase
+              .from("approvals")
+              .insert({
+                user_id: userData.user.id,
+                agent_name: node.data.label || "Approval gate",
+                agent_avatar: node.data.avatar || "🛡️",
+                action_type: "swarm_step",
+                action_title: node.data.approvalTitle || `Approve step: ${node.data.label}`,
+                description: approvalContent.slice(0, 1000),
+                risk_level: node.data.approvalRisk || "medium",
+                payload: { last_output: approvalContent.slice(0, 4000) },
+                approver_user_ids: approverUserIds,
+                approver_group_ids: approverGroupIds,
+                swarm_run_id: dbRunId ?? null,
+              })
+              .select("id")
+              .single();
+            if (error || !row) throw new Error(error?.message || "Could not create approval");
+            created = row;
+          }
           // Best-effort: email the targeted approvers (users + group members).
           // Never blocks the run — the in-app approvals bell is the source of
           // truth; email is a convenience nudge.
@@ -1227,6 +1264,10 @@ export async function runSwarm(
             }
           }
           onEvent({ type: "approval_pending", nodeId: node.id, approvalId: created.id });
+          if (node.data.approvalWork) {
+            suspension.at = { nodeId: node.id, approvalId: created.id };
+            return;
+          }
           const decision = await waitForApproval(created.id, signal, node.data.approvalTimeoutMs);
           if (decision === "rejected") {
             throw new Error("Approval rejected");
@@ -1246,6 +1287,7 @@ export async function runSwarm(
           // the same graph headlessly. Two runtimes that disagree about what a
           // node writes is the bug this pair exists to avoid.
           ctx[`${v}_approved`] = "yes";
+          ctx[`${v}_approval_id`] = created.id;
           lastOutput = approvalContent;
           onEvent({ type: "node_done", nodeId: node.id, output: approvalContent });
           return;
@@ -1982,6 +2024,7 @@ Evaluate the candidate output above against each metric and return the JSON scor
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
             await executeNode(node);
+            if (!suspension.at && !skippedNodes.has(node.id)) completed.add(node.id);
             return;
           } catch (err) {
             lastErr = err;
@@ -2074,6 +2117,11 @@ Evaluate the candidate output above against each metric and return the JSON scor
           );
           throw new Error(`${failures.length} parallel nodes failed:\n${messages.join("\n")}`);
         }
+      }
+
+      if (suspension.at) {
+        onEvent({ type: "run_suspended", ...suspension.at });
+        return;
       }
 
       // Publish a snapshot of shared flow state for the variable inspector.

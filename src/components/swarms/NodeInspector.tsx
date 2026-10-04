@@ -1372,6 +1372,15 @@ export function NodeInspector({
 
         {data.kind === "approval" && (
           <>
+            {data.approvalWork && (
+              <Section label="Protected SupaCase Approval">
+                <p className="text-xs text-muted-foreground">
+                  Server-bound Case, Candidate, Attempt and deterministic Evidence. Only the
+                  persisted reviewer assignment may decide. Work owners and Builders cannot approve
+                  or reject. The native checkpoint survives closing this tab.
+                </p>
+              </Section>
+            )}
             <Section label="Approval title (shown in inbox)">
               <Input
                 value={data.approvalTitle || ""}

@@ -12,6 +12,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
 import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
+import {
+  assertNativeApprovalResume,
+  createNativeWorkApproval,
+} from "@/utils/swarmWorkApproval.server";
 
 type Fail = { ok: false; error: string };
 
@@ -102,7 +106,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         // theirs to see, so a stolen id from another tenant resolves to nothing.
         const { data: approval } = await sb
           .from("approvals")
-          .select("id, status, swarm_run_id, user_id, action_title")
+          .select("id, status, swarm_run_id, user_id, action_title, payload, decided_by")
           .eq("id", data.approval_id)
           .maybeSingle();
         if (!approval) return { ok: false, error: "Approval not found" };
@@ -119,7 +123,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         // approver's.
         const { data: run } = await supabaseAdmin
           .from("swarm_runs")
-          .select("id, user_id, status, input_prompt, final_output")
+          .select("id, user_id, status, input_prompt, final_output, swarm_snapshot")
           .eq("id", approval.swarm_run_id)
           .maybeSingle();
         if (!run) return { ok: false, error: "Run not found" };
@@ -151,17 +155,89 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         // ok. The CHECKPOINT is what a resume actually needs, so that is what
         // decides — and a run with none really was resumed already.
         const { loadCheckpoint } = await import("@/utils/swarmCheckpoint.server");
-        if (!(await loadCheckpoint(run.id, run.user_id))) {
+        const protectedWork = Boolean(
+          approval.payload &&
+          typeof approval.payload === "object" &&
+          !Array.isArray(approval.payload) &&
+          "axtnDevelopment" in approval.payload,
+        );
+        const checkpoint = await loadCheckpoint(run.id, run.user_id, protectedWork);
+        if (!checkpoint) {
+          if (protectedWork && run.status === "suspended") {
+            return { ok: false, error: "Protected native Approval checkpoint unavailable" };
+          }
           return { ok: true, status: run.status, runId: run.id, output: "" };
+        }
+        assertNativeApprovalResume({
+          snapshot: run.swarm_snapshot,
+          nodeId: checkpoint.suspendedNodeId ?? "",
+          payload: approval.payload,
+          decidedBy: approval.decided_by,
+        });
+        if (
+          approval.payload &&
+          typeof approval.payload === "object" &&
+          !Array.isArray(approval.payload) &&
+          "axtnDevelopment" in approval.payload
+        ) {
+          const prior = await createNativeWorkApproval({
+            userId: run.user_id,
+            runId: run.id,
+            nodeId: checkpoint.suspendedNodeId ?? "",
+            context: checkpoint.ctx,
+            content:
+              typeof approval.payload.last_output === "string" ? approval.payload.last_output : "",
+          });
+          if (prior.id !== approval.id)
+            throw new Error("NATIVE_APPROVAL_RESUME_OPERATION_MISMATCH");
+          const { data: claimed, error: claimError } = await supabaseAdmin
+            .from("swarm_runs")
+            .update({ status: "running" })
+            .eq("id", run.id)
+            .eq("user_id", run.user_id)
+            .eq("status", "suspended")
+            .eq("cancel_requested", false)
+            .select("id")
+            .maybeSingle();
+          if (claimError)
+            throw new Error(`Native Approval resume claim failed: ${claimError.message}`);
+          if (!claimed) {
+            const { data: current, error: currentError } = await supabaseAdmin
+              .from("swarm_runs")
+              .select("status")
+              .eq("id", run.id)
+              .maybeSingle();
+            if (currentError || !current)
+              throw new Error("Native Approval continuation state unavailable");
+            return { ok: true, status: current.status, runId: run.id, output: "" };
+          }
         }
 
         const result = await resumeSwarmRun({
           runId: run.id,
           userId: run.user_id,
           origin: resolveInternalOrigin(),
-          decision: { approved: approval.status === "approved" },
+          decision: { approved: approval.status === "approved", approvalId: approval.id },
         });
         if (!result) return { ok: false, error: "This run can no longer be resumed" };
+        if (result.status !== "suspended") {
+          const { error: outcomeError } = await supabaseAdmin
+            .from("swarm_run_idempotency")
+            .update({
+              status: result.status === "success" ? "completed" : "failed",
+              response: {
+                status: result.status,
+                output: result.output,
+                runId: result.runId,
+                error: result.error,
+              },
+              completed_at: new Date().toISOString(),
+            })
+            .eq("run_id", run.id)
+            .eq("status", "in_progress");
+          if (outcomeError)
+            throw new Error(`Native resumed outcome persistence failed: ${outcomeError.message}`);
+        }
         const filingError =
           result.status === "success"
             ? await ensureFilingCase(run.user_id, run.input_prompt, result.output)

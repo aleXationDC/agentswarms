@@ -47,7 +47,9 @@ describe("resuming a parked run", () => {
   });
 
   it("leaves the step it parked ON open, so it is closed once, when it ends", () => {
-    expect(flat(head)).toContain('if (s.status === "running") continue;');
+    expect(flat(head)).toContain(
+      'if (s.status === "running" || s.status === "awaiting_approval") continue;',
+    );
     expect(flat(head)).toContain("carried.add(s.node_id)");
   });
 

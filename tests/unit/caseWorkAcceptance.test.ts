@@ -104,6 +104,27 @@ describe("independent exact-revision native Acceptance source boundary", () => {
     await expect(assertWorkPullHead("owner", request)).resolves.toBeUndefined();
     expect(git).toHaveBeenCalledWith("owner", "fetch", { target: "pull", identifier: "2" });
   });
+  it("binds pre-PR native Approval to the later exact PR from protected Case references", async () => {
+    const rows = setup();
+    const approval = rows.approvals as { payload: { axtnDevelopment: { pullRequest?: number } } };
+    delete approval.payload.axtnDevelopment.pullRequest;
+    rows.user_data_rows = {
+      row: {
+        candidate_sha: candidateSHA,
+        references: [
+          {
+            kind: "pull_request",
+            repository: "aXtn/development-swarm-acceptance",
+            id: "2",
+            revision: candidateSHA,
+          },
+        ],
+      },
+    };
+    await expect(assertWorkPullHead("owner", request)).resolves.toBeUndefined();
+    rows.user_data_rows = { row: { candidate_sha: candidateSHA, references: [] } };
+    await expect(assertWorkPullHead("owner", request)).rejects.toThrow("one exact Candidate PR");
+  });
   it.each(["FAIL", "empty-tests", "compile", "harness", "image", "input", "session", "candidate"])(
     "rejects %s native authority mismatch before reading PR",
     async (variant) => {

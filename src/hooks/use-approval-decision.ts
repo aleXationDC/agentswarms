@@ -18,17 +18,15 @@ export function useApprovalDecision() {
 
   return useCallback(
     async (approval: NativeApproval, decision: ApprovalDecision): Promise<boolean> => {
-      const { error } = await supabase
-        .from("approvals")
-        .update({
-          status: decision,
-          decided_at: new Date().toISOString(),
-          decided_by: (await supabase.auth.getUser()).data.user?.id ?? null,
-        })
-        .eq("id", approval.id)
-        .eq("status", "pending");
-      if (error) {
-        toast.error("Failed to update approval");
+      const { data: changed, error } = await supabase.rpc("decide_swarm_approval", {
+        p_approval_id: approval.id,
+        p_decision: decision,
+      });
+      if (error || !changed) {
+        toast.error("Approval decision denied", {
+          description:
+            error?.message || "Approval is not pending or you are not its authorized reviewer.",
+        });
         return false;
       }
 

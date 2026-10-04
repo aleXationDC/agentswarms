@@ -142,7 +142,10 @@ export async function startRun(params: StartRunParams): Promise<string> {
 
   void (async () => {
     let tracer: import("@/utils/observability/tracer").SwarmTracer | null = null;
-    if (params.traceEnabled) {
+    if (
+      params.traceEnabled ||
+      nodes.some((n) => n.data.kind === "approval" && n.data.approvalWork)
+    ) {
       try {
         tracer = await (
           await import("@/utils/observability/tracer")
@@ -164,6 +167,7 @@ export async function startRun(params: StartRunParams): Promise<string> {
 
     let runError: string | null = null;
     let finalText = "";
+    let suspended = false;
 
     await runSwarm(nodes, edges, {
       initialInput: params.input,
@@ -175,8 +179,16 @@ export async function startRun(params: StartRunParams): Promise<string> {
         applyEvent(run, e);
         if (e.type === "run_done") finalText = e.finalOutput;
         if (e.type === "run_error") runError = e.error;
+        if (e.type === "run_suspended") suspended = true;
       },
     });
+
+    if (suspended) {
+      // The durable native checkpoint, not this browser tab, owns continuation.
+      patch(run, { status: "waiting", runningNodeIds: [] });
+      emit();
+      return;
+    }
 
     const aborted = abort.signal.aborted;
     const status: RunStatus = aborted ? "cancelled" : runError ? "error" : "success";
@@ -277,12 +289,32 @@ function startCancelWatch(run: InternalRun) {
     }
     const { data } = await supabase
       .from("swarm_runs")
-      .select("cancel_requested")
+      .select("cancel_requested, status, final_output, error_message, finished_at")
       .eq("id", dbRunId)
       .maybeSingle();
     if (data?.cancel_requested) {
       run.abort.abort();
       stopCancelWatch(run);
+    } else if (data && run.view.events.some((e) => e.type === "run_suspended")) {
+      if (
+        data.status === "running" ||
+        data.status === "success" ||
+        data.status === "error" ||
+        data.status === "cancelled"
+      ) {
+        patch(run, {
+          status: data.status,
+          finalOutput: data.final_output,
+          error: data.error_message,
+          finishedAt: data.finished_at ? Date.parse(data.finished_at) : null,
+        });
+        if (data.status !== "running") {
+          run.waitingNodeIds.clear();
+          run.runningNodeIds.clear();
+          stopCancelWatch(run);
+        }
+        emit();
+      }
     }
   }, 4000);
 }

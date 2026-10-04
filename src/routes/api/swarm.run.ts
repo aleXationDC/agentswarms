@@ -291,14 +291,18 @@ export const Route = createFileRoute("/api/swarm/run")({
             });
 
           /** Record the outcome against the idempotency key, if one was sent. */
-          const finishIdempotency = async (status: "completed" | "failed", body: unknown) => {
+          const finishIdempotency = async (
+            status: "completed" | "failed" | "in_progress",
+            body: { runId?: string | null; [key: string]: unknown },
+          ) => {
             if (!idemKey) return;
             await supabaseAdmin
               .from("swarm_run_idempotency")
               .update({
                 status,
                 response: body as never,
-                completed_at: new Date().toISOString(),
+                run_id: body.runId ?? null,
+                completed_at: status === "in_progress" ? null : new Date().toISOString(),
               })
               .eq("api_key_id", key.id)
               .eq("idempotency_key", idemKey);
@@ -339,6 +343,8 @@ export const Route = createFileRoute("/api/swarm/run")({
                 // approval lands, rather than replaying a half-run result.
                 if (result.status !== "suspended") {
                   await finishIdempotency(result.status === "error" ? "failed" : "completed", body);
+                } else {
+                  await finishIdempotency("in_progress", body);
                 }
                 await deliverRunCallback({
                   url: callbackUrl,
@@ -373,6 +379,11 @@ export const Route = createFileRoute("/api/swarm/run")({
             const body = { error: result.error, runId: result.runId };
             await finishIdempotency("failed", body);
             return json(body, 400);
+          }
+          if (result.status === "suspended") {
+            const body = { status: "suspended", output: result.output, runId: result.runId };
+            await finishIdempotency("in_progress", body);
+            return json(body);
           }
           const body = { output: result.output, runId: result.runId };
           await finishIdempotency("completed", body);

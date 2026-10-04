@@ -105,7 +105,7 @@ export async function createServerSwarmTracer(opts: {
           // The step the run parked ON is still open. It is re-entered with
           // the decision in hand and closed then, so it is not carried: its
           // numbers are counted when it finishes, once.
-          if (s.status === "running") continue;
+          if (s.status === "running" || s.status === "awaiting_approval") continue;
           carried.add(s.node_id);
           totals.lat += Number(s.latency_ms ?? 0);
           totals.tin += Number(s.tokens_in ?? 0);

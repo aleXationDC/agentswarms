@@ -7,9 +7,8 @@ import { fromRow, toRow, type CheckpointRow, type SwarmCheckpoint } from "@/lib/
  * Write the run's position. Overwrites in place — the checkpoint is where the
  * run is now; swarm_run_steps is the history.
  *
- * Failure is logged and swallowed. A run that is working must not die because
- * the checkpoint table is unavailable; the cost is that this particular run
- * falls back to being non-resumable, which is exactly where we were before.
+ * Generic runs retain best-effort persistence. Protected native Approvals set
+ * required so a failed write cannot pretend that suspend/resume is durable.
  */
 export async function saveCheckpoint(args: {
   runId: string;
@@ -17,6 +16,7 @@ export async function saveCheckpoint(args: {
   checkpoint: SwarmCheckpoint;
   source: string;
   depth: number;
+  required?: boolean;
 }): Promise<void> {
   try {
     const { error } = await supabaseAdmin.from("swarm_run_checkpoints").upsert(
@@ -31,8 +31,12 @@ export async function saveCheckpoint(args: {
       } as never,
       { onConflict: "run_id" },
     );
-    if (error) console.warn("[swarmCheckpoint] save failed:", error.message);
+    if (error) {
+      if (args.required) throw new Error(`Native Approval checkpoint failed: ${error.message}`);
+      console.warn("[swarmCheckpoint] save failed:", error.message);
+    }
   } catch (e) {
+    if (args.required) throw e;
     console.warn("[swarmCheckpoint] save threw:", (e as Error).message);
   }
 }
@@ -41,9 +45,10 @@ export async function saveCheckpoint(args: {
 export async function loadCheckpoint(
   runId: string,
   userId: string,
+  required = false,
 ): Promise<SwarmCheckpoint | null> {
   try {
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("swarm_run_checkpoints")
       .select(
         "ctx, last_output, completed_node_ids, skipped_node_ids, dead_edge_ids, level_index, suspended_node_id",
@@ -51,8 +56,11 @@ export async function loadCheckpoint(
       .eq("run_id", runId)
       .eq("user_id", userId)
       .maybeSingle();
+    if (error && required)
+      throw new Error(`Native Approval checkpoint read failed: ${error.message}`);
     return fromRow((data ?? null) as CheckpointRow | null);
   } catch (e) {
+    if (required) throw e;
     console.warn("[swarmCheckpoint] load threw:", (e as Error).message);
     return null;
   }

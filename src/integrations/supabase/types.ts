@@ -8331,6 +8331,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      decide_swarm_approval: {
+        Args: { p_approval_id: string; p_decision: string };
+        Returns: string;
+      };
       axtn_get_extension_access_status: {
         Args: {
           _created_by: string;

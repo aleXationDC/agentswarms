@@ -4,13 +4,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { readDevelopmentGit } from "@/utils/notebookRuntime/developmentSource.server";
 import { DevelopmentReceipt } from "@/utils/notebookRuntime/development.server";
 import { canonicalJson } from "@/utils/provenance/canonical";
-import type { WorkRequest } from "./workContract";
+import { WorkReference, type WorkRequest } from "./workContract";
 
 const Binding = z.object({
   caseId: z.string().uuid(),
   candidateSHA: z.string().regex(/^[a-f0-9]{40}$/),
   repository: z.literal("aXtn/development-swarm-acceptance"),
-  pullRequest: z.number().int().positive(),
+  pullRequest: z.number().int().positive().optional(),
   runtimeSessionId: z.string().uuid(),
   graphHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
@@ -71,13 +71,50 @@ export async function assertWorkPullHead(
   ) {
     throw new Error("Native deterministic receipt does not match current authority");
   }
+  // A native step may request Approval before PR creation. Its immutable
+  // receipt remains bound; the later PR is read from protected Case evidence,
+  // never added to or edited into the Approval payload.
+  let pullRequest = payload.pullRequest;
+  if (!pullRequest) {
+    const { data: dataset, error: datasetError } = await supabaseAdmin
+      .from("user_data_tables")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", "axtn_cases")
+      .maybeSingle();
+    if (datasetError || !dataset) throw new Error("Native PR Case dataset unavailable");
+    const { data: work, error: workError } = await supabaseAdmin
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", dataset.id)
+      .filter("row->>case_id", "eq", request.caseId)
+      .maybeSingle();
+    if (workError || !work) throw new Error("Native PR Case evidence unavailable");
+    const row = z
+      .object({ candidate_sha: z.string(), references: z.array(WorkReference) })
+      .parse(work.row);
+    const numbers = new Set(
+      row.references
+        .filter(
+          (ref) =>
+            ref.kind === "pull_request" &&
+            ref.repository === payload.repository &&
+            ref.revision === request.candidateSHA,
+        )
+        .map((ref) => Number(ref.id)),
+    );
+    if (row.candidate_sha !== request.candidateSHA || numbers.size !== 1) {
+      throw new Error("Native PR Case evidence does not identify one exact Candidate PR");
+    }
+    pullRequest = [...numbers][0];
+  }
   const pull = Pull.parse(
     await readDevelopmentGit(userId, "fetch", {
       target: "pull",
-      identifier: String(payload.pullRequest),
+      identifier: String(pullRequest),
     }),
   );
-  if (pull.number !== payload.pullRequest || pull.head.sha !== request.candidateSHA) {
+  if (pull.number !== pullRequest || pull.head.sha !== request.candidateSHA) {
     const { error: invalidateError } = await supabaseAdmin.rpc("axtn_case_work", {
       p_user_id: userId,
       p_operation: "transition",

@@ -1,4 +1,50 @@
-# Native Development Swarm 0002: source/runtime preflight and exact stop
+# Native Development Swarm 0002: implementation and runtime evidence
+
+## 2026-10-04: authorized native Approval binding and Slice 1 source
+
+The operator authorized the minimal binding of the existing native Approval
+node to protected SupaCase authority. The previous Approval authorization stop
+below is historical, not a current restriction.
+
+The source now contains one visible 30-node native Slice 1 graph and an
+owner-authenticated idempotent seed at `axtn/swarms/axtn-development/`.
+Builder, three parallel Breakers, deterministic Verify, merge/gate,
+Approval, effect-bound Git writes and the existing Case Acceptance/completion
+are separate native nodes. Function snippets only validate or shape data.
+Evaluate/Learn remain gated on actual Slice 1 acceptance.
+
+Protected native Approval creation derives reviewer routing from the persisted
+run snapshot and Case/Attempt/Candidate/receipt authority from protected rows.
+The existing trigger rejects the owner, current or historical human Builder,
+and anyone outside the persisted reviewer/group assignment. Authenticated
+decision RPC, immutable binding and atomic existing-table audit capture the
+actual decision identity/time, Case, Attempt, Operation and Evidence.
+Canvas parks with a required native checkpoint; the existing inbox and
+headless continuation resume that exact snapshot. Protected resume validates
+current authority and claims the suspended run once. No second Approval engine,
+workflow dispatcher, retry engine or Acceptance plane was added.
+
+Source validation: full unit suite **9,116 PASS, 40 skipped**, 560 files PASS;
+production client/server build PASS.
+Actual PostgreSQL role fixture **PASS**, completely rolled back: owner,
+unrelated reviewer, routed Builder, duplicate decision, binding edits and
+Attempt drift denied; legitimate assigned reviewer/group decisions and atomic
+audit verified. This is capability evidence, not an independent business
+decision. The source build/deployment/live acceptance evidence follows below
+when completed; no source-only result is claimed as deployed acceptance.
+
+Fresh actual AgentSwarms inference: existing **OpenAI / gpt-4.1-mini HTTP 200**,
+READY present, no quota/authentication error. Provider integrations and
+credentials were not changed.
+
+Current independent-decision boundary: the actual database has one real
+auth user and one reviewer-group member, both the Work Owner. No eligible
+independent authenticated reviewer is present. Do not fabricate another
+identity, impersonate a reviewer, weaken owner exclusion, or call a parked
+PASS candidate accepted/PR_READY. Complete deployable source and bounded live
+tests first; retain the existing parent and Acceptance Case until real review.
+
+## Historical 2026-10-03: source/runtime preflight and exact stop
 
 Date: 2026-10-03.
 Authority: `37e79a23a55a62aa7f796878fd52239ef59e4128`.

@@ -49,14 +49,15 @@ describe("approving a parked run", () => {
     expect(resume).toContain(
       'const { loadCheckpoint } = await import("@/utils/swarmCheckpoint.server");',
     );
-    expect(resume).toContain("if (!(await loadCheckpoint(run.id, run.user_id))) {");
+    expect(resume).toContain(
+      "const checkpoint = await loadCheckpoint(run.id, run.user_id, protectedWork);",
+    );
+    expect(resume).toContain("if (!checkpoint) {");
   });
 
   it("still treats a run with no checkpoint as one already resumed", () => {
-    const gate = resume.slice(
-      resume.indexOf("if (!(await loadCheckpoint(run.id, run.user_id))) {"),
-    );
-    expect(gate.slice(0, 200)).toContain(
+    const gate = resume.slice(resume.indexOf("if (!checkpoint) {"));
+    expect(gate.slice(0, 500)).toContain(
       'return { ok: true, status: run.status, runId: run.id, output: "" };',
     );
   });

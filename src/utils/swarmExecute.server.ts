@@ -64,6 +64,7 @@ import { coerceParams, missingRequired } from "@/lib/swarmComponents";
 import { resolveDeployedGraph } from "@/lib/swarmPublish";
 import { safeStringify } from "@/lib/sandbox/jsSandbox";
 import { envInt } from "@/utils/rateLimit.server";
+import { createNativeWorkApproval } from "@/utils/swarmWorkApproval.server";
 
 // Tool context for headless data tools: service-role client with scopeUserId
 // set, which forces the loaders to restrict data to what the owner may read
@@ -211,6 +212,7 @@ async function createApprovalRequest(args: {
   runId: string | null;
   node: Node<SwarmNodeData>;
   content: string;
+  context: Record<string, string>;
 }): Promise<void> {
   const d = args.node.data as SwarmNodeData & {
     avatar?: string;
@@ -219,6 +221,17 @@ async function createApprovalRequest(args: {
     approverUserIds?: string[];
     approverGroupIds?: string[];
   };
+  if (d.approvalWork) {
+    if (!args.runId) throw new Error("Protected native Approval requires a persisted run");
+    await createNativeWorkApproval({
+      userId: args.userId,
+      runId: args.runId,
+      nodeId: args.node.id,
+      context: args.context,
+      content: args.content,
+    });
+    return;
+  }
   try {
     // FOUND FROM THE SURVEY (R90). This insert is the ONLY thing that puts a
     // parked run in front of a person. It sat in a try/catch a supabase
@@ -274,7 +287,7 @@ export async function executeSwarmServer(opts: {
     runId: string;
     checkpoint: SwarmCheckpoint;
     /** The human's answer to the approval this run parked at. */
-    decision?: { approved: boolean; note?: string };
+    decision?: { approved: boolean; note?: string; approvalId?: string };
   };
 }): Promise<ExecuteResult> {
   const nodes = (Array.isArray(opts.swarm.nodes) ? opts.swarm.nodes : []) as Node<SwarmNodeData>[];
@@ -408,6 +421,9 @@ export async function executeSwarmServer(opts: {
             .eq("id", runId!);
         let { error: parkErr } = await park();
         if (parkErr) {
+          if (nodes.some((n) => n.data.kind === "approval" && n.data.approvalWork)) {
+            throw new Error(`Protected native Approval suspension failed: ${parkErr.message}`);
+          }
           await new Promise((r) => setTimeout(r, 1_000));
           ({ error: parkErr } = await park());
         }
@@ -456,6 +472,9 @@ export async function executeSwarmServer(opts: {
         userId: opts.userId,
         source: opts.source,
         depth,
+        required: Boolean(
+          suspendedNodeId && nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork,
+        ),
         checkpoint: captureCheckpoint({
           ctx,
           lastOutput,
@@ -881,6 +900,9 @@ export async function executeSwarmServer(opts: {
                 // the approver's note, which is the part a branch might
                 // genuinely want ("approved, but cap it at $100").
                 staged.writes.push([`${outVar}_approved`, "yes"]);
+                if (decision.approvalId) {
+                  staged.writes.push([`${outVar}_approval_id`, decision.approvalId]);
+                }
                 if (decision.note?.trim()) {
                   staged.writes.push([`${outVar}_note`, decision.note.trim()]);
                 }
@@ -899,6 +921,7 @@ export async function executeSwarmServer(opts: {
               runId,
               node,
               content: pending,
+              context: ctx,
             });
             // Recorded, not returned: this function now runs one node of a
             // level, so returning here would only end the node. The level
@@ -1152,7 +1175,7 @@ export async function resumeSwarmRun(args: {
   origin: string;
   rejectApprovals?: boolean;
   /** The approver's answer, when resuming a run parked at an approval node. */
-  decision?: { approved: boolean; note?: string };
+  decision?: { approved: boolean; note?: string; approvalId?: string };
 }): Promise<ExecuteResult | null> {
   const { data: run } = await supabaseAdmin
     .from("swarm_runs")
