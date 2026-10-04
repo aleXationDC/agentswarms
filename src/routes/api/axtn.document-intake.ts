@@ -8,6 +8,7 @@ import {
 } from "@/utils/axtnDocumentIntakeSeed.server";
 import { requireSuperadmin } from "@/utils/iam.server";
 import { seedDocumentRegistries } from "@/axtn/workbenches/documents/documentRegistries.server";
+import { seedDocumentLocalTable } from "@/axtn/workbenches/documents/documentLocalTableSeed.server";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -46,12 +47,20 @@ async function handle(request: Request): Promise<Response> {
     action !== "seed" &&
     action !== "apply" &&
     action !== "seed_case" &&
-    action !== "seed_registries"
+    action !== "seed_registries" &&
+    action !== "seed_local_table"
   ) {
     return json(400, { error: "Unsupported Document Intake action" });
   }
 
   try {
+    if (action === "seed_local_table") {
+      const result = await seedDocumentLocalTable(auth.user.id);
+      return json(200, {
+        ...result,
+        message: "Canonical Local Table MCP Builder object reconciled; no runtime/key activation.",
+      });
+    }
     if (action === "seed_registries") {
       const result = await seedDocumentRegistries(auth.user.id);
       return json(200, {

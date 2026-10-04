@@ -18,7 +18,7 @@ export function query(sql) {
       "postgres",
       "-d",
       database,
-      "-At",
+      "-qAt",
       "-v",
       "ON_ERROR_STOP=1",
     ]);

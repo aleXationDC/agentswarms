@@ -398,6 +398,72 @@ restart/full empty-state, real filing/delete or Learning/promotion PASS claimed.
 
 ## Concrete unresolved dependencies and next packages
 
+### Native Local Table draft provisioning increment
+
+The exact recovered Python definition now has an explicit native MCP Builder
+draft seed: service-only migration
+`20261004130000_document_local_table_seed.sql`, strict server adapter and
+`seed-local-table.mjs` through the existing authenticated bootstrap-superadmin
+endpoint. Both server and SQL independently require the byte-exact canonical
+source hash. Owner comes from authenticated identity, never the request body.
+Native random slug generation and the existing owner advisory lock retain one
+app ID/slug across sixteen independent sessions and new-session replay.
+
+Existing operator source/requirements/public exposure/origins/egress/secrets or
+foreign connected-server binding conflicts fail without replacement; ambiguous
+same-owner names are not guessed away. Unchanged replay retains the complete
+native app row, including operator description/lifecycle state, and adds no
+audit. Explicit provisioning adds one minimized audit event on top of the
+existing native auth-bootstrap audit baseline.
+
+Actual isolated schema tests passed twice: service-only roles, separate owners,
+source/config/foreign-binding/ambiguity rejection, sixteen concurrent seeds,
+durable no-op replay and zero minted keys, connected servers or runtime sessions.
+The first fixture run exposed `psql` command tags before JSON; the shared
+explicitly isolated query helper now uses quiet tuple output. A subsequent
+fixture assertion counted existing auth-bootstrap audits as seed audits; it now
+checks the actual before/after delta and exact action. All concurrent attempts
+settle before fixture cleanup. Existing Work and Registry concurrency suites
+also pass with the quiet helper. These fixes do not suppress database failures.
+
+Focused adapter/bootstrap/Registry regression tests passed 33/33; typecheck,
+changed-file lint and documentation/infra checks passed. Native deployment/
+discovery, single-tool key, admission configuration and live Registry mutation
+are **still pending**. The seed neither exposes the app nor starts a sandbox,
+changes provider/local CLI MCP configuration or authorizes a capability.
+The complete canonical `npm run check` passed: 573 test files, 9,285 tests,
+40 skips, including typecheck/lint/documentation/infra and production build.
+All four protected DMS SQL suites pass with the fifth candidate migration in
+the isolated schema database. Actual protected-credential scan across the own
+DMS App/Host source/evidence and browser assets passed (2,468 files).
+Fresh production readback retains App 10df/image 1f3, 278 ledger entries
+(latest `20261004060000_native_work_approval_binding.sql`) and the suspended
+Development run; unrelated Development App/Host/MCP heads remain clean.
+
+### Exact committed-source OCR and Host gate readback
+
+App source `74f49fcead07e5099dbec6ad384f7c869efee8ab` was canonical-pushed and
+immediately mirrored. Host source
+`c1a25fefd9934424d4023ad5ead12004d18007a8` is retained on the own DMS worktree.
+Canonical App draft PR **11** and Host draft PR **8** target the compatible
+Development branches; neither is merged. Exact revisions and genuine PR refs
+are bound to the same OPEN implementation Parent/Inventory/Case Children.
+
+The later OCR build from clean, committed App source 74 has image
+`sha256:a0423be24536757cab434f6411c29285880e7fb752219e87cb8ac09b5197e2b6`;
+actual image readback verifies its OCI source revision equals that exact SHA.
+This is distinct from the earlier unlabelled fixture image: that fixture is
+not a deployable Host pin. The actual native Host entrypoint accepted the exact
+74/image pin and rendered the opt-in overlay against existing n8n source
+`24de6248`, with synthetic configuration only. Existing API/internal network
+names are `axtn-native-api` and `axtn-native-n8n-internal`. No network, service,
+production flag or Host/runtime source pin was changed.
+
+That exact render-only evidence predates this Local Table increment. A later
+report/source commit must not be relabelled as source 74 or passed to the clean
+source/image guard with the older image. Runtime deployment/restart and full
+DMS Acceptance remain unproven.
+
 The Local Table MCP Python template already exists in the compatible current
 basis, byte-identical to the historical source; the gap is its native
 app/key/runtime authorization provisioning, not missing template source.

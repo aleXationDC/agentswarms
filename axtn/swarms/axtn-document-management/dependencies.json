@@ -120,12 +120,29 @@
       "kind": "native-mcp",
       "source": "axtn/mcp-servers/axtn-local-table-integration/server.py",
       "sourceSHA256": "925c5324f7fd4c1a5e66e9972fd18b0a58212dc350a83722fb6cf98ed21a5c68",
-      "dependencies": ["document-registry", "recognition", "taxonomy", "identity"],
+      "dependencies": [
+        "local-table-seed",
+        "document-registry",
+        "recognition",
+        "taxonomy",
+        "identity"
+      ],
       "recovered": "exact historical server.py already retained in compatible current basis",
-      "implemented": "existing native SDK/broker template; app/key/runtime provisioning pending",
+      "implemented": "existing native SDK/broker template plus explicit atomic owned MCP Builder draft seed; discovery/scoped key/runtime provisioning pending",
+      "tested": "actual service-only roles, source/config/foreign-binding conflicts, sixteen-session seed and durable no-op replay; no runtime activation",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Native Local Table product MCP absent; do not change working local Copilot MCP."
+    },
+    {
+      "name": "local-table-seed",
+      "kind": "native-bootstrap",
+      "source": "supabase/migrations/20261004130000_document_local_table_seed.sql",
+      "dependencies": ["identity"],
+      "implemented": "configured authenticated bootstrap superadmin; canonical-source-only native MCP Builder draft, no keys/servers/runtime admission",
+      "tested": "strict adapter/actual bootstrap handler plus isolated native schema and concurrent/reseed role tests",
+      "deployed": false,
+      "runtimeVerified": false
     },
     {
       "name": "document-registry",

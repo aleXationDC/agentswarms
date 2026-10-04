@@ -6,6 +6,7 @@ const fixture = vi.hoisted(() => ({
   auth: vi.fn(),
   admin: vi.fn(),
   seed: vi.fn(),
+  localTable: vi.fn(),
   intake: vi.fn(),
 }));
 vi.mock("@tanstack/react-router", () => ({
@@ -20,6 +21,9 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 vi.mock("@/utils/iam.server", () => ({ requireSuperadmin: fixture.admin }));
 vi.mock("@/axtn/workbenches/documents/documentRegistries.server", () => ({
   seedDocumentRegistries: fixture.seed,
+}));
+vi.mock("@/axtn/workbenches/documents/documentLocalTableSeed.server", () => ({
+  seedDocumentLocalTable: fixture.localTable,
 }));
 vi.mock("@/utils/axtnDocumentIntakeSeed.server", () => ({
   applyAxtnDocumentIntake: fixture.intake,
@@ -50,6 +54,10 @@ beforeEach(() => {
   });
   fixture.admin.mockReset().mockResolvedValue({ ok: true, userId: owner });
   fixture.seed.mockReset().mockResolvedValue({ schemaVersion: "document-registry-seed-v1" });
+  fixture.localTable.mockReset().mockResolvedValue({
+    schemaVersion: "document-local-table-seed-v1",
+    runtimeActivated: false,
+  });
   fixture.intake
     .mockReset()
     .mockResolvedValue({ created: false, changed: false, published: false });
@@ -59,6 +67,45 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("existing bootstrap authorization for explicit Registry provisioning", () => {
+  it("seeds the existing native Builder draft without accepting client owner/configuration", async () => {
+    const response = await request({
+      action: "seed_local_table",
+      userId: "another-owner",
+      source: "untrusted",
+    });
+    expect(response.status).toBe(200);
+    expect(fixture.localTable).toHaveBeenCalledExactlyOnceWith(owner);
+    expect(fixture.seed).not.toHaveBeenCalled();
+    expect(fixture.intake).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ runtimeActivated: false });
+  });
+  it.each(["missing-session", "revoked", "wrong-admin", "not-superadmin"])(
+    "denies Local Table provisioning through %s",
+    async (condition) => {
+      if (condition === "revoked")
+        fixture.auth.mockResolvedValue({ data: { user: null }, error: { message: "revoked" } });
+      if (condition === "wrong-admin")
+        fixture.auth.mockResolvedValue({
+          data: { user: { id: owner, email: "other@example.invalid" } },
+          error: null,
+        });
+      if (condition === "not-superadmin") fixture.admin.mockResolvedValue({ ok: false });
+      const response = await request(
+        { action: "seed_local_table" },
+        condition !== "missing-session",
+      );
+      expect(response.status).toBe(
+        condition === "missing-session" || condition === "revoked" ? 401 : 403,
+      );
+      expect(fixture.localTable).not.toHaveBeenCalled();
+    },
+  );
+  it("returns an explicit failure on native Local Table conflict", async () => {
+    fixture.localTable.mockRejectedValue(new Error("DOCUMENT_LOCAL_TABLE_APP_AMBIGUOUS"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await request({ action: "seed_local_table" })).status).toBe(500);
+    expect(log).toHaveBeenCalledTimes(1);
+  });
   it("uses authenticated bootstrap identity, never a client owner field", async () => {
     const response = await request({ action: "seed_registries", userId: "another-owner" });
     expect(response.status).toBe(200);

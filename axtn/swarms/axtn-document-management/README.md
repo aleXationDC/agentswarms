@@ -116,3 +116,30 @@ node tests/integration/documentRegistryConcurrency.mjs
 This proves the bounded Dataset seed, not the complete DMS empty-state or
 production restoration gate. The restored historical editor is not blindly
 activated: raw provider-safe claims and seed-on-read remain excluded.
+
+## Native Local Table MCP Builder draft seed
+
+Migration `20261004130000_document_local_table_seed.sql` and
+`node axtn/swarms/axtn-document-management/seed-local-table.mjs` provision the
+existing canonical Python definition under the authenticated bootstrap owner.
+The fixed source SHA-256 is checked independently by the server and service-only
+RPC. The native slug generator and same owner advisory lock retain one
+`aXtn Local Table Integration` app across concurrent seeds and lost-response
+replays. Existing app source/configuration, public exposure or foreign server
+binding conflicts fail explicitly; duplicate names are never guessed away.
+Unchanged reseeds preserve the full app row and emit no new audit.
+
+This is native **draft metadata provisioning**, not deployment or capability
+activation. It creates no MCP key, connected server, sandbox or provider
+credential and does not change `LOCAL_TABLE_INTEGRATION_MCP_APP_IDS`.
+Existing MCP Builder deployment, discovery/approval, single-tool scoped key
+and exact app-ID admission remain separate gates. Source availability does not
+prove live Registry mutation or the complete fresh-install DMS matrix.
+
+Actual isolated role/source/config/owner and sixteen-session concurrency tests:
+
+```sh
+AXTN_DOCUMENT_TEST_CONTAINER=axtn-native-supabase-db \
+AXTN_DOCUMENT_TEST_DATABASE=dms_native_contract_20261004 \
+node tests/integration/documentLocalTableSeed.mjs
+```
