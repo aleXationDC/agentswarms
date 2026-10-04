@@ -22,7 +22,7 @@
         "cleanup"
       ],
       "recovered": true,
-      "implemented": "historical native composition plus bounded filing-readback repair; protected DMS Approval/effects still required",
+      "implemented": "historical native composition plus bounded filing-readback repair; protected Approval adapter tested separately, graph wiring/effects still required",
       "tested": "Function fixtures only; not full Parent execution",
       "deployed": false,
       "runtimeVerified": false
@@ -166,15 +166,19 @@
       "tested": "isolated PostgreSQL migration/roles/projection recovery, proposal revision/identity/owner fences and sixteen concurrent sessions",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Protected DMS domain receipts/closure and independent Approval still pending."
+      "gap": "Protected DMS domain receipts/closure, graph composition and actual independent Acceptance still pending."
     },
     {
       "name": "protected-approval",
       "kind": "native-approval-domain",
-      "implemented": false,
+      "source": "supabase/migrations/20261004100000_document_native_approval_binding.sql",
+      "sourceSHA256": "c593497e306921f8148564e27c4e128b86bb28cc3307f2143ee20a18d7851929",
+      "dependencies": ["case-profile"],
+      "implemented": "registered DMS binding on existing Approval/IAM/canvas/headless/checkpoint/resume; exact step operation, Case/Attempt/Input/Source/Decision, persisted routing, protected proposal and current reviewer",
+      "tested": "unit callback/readback/operation/privacy/takeover fences and isolated actual PostgreSQL roles, source drift, group revocation, immutable evidence and atomic audit",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Existing Development native guard must be extended with narrow DMS bindings, not bypassed."
+      "gap": "Recovered Parent/Cleanup are not yet wired or published; protected privacy/rule evidence, provider rights/effects and real independent human Acceptance remain pending. Not an effect permission."
     },
     {
       "name": "privacy-preflight",

@@ -64,7 +64,8 @@ Working local Copilot MCP, existing providers and Development worktrees preserve
   and Approval reference required. Historical Filing `filed=true` alone no
   longer passes: actual provider file/name/exact parent must match instruction.
   These graphs are **not published or executable completion claims**; protected
-  revision-bound DMS Approval/effects and genuine agent dependencies are pending.
+  Approval graph composition, revision-bound effects and genuine agent
+  dependencies are pending.
 - Issue #8 optional opaque input is retained as untrusted
   `externalReferenceContext`, with `NEEDS_CLARIFICATION`; no correlation,
   local Parent inference, Core CRUD or Work-key derivation from external IDs.
@@ -75,9 +76,62 @@ implemented/tested/deployed/runtime states are retained in
 Historical full DMS source is not an ancestor of current App basis; this is a
 non-integration/provisioning gap, not a demonstrated deletion regression.
 
+## Native Approval source increment
+
+Previous Case/Manual increment is committed at
+`29036ea3cb2d44a111ec791fd9b5d873be57b641`.
+The following narrow extension keeps the existing native Approval, IAM,
+canvas/headless runtime, checkpoint and atomic resume claim:
+
+- Literal step operation `CLASSIFY`/`FILE`/`DELETE`, current
+  Case/Attempt/Input/document/source/Decision revision, graph snapshot hash and
+  minimized Evidence bind the same native Approval row. Persisted node routing,
+  not prompt/client routing, defines eligible reviewers. Classification
+  authority cannot be reused for deletion.
+- Authenticated Owner and actual Builder decisions are denied; routed
+  independent reviewers/current group members can approve or reject.
+  Immutable proposal/routing/binding/run snapshot and atomic identity/time
+  audit prevent mutation of retained decision evidence. Unauthorized decisions
+  leave Approval/Case state unchanged.
+- Pending callback replay/readback reuses the operation. Approved/rejected
+  resume revalidates current proposal and reviewer/group authority;
+  cancellations cannot be revived. Human takeover fences machine requests.
+- Machine proposals still require protected private privacy evidence; no
+  caller-supplied `ELIGIBLE` authority. Non-null Rule/Policy binding stays blocked
+  pending its authoritative adapter. Native Approval is not source/target
+  authorization, physical-effect evidence, acceptance or Case closure.
+- Candidate migration `20261004100000_document_native_approval_binding.sql`,
+  SHA256 `c593497e306921f8148564e27c4e128b86bb28cc3307f2143ee20a18d7851929`.
+  No new engine, workflow controller, scheduler or Case store.
+
+Targeted Document Approval/Development Approval/Document Work suite:
+**65 tests PASS**. Actual schema-only PostgreSQL role suites pass with both
+candidate migrations: DMS reviewer approve/reject/group, Owner/Builder/unrouted
+denial, operation/routing/domain binding denial, source drift, revoked group at
+resume, service-role decision denial, immutable run/proposal evidence and audit;
+unchanged Development Approval roles also PASS.
+Document profile and 16-session concurrency/lost-response rerun PASS.
+The test DB ownership initially differed from production (`supabase_admin`
+instead of `postgres`), causing a migration CREATE permission failure.
+The isolated DB was recreated with production-matching ownership; all exact
+migrations and role tests were then rerun successfully. No production grants
+or privilege widening, and no failed run claimed as PASS.
+
+Stable full Component gate for this Approval increment **PASS**:
+typecheck, lint (warnings only), docs, infra, **567 files / 9,214 tests PASS /
+40 skipped**, and build. Missing-tool infra check and Parquet/MinIO skips
+remain skips, not runtime PASS. Recovered Parent/Cleanup graph composition and live native
+Suspend/Resume/restart remain pending; synthetic SQL reviewers are not real
+independent Acceptance. Native checkpoint context can still persist raw data;
+the minimized Approval payload alone is not a DMS leakage/retention PASS.
+Final protected-credential scan PASS across 2,441 source/evidence files,
+browser assets and runtime logs. Final readback still shows App `10df3a869...`,
+image `sha256:1f3e476e...`, 278 production ledger entries and the same suspended
+Development run; unrelated worktrees remain clean.
+
 ## Executed evidence and remaining gates
 
-Final stable Component check passed typecheck, lint (warnings only), docs,
+Previous committed increment's stable Component check passed typecheck, lint (warnings only), docs,
 infra, **566 files / 9,195 tests PASS / 40 skipped**, and build.
 The skipped Parquet/MinIO tests are not claimed as runtime PASS.
 Subsequent targeted recovered-graph/manual suite: 50 tests PASS, including
@@ -125,7 +179,7 @@ Gemini scope is not changed. Restore independent deterministic surfaces while
 keeping affected semantic capability blocked.
 
 Pending: complete dependency-ordered native seed; Local Table/Registry editor;
-local privacy/OCR; protected DMS receipts/closure and native Approval adapter;
+local privacy/OCR; protected DMS receipts/closure and native Approval graph composition;
 scoped persistent effect claim/readback/projection recovery; own n8n executor
 branch with compatible source envelope/deletion contracts; bounded persisted
 Learning/side-effect-free evaluation/review handoff; full tested Host pins and

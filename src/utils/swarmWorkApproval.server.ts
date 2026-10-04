@@ -5,6 +5,11 @@ import type { Json } from "@/integrations/supabase/types";
 import { canonicalJson } from "@/utils/provenance/canonical";
 import { interpolate } from "@/lib/swarmRuntime";
 import { DevelopmentReceipt } from "@/utils/notebookRuntime/development.server";
+import type { WorkPrincipal } from "@/axtn/workbenches/cases/work.server";
+import {
+  assertNativeDocumentApprovalResume,
+  createNativeDocumentApproval,
+} from "@/axtn/workbenches/documents/documentApproval.server";
 
 const sha = z.string().regex(/^[a-f0-9]{40}$/);
 const operation = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
@@ -28,6 +33,14 @@ const Snapshot = z
                   caseId: z.string(),
                   runtimeSessionId: z.string(),
                   operationId: z.string(),
+                })
+                .optional(),
+              approvalDocument: z
+                .object({
+                  caseId: z.string(),
+                  decisionId: z.string(),
+                  operationId: z.string(),
+                  operation: z.enum(["CLASSIFY", "FILE", "DELETE"]),
                 })
                 .optional(),
             })
@@ -56,6 +69,7 @@ export async function createNativeWorkApproval(args: {
   nodeId: string;
   context: Record<string, string>;
   content: string;
+  principal?: WorkPrincipal;
 }): Promise<{ id: string }> {
   const { data: run, error: runError } = await supabaseAdmin
     .from("swarm_runs")
@@ -67,6 +81,15 @@ export async function createNativeWorkApproval(args: {
     throw new Error("NATIVE_APPROVAL_RUN_DENIED");
   }
   const node = Snapshot.parse(run.swarm_snapshot).nodes.find((n) => n.id === args.nodeId);
+  if (node?.data.approvalDocument) {
+    if (node.data.kind !== "approval" || node.data.approvalWork)
+      throw new Error("NATIVE_APPROVAL_DOMAIN_BINDING_CONFLICT");
+    return createNativeDocumentApproval({
+      ...args,
+      snapshot: run.swarm_snapshot,
+      nodeData: node.data,
+    });
+  }
   if (!node || node.data.kind !== "approval" || !node.data.approvalWork) {
     throw new Error("NATIVE_APPROVAL_NODE_BINDING_REQUIRED");
   }
@@ -223,6 +246,19 @@ export function assertNativeApprovalResume(args: {
   const node = Snapshot.parse(args.snapshot).nodes.find((n) => n.id === args.nodeId);
   if (!node || node.data.kind !== "approval")
     throw new Error("NATIVE_APPROVAL_RESUME_NODE_MISMATCH");
+  if (
+    (node.data.approvalWork || node.data.approvalDocument) &&
+    args.payload &&
+    typeof args.payload === "object" &&
+    "axtnDocument" in args.payload &&
+    "axtnDevelopment" in args.payload
+  )
+    throw new Error("NATIVE_APPROVAL_DOMAIN_BINDING_CONFLICT");
+  if (node.data.approvalDocument) {
+    if (node.data.approvalWork) throw new Error("NATIVE_APPROVAL_DOMAIN_BINDING_CONFLICT");
+    assertNativeDocumentApprovalResume(args);
+    return;
+  }
   if (!node.data.approvalWork) return;
   const binding = z
     .object({ axtnDevelopment: NativeWorkApprovalBinding })

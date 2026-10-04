@@ -1381,6 +1381,15 @@ export function NodeInspector({
                 </p>
               </Section>
             )}
+            {data.approvalDocument && (
+              <Section label="Protected Document Case Approval">
+                <p className="text-xs text-muted-foreground">
+                  Server-bound Case, Attempt, Input, Source and immutable Decision revision. Only
+                  the persisted independent reviewer assignment may decide. A proposal is not
+                  provider permission or Filing/Delete success. Native Suspend/Resume is retained.
+                </p>
+              </Section>
+            )}
             <Section label="Approval title (shown in inbox)">
               <Input
                 value={data.approvalTitle || ""}

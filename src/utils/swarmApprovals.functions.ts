@@ -55,6 +55,7 @@ export const createWorkSwarmApproval = createServerFn({ method: "POST" })
       nodeId: data.node_id,
       context: data.context,
       content: data.content,
+      principal: { kind: "user_session", id: auth.userId },
     });
     await saveCheckpoint({
       userId: auth.userId,

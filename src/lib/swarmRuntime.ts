@@ -234,6 +234,12 @@ export type SwarmNodeData = {
   // Protected SupaCase binding; references resolve against flow state, while
   // routing and authority are loaded from the persisted run on the server.
   approvalWork?: { caseId: string; runtimeSessionId: string; operationId: string };
+  approvalDocument?: {
+    caseId: string;
+    decisionId: string;
+    operationId: string;
+    operation: "CLASSIFY" | "FILE" | "DELETE";
+  };
   // a2a_remote — delegates to a remote A2A-compliant agent server
   a2aEndpoint?: string;
   a2aAgentCard?: AgentCard;
@@ -1194,7 +1200,7 @@ export async function runSwarm(
             ? node.data.approverGroupIds
             : [];
           let created: { id: string };
-          if (node.data.approvalWork) {
+          if (node.data.approvalWork || node.data.approvalDocument) {
             const { data: session } = await supabase.auth.getSession();
             if (!session.session?.access_token || !dbRunId) {
               throw new Error("Protected native Approval requires an authenticated persisted run");
@@ -1264,7 +1270,7 @@ export async function runSwarm(
             }
           }
           onEvent({ type: "approval_pending", nodeId: node.id, approvalId: created.id });
-          if (node.data.approvalWork) {
+          if (node.data.approvalWork || node.data.approvalDocument) {
             suspension.at = { nodeId: node.id, approvalId: created.id };
             return;
           }

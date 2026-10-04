@@ -159,7 +159,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           approval.payload &&
           typeof approval.payload === "object" &&
           !Array.isArray(approval.payload) &&
-          "axtnDevelopment" in approval.payload,
+          ("axtnDevelopment" in approval.payload || "axtnDocument" in approval.payload),
         );
         const checkpoint = await loadCheckpoint(run.id, run.user_id, protectedWork);
         if (!checkpoint) {
@@ -178,7 +178,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           approval.payload &&
           typeof approval.payload === "object" &&
           !Array.isArray(approval.payload) &&
-          "axtnDevelopment" in approval.payload
+          ("axtnDevelopment" in approval.payload || "axtnDocument" in approval.payload)
         ) {
           const prior = await createNativeWorkApproval({
             userId: run.user_id,

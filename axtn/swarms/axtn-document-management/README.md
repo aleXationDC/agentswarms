@@ -33,3 +33,35 @@ Executed Function-body fixtures live in
 does not automatically seed or activate a learned rule. Full Parent execution,
 privacy services, persisted registries, independent review, provider effects
 and Learning remain separately gated.
+
+## Protected native Approval adapter
+
+The existing Approval row, IAM reviewer routing and native Suspend/Resume now
+have a tested DMS adapter in
+`src/axtn/workbenches/documents/documentApproval.server.ts` and additive migration
+`20261004100000_document_native_approval_binding.sql`. It is not deployed or
+materialized into the recovered graphs.
+
+An Approval node declares `approvalDocument` with `caseId`, `decisionId`,
+`operationId` and a literal `operation` (`CLASSIFY`, `FILE` or `DELETE`).
+The identifiers may use existing native context interpolation; the operation
+may not. A classification step cannot authorize a deletion proposal. The
+server derives the binding from protected current Case/Proposal data and
+the persisted run snapshot, never client-provided routing or free-text output.
+Owner/Builder self-decision is denied; only authenticated routed reviewers
+or current members of the routed group can decide. Current proposal and
+reviewer authority are rechecked before decided resume. Binding, minimized
+proposal, routing and run snapshot remain immutable and auditable.
+
+Callback readback reuses the same native run/operation; cancelled operations
+cannot be revived. Human takeover fences machine requests. Machine requests
+need protected privacy evidence; claimed `ELIGIBLE` is insufficient. Non-null
+Rule/Policy bindings remain blocked until their authoritative adapter exists.
+Approval alone proves no provider permission, physical effect or Case closure.
+The native checkpoint still can persist context; payload minimization here
+does not claim complete DMS trace redaction or retention acceptance.
+
+Tests: `tests/unit/documentApproval.test.ts` and
+`tests/integration/documentApproval.sql`. SQL fixtures run only against a
+dedicated schema-only test database and roll back; they are not real human
+Acceptance or production runtime evidence.

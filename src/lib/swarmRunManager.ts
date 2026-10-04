@@ -144,7 +144,9 @@ export async function startRun(params: StartRunParams): Promise<string> {
     let tracer: import("@/utils/observability/tracer").SwarmTracer | null = null;
     if (
       params.traceEnabled ||
-      nodes.some((n) => n.data.kind === "approval" && n.data.approvalWork)
+      nodes.some(
+        (n) => n.data.kind === "approval" && (n.data.approvalWork || n.data.approvalDocument),
+      )
     ) {
       try {
         tracer = await (

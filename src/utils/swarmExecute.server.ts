@@ -221,7 +221,7 @@ async function createApprovalRequest(args: {
     approverUserIds?: string[];
     approverGroupIds?: string[];
   };
-  if (d.approvalWork) {
+  if (d.approvalWork || d.approvalDocument) {
     if (!args.runId) throw new Error("Protected native Approval requires a persisted run");
     await createNativeWorkApproval({
       userId: args.userId,
@@ -421,7 +421,11 @@ export async function executeSwarmServer(opts: {
             .eq("id", runId!);
         let { error: parkErr } = await park();
         if (parkErr) {
-          if (nodes.some((n) => n.data.kind === "approval" && n.data.approvalWork)) {
+          if (
+            nodes.some(
+              (n) => n.data.kind === "approval" && (n.data.approvalWork || n.data.approvalDocument),
+            )
+          ) {
             throw new Error(`Protected native Approval suspension failed: ${parkErr.message}`);
           }
           await new Promise((r) => setTimeout(r, 1_000));
@@ -473,7 +477,9 @@ export async function executeSwarmServer(opts: {
         source: opts.source,
         depth,
         required: Boolean(
-          suspendedNodeId && nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork,
+          suspendedNodeId &&
+          (nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork ||
+            nodes.find((n) => n.id === suspendedNodeId)?.data.approvalDocument),
         ),
         checkpoint: captureCheckpoint({
           ctx,
