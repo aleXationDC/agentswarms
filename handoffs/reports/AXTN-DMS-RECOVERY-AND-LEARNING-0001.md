@@ -58,7 +58,8 @@ Working local Copilot MCP, existing providers and Development worktrees preserve
 - Explicit eight-node native Case-bound Intake seed/publish/apply; compatibility
   five-node seed remains. Strict technical request/delivery/provider revision
   required before writes. Validated top-level ACK retains old output/runId.
-  This is not the full dependency seed or Parent suspended registration ACK.
+  That initial increment did not deliver the full dependency seed or Parent
+  suspended registration ACK; the bounded ACK addition is recorded below.
 - Recovered Parent/Privacy/Cleanup graph sources and pure recognition basis.
   Historical Cleanup implicit-all fallback removed; exact explicit selection
   and Approval reference required. Historical Filing `filed=true` alone no
@@ -130,6 +131,61 @@ image `sha256:1f3e476e...`, 278 production ledger entries and the same suspended
 Development run; unrelated worktrees remain clean.
 
 ## Executed evidence and remaining gates
+
+### Canonical draft PR and Case references
+
+Current-Decision/privacy increment is committed/pushed at
+`2f2d67f2099888f0c4403f9cbcb9a4c2bdcdecda`; immediate existing push-mirror
+synchronization and completion readback passed. Parent, Inventory and Case
+retain this exact candidate/evidence and genuine PR_CREATED references,
+all OPEN.
+
+Canonical Gitea draft **PR #11** uses head `work/AXTN-DMS-RESTORE-0001` and
+base `work/AXTN-DEVELOPMENT-SWARM-NATIVE-0002` at
+`6bf776ef7c9abb59224f0477dc7257f94f93f4ca`. The compatible base is an
+ancestor of the DMS head. No unrelated history was introduced into old main;
+no Development branch write or merge was performed. The draft is explicitly
+partial, not ready for full DMS deployment or independent acceptance.
+
+### Native Parent registration ACK source increment
+
+The existing public API and signed asynchronous callback now project the
+completed Intake registration when the native Parent is suspended. The
+read-only DMS adapter uses actual owner-bound persisted run/snapshot/checkpoint,
+one completed native Intake writer, exact original request/manifest/provider
+revision, and protected Case plus Registry identities. Raw client/context
+claims alone cannot authorize an ACK. Unrelated Development and standalone
+Intake behavior remain unchanged.
+
+The Registry's immutable first Intake Case is retained for a separate request
+on the same document; its protected owned identity is checked, not overwritten.
+Drive ACKs cannot introduce `next_location`; mail keeps the existing
+`00_Review`, not arbitrary caller destinations.
+
+Pending idempotency remains `in_progress`. The existing run reference and
+original output are saved before ACK projection: projection failure surfaces
+an error but cannot make an already parked workflow reclaimable. A same-body
+lost-response retry reads the native persisted registration without another
+execution, write, approval, Case or workflow retry engine. Body mismatch still
+rejects before readback. Native Suspend/Resume/approval authority are unchanged.
+
+Executable isolated adapter and actual API-handler tests cover sync, async
+callback, pending replay, mismatch, owner scoping, failed/missing persistence,
+stale/fabricated bindings, ambiguous writers, metadata leakage exclusion and
+transport destination restrictions. Targeted **60 tests PASS**, including
+unchanged native parked/resumed-run and Intake tests. These use isolated
+fixtures, not a published production Parent; full live S5/R9 remain pending.
+There is no new migration, executor, orchestrator or production mutation.
+Stable full Component gate **PASS**: typecheck, lint (warnings only), docs,
+infra, **569 files / 9,251 tests PASS / 40 skipped**, and client/server build.
+After the inventory/report update, docs/infra plus the 39-test inventory/ACK
+subset passed again. Protected credential scan passed across 2,446
+source/evidence files, browser assets and runtime logs. The native adapter
+source SHA256 is
+`8e2ba2f3c20ee3962f9243976fec515c5f64fd3225e50966ca2f85e98c9c9461`.
+Fresh canonical branch readback still showed compatible Development `6bf776ef`
+and prior DMS `2f2d67f`; actual live image/source remained `1f3e476e`/`10df3a869`.
+Unrelated Development App/Host/MCP and own Host worktrees remain clean.
 
 ### Current Decision and privacy revision increment
 

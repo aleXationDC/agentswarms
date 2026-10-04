@@ -19,6 +19,7 @@
         "local-table",
         "case-profile",
         "proposal-current",
+        "parent-registration-ack",
         "filing",
         "cleanup"
       ],
@@ -198,6 +199,18 @@
       "deployed": false,
       "runtimeVerified": false,
       "gap": "No provider permission, effect receipt, closure or real independent Acceptance."
+    },
+    {
+      "name": "parent-registration-ack",
+      "kind": "native-public-registration-readback",
+      "source": "src/axtn/workbenches/documents/documentRegistrationAck.server.ts",
+      "sourceSHA256": "8e2ba2f3c20ee3962f9243976fec515c5f64fd3225e50966ca2f85e98c9c9461",
+      "dependencies": ["intake", "case-profile", "document-registry"],
+      "implemented": "existing API/callback projection from owned persisted native checkpoint/snapshot and protected Case/Registry; pending idempotency replay without workflow execution",
+      "tested": "executable isolated adapter and API handler sync/callback/lost-response/failure/identity/destination fixtures",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Not published full Parent, provider effect, Case closure or live S5/R9 proof. Native checkpoint redaction remains pending."
     },
     {
       "name": "privacy-preflight",

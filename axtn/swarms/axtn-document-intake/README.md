@@ -42,6 +42,23 @@ The public synchronous Intake response retains `output` and `runId` and also
 projects the validated ACK at top level for the existing n8n consumer.
 This does not assert Filing, semantic processing or independent acceptance.
 
+When the existing Document Management Parent parks at a native Approval, the
+same endpoint and signed callback expose the completed Intake ACK at top level,
+alongside `status: "suspended"`, the original `output` and `runId`. Readback uses
+the owner-bound persisted run snapshot/checkpoint, a completed native Intake
+node, the original technical manifest, and protected Case/Registry identities.
+It cannot accept caller-supplied ACK fields or substitute another request.
+The Registry's first Intake Case remains unchanged when another explicit
+request uses the same document.
+
+The existing idempotency claim remains `in_progress`, not completed. A retry
+with the same body reads the durable registration without executing the
+Parent again. Projection failure retains the parked run reference and reports
+an error; it does not make the claim reclaimable or replay the workflow.
+Drive registration emits no move instruction; mail retains only `00_Review`.
+This source adapter does not claim full Parent publication, live Approval
+verification, provider effects, Case closure or DMS restoration PASS.
+
 ### Shared manual Case profile
 
 The owner-bound `/api/cases/work` endpoint registers `document_ensure`,

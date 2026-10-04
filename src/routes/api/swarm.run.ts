@@ -37,6 +37,7 @@ import { budgetMessage, getBudgetDecision } from "@/utils/budgetGuard.server";
 import { deliverRunCallback, hashBody } from "@/utils/swarmWebhook.server";
 import { idempotencyVerdict, type IdempotencyRow } from "@/utils/swarmIdempotency";
 import { documentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import { readDocumentParentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -178,6 +179,30 @@ export const Route = createFileRoute("/api/swarm/run")({
               });
             }
             if (verdict.action === "in_progress") {
+              if (existing?.run_id) {
+                const registration = await readDocumentParentRegistrationAck({
+                  userId: key.user_id,
+                  swarmId: key.swarm_id,
+                  runId: existing.run_id,
+                });
+                if (registration) {
+                  const cached = existing.response;
+                  if (
+                    !cached ||
+                    typeof cached !== "object" ||
+                    Array.isArray(cached) ||
+                    cached.status !== "suspended" ||
+                    typeof cached.output !== "string"
+                  )
+                    throw new Error("DOCUMENT_PARENT_REGISTRATION_CACHED_RESPONSE_REQUIRED");
+                  return json({
+                    status: "suspended",
+                    output: cached.output,
+                    runId: existing.run_id,
+                    ...registration,
+                  });
+                }
+              }
               return json(
                 {
                   error: "A run with this Idempotency-Key is still in progress.",
@@ -336,16 +361,31 @@ export const Route = createFileRoute("/api/swarm/run")({
             // Detached: hold the concurrency slot for the real duration of the
             // run, and release it in this task rather than the outer finally.
             void (async () => {
+              let parkedRunId: string | null = null;
               try {
                 const result = await runSwarm();
-                const body = {
+                const baseBody = {
                   runId: result.runId,
                   status: result.status,
                   output: result.output,
                   error: result.error,
                   swarmId: swarm.id,
+                };
+                if (result.status === "suspended") {
+                  parkedRunId = result.runId;
+                  await finishIdempotency("in_progress", baseBody);
+                }
+                const body = {
+                  ...baseBody,
                   ...(result.status !== "error" && result.status !== "suspended"
                     ? documentRegistrationAck(swarm.id, result.output)
+                    : {}),
+                  ...(result.status === "suspended"
+                    ? await readDocumentParentRegistrationAck({
+                        userId: key.user_id,
+                        swarmId: swarm.id,
+                        runId: result.runId,
+                      })
                     : {}),
                 };
                 // A suspended run is NOT complete: leaving the idempotency
@@ -353,8 +393,6 @@ export const Route = createFileRoute("/api/swarm/run")({
                 // approval lands, rather than replaying a half-run result.
                 if (result.status !== "suspended") {
                   await finishIdempotency(result.status === "error" ? "failed" : "completed", body);
-                } else {
-                  await finishIdempotency("in_progress", body);
                 }
                 await deliverRunCallback({
                   url: callbackUrl,
@@ -363,13 +401,13 @@ export const Route = createFileRoute("/api/swarm/run")({
                 });
               } catch (e) {
                 const body = {
-                  runId: null,
+                  runId: parkedRunId,
                   status: "error" as const,
                   output: "",
                   error: (e as Error).message,
                   swarmId: swarm.id,
                 };
-                await finishIdempotency("failed", body);
+                if (!parkedRunId) await finishIdempotency("failed", body);
                 await deliverRunCallback({
                   url: callbackUrl,
                   secret: key.webhook_secret,
@@ -391,8 +429,20 @@ export const Route = createFileRoute("/api/swarm/run")({
             return json(body, 400);
           }
           if (result.status === "suspended") {
-            const body = { status: "suspended", output: result.output, runId: result.runId };
-            await finishIdempotency("in_progress", body);
+            const baseBody = {
+              status: "suspended",
+              output: result.output,
+              runId: result.runId,
+            };
+            await finishIdempotency("in_progress", baseBody);
+            const body = {
+              ...baseBody,
+              ...(await readDocumentParentRegistrationAck({
+                userId: key.user_id,
+                swarmId: swarm.id,
+                runId: result.runId,
+              })),
+            };
             return json(body);
           }
           const body = {

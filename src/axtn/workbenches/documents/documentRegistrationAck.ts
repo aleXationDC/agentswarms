@@ -18,6 +18,11 @@ const Ack = z
   })
   .strict();
 
+export const CaseBoundRegistrationAck = Ack.extend({
+  case_id: z.string().uuid(),
+  input_hash: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
 export function documentRegistrationAck(swarmId: string, output: unknown) {
   if (swarmId !== INTAKE_ID) return {};
   if (typeof output !== "string") throw new Error("DOCUMENT_REGISTRATION_ACK_REQUIRED");
