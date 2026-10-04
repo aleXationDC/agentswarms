@@ -66,19 +66,20 @@ required(/^[a-f0-9]{40}$/.test(file.commit?.sha) && /^[a-f0-9]{40}$/.test(file.c
   "Immutable Candidate commit/content readback required");
 const verifyCase = read(ctx.vars.verify_work);
 required(typeof verifyCase.case_id === "string", "Native Verify Case identity required");
-const transition = (caseId, operationId, eventType) => ({operation: "transition", transition: {
+const transition = (caseId, operationId, eventType, processingMode = "SEMANTIC") => ({operation: "transition", transition: {
   caseId, transitionKey: task.attemptId + ":" + operationId,
   eventType, reasonCode: "NATIVE_CANDIDATE_MATERIALIZED", actorRef: "native-builder",
   candidateSHA: file.commit.sha, attemptId: task.attemptId,
-  processingMode: eventType === "STARTED" ? "DETERMINISTIC" : "SEMANTIC", executionChannel: "SWARM",
+  processingMode, executionChannel: "SWARM",
   references: [{kind: "repository", repository: task.repository, id: branch.name, revision: file.commit.sha}]
 }});
 return {schema: "axtn.development.candidate/v1", caseId: task.caseId, taskId: task.taskId, attemptId: task.attemptId,
   repository: task.repository, baseSHA: task.baseSHA, candidateSHA: file.commit.sha, branch: branch.name,
   files: [{path: builder.path, content: builder.content, contentHash: file.content.sha}],
   parentUpdate: transition(task.caseId, "candidate", "CANDIDATE_UPDATED"),
+  parentStart: transition(task.caseId, "work-start", "STARTED"),
   verifyUpdate: transition(verifyCase.case_id, "verify-candidate", "CANDIDATE_UPDATED"),
-  verifyStart: transition(verifyCase.case_id, "verify-start", "STARTED"),
+  verifyStart: transition(verifyCase.case_id, "verify-start", "STARTED", "DETERMINISTIC"),
   verifyCall: {operation: "verify", caseId: verifyCase.case_id, transitionKey: task.attemptId + ":verify"}
 };
 `;
@@ -264,8 +265,11 @@ export function createNativeDevelopmentSwarm(config: {
   mcp("file", "Materialize Candidate (effect-bound)", "upsert_file", "file_args", ["file_args"]);
   fn("candidate", "Bind immutable Candidate readback", candidateCode, ["file", "verify_work"]);
   work("candidate_case", "Bind Candidate to Work", "{{candidate.parentUpdate}}", ["candidate"]);
-  work("verify_candidate", "Bind Candidate to Verify Work", "{{candidate.verifyUpdate}}", [
+  work("candidate_started", "Start native Candidate Work", "{{candidate.parentStart}}", [
     "candidate_case",
+  ]);
+  work("verify_candidate", "Bind Candidate to Verify Work", "{{candidate.verifyUpdate}}", [
+    "candidate_started",
   ]);
   work("verify_started", "Start native Verify Work", "{{candidate.verifyStart}}", [
     "verify_candidate",

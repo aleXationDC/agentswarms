@@ -71,7 +71,7 @@ describe("native Development seed publication", () => {
   it("publishes into an empty native store and verifies JSONB-reordered readback", async () => {
     await apply();
     expect(fixture.writes).toBe(1);
-    expect(fixture.row?.published_nodes).toHaveLength(30);
+    expect(fixture.row?.published_nodes).toHaveLength(31);
     expect(console.log).toHaveBeenLastCalledWith(expect.stringContaining('"outcome":"PUBLISHED"'));
   });
   it("applies twice without republishing or changing publication time", async () => {

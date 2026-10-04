@@ -6,7 +6,7 @@ The operator authorized the minimal binding of the existing native Approval
 node to protected SupaCase authority. The previous Approval authorization stop
 below is historical, not a current restriction.
 
-The source now contains one visible 30-node native Slice 1 graph and an
+The source now contains one visible 31-node native Slice 1 graph and an
 owner-authenticated idempotent seed at `axtn/swarms/axtn-development/`.
 Builder, three parallel Breakers, deterministic Verify, merge/gate,
 Approval, effect-bound Git writes and the existing Case Acceptance/completion
@@ -24,7 +24,7 @@ headless continuation resume that exact snapshot. Protected resume validates
 current authority and claims the suspended run once. No second Approval engine,
 workflow dispatcher, retry engine or Acceptance plane was added.
 
-Source validation: full repaired unit suite **9,120 PASS, 40 skipped**, 561 files PASS;
+Source validation: full repaired unit suite **9,121 PASS, 40 skipped**, 561 files PASS;
 production client/server build PASS.
 Actual PostgreSQL role fixture **PASS**, completely rolled back: owner,
 unrelated reviewer, routed Builder, duplicate decision, binding edits and
@@ -70,6 +70,13 @@ then exposed a missing typed Evidence reference. The graph now carries the
 actual immutable receipt reference through Verify and final Work completion;
 no completion rule was weakened.
 
+The next real run completed Verify, then the protected Approval correctly
+rejected an unstarted root Work. Native `CANDIDATE_UPDATED` resets Case status
+to NEW; a CLI STARTED event before materialization is insufficient. An explicit
+native `candidate_started` Tool node now records STARTED after Candidate
+binding. The graph therefore has 31 visible nodes. The guard still requires
+OPEN; NEW/CLOSED authority was not admitted to hide this lifecycle defect.
+
 First concurrent test traffic also observed the existing Node/Undici
 `ReadableStream is already closed` worker exit. Baseline and candidate both
 use Node 22.23.2 / Undici 6.28.0. The existing worker supervisor restored
@@ -84,7 +91,7 @@ No exception suppression, provider fallback or retry engine was introduced.
 | input | input | immutable Task input |
 | task, branch_args, file_args, candidate | function | pure validation/write-argument shaping/readback binding |
 | builder | agent | existing configurable OpenAI, no credentials/tools |
-| verify_work, candidate_case, verify_candidate, verify_started | tool | existing owner-derived `case_work` contract |
+| verify_work, candidate_case, candidate_started, verify_candidate, verify_started | tool | existing owner-derived `case_work` contract |
 | branch, file | tool | existing native MCP connector/scoped effect-bound Gitea |
 | security, contract, maintainability | agent | one immutable Candidate/content hash |
 | verify | tool | actual existing Developer Runtime and protected receipt |

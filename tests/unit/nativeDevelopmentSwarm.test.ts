@@ -73,6 +73,25 @@ const gate = (input: unknown) =>
   });
 
 describe("visible native Development slice", () => {
+  it("starts the actual Candidate Work natively after candidate binding resets it", () => {
+    expect(graph.nodes.find((node) => node.id === "candidate_started")?.data).toMatchObject({
+      kind: "tool",
+      toolId: "case_work",
+      toolArgs: { request: "{{candidate.parentStart}}" },
+    });
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        source: "candidate_case",
+        target: "candidate_started",
+      }),
+    );
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        source: "candidate_started",
+        target: "verify_candidate",
+      }),
+    );
+  });
   it("binds native Verify completion to typed immutable receipt Evidence", () => {
     const result = gate(fixture());
     expect(result.verifyComplete.transition.references).toContainEqual({
