@@ -78,6 +78,17 @@ remains an INFORMS evidence dependency, not the implementation base.
 This was updated through the existing authenticated directed-dependency
 operation, preserving both Cases and the actual completion requirement.
 
+Final Case readback: native implementation, guard Work and guard Verify are
+CLOSED as completed Work, with immutable report/receipt Evidence; none is
+self-accepted. Parent remains OPEN and unaccepted, now bound to final App
+source. Overall Acceptance remains OPEN with persisted
+`NO_ELIGIBLE_INDEPENDENT_REVIEWER` blocking reason. Only the three completed
+guard-regression runs were stopped through existing `cancelParkedSwarmRun`;
+their requests/trace/audit are retained. The real full PASS remains suspended
+and pending. Native request audit and cancellation audit/binding/time rows
+are durable; authenticated cancellation identity is also retained in the
+existing `swarm_run.cancel` audit.
+
 Actual retained live evidence:
 
 - Full headless PASS-to-Approval run
@@ -147,6 +158,7 @@ Relative to corrected native authority `37e79a23a55a62aa7f796878fd52239ef59e4128
 ```text
 axtn/swarms/axtn-development/README.md
 axtn/swarms/axtn-development/apply.mts
+docs/architecture/axtn-development-swarm/HANDOFF.md
 handoffs/reports/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md
 server.mjs
 src/axtn/workbenches/cases/workAcceptance.server.ts
