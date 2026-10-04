@@ -464,6 +464,53 @@ report/source commit must not be relabelled as source 74 or passed to the clean
 source/image guard with the older image. Runtime deployment/restart and full
 DMS Acceptance remain unproven.
 
+### Reviewed native internal key scope
+
+The draft seed increment is now committed as
+`74f09762bb2a75f78c0b1cb0062ed83c10f45ae4`,
+canonical-pushed and immediately mirrored at `2026-10-05T01:24:30+02:00`.
+App draft PR 11 was updated with exact candidate/report readback. The same
+implementation Parent/Inventory/Case Children remain OPEN with source/Evidence
+and Host PR 8 references; no parallel Case or acceptance claim was created.
+
+The existing native `mcpAppRegisterInternal` now supports an optional explicit
+nonempty `tool_allowlist` and required reviewed `tools_hash`. DMS can register
+only `local_table_upsert` through that native path: current deployed tool-list
+membership and approval are checked before any key revocation/issuance.
+Timestamp checks compare actual instants, not lexical offset spellings.
+The native key remains hashed at rest, the connected-server bearer encrypted,
+and discovered advertisement filtered to the same one-tool scope.
+Audit retains the reviewed fingerprint/scope, never the token.
+
+Existing callers without scope retain unrestricted native registration;
+existing deleted connected-server rows can still be recreated. Existing
+foreign bindings are rejected before key rotation; updates also filter owner.
+Native key-revocation/server-write/app-binding failures now return explicit
+failure, not a false registration success or an error-shaped fallback insert.
+This remains the existing native rotation lifecycle, not a new retry engine
+or transactional/projection recovery claim.
+
+Twenty-one actual server-handler/pure-schema fixtures and twenty-two existing
+key/tool-approval/record-write regressions pass (43 total). Evidence covers
+hashed scoped issuance/encrypted bearer/narrow advertisement, fingerprint/
+approval/tool/owner/endpoint fences before writes, timestamp offsets, default
+compatibility and native write failures. No key was minted in production.
+The key hash is checked against the actual ephemeral plaintext supplied to
+native encryption; the persisted-write payloads contain no plaintext token.
+Hashing/encryption complete before any existing key is revoked. Native
+encryption failure or a missing encrypted result therefore leaves the existing
+working binding/key unchanged. No general retry or alternate credential path
+was added. Changed-file lint has zero errors; the four existing `any` warnings
+in the native MCP management module are unchanged.
+Live deployment/discovery and exact app-ID mutation admission remain pending.
+The complete canonical check passes (574 files / 9,304 tests / 40 skips);
+the final typecheck and complete suite with the two additional encryption
+fixtures passes (574 files / 9,306 tests / 40 skips). The successful production
+SSR build is read back to verify the final encryption-before-rotation guard
+is included. Final documentation/command/format checks and the actual protected
+credential scan also pass. Production retains 278 migration ledger entries and
+the existing suspended Development run; this source increment is not deployed.
+
 The Local Table MCP Python template already exists in the compatible current
 basis, byte-identical to the historical source; the gap is its native
 app/key/runtime authorization provisioning, not missing template source.

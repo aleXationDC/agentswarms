@@ -26,6 +26,12 @@ Runtime mutation admission also requires the exact persisted app ID in
 `LOCAL_TABLE_INTEGRATION_MCP_APP_IDS`; an unset list admits **no** app.
 The table allowlist alone is insufficient. Use the native issued Streamable HTTP
 endpoint `/api/mcp/s/<slug>` and a key narrowed to `local_table_upsert`.
-Do not use the unrestricted internal-registration key as a substitute for the
-required scoped key. Production discovery/key/runtime provisioning and n8n
+The existing native `mcpAppRegisterInternal` now accepts an explicit nonempty
+`tool_allowlist` and reviewed `tools_hash`. For this integration pass
+`["local_table_upsert"]` and the actual approved deployment fingerprint.
+It hashes the native internal key, encrypts the connected-server token and
+advertises only that scoped tool. Missing/stale approval, fingerprint mismatch
+or unknown tool fails before key rotation. Existing callers omitting the scope
+retain their current behavior; do not use that unrestricted default here.
+Production discovery/key/runtime provisioning and n8n
 credential binding remain pending. No local Copilot MCP change is involved.

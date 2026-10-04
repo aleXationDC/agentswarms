@@ -128,8 +128,8 @@
         "identity"
       ],
       "recovered": "exact historical server.py already retained in compatible current basis",
-      "implemented": "existing native SDK/broker template plus explicit atomic owned MCP Builder draft seed; discovery/scoped key/runtime provisioning pending",
-      "tested": "actual service-only roles, source/config/foreign-binding conflicts, sixteen-session seed and durable no-op replay; no runtime activation",
+      "implemented": "existing native SDK/broker template plus explicit atomic owned MCP Builder draft seed and reviewed single-tool internal key registration extension; live discovery/key/runtime provisioning pending",
+      "tested": "actual service-only roles, source/config/foreign-binding conflicts, sixteen-session seed and durable no-op replay; actual registration handler scoped-key/encrypted-token and default compatibility fixtures; no runtime activation",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Native Local Table product MCP absent; do not change working local Copilot MCP."

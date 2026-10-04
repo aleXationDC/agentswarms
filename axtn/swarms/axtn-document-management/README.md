@@ -135,6 +135,12 @@ credential and does not change `LOCAL_TABLE_INTEGRATION_MCP_APP_IDS`.
 Existing MCP Builder deployment, discovery/approval, single-tool scoped key
 and exact app-ID admission remain separate gates. Source availability does not
 prove live Registry mutation or the complete fresh-install DMS matrix.
+For native internal registration, the existing `mcpAppRegisterInternal` accepts
+`tool_allowlist: ["local_table_upsert"]` plus the actual reviewed `tools_hash`.
+Only currently deployed approved names can be registered; the native key is
+hashed, its connected-server token encrypted, and advertisements narrowed.
+This extension does not deploy the draft, approve a tool list or change app-ID
+admission. No credentials are returned by internal registration.
 
 Actual isolated role/source/config/owner and sixteen-session concurrency tests:
 

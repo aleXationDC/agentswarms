@@ -21,6 +21,11 @@ import {
 } from "@/utils/mcpApps/keys";
 import { MCP_PROTOCOL_VERSION, readRpcBody, rpcFailure } from "@/utils/mcpApps/protocol";
 import { templateById } from "@/lib/mcpTemplates";
+import {
+  InternalRegistrationSchema,
+  internalToolScope,
+  InternalToolScopeError,
+} from "@/utils/mcpApps/internalScope";
 
 type Fail = { ok: false; error: string };
 
@@ -558,10 +563,12 @@ export const mcpAppSetPublic = createServerFn({ method: "POST" })
  * no changes to the tool registry at all. The bearer token is a key flagged
  * `is_internal`, so it works even while the app is not exposed publicly and
  * never appears in the owner's key list to be revoked by accident.
+ * A supplied scope requires the current reviewed fingerprint and narrows both
+ * the native key and the connected-server advertisement.
  */
 export const mcpAppRegisterInternal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .inputValidator((input: unknown) => InternalRegistrationSchema.parse(input))
   .handler(async ({ data, context }): Promise<Fail | { ok: true; server_id: string }> => {
     const owned = await ownedApp(context.supabase, data.id);
     if (!owned.ok) return owned;
@@ -569,6 +576,30 @@ export const mcpAppRegisterInternal = createServerFn({ method: "POST" })
 
     if (app.status !== "ready") {
       return { ok: false, error: "Deploy the server successfully before registering it." };
+    }
+    let toolScope: string[];
+    try {
+      toolScope = internalToolScope(app, data.tool_allowlist, data.tools_hash);
+    } catch (error) {
+      if (!(error instanceof InternalToolScopeError)) throw error;
+      return { ok: false, error: error.message };
+    }
+    const registeredTools = Array.isArray(app.tools)
+      ? app.tools.filter(
+          (tool: { name: string }) => !toolScope.length || toolScope.includes(tool.name),
+        )
+      : [];
+    let serverId = app.registered_server_id as string | null;
+    if (serverId) {
+      const { data: server, error } = await supabaseAdmin
+        .from("mcp_servers")
+        .select("id,user_id")
+        .eq("id", serverId)
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (server && server.user_id !== context.userId)
+        return { ok: false, error: "The registered server is not owned by this caller." };
+      if (!server) serverId = null;
     }
 
     const { resolveInternalOrigin } = await import("@/utils/internalOrigin.server");
@@ -592,28 +623,32 @@ export const mcpAppRegisterInternal = createServerFn({ method: "POST" })
       };
     }
 
+    const plaintext = generateMcpApiKey();
+    const keyHash = await hashMcpApiKey(plaintext);
+    const { encryptMcpAuthToken } = await import("@/lib/mcp/auth.server");
+    const enc = await encryptMcpAuthToken(plaintext);
+    if (!enc) return { ok: false, error: "The native internal key could not be encrypted." };
+
     // Reissue rather than reuse: we cannot read back a hashed key, so a
     // re-registration mints a fresh one and retires the old.
-    await supabaseAdmin
+    const { error: revokeErr } = await supabaseAdmin
       .from("mcp_app_keys")
       .update({ is_active: false, revoked_at: new Date().toISOString() })
       .eq("app_id", app.id)
       .eq("is_internal", true)
       .is("revoked_at", null);
+    if (revokeErr) return { ok: false, error: revokeErr.message };
 
-    const plaintext = generateMcpApiKey();
     const { error: keyErr } = await supabaseAdmin.from("mcp_app_keys").insert({
       app_id: app.id,
       user_id: context.userId,
       name: "Internal (agents)",
-      key_hash: await hashMcpApiKey(plaintext),
+      key_hash: keyHash,
       key_prefix: mcpKeyPrefix(plaintext),
       is_internal: true,
+      tool_allowlist: toolScope,
     });
     if (keyErr) return { ok: false, error: keyErr.message };
-
-    const { encryptMcpAuthToken } = await import("@/lib/mcp/auth.server");
-    const enc = await encryptMcpAuthToken(plaintext);
 
     const payload = {
       user_id: context.userId,
@@ -625,15 +660,26 @@ export const mcpAppRegisterInternal = createServerFn({ method: "POST" })
       auth_token: null,
       auth_token_enc: enc,
       status: "connected",
-      tools_count: Array.isArray(app.tools) ? app.tools.length : 0,
-      tools: app.tools as Database["public"]["Tables"]["mcp_servers"]["Insert"]["tools"],
+      tools_count: registeredTools.length,
+      tools: registeredTools as Database["public"]["Tables"]["mcp_servers"]["Insert"]["tools"],
       last_ping: new Date().toISOString(),
     };
 
-    let serverId = app.registered_server_id as string | null;
     if (serverId) {
-      const { error } = await supabaseAdmin.from("mcp_servers").update(payload).eq("id", serverId);
-      if (error) serverId = null; // row was deleted from /mcp — fall through and recreate
+      const { data: row, error } = await supabaseAdmin
+        .from("mcp_servers")
+        .update(payload)
+        .eq("id", serverId)
+        .eq("user_id", context.userId)
+        .select("id")
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!row)
+        return {
+          ok: false,
+          error:
+            "The registered server changed during registration; retry after checking its ownership.",
+        };
     }
     if (!serverId) {
       const { data: row, error } = await supabaseAdmin
@@ -645,16 +691,20 @@ export const mcpAppRegisterInternal = createServerFn({ method: "POST" })
       serverId = row.id;
     }
 
-    await context.supabase
+    const { error: bindingErr } = await context.supabase
       .from("mcp_apps")
       .update({ registered_server_id: serverId })
-      .eq("id", app.id);
+      .eq("id", app.id)
+      .select("id")
+      .single();
+    if (bindingErr) return { ok: false, error: bindingErr.message };
     auditEvent({
       userId: context.userId,
       action: "mcp_app.register_internal",
       resourceType: "mcp_app",
       resourceId: app.id,
       resourceName: app.name,
+      detail: { tool_allowlist: toolScope, tools_hash: app.tools_hash ?? null },
     });
     return { ok: true, server_id: serverId };
   });
