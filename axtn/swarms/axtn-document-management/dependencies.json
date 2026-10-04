@@ -280,7 +280,11 @@
       "kind": "n8n-executor",
       "id": "axtnDriveDeletionExecutor",
       "recovered": "later canonical Source export exists; absent from active Host pin",
-      "implemented": false,
+      "sourceRepository": "aXtn/aXtn-n8n",
+      "sourceRevision": "dd4dcb8ff8455e65b39ff16c3664a4c6e66f8942",
+      "source": "workflows/aXtn-Drive-Deletion-Executor.json",
+      "implemented": "own native source verifier requires exact readable trashed file; generic errors/missing/mismatched/404 are never deletion proof; protected effect/rights/receipt binding incomplete",
+      "tested": "103 native source tests, actual exported verifier, unchanged provider nodes/connections/settings and byte-idempotent regeneration",
       "deployed": false,
       "runtimeVerified": false
     },

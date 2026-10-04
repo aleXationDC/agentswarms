@@ -524,8 +524,8 @@ keeping affected semantic capability blocked.
 
 Pending: complete dependency-ordered native seed; Local Table/Registry editor;
 local privacy/OCR; protected DMS receipts/closure and native Approval graph composition;
-scoped persistent effect claim/readback/projection recovery; own n8n executor
-branch with compatible source envelope/deletion contracts; bounded persisted
+scoped persistent effect claim/readback/projection recovery; complete own n8n
+source envelope/protected deletion contracts beyond the tested parser/verifier; bounded persisted
 Learning/side-effect-free evaluation/review handoff; full tested Host pins and
 allowed production convergence. Missing QualityProfile blocks promotion only;
 all new real auto-policies must stay disabled.
@@ -536,6 +536,68 @@ Sole current authenticated Owner cannot independently accept own work.
 Issue API 403 is not bypassed; canonical Git and Case execution remain available.
 
 ## Production and rollback
+
+### Persisted native Local Table and n8n recovery candidates
+
+Scoped native registration is committed as
+`bc1bbf2e9311ab66549a9628ad6680e48a130897`, canonical-pushed and immediately
+mirrored at `2026-10-05T01:40:00+02:00`. The own n8n worktree/source/writer
+preflight was committed separately at
+`1ce463919d5806c61b821b8a61543f56632d00f8`, mirrored at
+`2026-10-05T01:42:27+02:00`, and bound before n8n executor edits.
+App draft PR 11 and the same OPEN Cases retain exact candidate readback.
+
+Own n8n branch `work/AXTN-DMS-EXECUTORS-0001`, worktree
+`/home/alex/aXtn-n8n-dms-executors-worktree`, now contains recovery commit
+`3d7742d3697d09906f273e9e44f2656202108981` on compatible source 381.
+It was canonical-pushed and immediately mirrored at
+`2026-10-05T01:45:01+02:00`. Genuine n8n draft PR **2** targets the preserved
+compatible `change/DMS-FILING-TARGET-RESOLUTION-0001-R2` branch at 381;
+neither that branch nor default/deployed pin 24de was changed.
+
+The source-native Delete verifier no longer converts arbitrary provider
+errors or wrong/missing file identities into `not_found/deleted=true`.
+Exactly one readable record, exact approved file ID and boolean `trashed=true`
+are required. Generic errors/timeouts and HTTP 400/401/403/404/429/500/503,
+including unavailable access disguised as 404, fail explicitly.
+Permanent-delete/UNKNOWN outcomes still require the incomplete protected
+operation/rights/receipt adapter; no fabricated receipt or retry loop is added.
+This bounded repair is not full effect fencing, provider authority, Approval
+validation or Case closure.
+
+The complete native n8n suite passes **103/103**, without skips. Tests execute
+the actual exported verifier, not a separate approximation. Canonical workflow
+regeneration is byte-idempotent. Exact before/after JSON comparison proves only
+the Delete verifier code changes: provider operation, credentials, inactive
+state, all nodes/connections/settings and other exports remain unchanged.
+Actual protected credential scan passed across the own App/Host/n8n source,
+reports/artifacts and browser assets (2,500 files).
+No native workflow was imported, activated or executed against a provider.
+The full Filing Child remains NEW; no prerequisite was falsely completed.
+
+The next own n8n increment is
+`dd4dcb8ff8455e65b39ff16c3664a4c6e66f8942`, canonical-pushed and immediately
+mirrored at `2026-10-05T01:51:17+02:00`; draft PR 2 readback matches that SHA.
+The actual App Parent API spreads protected registration fields at top level
+alongside suspended status/output/runId. The older n8n parser read only
+`output`, so a real parked Approval response could be rejected. The canonical
+core now supports that one exact Case-bound suspended contract; it does not
+guess a carrier, parse the human Approval text, accept an incomplete ACK or
+fall back to plausible legacy output after parked-contract failure.
+Pending/error statuses cannot authorize source handling. Ordinary completed
+Intake output and historical first-line compatibility are retained.
+
+The complete native n8n suite passes **124/124**, without skips. All four actual
+generated ACK nodes (Drive initial/retry, Gmail/IMAP) consume the complete
+parked response and reject missing Case evidence, retaining per-item request/
+run observability. Mail still requires `00_Review`; Drive still forbids a move
+destination. Native topology/provider operation/credentials/settings/inactive
+state are unchanged across all eight exports; regeneration is byte-idempotent.
+Cross-repository protected Parent API/adapter and inventory tests pass 39/39.
+The original n8n worktree at 381 remains clean and untouched.
+Source-emitter Request/Delivery/original hash/exact revision, live Parent,
+privacy rights and durable effects/receipts are still incomplete; this is not
+full registration-to-filing Acceptance or production convergence.
 
 No DMS deployment or production schema/seed/config mutation performed.
 Fresh readback before this source commit confirms active App source
