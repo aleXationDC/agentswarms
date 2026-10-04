@@ -18,6 +18,7 @@
         "processing",
         "local-table",
         "case-profile",
+        "proposal-current",
         "filing",
         "cleanup"
       ],
@@ -57,7 +58,13 @@
       "name": "cleanup",
       "source": "axtn/swarms/axtn-blacklisted-file-cleanup/graph.mjs",
       "sourceSHA256": "f307b0ef542b4494aee98a91e5c49b728b754fdb5460e530cb8127d4b7af6640",
-      "dependencies": ["local-table", "deletion", "case-profile", "protected-approval"],
+      "dependencies": [
+        "local-table",
+        "deletion",
+        "case-profile",
+        "protected-approval",
+        "proposal-current"
+      ],
       "recovered": true,
       "implemented": "historical native graph; implicit all-selection removed; protected deletion receipt still required",
       "tested": "explicit selection/binding fixtures only",
@@ -179,6 +186,18 @@
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Recovered Parent/Cleanup are not yet wired or published; protected privacy/rule evidence, provider rights/effects and real independent human Acceptance remain pending. Not an effect permission."
+    },
+    {
+      "name": "proposal-current",
+      "kind": "native-case-domain-revision",
+      "source": "supabase/migrations/20261004110000_document_current_proposal.sql",
+      "sourceSHA256": "1e2ce3d5e254074ee10dca0b776f0e300ed6287f488c2b04b50c48dc1bf474dd",
+      "dependencies": ["case-profile", "protected-approval"],
+      "implemented": "same domain RPC, atomic operation-scoped current Decision selection, append-only proposals, stale callback/Approval/resume denial and strict NO_AI/verified-privacy gate",
+      "tested": "isolated actual PostgreSQL current selection/readback/replay/supersession/privacy/private-delegate roles; existing Development guards and sixteen-session ensure remain intact",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "No provider permission, effect receipt, closure or real independent Acceptance."
     },
     {
       "name": "privacy-preflight",

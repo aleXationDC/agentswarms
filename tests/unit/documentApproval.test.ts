@@ -56,6 +56,9 @@ function fixture() {
     document_id: proposal.documentId,
     actor_principal: { kind: "swarm", id: owner },
     processing_mode: "DETERMINISTIC",
+    document_decisions_by_operation: {
+      CLASSIFY: { decisionId, revision: documentInputHash(proposal) },
+    },
     privacy_evidence_revision: "e".repeat(64) as string | undefined,
     verified_privacy_status: "ELIGIBLE",
     document_input: {
@@ -195,6 +198,7 @@ describe("DMS registered binding on the existing native Approval", () => {
     "reviewer",
     "development",
     "operation",
+    "superseded",
   ])("refuses %s mismatch before native insertion", async (variant) => {
     const f = fixture();
     if (variant === "case") f.work.status = "CLOSED";
@@ -206,16 +210,20 @@ describe("DMS registered binding on the existing native Approval", () => {
     if (variant === "graph") {
       f.proposal.graphRevision = "f".repeat(64);
       f.decision.revision = documentInputHash(f.proposal);
+      f.work.document_decisions_by_operation.CLASSIFY.revision = f.decision.revision;
     }
     if (variant === "rule") {
       f.proposal.ruleRevision = "f".repeat(64);
       f.decision.revision = documentInputHash(f.proposal);
+      f.work.document_decisions_by_operation.CLASSIFY.revision = f.decision.revision;
     }
     if (variant === "privacy") f.work.privacy_evidence_revision = undefined;
     if (variant === "NO_AI") f.work.document_input.privacyStatus = "NO_AI";
     if (variant === "reviewer") f.snapshot.nodes[0].data.approverUserIds = [];
     if (variant === "development") f.work.source_kind = "development_work";
     if (variant === "operation") f.snapshot.nodes[0].data.approvalDocument.operation = "DELETE";
+    if (variant === "superseded")
+      f.work.document_decisions_by_operation.CLASSIFY.decisionId = runId;
     await expect(
       createNativeWorkApproval({ ...args, userId: variant === "owner" ? reviewerId : owner }),
     ).rejects.toThrow();

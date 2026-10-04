@@ -65,3 +65,15 @@ Tests: `tests/unit/documentApproval.test.ts` and
 `tests/integration/documentApproval.sql`. SQL fixtures run only against a
 dedicated schema-only test database and roll back; they are not real human
 Acceptance or production runtime evidence.
+
+Additive migration `20261004110000_document_current_proposal.sql` extends that
+same domain RPC with a protected current Decision/revision pointer per
+operation in the existing Case. A new proposal selects its immutable revision
+atomically without changing the Case lifecycle. Prior proposals remain
+append-only and findable, but their late callbacks cannot reactivate them and
+their Approvals cannot resume after supersession. The shared read API exposes
+derived `current` status; the manual panel labels non-current proposals.
+Machine proposals and all semantic mode transitions require verified
+`ELIGIBLE` privacy and may never use a NO_AI manifest, even with a plausible
+proof hash. Private legacy delegates have no service/user execute grant.
+The additional actual SQL suite is `tests/integration/documentCurrentProposal.sql`.

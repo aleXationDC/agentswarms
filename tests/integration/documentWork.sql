@@ -172,7 +172,8 @@ BEGIN
   THEN RAISE EXCEPTION 'Proposal replay failed or became authority'; END IF;
   again := axtn_case_document(owner,'document_proposals',jsonb_build_object(
     'caseId',result->>'case_id','_principal',machine));
-  IF jsonb_array_length(again)<>1 OR again->0 IS DISTINCT FROM saved_proposal
+  IF jsonb_array_length(again)<>1 OR (again->0)-'current' IS DISTINCT FROM saved_proposal
+    OR again->0->>'current'<>'true'
   THEN RAISE EXCEPTION 'Persisted proposal not readable through shared Case API'; END IF;
   BEGIN
     PERFORM axtn_case_document(other,'document_proposals',jsonb_build_object(
@@ -181,7 +182,7 @@ BEGIN
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM<>'DOCUMENT_OWNED_CASE_REQUIRED' THEN RAISE; END IF;
   END;
-  IF result IS DISTINCT FROM (SELECT row FROM user_data_rows WHERE table_id=dataset
+  IF result IS DISTINCT FROM (SELECT row-'document_decisions_by_operation' FROM user_data_rows WHERE table_id=dataset
     AND row->>'case_id'=result->>'case_id')
   THEN RAISE EXCEPTION 'Proposal silently changed Case state'; END IF;
   BEGIN

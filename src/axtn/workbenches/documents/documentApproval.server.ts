@@ -67,6 +67,10 @@ const CurrentCase = z.object({
   document_input: DocumentInputManifest,
   actor_principal: Principal,
   processing_mode: z.enum(["DETERMINISTIC", "HUMAN", "SEMANTIC"]),
+  document_decisions_by_operation: z.record(
+    z.string(),
+    z.object({ decisionId: z.string().uuid(), revision: DocumentRevision }),
+  ),
   privacy_evidence_revision: DocumentRevision.optional(),
   verified_privacy_status: z.enum(["NO_AI", "UNRESOLVED", "ELIGIBLE"]).optional(),
 });
@@ -126,6 +130,9 @@ export async function createNativeDocumentApproval(args: {
   const work = CurrentCase.parse(workResult.data.row);
   const decision = StoredDecision.parse(decisionResult.data.row);
   const proposal = decision.document_decision;
+  const selected = work.document_decisions_by_operation[proposal.operation];
+  if (selected?.decisionId !== decision.decision_id || selected?.revision !== decision.revision)
+    throw new Error("DMS_NATIVE_APPROVAL_CURRENT_DECISION_REQUIRED");
   if (proposal.operation !== config.approvalDocument.operation)
     throw new Error("DMS_NATIVE_APPROVAL_OPERATION_SCOPE_REQUIRED");
   if (

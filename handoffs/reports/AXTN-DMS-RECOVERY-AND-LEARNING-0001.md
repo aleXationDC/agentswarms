@@ -131,6 +131,45 @@ Development run; unrelated worktrees remain clean.
 
 ## Executed evidence and remaining gates
 
+### Current Decision and privacy revision increment
+
+Native Approval increment is committed/pushed as
+`6c3f055763dbd8dd33648fd9bf791480c95a34a7`; the existing repository push
+mirror was synchronized immediately and read back with `last_update` after
+that commit. Parent/Inventory/Case retain this exact candidate and evidence,
+all still OPEN.
+
+Further candidate migration `20261004110000_document_current_proposal.sql`,
+SHA256 `1e2ce3d5e254074ee10dca0b776f0e300ed6287f488c2b04b50c48dc1bf474dd`,
+extends the same Case RPC and native binding check, not another engine.
+Current immutable Decision/revision is selected per operation atomically;
+prior proposals remain retained, but a late callback cannot reselect one
+after supersession. Existing native Approval decisions and approved resume
+reject non-current Decision bindings. Shared readback and manual UI label
+current/non-current proposals without asserting acceptance.
+
+The wrapper also requires actual verified ELIGIBLE privacy for machine
+proposals and all semantic mode transitions. A proof-shaped hash or even
+claimed eligibility cannot override an original NO_AI manifest. Raw private
+legacy delegates have no user/service-role execute grant. Existing native
+owner/name Dataset uniqueness is reused, not replaced with another mechanism.
+
+Fresh schema-only rehearsal with all three exact candidate migrations PASS:
+Document profile/broker roles, native Document Approval roles including
+superseded approved resume, current-proposal callback/readback/NO_AI/private
+delegate suite, unchanged Development Approval roles, and 16-session
+ensure/lost-response concurrency. The new fixture initially expected a
+duplicate Dataset could be inserted; actual native uniqueness rejected it.
+The test now verifies that exact existing constraint, and redundant custom
+ambiguity logic was removed. No failing rehearsal counted as PASS.
+Targeted current-binding suite: 66 tests PASS. Stable full Component gate for
+this latest revision increment **PASS**: typecheck, lint (warnings only), docs,
+infra, **567 files / 9,215 tests PASS / 40 skipped**, and build. Missing-tool
+infra and Parquet/MinIO skips remain skips. Protected-credential scan PASS
+across 2,443 source/evidence files, browser assets and runtime logs.
+Production remains untouched (278 ledger entries, prior live image and
+suspended Development run). This is tested source, not deployed full DMS.
+
 Previous committed increment's stable Component check passed typecheck, lint (warnings only), docs,
 infra, **566 files / 9,195 tests PASS / 40 skipped**, and build.
 The skipped Parquet/MinIO tests are not claimed as runtime PASS.

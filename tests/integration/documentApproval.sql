@@ -22,6 +22,8 @@ INSERT INTO user_data_rows(table_id,row)
   SELECT dataset_id,jsonb_build_object('case_id',case_id,'source_kind','document_work',
     'case_type','DOCUMENT_PROCESSING','source_id','request:fixture:approval-fixture','status','OPEN',
     'attempt_id',attempt_id,'input_hash',repeat('a',64),'document_id','document-fixture',
+    'document_decisions_by_operation',jsonb_build_object('CLASSIFY',
+      jsonb_build_object('decisionId',decision_id,'revision',repeat('b',64))),
     'processing_mode','HUMAN','actor_principal',jsonb_build_object('kind','user_session','id',builder_id),
     'document_input',jsonb_build_object('sourceRef','fixture:approval','sourceRevision','"etag:0001"'))
   FROM dms_approval_fixture;
@@ -129,6 +131,21 @@ DO $$ BEGIN
     IF SQLERRM<>'DMS_NATIVE_APPROVAL_CURRENT_REVIEWER_REQUIRED' THEN RAISE; END IF;
   END;
 END $$;
+UPDATE user_data_rows SET row=jsonb_set(row,'{document_decisions_by_operation,CLASSIFY,decisionId}',
+  to_jsonb((SELECT stranger_id::text FROM dms_approval_fixture)))
+  WHERE table_id=(SELECT dataset_id FROM dms_approval_fixture);
+DO $$ BEGIN
+  BEGIN
+    PERFORM assert_axtn_document_approval_resume(r.id,f.owner_id)
+      FROM dms_approval_fixture f CROSS JOIN dms_approval_requests r WHERE r.label='approve';
+    RAISE EXCEPTION 'Approved proposal survived supersession at resume';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'DMS_NATIVE_APPROVAL_CURRENT_DECISION_REQUIRED' THEN RAISE; END IF;
+  END;
+END $$;
+UPDATE user_data_rows SET row=jsonb_set(row,'{document_decisions_by_operation,CLASSIFY,decisionId}',
+  to_jsonb((SELECT decision_id::text FROM dms_approval_fixture)))
+  WHERE table_id=(SELECT dataset_id FROM dms_approval_fixture);
 UPDATE user_data_rows SET row=jsonb_set(row,'{document_input,sourceRevision}','"changed"')
   WHERE table_id=(SELECT dataset_id FROM dms_approval_fixture);
 SET LOCAL ROLE authenticated;

@@ -17,6 +17,7 @@ const StoredProposals = z.array(
     decision_id: z.string().uuid(),
     revision: DocumentRevision,
     status: z.literal("PROPOSED"),
+    current: z.boolean(),
   }),
 );
 
@@ -115,6 +116,7 @@ export function DocumentWorkPanel({
         },
       });
       setProposals(StoredProposals.parse(await call({ operation: "document_proposals", caseId })));
+      setState(WorkState.parse(await call({ operation: "list" })));
       setProposalId(crypto.randomUUID());
       await onChanged();
     } catch (cause) {
@@ -293,7 +295,8 @@ export function DocumentWorkPanel({
             </Button>
             {proposals.map((proposal) => (
               <p key={proposal.decision_id}>
-                {proposal.status} · {proposal.decision_id} · <code>{proposal.revision}</code>
+                {proposal.status} · {proposal.current ? "CURRENT" : "NON_CURRENT"} ·{" "}
+                {proposal.decision_id} · <code>{proposal.revision}</code>
               </p>
             ))}
             <strong>Durable transitions</strong>
