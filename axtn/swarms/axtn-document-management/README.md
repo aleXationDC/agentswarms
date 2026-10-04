@@ -77,3 +77,42 @@ Machine proposals and all semantic mode transitions require verified
 `ELIGIBLE` privacy and may never use a NO_AI manifest, even with a plausible
 proof hash. Private legacy delegates have no service/user execute grant.
 The additional actual SQL suite is `tests/integration/documentCurrentProposal.sql`.
+
+## Explicit native Registry seed
+
+After additive migration `20261004120000_document_registry_seed.sql`, run
+`node axtn/swarms/axtn-document-management/seed-registries.mjs` with the existing
+Intake bootstrap environment. This reuses the configured authenticated
+bootstrap-superadmin endpoint; the SQL RPC is service-only and the owner is
+derived server-side. No new credential, public setup endpoint or CLI MCP change
+is needed.
+
+The native owner/name Dataset constraint and same owner advisory lock protect
+atomic creation/reconciliation of `axtn_document_registry`,
+`axtn_document_recognition_patterns` and
+`axtn_document_classification_values`. Existing IDs, unknown column metadata,
+operator documents, custom taxonomy values and source filenames are retained.
+Malformed/ambiguous metadata or sample collisions fail, not silently reset.
+Missing columns are appended; an unchanged second seed writes no audit or
+Dataset update.
+
+Only the six historical operational document types are seeded: Rechnung,
+Vertrag, Vertragsanpassung, Mahnung, Bescheid and Nachweis. No sample document,
+active recognition rule, provider identity, Policy or privacy proof is created.
+The seed is explicit, never a side effect of reading the Registry.
+Operator-owned identity settings and full native dependency provisioning
+remain separate requirements.
+
+Actual isolated role/reseed tests are in
+`tests/integration/documentRegistrySeed.sql`. For sixteen-session concurrency
+and a new-session replay, use the explicitly isolated test DB environment:
+
+```sh
+AXTN_DOCUMENT_TEST_CONTAINER=axtn-native-supabase-db \
+AXTN_DOCUMENT_TEST_DATABASE=dms_native_contract_20261004 \
+node tests/integration/documentRegistryConcurrency.mjs
+```
+
+This proves the bounded Dataset seed, not the complete DMS empty-state or
+production restoration gate. The restored historical editor is not blindly
+activated: raw provider-safe claims and seed-on-read remain excluded.

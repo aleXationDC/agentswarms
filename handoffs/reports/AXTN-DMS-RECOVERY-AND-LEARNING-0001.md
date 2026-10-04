@@ -187,6 +187,62 @@ Fresh canonical branch readback still showed compatible Development `6bf776ef`
 and prior DMS `2f2d67f`; actual live image/source remained `1f3e476e`/`10df3a869`.
 Unrelated Development App/Host/MCP and own Host worktrees remain clean.
 
+### Explicit native Registry seed source increment
+
+Parent ACK increment is committed/pushed at
+`53a6d085b969676acf2e7c6fcc6fd538674ceb77`, immediately mirrored with verified
+completion readback. The same Parent/Inventory/Case are OPEN with this exact
+candidate/evidence and PR #11 refs. Existing PR #11 remains draft and its
+partial source/NOT_DEPLOYED evidence is updated; no merge or foreign branch
+write.
+
+The next bounded source increment restores an explicit native three-Dataset
+seed/reconcile through the existing configured-bootstrap-superadmin endpoint
+and a service-only atomic RPC. Dataset owner is server-derived, not a body
+field. The existing owner/name uniqueness and owner Case advisory lock are
+reused. Existing IDs, operator documents/custom taxonomy/unknown metadata and
+source filenames remain unchanged; missing columns are appended. Sample
+collisions, malformed metadata and ambiguous matching taxonomy fail without
+reset or invented replacements. A no-op seed adds no audit or Dataset update.
+
+Six exact historical operational document types are seeded only explicitly;
+no active recognition pattern, business document, provider identity, Policy
+or privacy authority is inserted. Historical seed-on-read and client-asserted
+provider-safe pattern creation are not restored. The dedicated command is
+`axtn/swarms/axtn-document-management/seed-registries.mjs`; no MCP or credential
+configuration change is required.
+
+Additive migration `20261004120000_document_registry_seed.sql`, SHA256
+`836cbf6520bf6270e381e255937dfc37e66e5d5249054174621bf475f28e9697`,
+was applied **only** to the isolated production-ownership-matching schema DB.
+Fresh schema restore plus all four exact candidate migrations passed actual
+Document Work, Approval, current Decision/privacy, Registry seed and unchanged
+Development native Approval role suites. Anon/authenticated RPC bypass is
+denied; the configured bootstrap endpoint authentication/IAM is executed in
+isolated API-handler tests.
+
+Sixteen independent native PostgreSQL Registry seed sessions plus a new-session
+replay prove exactly three owned Datasets, six values, zero business/pattern
+rows and four audit events. Work ensure/concurrency/lost-response also passes
+with this migration. Both concurrency suites passed twice in separate sessions.
+An intermediate repeat exposed old fixture cleanup leaving native deletion
+audit events after auth deletion. The test helper was shared without weakening
+its isolated-DB fence, fixture cleanup now commits exact fixture Dataset/auth
+deletion followed by audit cleanup, and fresh/readback/repeat runs passed.
+Only those synthetic owners in the isolated DB were cleaned; no production
+business/evidence cleanup occurred and no failed test was counted as PASS.
+
+This is partial native seed evidence, not R1/R15/R17 full-DMS PASS, active
+recognition/editor delivery, real source effects, Learning or deployment.
+Stable full Component gate **PASS**: typecheck, lint (warnings only), docs,
+infra, **571 files / 9,269 tests PASS / 40 skipped**, client/server build.
+Targeted Registry/bootstrap/Intake/inventory subset: **25 tests PASS**.
+Protected credential scan passed across 2,457 source/evidence files,
+browser assets and runtime logs. Production readback remains App `10df3a869`,
+image `1f3e476e`, ledger 278 and the same suspended Development run.
+Native local OCR restoration has started separately in uncommitted source;
+it is not part of this Registry seed commit or a deployed capability.
+
 ### Current Decision and privacy revision increment
 
 Native Approval increment is committed/pushed as

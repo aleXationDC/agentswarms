@@ -7,6 +7,7 @@ import {
   seedAxtnDocumentCaseIntake,
 } from "@/utils/axtnDocumentIntakeSeed.server";
 import { requireSuperadmin } from "@/utils/iam.server";
+import { seedDocumentRegistries } from "@/axtn/workbenches/documents/documentRegistries.server";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -41,11 +42,23 @@ async function handle(request: Request): Promise<Response> {
   }
   const action =
     payload && typeof payload === "object" && "action" in payload ? payload.action : undefined;
-  if (action !== "seed" && action !== "apply" && action !== "seed_case") {
+  if (
+    action !== "seed" &&
+    action !== "apply" &&
+    action !== "seed_case" &&
+    action !== "seed_registries"
+  ) {
     return json(400, { error: "Unsupported Document Intake action" });
   }
 
   try {
+    if (action === "seed_registries") {
+      const result = await seedDocumentRegistries(auth.user.id);
+      return json(200, {
+        ...result,
+        message: "Document registries reconciled; no recognition or automation activated.",
+      });
+    }
     if (action === "seed_case") {
       const result = await seedAxtnDocumentCaseIntake(auth.user.id);
       return json(200, {

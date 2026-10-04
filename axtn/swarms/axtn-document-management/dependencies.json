@@ -17,6 +17,7 @@
         "triage",
         "processing",
         "local-table",
+        "registry-seed",
         "case-profile",
         "proposal-current",
         "parent-registration-ack",
@@ -130,7 +131,8 @@
       "name": "document-registry",
       "kind": "dataset",
       "logicalName": "axtn_document_registry",
-      "implemented": "Case-bound Intake writes minimized registration using existing native broker",
+      "dependencies": ["registry-seed"],
+      "implemented": "explicit owned metadata seed/reconcile plus Case-bound Intake registration using existing native broker; no seeded business documents",
       "deployed": false,
       "runtimeVerified": false
     },
@@ -152,7 +154,9 @@
       "kind": "dataset-contract",
       "logicalName": "axtn_document_classification_values",
       "recovered": "historical Source available",
-      "implemented": false,
+      "dependencies": ["registry-seed"],
+      "implemented": "explicit atomic native Dataset seed/reconcile of six historical operational document types; custom data retained",
+      "tested": "actual PostgreSQL service/anon/authenticated roles, no-op reseed, metadata preservation and sixteen-session concurrency",
       "deployed": false,
       "runtimeVerified": false
     },
@@ -199,6 +203,18 @@
       "deployed": false,
       "runtimeVerified": false,
       "gap": "No provider permission, effect receipt, closure or real independent Acceptance."
+    },
+    {
+      "name": "registry-seed",
+      "kind": "native-dataset-seed",
+      "source": "supabase/migrations/20261004120000_document_registry_seed.sql",
+      "sourceSHA256": "836cbf6520bf6270e381e255937dfc37e66e5d5249054174621bf475f28e9697",
+      "dependencies": [],
+      "implemented": "explicit service-only atomic owned three-Dataset metadata reconcile and exact historical starter taxonomy through existing configured-superadmin bootstrap",
+      "tested": "fresh isolated four-migration schema, actual role/no-op/metadata/operator-data/ambiguity tests, sixteen sessions plus new-session replay twice",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "No active recognition seed, operator identity, privacy authority, full dependency seed, editor or full empty-state DMS PASS."
     },
     {
       "name": "parent-registration-ack",

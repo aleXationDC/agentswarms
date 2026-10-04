@@ -8339,6 +8339,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      axtn_seed_document_registries: {
+        Args: { p_user_id: string };
+        Returns: Json;
+      };
       assert_axtn_document_approval_resume: {
         Args: { p_approval_id: string; p_user_id: string };
         Returns: undefined;

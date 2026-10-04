@@ -1,42 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-
-const container = process.env.AXTN_DOCUMENT_TEST_CONTAINER;
-const database = process.env.AXTN_DOCUMENT_TEST_DATABASE;
-if (!container || !database || !/^dms_native_contract_[a-z0-9_]+$/.test(database)) {
-  throw new Error("An explicitly isolated dms_native_contract_* test database is required.");
-}
-function query(sql) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("docker", [
-      "exec",
-      "-i",
-      container,
-      "psql",
-      "-X",
-      "-U",
-      "postgres",
-      "-d",
-      database,
-      "-At",
-      "-v",
-      "ON_ERROR_STOP=1",
-    ]);
-    let output = "";
-    let error = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk) => {
-      output += chunk;
-    });
-    child.stderr.setEncoding("utf8").on("data", (chunk) => {
-      error += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0 ? resolve(output.trim()) : reject(new Error(`Isolated psql failed: ${error}`)),
-    );
-    child.stdin.end(sql);
-  });
-}
+import { query } from "./documentTestDatabase.mjs";
 const owner = "77777777-7777-4777-8777-777777777777";
 const work = {
   businessRequestId: "concurrent-request-01",
@@ -65,6 +28,14 @@ const work = {
   _principal: { kind: "swarm", id: owner },
 };
 const quote = (value) => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
+for (const table of ["auth.users", "public.user_data_tables", "public.audit_events"]) {
+  const column = table === "auth.users" ? "id" : "user_id";
+  assert.equal(
+    await query(`SELECT count(*) FROM ${table} WHERE ${column}='${owner}';`),
+    "0",
+    "The isolated Work fixture owner and its evidence must not preexist.",
+  );
+}
 await query(`
   INSERT INTO public.knowledge_bases(id,user_id,name,is_sample)
     VALUES('a9ed1b51-4c3d-4f87-9c5a-1d2e3f4a5b00',NULL,'AgentSwarms How-To Guide',true)
@@ -107,5 +78,11 @@ try {
     "PASS: 16 actual concurrent sessions + lost-response replay preserve one Case, document, attempt and delivery.",
   );
 } finally {
-  await query(`DELETE FROM auth.users WHERE id='${owner}';`);
+  await query(`
+    BEGIN;
+    DELETE FROM user_data_tables WHERE user_id='${owner}';
+    DELETE FROM auth.users WHERE id='${owner}';
+    DELETE FROM audit_events WHERE user_id='${owner}';
+    COMMIT;
+  `);
 }
