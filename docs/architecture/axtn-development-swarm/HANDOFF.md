@@ -4,7 +4,7 @@
 **Canonical branch:** `work/AXTN-DEVELOPMENT-SWARM-NATIVE-0002`
 **Branch base:** deployed AgentSwarms source pin `ff43febf35bee35e5a8346e142628e20bdefa5b9`
 **Tracking issue:** `aXtn/aXtn-agentswarms#7`
-**Status:** `READY_FOR_DIRECT_IMPLEMENTATION_AND_PROD_ACCEPTANCE`
+**Status:** `NATIVE_SLICE_DEPLOYED_INDEPENDENT_REVIEW_PENDING`
 **Authorization date:** 2026-10-03
 
 ## Execute this assignment
@@ -14,6 +14,31 @@ Read completely and execute:
 `handoffs/requests/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md`
 
 This request is the complete current implementation contract. Issue #7 is the status/index. Repository and verified runtime truth override chat summaries.
+
+## Verified execution state, 2026-10-04
+
+The native 31-node Slice 1 and authorized protected Approval binding are
+implemented and deployed at App source
+`10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`,
+image `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a`.
+The existing MCP remains at `6e18b49a46327a56a21444fd6ebb6aeac745718d`.
+Canonical evidence, changed files, native matrix, retained Cases/runs and
+rollback boundary:
+`handoffs/reports/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md`.
+
+Headless genuine FAIL and PASS-to-Approval, full native canvas FAIL, protected
+canvas suspension, owner denial without mutation and actual restart
+persistence are verified. The recurring HTTP worker stream defect is repaired
+using existing native srvx compression.
+
+Full Slice 1/V1 Acceptance is not claimed: the actual assigned group contains
+only the Work Owner, who must not accept this Candidate. Keep the real pending
+PASS Approval and existing Parent/Acceptance Cases. Do not fabricate a
+reviewer, accept as Builder, replace Cases or start a general approval loop.
+Continue the existing native suspended snapshot only after an actual
+independent assigned reviewer decision. Advisory Evaluate/Learn stay gated
+on actual Slice 1 acceptance. Existing direct PROD repair authority remains
+unchanged.
 
 ## Superseded work
 

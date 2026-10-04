@@ -30,8 +30,8 @@ Actual PostgreSQL role fixture **PASS**, completely rolled back: owner,
 unrelated reviewer, routed Builder, duplicate decision, binding edits and
 Attempt drift denied; legitimate assigned reviewer/group decisions and atomic
 audit verified. This is capability evidence, not an independent business
-decision. The source build/deployment/live acceptance evidence follows below
-when completed; no source-only result is claimed as deployed acceptance.
+decision. Deployment/live evidence follows below with its explicit remaining
+boundary; source validation is not business Acceptance.
 
 Fresh actual AgentSwarms inference: existing **OpenAI / gpt-4.1-mini HTTP 200**,
 READY present, no quota/authentication error. Provider integrations and
@@ -44,7 +44,139 @@ identity, impersonate a reviewer, weaken owner exclusion, or call a parked
 PASS candidate accepted/PR_READY. Complete deployable source and bounded live
 tests first; retain the existing parent and Acceptance Case until real review.
 
-### Bounded live repairs
+### Final verified PROD state
+
+**Implementation and bounded PROD tests PASS; full Slice 1/V1 Acceptance
+BLOCKED at the genuine independent-reviewer boundary.**
+
+| Component | Exact deployed source | Immutable local image ID |
+|---|---|---|
+| AgentSwarms | `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f` | `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a` |
+| Scoped Gitea MCP, unchanged | `6e18b49a46327a56a21444fd6ebb6aeac745718d` | `sha256:bd248c3fae4c0512292f20e737cc72c23b246858c77e039912e9f566a5962f7e` |
+| Previous App / retained rollback | `ff43febf35bee35e5a8346e142628e20bdefa5b9` | `sha256:4a856a22f273dbdfe8540d461661d60de4d2e942ccee4055158d7c2e6bba4ac1` |
+
+These are verified local image IDs, not claimed registry RepoDigests or a
+distribution release. Only App was recreated/restarted. Source-only
+`ab159334515e830105361444a7db8ab8aaa57dc8` was built, not deployed.
+Intermediate App `489008641bf333b0caad13f9d57c9952fe14c185` /
+`sha256:a2fd329273a4d09f15743c1b43fdd64a7d8edfc84e1fe352156628b6a2f7fa11`
+was superseded by the native HTTP stream repair.
+
+| Retained responsibility | SupaCase |
+|---|---|
+| Parent, not independently accepted | `85a1d829-39ac-49bd-9047-163ab52d427b` |
+| Native implementation | `41039014-4a5e-4e8d-873a-2869cebea5f9` |
+| Production Acceptance, unresolved | `11496f0f-360d-4069-b88e-05d34584ab65` |
+| Guard regression Work / Verify | `fd6112dc-71eb-4534-9673-7662f1cd5839` / `c51c0674-2b0a-4ff2-b072-88596c700fbd` |
+| Intentional FAIL Work / Verify | `09a2923a-2be9-4e46-87e7-5d76128b8340` / `8760b26c-8b18-4b43-9aba-bca5b3f0a3e8` |
+| Intended PASS Work / completed Verify | `b3d864db-0a1c-4412-b3b1-95b3a0555b9c` / `11f84b7d-60be-4aa4-938d-568018613e87` |
+
+The implementation and Acceptance references track the final immutable App
+source. Acceptance now requires completion of the actual native rebuild;
+the superseded dispatcher Work `43d22cf1-8767-40ef-b682-785607e6d724`
+remains an INFORMS evidence dependency, not the implementation base.
+This was updated through the existing authenticated directed-dependency
+operation, preserving both Cases and the actual completion requirement.
+
+Actual retained live evidence:
+
+- Full headless PASS-to-Approval run
+  `00ff44a5-760c-45dc-a605-7762ba72761a`, Attempt `intended-pass-v4`,
+  Candidate `9bb40cd54fa31b4a14613aa52d272ff5acdef752`.
+  Real PASS receipt session `0564be1f-5e16-4b18-b408-6ff2bfc344f5`;
+  pending native Approval `afe3d09b-f27b-41ce-a00a-60c82c06e8e3`;
+  graph hash `a1ea24867435314470f61bb3e3d641c2351867a429214f043285355947582c74`;
+  Evidence hash `251c01e33f20e1b26530592e9183af4eabd659d209ad6b722d5eb2c98ee7a0c3`.
+  Native checkpoint is suspended at `approved`, after `verify_completed`.
+  Actual owner approve/reject both denied without Approval/Case mutation.
+  A pending callback cannot resume or create a PR.
+- Final 31-node headless intentional FAIL
+  `72933106-4a52-42be-b37e-40896c957f19`, Attempt `intentional-fail-v2`:
+  genuine deterministic FAIL and retained accepted HIGH finding, native hard
+  gate blocked, no Approval/PR.
+- Actual full 31-node canvas intentional FAIL on the same retained Work/Verify:
+  `062cb921-a153-47f2-9079-f3f69d92df9b`, Attempt `intentional-fail-v3`,
+  Candidate `aeff56aa0e90f50f23b82c4f9c3fa88bf42749ca`,
+  genuine FAIL receipt `d8cd1b08-6c02-4a8f-8b49-d0e8f475ef39`.
+  The canvas branch matches headless: terminal hard-gate error, no Approval
+  and no PR-node execution. No page exceptions.
+- Actual 31-node published inventory in the authenticated browser.
+  Actual protected native canvas Verify/Approval regression
+  `a9024ee0-149f-4964-a99a-57424615ad11` suspended durably;
+  checkpoint remained after browser reload. Earlier native headless/canvas
+  guard runs `de6014ad-9b4d-4a77-ad25-4ae87955f08d` /
+  `250f3d28-f320-47dc-8fa1-f8c71905432c` are retained.
+- Actual final-image App restart: full PASS Approval binding, completed node
+  set, native trace-step rows and checkpoint unchanged; original guard
+  pending request/checkpoint also survived. No step reran.
+- Final-image native canvas/API traffic has no recurring
+  `ReadableStream is already closed` worker exit. Native OpenAI inference
+  repeated HTTP 200/READY. Actual seed repeated UNCHANGED with 31 nodes.
+
+Preservation PASS: ledger 278 (one additive migration), 1 real user, 1 group /
+1 membership, 4 datasets, 2 unchanged integrations and all 16 Cases retained.
+Dataset fingerprint `d29a8a2413cb6dfd2e967732d941d045`;
+integration fingerprint `b64f21362192273693663450457d5288`;
+Document Intake graph fingerprint `721350f8a9ab136006435b45928b6c38`.
+Existing App egress mount, runtime/MCP configuration, credentials and provider
+bindings are preserved. No unrelated worktree was changed.
+
+The current real group has only the Work Owner. SQL reviewer/group fixtures
+are rolled-back capability evidence, never a real human decision.
+Positive live protected resume, rejection by a real assigned independent
+reviewer, semantic PR_READY and full V1 Acceptance remain unclaimed.
+Evaluate/Learn remain intentionally deferred until actual Slice 1 acceptance.
+No impersonation, Builder self-acceptance or synthetic reviewer was used.
+Canonical Issue #7 access was retried with the existing automation identity:
+HTTP 403. Its index could not be updated; no credential or permission scope
+was widened. Repository Handoff and this versioned report carry the state.
+
+Rollback **not performed**: the current bounded App is healthy. Retained
+mode-0600 runtime snapshot `development-swarm-compose.pre-native-0002-guard.env`
+and the prior immutable App image are the platform rollback baseline.
+Keep additive migration, Cases, receipts and MCP capability. Pre-guard App
+must not execute this protected graph: any actual rollback first requires
+a fail-closed execution freeze of the canary (including canvas and callbacks),
+not merely an image swap. Missing independent review is not reason to roll
+back the healthy platform or weaken the guard.
+
+### Changed App files
+
+Relative to corrected native authority `37e79a23a55a62aa7f796878fd52239ef59e4128`:
+
+```text
+axtn/swarms/axtn-development/README.md
+axtn/swarms/axtn-development/apply.mts
+handoffs/reports/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md
+server.mjs
+src/axtn/workbenches/cases/workAcceptance.server.ts
+src/components/swarms/NodeInspector.tsx
+src/hooks/use-approval-decision.ts
+src/integrations/supabase/types.ts
+src/lib/axtnDevelopmentSwarm.ts
+src/lib/swarmRunManager.ts
+src/lib/swarmRuntime.ts
+src/routes/api/swarm.run.ts
+src/utils/observability/serverTracer.server.ts
+src/utils/swarmApprovals.functions.ts
+src/utils/swarmCheckpoint.server.ts
+src/utils/swarmExecute.server.ts
+src/utils/swarmResume.functions.ts
+src/utils/swarmWorkApproval.server.ts
+supabase/migrations/20261004060000_native_work_approval_binding.sql
+tests/case-work/native-approval-roles.sql
+tests/unit/approvalDecisionInFlow.test.ts
+tests/unit/caseWorkAcceptance.test.ts
+tests/unit/nativeDevelopmentSeed.test.ts
+tests/unit/nativeDevelopmentSwarm.test.ts
+tests/unit/nativeWorkApproval.test.ts
+tests/unit/productionServer.test.ts
+tests/unit/supacaseResumeAcceptance.test.ts
+tests/unit/swarmParkedRunWrites.test.ts
+tests/unit/swarmResumeRunRecord.test.ts
+```
+
+### Earlier bounded live repairs
 
 The first immutable App candidate `fcd643c18ed3e1fd626845c7530ea55f3ccfe972`
 was deployed as image
