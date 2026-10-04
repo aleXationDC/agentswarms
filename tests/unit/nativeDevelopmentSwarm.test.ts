@@ -73,6 +73,15 @@ const gate = (input: unknown) =>
   });
 
 describe("visible native Development slice", () => {
+  it("binds native Verify completion to typed immutable receipt Evidence", () => {
+    const result = gate(fixture());
+    expect(result.verifyComplete.transition.references).toContainEqual({
+      kind: "evidence",
+      repository: "aXtn/aXtn-agentswarms",
+      id: `notebook-runtime/${sessionId}/receipt`,
+      revision: candidateSHA,
+    });
+  });
   it("uses native kinds, not a dispatcher, controller, or sub-swarm wrapper", () => {
     const kinds = new Map(graph.nodes.map((n) => [n.id, n.data.kind]));
     expect(kinds.get("input")).toBe("input");

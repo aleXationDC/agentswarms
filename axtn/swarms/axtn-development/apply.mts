@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { createNativeDevelopmentSwarm } from "../../../src/lib/axtnDevelopmentSwarm.ts";
+import { canonicalJson } from "../../../src/utils/provenance/canonical.ts";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
@@ -30,7 +31,7 @@ const { data: prior, error: readError } = await client
   .maybeSingle();
 if (readError) throw new Error(readError.message);
 if (prior && prior.user_id !== auth.user.id) throw new Error("Native seed owner mismatch");
-const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const equal = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
 if (
   prior &&
   equal(prior.nodes, graph.nodes) &&

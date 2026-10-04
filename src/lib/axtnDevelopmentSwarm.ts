@@ -111,7 +111,11 @@ const deterministicPass = verify.status === "COMPLETED" && evidence?.schema === 
   evidence.candidate.compileExitCode === 0 && evidence.candidate.testsRun > 0;
 const blocked = findings.some(f => f.accepted && f.blocking && f.severity !== "LOW");
 const verdict = deterministicPass && !blocked ? "PASS" : "BLOCKED";
-const references = evidence ? [{kind: "run", repository: "aXtn/aXtn-agentswarms", id: evidence.sessionId}] : [];
+const references = evidence ? [
+  {kind: "run", repository: "aXtn/aXtn-agentswarms", id: evidence.sessionId},
+  {kind: "evidence", repository: "aXtn/aXtn-agentswarms",
+    id: "notebook-runtime/" + evidence.sessionId + "/receipt", revision: candidate.candidateSHA}
+] : [];
 return {schema: "axtn.development.gate/v1", caseId: candidate.caseId, candidateSHA: candidate.candidateSHA,
   attemptId: candidate.attemptId, verdict, findings, evidence: evidence || null,
   checksTransition: {operation: "transition", transition: {
@@ -164,7 +168,11 @@ return {schema: "axtn.development.result/v1", outcome: "PR_READY", ...candidate,
     caseId: candidate.caseId, transitionKey: candidate.attemptId + ":complete",
     eventType: "COMPLETED", reasonCode: "NATIVE_PR_READY_VERIFIED", actorRef: "native-builder",
     candidateSHA: candidate.candidateSHA,
-    references: [{kind: "pull_request", repository: candidate.repository, id: String(pull.number), revision: candidate.candidateSHA}]
+    references: [
+      {kind: "pull_request", repository: candidate.repository, id: String(pull.number), revision: candidate.candidateSHA},
+      {kind: "evidence", repository: "aXtn/aXtn-agentswarms",
+        id: "notebook-runtime/" + read(ctx.vars.gate).evidence.sessionId + "/receipt", revision: candidate.candidateSHA}
+    ]
   }},
   caseTransition: {operation: "transition", transition: {
     caseId: candidate.caseId, transitionKey: candidate.attemptId + ":pr-ready", eventType: "PR_CREATED",

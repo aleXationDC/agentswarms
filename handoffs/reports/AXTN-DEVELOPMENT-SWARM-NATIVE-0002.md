@@ -24,7 +24,7 @@ headless continuation resume that exact snapshot. Protected resume validates
 current authority and claims the suspended run once. No second Approval engine,
 workflow dispatcher, retry engine or Acceptance plane was added.
 
-Source validation: full unit suite **9,116 PASS, 40 skipped**, 560 files PASS;
+Source validation: full repaired unit suite **9,120 PASS, 40 skipped**, 561 files PASS;
 production client/server build PASS.
 Actual PostgreSQL role fixture **PASS**, completely rolled back: owner,
 unrelated reviewer, routed Builder, duplicate decision, binding edits and
@@ -43,6 +43,67 @@ independent authenticated reviewer is present. Do not fabricate another
 identity, impersonate a reviewer, weaken owner exclusion, or call a parked
 PASS candidate accepted/PR_READY. Complete deployable source and bounded live
 tests first; retain the existing parent and Acceptance Case until real review.
+
+### Bounded live repairs
+
+The first immutable App candidate `fcd643c18ed3e1fd626845c7530ea55f3ccfe972`
+was deployed as image
+`sha256:e9579a79a73c4726ac812cd796941bb31e01dd386b335b2997d41e73103eae6b`.
+Only App was recreated; one additive migration reconciled ledger 277 -> 278.
+Actual protected headless and canvas requests both suspended with the same
+real Verify receipt. Owner approve/reject returned
+`NATIVE_APPROVAL_WORK_OWNER_DENIED`, without changing Approval or Case.
+The published 30-node graph is visible in the authenticated browser.
+
+Live seed readback exposed JSONB object-key reordering. Publication itself had
+succeeded; the comparison was wrong. The seed now reuses the existing
+`canonicalJson` helper and three tests cover fresh-store publication,
+idempotence/publication-time preservation and corrupt-readback denial.
+Two actual subsequent applies returned UNCHANGED.
+
+Actual semantic FAIL reached native parallel review/Verify and the hard gate
+with retained findings and a genuine FAIL receipt; no Approval or PR was
+created. The first intended-PASS Candidate missed finite-bound validation and
+correctly failed. The same Work and stable Verify Child continued on Attempt
+v2: real deterministic receipt and review gate PASS. Its Verify completion
+then exposed a missing typed Evidence reference. The graph now carries the
+actual immutable receipt reference through Verify and final Work completion;
+no completion rule was weakened.
+
+First concurrent test traffic also observed the existing Node/Undici
+`ReadableStream is already closed` worker exit. Baseline and candidate both
+use Node 22.23.2 / Undici 6.28.0. The existing worker supervisor restored
+service; later sequential native semantic runs reached real receipts/gates.
+The interrupted run is retained as failure evidence, not claimed successful.
+No exception suppression, provider fallback or retry engine was introduced.
+
+### Native conformance and reviewed reuse
+
+| Native node IDs | Kind | Contract actually used |
+|---|---|---|
+| input | input | immutable Task input |
+| task, branch_args, file_args, candidate | function | pure validation/write-argument shaping/readback binding |
+| builder | agent | existing configurable OpenAI, no credentials/tools |
+| verify_work, candidate_case, verify_candidate, verify_started | tool | existing owner-derived `case_work` contract |
+| branch, file | tool | existing native MCP connector/scoped effect-bound Gitea |
+| security, contract, maintainability | agent | one immutable Candidate/content hash |
+| verify | tool | actual existing Developer Runtime and protected receipt |
+| join | merge | native object join; four upstream dependency peers |
+| gate, hard_gate | function | deterministic fail-closed data validation |
+| checks_case, review_case, verify_completed | tool | native Case transitions and typed receipt Evidence |
+| approved | approval | existing node, guarded persisted assignment and checkpoint |
+| pull_args, result | function | pure approved-effect/result validation |
+| pull | tool | existing scoped MCP PR creation/readback |
+| pr_case, accept_case, complete_case | tool | existing Case PR/Acceptance/completion contracts |
+| output | output | PR_READY only after actual independent Approval/Acceptance |
+
+Reviewed reuse: `workContract.ts`, `work.server.ts`, `workVerification.server.ts`,
+the existing runtime source/receipt/harness modules and existing scoped MCP
+capability remain authoritative. `workAcceptance.server.ts` is extended only
+to read the exact later PR reference after Approval-before-PR; protected
+receipt/Candidate/graph/head checks remain. No files from the superseded
+dispatcher/controller/provider branch were copied. Advisory evaluate/Learn
+remain deferred by the canonical Slice 1 acceptance gate.
 
 ## Historical 2026-10-03: source/runtime preflight and exact stop
 
