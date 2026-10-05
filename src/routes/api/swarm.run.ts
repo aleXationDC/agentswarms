@@ -46,6 +46,10 @@ import {
   documentRunOutput,
   documentSuspendedOutput,
 } from "@/axtn/workbenches/documents/documentPersistence.server";
+import { z } from "zod";
+import type { CaseRunContext } from "@/axtn/workbenches/cases/caseExecution.server";
+import { executeCaseWork } from "@/axtn/workbenches/cases/work.server";
+import { CaseAccessView } from "@/axtn/workbenches/cases/caseAssignmentContract";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -129,17 +133,6 @@ export const Route = createFileRoute("/api/swarm/run")({
           );
         }
 
-        // Budget gate before any work: a swarm run can fan out to many model
-        // calls, so refusing up-front is much cheaper than aborting mid-run.
-        const budget = await getBudgetDecision(key.user_id, {
-          type: "swarm_api_key",
-          id: key.id,
-        });
-        if (budget.over) {
-          await slot.release();
-          return json({ error: budgetMessage(budget) }, 402);
-        }
-
         // Set when a detached async run takes ownership of the concurrency
         // slot, so the outer finally does not release it early.
         let asyncStarted = false;
@@ -151,11 +144,64 @@ export const Route = createFileRoute("/api/swarm/run")({
             history?: unknown;
             async?: unknown;
             callback_url?: unknown;
+            case_id?: unknown;
           } = {};
           try {
             payload = (await request.json()) as typeof payload;
           } catch {
             /* empty body ok */
+          }
+          let caseExecution: CaseRunContext | undefined;
+          let caseClosed = false;
+          if (payload.case_id !== undefined) {
+            if (
+              Object.keys(payload).some(
+                (field) =>
+                  !["case_id", "input", "inputs", "history", "async", "callback_url"].includes(
+                    field,
+                  ),
+              )
+            )
+              return json({ error: "CASE_EXECUTION_CLIENT_IDENTITY_FORBIDDEN" }, 400);
+            const parsedCase = z.string().uuid().safeParse(payload.case_id);
+            if (!parsedCase.success) return json({ error: "CASE_ACCESS_DENIED" }, 400);
+            if (!scopes.includes("cases")) return json({ error: "Case scope required" }, 403);
+            if (
+              Object.keys(payload).some((field) =>
+                [
+                  "user_id",
+                  "execution_principal_user_id",
+                  "credential_owner_id",
+                  "credential_id",
+                  "integration_id",
+                  "internalUserId",
+                  "case_attempt_id",
+                ].includes(field),
+              )
+            )
+              return json({ error: "CASE_EXECUTION_CLIENT_IDENTITY_FORBIDDEN" }, 400);
+            const principal = { kind: "swarm_api_key" as const, id: key.id };
+            const view = CaseAccessView.parse(
+              await executeCaseWork(
+                key.user_id,
+                {
+                  operation: "case_access",
+                  caseId: parsedCase.data,
+                  offset: 0,
+                  limit: 1,
+                },
+                principal,
+              ),
+            );
+            if (view.cases.length !== 1) return json({ error: "CASE_ACCESS_DENIED" }, 403);
+            caseClosed = view.cases[0].status === "CLOSED";
+            caseExecution = { caseId: parsedCase.data, principal };
+          } else {
+            const budget = await getBudgetDecision(key.user_id, {
+              type: "swarm_api_key",
+              id: key.id,
+            });
+            if (budget.over) return json({ error: budgetMessage(budget) }, 402);
           }
 
           // ── Idempotency ───────────────────────────────────────────────
@@ -165,6 +211,8 @@ export const Route = createFileRoute("/api/swarm/run")({
           const requestedIdemKey = (request.headers.get("idempotency-key") || "").trim();
           if (documentParent && (!requestedIdemKey || requestedIdemKey.length > 200))
             return json({ error: "DOCUMENT_RUN_IDEMPOTENCY_KEY_REQUIRED" }, 400);
+          if (caseExecution && (!requestedIdemKey || requestedIdemKey.length > 200))
+            return json({ error: "CASE_EXECUTION_IDEMPOTENCY_KEY_REQUIRED" }, 400);
           const idemKey = requestedIdemKey.slice(0, 200);
           const reqHash = idemKey ? await hashBody(payload) : "";
           if (idemKey) {
@@ -176,6 +224,8 @@ export const Route = createFileRoute("/api/swarm/run")({
               .maybeSingle();
             if (documentParent && readError)
               throw new Error("DOCUMENT_RUN_IDEMPOTENCY_READ_FAILED");
+            if (caseExecution && readError)
+              throw new Error("CASE_EXECUTION_IDEMPOTENCY_READ_FAILED");
             const verdict = idempotencyVerdict(existing as IdempotencyRow | null, reqHash);
             if (verdict.action === "mismatch") {
               return json(
@@ -185,6 +235,35 @@ export const Route = createFileRoute("/api/swarm/run")({
             }
             if (verdict.action === "replay") {
               const response = verdict.response as Record<string, unknown>;
+              if (caseExecution) {
+                const { data: finished, error: runError } = await supabaseAdmin
+                  .from("swarm_runs")
+                  .select("id, status, case_id, case_execution_principal")
+                  .eq("id", existing?.run_id ?? "")
+                  .eq("user_id", key.user_id)
+                  .eq("swarm_id", key.swarm_id)
+                  .maybeSingle();
+                const principal = z
+                  .object({ kind: z.literal("swarm_api_key"), id: z.string().uuid() })
+                  .safeParse(finished?.case_execution_principal);
+                if (
+                  runError ||
+                  !finished ||
+                  finished.status !== "success" ||
+                  finished.case_id !== caseExecution.caseId ||
+                  !principal.success ||
+                  principal.data.id !== key.id ||
+                  !response ||
+                  typeof response.output !== "string" ||
+                  response.runId !== finished.id ||
+                  response.error != null ||
+                  (response.status !== undefined && response.status !== "success")
+                )
+                  return json(
+                    { error: "CASE_EXECUTION_READBACK_RECOVERY_REQUIRED", runId: existing?.run_id },
+                    409,
+                  );
+              }
               if (documentParent) {
                 if (
                   !response ||
@@ -269,6 +348,12 @@ export const Route = createFileRoute("/api/swarm/run")({
                 409,
               );
             }
+            if (caseExecution && existing)
+              return json(
+                { error: "CASE_EXECUTION_READBACK_RECOVERY_REQUIRED", runId: existing.run_id },
+                409,
+              );
+            if (caseClosed) return json({ error: "CASE_EXECUTION_INACTIVE" }, 409);
 
             // CLAIM ATOMICALLY. This was an upsert, which SUCCEEDS FOR BOTH
             // racers: two concurrent requests carrying the same key both read
@@ -286,6 +371,11 @@ export const Route = createFileRoute("/api/swarm/run")({
               status: "in_progress",
             });
             if (claimErr) {
+              if (caseExecution) {
+                if (claimErr.code !== "23505")
+                  throw new Error("CASE_EXECUTION_IDEMPOTENCY_CLAIM_FAILED");
+                return json({ error: "CASE_EXECUTION_READBACK_RECOVERY_REQUIRED" }, 409);
+              }
               if (documentParent) {
                 if (claimErr.code !== "23505") throw new Error("DOCUMENT_RUN_CLAIM_FAILED");
                 return json({ error: "DOCUMENT_RUN_CLAIM_CONFLICT" }, 409);
@@ -382,6 +472,7 @@ export const Route = createFileRoute("/api/swarm/run")({
               history,
               rejectApprovals: key.reject_approvals,
               source: "api",
+              caseExecution,
             });
 
           /** Record the outcome against the idempotency key, if one was sent. */

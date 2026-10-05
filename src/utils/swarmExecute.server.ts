@@ -21,6 +21,7 @@
 // saying how to enable it. Still owner-login-only: `a2a_remote` (needs the
 // owner's JWT for the /api/a2a proxy).
 import { beginDecision } from "@/utils/provenance/decision.server";
+import { createHash } from "node:crypto";
 import type { Node, Edge } from "@xyflow/react";
 import {
   interpolate,
@@ -66,6 +67,13 @@ import { safeStringify } from "@/lib/sandbox/jsSandbox";
 import { envInt } from "@/utils/rateLimit.server";
 import { createNativeWorkApproval } from "@/utils/swarmWorkApproval.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import {
+  registerCaseRun,
+  readCaseRunContext,
+  blockCaseRun,
+  CaseExecutionFailureCode,
+  type CaseRunContext,
+} from "@/axtn/workbenches/cases/caseExecution.server";
 
 // Tool context for headless data tools: service-role client with scopeUserId
 // set, which forces the loaders to restrict data to what the owner may read
@@ -126,6 +134,8 @@ async function serverChat(args: {
   userId: string;
   /** The run this turn belongs to; becomes the turn's decision id. */
   runId?: string | null;
+  executionRunId?: string;
+  operationKey?: string;
   node: Node<SwarmNodeData>;
   systemPrompt: string;
   userMessage: string;
@@ -163,6 +173,13 @@ async function serverChat(args: {
       // Every node turn joins the run's decision, so the run's provenance is
       // one id rather than one per node.
       decisionId: args.runId ?? undefined,
+      ...(args.executionRunId
+        ? {
+            runId: args.executionRunId,
+            nodeId: args.node.id,
+            operationKey: args.operationKey,
+          }
+        : {}),
       provider: d.provider || "openrouter",
       model: d.model || "google/gemini-3-flash-preview",
       systemPrompt: args.systemPrompt,
@@ -183,12 +200,33 @@ async function serverChat(args: {
     }),
   });
   if (!res.ok || !res.body) {
+    if (args.executionRunId) {
+      const body: unknown = await res.json().catch(() => null);
+      const failure = body && typeof body === "object" && "error" in body ? body.error : null;
+      const code = CaseExecutionFailureCode.safeParse(
+        failure === "budget_exceeded" ? "CASE_EXECUTION_BUDGET_EXCEEDED" : failure,
+      );
+      throw new Error(code.success ? code.data : "PROVIDER_UNAVAILABLE");
+    }
     const txt = await res.text().catch(() => "");
     throw new Error(`chat failed [${res.status}]: ${txt.slice(0, 300)}`);
   }
   // Text, the `cost` event and every `tool` event, read by the same pure
   // reader a test can feed bytes to (src/lib/chatStream.ts).
-  return readChatStream(res.body, { usage: args.onUsage, tool: args.onToolEvent });
+  return readChatStream(res.body, {
+    usage: args.onUsage,
+    tool: args.onToolEvent,
+    ...(args.executionRunId
+      ? {
+          error: (failure: unknown): never => {
+            const code = CaseExecutionFailureCode.safeParse(
+              failure && typeof failure === "object" && "error" in failure ? failure.error : null,
+            );
+            throw new Error(code.success ? code.data : "PROVIDER_UNAVAILABLE");
+          },
+        }
+      : {}),
+  });
 }
 
 // Extract a JSON payload from an optionally fenced string.
@@ -274,6 +312,7 @@ export async function executeSwarmServer(opts: {
   rejectApprovals: boolean;
   source: "api" | "schedule";
   depth?: number;
+  caseExecution?: CaseRunContext;
   /** Internal native DMS provenance only; verified against the persisted owned Parent. */
   documentParentRunId?: string;
   /**
@@ -306,6 +345,9 @@ export async function executeSwarmServer(opts: {
   const nodes = (Array.isArray(opts.swarm.nodes) ? opts.swarm.nodes : []) as Node<SwarmNodeData>[];
   const edges = (Array.isArray(opts.swarm.edges) ? opts.swarm.edges : []) as Edge[];
   const depth = opts.depth ?? 0;
+  const caseExecution =
+    opts.caseExecution ??
+    (opts.resume ? await readCaseRunContext(opts.userId, opts.resume.runId) : null);
 
   // Whole-run deadline. Without one, a hung provider or a long foreach/loop can
   // hold a worker (and the caller's connection) indefinitely. The signal is
@@ -362,13 +404,20 @@ export async function executeSwarmServer(opts: {
 
   // Inject the conversation history into every LLM node call (chat mode), and
   // record what the call actually cost.
-  const chat = (a: Parameters<typeof serverChat>[0]) =>
-    withNodeRetry(a.node.data, () =>
+  const semanticCalls = new Map<string, number>();
+  const chat = (a: Parameters<typeof serverChat>[0]) => {
+    const callIndex = semanticCalls.get(a.node.id) ?? 0;
+    semanticCalls.set(a.node.id, callIndex + 1);
+    return withNodeRetry(a.node.data, () =>
       serverChat({
         ...a,
         // The run is the decision; `runId` is assigned once the tracer exists,
         // before any node executes, so the closure sees it.
         runId: provenanceRunId,
+        executionRunId: caseExecution && runId ? runId : undefined,
+        operationKey: createHash("sha256")
+          .update(JSON.stringify([a.node.id, callIndex]))
+          .digest("hex"),
         history: opts.history,
         signal: ac.signal,
         onUsage: (u) => {
@@ -383,13 +432,14 @@ export async function executeSwarmServer(opts: {
         onToolEvent: (e) => recordToolEvents(a.node.id, [e]),
       }),
     );
+  };
 
   // Record the run + per-node steps for observability (Recent runs / traces),
   // via the same tables the canvas tracer uses — so deployed-API and scheduled
   // runs get the full per-node timeline too. Only the top-level run is traced;
   // nested Execute-Swarm runs don't clutter the history. All best-effort.
   const tracer =
-    depth === 0
+    depth === 0 || caseExecution
       ? await createServerSwarmTracer({
           userId: opts.userId,
           swarmId: opts.swarm.id,
@@ -461,11 +511,23 @@ export async function executeSwarmServer(opts: {
     // A TERMINAL run keeps no checkpoint — leaving one behind would let a
     // finished run be "resumed", re-running everything after the last node. A
     // suspended run keeps its checkpoint; that is the whole point of it.
-    if (runId && depth === 0 && status !== "suspended") await clearCheckpoint(runId);
+    if (
+      runId &&
+      status !== "suspended" &&
+      (depth === 0 || caseExecution) &&
+      !(caseExecution?.parentRunId && status === "success")
+    )
+      await clearCheckpoint(runId);
     return { status, output, error, runId };
   };
 
+  let caseRunRegistered = false;
   try {
+    if (caseExecution) {
+      if (!runId) throw new Error("CASE_EXECUTION_PERSISTED_RUN_REQUIRED");
+      await registerCaseRun(opts.userId, runId, caseExecution);
+      caseRunRegistered = true;
+    }
     // A resumed run starts from where it stopped, not from the top.
     const resumed = opts.resume?.checkpoint ?? null;
     const ctx: Ctx = resumed
@@ -486,7 +548,7 @@ export async function executeSwarmServer(opts: {
 
     // Only a top-level run checkpoints. A nested Execute-Swarm run is part of
     // its parent's node and is resumed by re-running that node, not on its own.
-    const durable = depth === 0 && Boolean(runId);
+    const durable = (depth === 0 || Boolean(caseExecution)) && Boolean(runId);
     const persist = async (suspendedNodeId?: string | null) => {
       if (!durable || !runId) return;
       await saveCheckpoint({
@@ -497,11 +559,13 @@ export async function executeSwarmServer(opts: {
         required:
           opts.swarm.id === DOCUMENT_MANAGEMENT_SWARM_ID
             ? "document"
-            : Boolean(
-                suspendedNodeId &&
-                (nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork ||
-                  nodes.find((n) => n.id === suspendedNodeId)?.data.approvalDocument),
-              ),
+            : caseExecution
+              ? "case"
+              : Boolean(
+                  suspendedNodeId &&
+                  (nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork ||
+                    nodes.find((n) => n.id === suspendedNodeId)?.data.approvalDocument),
+                ),
         checkpoint: captureCheckpoint({
           ctx,
           lastOutput,
@@ -975,6 +1039,54 @@ export async function executeSwarmServer(opts: {
             }
             const subId = d.subSwarmId;
             if (!subId) throw new Error("Execute Swarm node has no swarm selected.");
+            if (caseExecution && runId) {
+              const { data: child, error: childError } = await supabaseAdmin
+                .from("swarm_runs")
+                .select("id, status, swarm_id, swarm_snapshot")
+                .eq("user_id", opts.userId)
+                .eq("case_parent_run_id", runId)
+                .eq("case_parent_node_id", node.id)
+                .maybeSingle();
+              if (childError) throw new Error("CASE_EXECUTION_CHILD_READ_FAILED");
+              if (child) {
+                if (child.swarm_id !== subId)
+                  throw new Error("CASE_EXECUTION_PARENT_NODE_REQUIRED");
+                if (child.status === "suspended" || child.status === "running") {
+                  suspension.at = {
+                    nodeId: node.id,
+                    pending: `Waiting for native child run ${child.id}`,
+                  };
+                  return;
+                }
+                if (child.status !== "success")
+                  throw new Error("CASE_EXECUTION_READBACK_RECOVERY_REQUIRED");
+                const childCheckpoint = await loadCheckpoint(child.id, opts.userId, "case");
+                const snapshot = child.swarm_snapshot;
+                if (
+                  !childCheckpoint ||
+                  !snapshot ||
+                  typeof snapshot !== "object" ||
+                  Array.isArray(snapshot) ||
+                  !Array.isArray(snapshot.nodes) ||
+                  !Array.isArray(snapshot.edges) ||
+                  childCheckpoint.suspendedNodeId ||
+                  snapshot.nodes.some(
+                    (n) =>
+                      !n ||
+                      typeof n !== "object" ||
+                      Array.isArray(n) ||
+                      typeof n.id !== "string" ||
+                      ![
+                        ...childCheckpoint.completedNodeIds,
+                        ...childCheckpoint.skippedNodeIds,
+                      ].includes(n.id),
+                  )
+                )
+                  throw new Error("CASE_EXECUTION_CHILD_COMPLETE_STATE_REQUIRED");
+                write(childCheckpoint.lastOutput);
+                return;
+              }
+            }
             const { data: sub } = await supabaseAdmin
               .from("swarms")
               .select(
@@ -996,12 +1108,23 @@ export async function executeSwarmServer(opts: {
               rejectApprovals: opts.rejectApprovals,
               source: opts.source,
               depth: depth + 1,
+              caseExecution:
+                caseExecution && runId
+                  ? { ...caseExecution, parentRunId: runId, parentNodeId: node.id }
+                  : undefined,
               documentParentRunId: documentParentRunId ?? undefined,
               // Inherit the parent's budget — nesting must not multiply it.
               deadlineAt,
             });
             if (subResult.status === "error")
               throw new Error(`Sub-swarm failed: ${subResult.error}`);
+            if (caseExecution && subResult.status === "suspended") {
+              suspension.at = {
+                nodeId: node.id,
+                pending: `Waiting for native child run ${subResult.runId}`,
+              };
+              return;
+            }
             write(subResult.output);
             return;
           }
@@ -1063,10 +1186,20 @@ export async function executeSwarmServer(opts: {
           // outgoing edge would still be live and BOTH paths would run — an
           // approval branch and its bypass, for example. There is no safe
           // "continue" past an unmade routing decision, so those always fail.
-          const canContinue = canContinueOnError(
-            { kind, onError: d.onError },
-            { aborted: ac.signal.aborted, expired: expired() },
-          );
+          const canContinue =
+            !(
+              caseExecution &&
+              (/CASE_EXECUTION_|CASE_ACCESS_DENIED|MODEL_ACCESS_DENIED|PERSONAL_CONNECTION_|PERSONAL_PLAN_|NO_ELIGIBLE_EXECUTION_PRINCIPAL|SYSTEM_INTEGRATION_|ROUTING_DECISION_REQUIRED|PROVIDER_CAPABILITY_UNSUPPORTED/.test(
+                stepError,
+              ) ||
+                ["agent", "loop", "evaluate", "extract", "foreach", "condition", "router"].includes(
+                  kind,
+                ))
+            ) &&
+            canContinueOnError(
+              { kind, onError: d.onError },
+              { aborted: ac.signal.aborted, expired: expired() },
+            );
           if (canContinue) {
             const fallback = d.errorFallback ?? "";
             staged.writes.push([outVar, fallback]);
@@ -1179,6 +1312,26 @@ export async function executeSwarmServer(opts: {
       : err instanceof Error
         ? err.message
         : String(err);
+    const code = CaseExecutionFailureCode.safeParse(msg.replace(/^Sub-swarm failed: /, ""));
+    if (
+      caseRunRegistered &&
+      runId &&
+      code.success &&
+      ![
+        "CASE_ACCESS_DENIED",
+        "CASE_EXECUTION_INACTIVE",
+        "CASE_EXECUTION_BINDING_REQUIRED",
+        "CASE_EXECUTION_SEMANTIC_NODE_REQUIRED",
+        "CASE_EXECUTION_OPERATION_REQUIRED",
+      ].includes(code.data)
+    ) {
+      try {
+        await blockCaseRun(opts.userId, runId, code.data);
+      } catch (trackingError) {
+        console.error("[swarmExecute] Case failure tracking failed:", trackingError);
+        return await finish("error", "", `${code.data}; CASE_EXECUTION_BLOCK_TRACKING_FAILED`);
+      }
+    }
     return await finish("error", "", msg);
   } finally {
     clearTimeout(timer);
@@ -1207,7 +1360,7 @@ export async function resumeSwarmRun(args: {
 }): Promise<ExecuteResult | null> {
   const { data: run, error: runError } = await supabaseAdmin
     .from("swarm_runs")
-    .select("id, user_id, swarm_id, swarm_name, swarm_snapshot, input_prompt, status")
+    .select("id, user_id, swarm_id, swarm_name, swarm_snapshot, input_prompt, status, case_id")
     .eq("id", args.runId)
     .eq("user_id", args.userId)
     .maybeSingle();
@@ -1216,12 +1369,15 @@ export async function resumeSwarmRun(args: {
   if (run.status === "success" || run.status === "error") return null;
 
   const documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
+  const caseBound = Boolean(run.case_id);
+  if (caseBound && run.status !== "suspended")
+    throw new Error("CASE_EXECUTION_READBACK_RECOVERY_REQUIRED");
   if (documentParent && run.status !== "suspended")
     throw new Error("DOCUMENT_RESUME_SUSPENDED_PARENT_REQUIRED");
   const checkpoint = await loadCheckpoint(
     args.runId,
     args.userId,
-    documentParent ? "document" : false,
+    documentParent ? "document" : caseBound ? "case" : false,
   );
   if (!checkpoint) {
     if (documentParent) throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
@@ -1233,7 +1389,7 @@ export async function resumeSwarmRun(args: {
     if (documentParent) throw new Error("DOCUMENT_RESUME_GRAPH_REQUIRED");
     return null;
   }
-  if (documentParent) {
+  if (documentParent || caseBound) {
     const nodes = snapshot.nodes as Node<SwarmNodeData>[];
     const edges = Array.isArray(snapshot.edges) ? (snapshot.edges as Edge[]) : [];
     const nodeIds = new Set(nodes.map((node) => node?.id));
@@ -1248,7 +1404,9 @@ export async function resumeSwarmRun(args: {
       edges.some((edge) => !edge?.id || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) ||
       !checkpoint.suspendedNodeId ||
       !nodes.some(
-        (node) => node.id === checkpoint.suspendedNodeId && node.data.kind === "approval",
+        (node) =>
+          node.id === checkpoint.suspendedNodeId &&
+          (node.data.kind === "approval" || (caseBound && node.data.kind === "subswarm")),
       ) ||
       completed.has(checkpoint.suspendedNodeId) ||
       skipped.has(checkpoint.suspendedNodeId) ||
@@ -1261,7 +1419,11 @@ export async function resumeSwarmRun(args: {
       checkpoint.levelIndex < 0 ||
       checkpoint.levelIndex > topoLevels(nodes, edges).length
     )
-      throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
+      throw new Error(
+        caseBound
+          ? "CASE_EXECUTION_RESUME_EXACT_ROUTING_REQUIRED"
+          : "DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED",
+      );
     const levels = topoLevels(nodes, edges);
     const parkedLevel = levels.findIndex((level) =>
       level.some((node) => node.id === checkpoint.suspendedNodeId),
@@ -1272,8 +1434,21 @@ export async function resumeSwarmRun(args: {
         .slice(0, parkedLevel)
         .some((level) => level.some((node) => !completed.has(node.id) && !skipped.has(node.id)))
     )
-      throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
-    if (!args.decision) throw new Error("DOCUMENT_RESUME_APPROVAL_DECISION_REQUIRED");
+      throw new Error(
+        caseBound
+          ? "CASE_EXECUTION_RESUME_EXACT_ROUTING_REQUIRED"
+          : "DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED",
+      );
+    if (
+      !args.decision &&
+      (documentParent ||
+        nodes.find((n) => n.id === checkpoint.suspendedNodeId)?.data.kind === "approval")
+    )
+      throw new Error(
+        documentParent
+          ? "DOCUMENT_RESUME_APPROVAL_DECISION_REQUIRED"
+          : "CASE_EXECUTION_APPROVAL_DECISION_REQUIRED",
+      );
     const { data: claimed, error: claimError } = await supabaseAdmin
       .from("swarm_runs")
       .update({ status: "running" })
@@ -1283,8 +1458,32 @@ export async function resumeSwarmRun(args: {
       .eq("cancel_requested", false)
       .select("id")
       .maybeSingle();
-    if (claimError) throw new Error("DOCUMENT_RESUME_CLAIM_FAILED");
-    if (!claimed) throw new Error("DOCUMENT_RESUME_CLAIM_UNAVAILABLE");
+    if (claimError)
+      throw new Error(
+        caseBound ? "CASE_EXECUTION_RESUME_CLAIM_FAILED" : "DOCUMENT_RESUME_CLAIM_FAILED",
+      );
+    if (!claimed)
+      throw new Error(
+        caseBound ? "CASE_EXECUTION_RESUME_CLAIM_UNAVAILABLE" : "DOCUMENT_RESUME_CLAIM_UNAVAILABLE",
+      );
+  }
+  let depth = 0;
+  if (caseBound) {
+    const { data: position, error } = await supabaseAdmin
+      .from("swarm_run_checkpoints")
+      .select("depth")
+      .eq("run_id", args.runId)
+      .eq("user_id", args.userId)
+      .maybeSingle();
+    if (
+      error ||
+      !position ||
+      !Number.isInteger(position.depth) ||
+      position.depth < 0 ||
+      position.depth > MAX_SUBSWARM_DEPTH
+    )
+      throw new Error("CASE_EXECUTION_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+    depth = position.depth;
   }
 
   return executeSwarmServer({
@@ -1299,6 +1498,7 @@ export async function resumeSwarmRun(args: {
     input: run.input_prompt ?? "",
     rejectApprovals: args.rejectApprovals ?? false,
     source: "api",
+    depth,
     resume: { runId: args.runId, checkpoint, decision: args.decision },
   });
 }

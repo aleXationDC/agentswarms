@@ -29,7 +29,11 @@ export const TOOL_NODE_PREVIEW_CHARS = 400;
  */
 export async function readChatStream(
   body: ReadableStream<Uint8Array>,
-  on: { usage?: (u: ChatUsage) => void; tool?: (e: ToolEvent) => void } = {},
+  on: {
+    usage?: (u: ChatUsage) => void;
+    tool?: (e: ToolEvent) => void;
+    error?: (failure: unknown) => never;
+  } = {},
 ): Promise<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -56,6 +60,19 @@ export async function readChatStream(
       if (!line.startsWith("data: ")) continue;
       const payload = line.slice(6).trim();
       if (!payload || payload === "[DONE]") continue;
+      if (event === "error" && on.error) {
+        let failure: unknown;
+        try {
+          failure = JSON.parse(payload);
+        } catch {
+          failure = null;
+        }
+        try {
+          on.error(failure);
+        } finally {
+          await reader.cancel().catch(() => {});
+        }
+      }
       if (event === "cost") {
         try {
           const c = JSON.parse(payload) as {

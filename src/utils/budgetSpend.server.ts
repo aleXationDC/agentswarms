@@ -18,6 +18,7 @@
 // figure is unknown, which is not the same as zero, and the caller decides what
 // to do about it — see budgetGuard's fail-open/fail-closed policy.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { z } from "zod";
 
 export type SpendResult =
   | {
@@ -41,6 +42,34 @@ export type SpendResult =
 /** First instant of the current UTC month. */
 export function monthStartIso(now: Date = new Date()): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+export async function groupSpendSince(
+  groupId: string,
+  since: string,
+  memberIds?: string[],
+): Promise<SpendResult> {
+  const { data, error } = await supabaseAdmin.rpc("axtn_case_group_spend", {
+    p_group_id: groupId,
+    p_since: since,
+  });
+  if (!error) {
+    const result = z
+      .object({
+        spend: z.number().finite().nonnegative(),
+        unpriced: z.number().int().nonnegative(),
+      })
+      .safeParse(data);
+    return result.success
+      ? { ok: true, ...result.data }
+      : { ok: false, error: "Invalid native group spend" };
+  }
+  if (!/does not exist|schema cache|not find the function/i.test(error.message)) {
+    return { ok: false, error: error.message };
+  }
+  if (!memberIds) return { ok: false, error: error.message };
+  if (memberIds.length === 0) return { ok: true, spend: 0, unpriced: 0 };
+  return spendSince({ userId: "", since, userIds: memberIds });
 }
 
 /**
@@ -133,19 +162,30 @@ async function unpricedSince(args: {
   scope?: { type: string; id: string } | null;
   userIds?: string[] | null;
 }): Promise<number | null> {
-  let q = supabaseAdmin
-    .from("execution_traces")
-    .select("id", { count: "exact", head: true })
-    .gte("created_at", args.since)
-    .eq("request_payload->>pricing_missing", "true");
-  q = args.scope
-    ? q.eq("cost_scope_type", args.scope.type).eq("cost_scope_id", args.scope.id)
-    : args.userIds
-      ? q.in("user_id", args.userIds)
-      : q.eq("user_id", args.userId);
-  const { count, error } = await q;
-  if (error) return null;
-  return count ?? 0;
+  for (const native of [true, false]) {
+    let q = supabaseAdmin
+      .from("execution_traces")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", args.since)
+      .eq("request_payload->>pricing_missing", "true");
+    if (args.scope) q = q.eq("cost_scope_type", args.scope.type).eq("cost_scope_id", args.scope.id);
+    else if (native) {
+      const predicate = args.userIds ? `in.(${args.userIds.join(",")})` : `eq.${args.userId}`;
+      q = q
+        .is("budget_subject_group_id", null)
+        .or(
+          `budget_subject_user_id.${predicate},and(budget_subject_user_id.is.null,user_id.${predicate})`,
+        );
+    } else q = args.userIds ? q.in("user_id", args.userIds) : q.eq("user_id", args.userId);
+    const { count, error } = await q;
+    if (!error) return count ?? 0;
+    if (!native || !missingBudgetColumns(error)) return null;
+  }
+  return null;
+}
+
+function missingBudgetColumns(error: { code?: string; message: string }): boolean {
+  return ["42703", "PGRST204"].includes(error.code ?? "") && /budget_subject_/.test(error.message);
 }
 
 async function fallbackSum(args: {
@@ -164,19 +204,28 @@ async function fallbackSum(args: {
   // — a budget path must not hold fifty thousand rows to add up a column.
   let offset = 0;
   let observedMax = 0;
+  let native = true;
   while (offset < MAX_FALLBACK_ROWS) {
     let q = supabaseAdmin
       .from("execution_traces")
       .select("cost_usd, pricing_missing:request_payload->>pricing_missing")
       .gte("created_at", args.since)
       .range(offset, offset + PAGE - 1);
-    q = args.scope
-      ? q.eq("cost_scope_type", args.scope.type).eq("cost_scope_id", args.scope.id)
-      : args.userIds
-        ? q.in("user_id", args.userIds)
-        : q.eq("user_id", args.userId);
+    if (args.scope) q = q.eq("cost_scope_type", args.scope.type).eq("cost_scope_id", args.scope.id);
+    else if (native) {
+      const predicate = args.userIds ? `in.(${args.userIds.join(",")})` : `eq.${args.userId}`;
+      q = q
+        .is("budget_subject_group_id", null)
+        .or(
+          `budget_subject_user_id.${predicate},and(budget_subject_user_id.is.null,user_id.${predicate})`,
+        );
+    } else q = args.userIds ? q.in("user_id", args.userIds) : q.eq("user_id", args.userId);
 
     const { data, error } = await q;
+    if (error && native && offset === 0 && missingBudgetColumns(error)) {
+      native = false;
+      continue;
+    }
     if (error) return { ok: false, error: error.message };
     const rows = data ?? [];
     if (rows.length === 0) return { ok: true, spend: total, unpriced };

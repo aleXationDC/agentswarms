@@ -160,8 +160,8 @@ describe("a step records the tools it called, on both paths", () => {
   const tracer = readFileSync("src/utils/observability/serverTracer.server.ts", "utf8");
 
   it("the server reads the stream through the shared reader, with a tool handler", () => {
-    expect(server).toContain(
-      "readChatStream(res.body, { usage: args.onUsage, tool: args.onToolEvent })",
+    expect(server).toMatch(
+      /readChatStream\(res\.body,\s*\{\s*usage: args\.onUsage,\s*tool: args\.onToolEvent,/,
     );
     expect(server).toContain("onToolEvent: (e) => recordToolEvents(a.node.id, [e]),");
   });

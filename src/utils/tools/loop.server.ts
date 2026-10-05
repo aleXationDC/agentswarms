@@ -12,6 +12,8 @@
 // so the playground inspector can show what's happening in real time.
 
 import type { ToolDef, ToolHandler, AgentToolContext } from "./registry.server";
+import type { CaseTraceBudget } from "@/axtn/workbenches/cases/caseExecution.server";
+import type { CostScope } from "@/utils/budgetGuard.server";
 import { extractToolSources, type RawSource } from "./sources";
 import { mlToolData, type MlToolData } from "@/lib/mlToolResult";
 import { providerReportedCost, usageReportingBody } from "@/utils/observability/providerCost";
@@ -364,6 +366,9 @@ export async function streamChatWithTools(opts: {
   // Observability: record each non-streaming tool round into execution_traces
   // attributed to this user, linked to the parent /api/chat trace row.
   userId?: string | null;
+  caseBudget?: CaseTraceBudget;
+  costScope?: CostScope;
+  provider?: string;
   parentTraceId?: string | null;
   /**
    * The client request's signal. Without it, "Stop" only closed the browser
@@ -444,6 +449,9 @@ export async function streamChatWithTools(opts: {
           await import("@/utils/observability/recordGatewayUsage.server");
         await recordGatewayCall({
           userId: opts.userId,
+          caseBudget: opts.caseBudget,
+          costScope: opts.costScope,
+          provider: opts.provider,
           surface: "Chat: tool-round",
           model: opts.model,
           tokensIn: j.usage?.prompt_tokens,
@@ -455,6 +463,7 @@ export async function streamChatWithTools(opts: {
         });
       } catch (e) {
         console.error("[loop.server] recordGatewayCall failed:", e);
+        if (opts.caseBudget) throw e;
       }
     }
     const msg = j.choices?.[0]?.message;

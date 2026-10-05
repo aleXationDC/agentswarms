@@ -40,7 +40,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     // builder so the ok path can complete.
     from: () => {
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "gte", "eq", "in", "range"]) q[m] = () => q;
+      for (const m of ["select", "gte", "eq", "in", "range", "or", "is"]) q[m] = () => q;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (q as any).then = (res: (v: unknown) => unknown) => res({ count: 0, data: [], error: null });
       return q;

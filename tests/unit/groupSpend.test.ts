@@ -61,7 +61,7 @@ describe("what the admin budgets tab actually reads", () => {
   });
 
   it("asks the path that enforces the cap for the figure it displays", () => {
-    expect(fn).toContain('await spendSince({ userId: "", since: monthStartIso(), userIds })');
+    expect(fn).toContain("await groupSpendSince(groupId, monthStartIso(), userIds)");
     expect(fn).toContain("unpricedRows: r.unpriced");
   });
 

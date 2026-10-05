@@ -62,7 +62,7 @@ describe("the figure it alerts on is the team's, and is trusted only when known"
     // A TEAM cap is a sum across the team. Alerting on one member's spend
     // would fire late or never.
     expect(FN).toMatch(/from\("iam_group_members"\)[\s\S]{0,120}eq\("group_id"/);
-    expect(FN).toMatch(/userIds: memberIds/);
+    expect(FN).toContain("groupSpendSince(limit.scope_id, monthStartIso(), memberIds)");
   });
 
   it("does not treat an unknown spend as zero", () => {

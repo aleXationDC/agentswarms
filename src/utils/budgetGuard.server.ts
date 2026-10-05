@@ -9,7 +9,8 @@
 // refusing model calls on existing instances whose cap was never meant to bite.
 // Operators turn it on deliberately once their caps reflect reality.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { monthStartIso, spendSince } from "@/utils/budgetSpend.server";
+import { groupSpendSince, monthStartIso, spendSince } from "@/utils/budgetSpend.server";
+import type { CaseExecutionBinding } from "@/axtn/workbenches/cases/caseExecution.server";
 
 export function budgetEnforcementEnabled(): boolean {
   return /^(1|true|yes)$/i.test(process.env.ENFORCE_BUDGET_CAP ?? "");
@@ -136,12 +137,13 @@ export type BudgetDecision = {
 const scopeCache = new Map<string, { at: number; d: BudgetDecision }>();
 
 async function capFor(scopeType: string, scopeId: string): Promise<number> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("budget_limits")
     .select("monthly_cap_usd, is_active")
     .eq("scope_type", scopeType)
     .eq("scope_id", scopeId)
     .maybeSingle();
+  if (error) throw new Error(`Budget policy read failed: ${error.message}`);
   if (!data?.is_active) return 0;
   const cap = Number(data.monthly_cap_usd ?? 0);
   return Number.isFinite(cap) && cap > 0 ? cap : 0;
@@ -172,9 +174,8 @@ async function credentialSpend(scope: CostScope): Promise<number | null> {
  * null means the figure could not be established — not that the team spent
  * nothing, which is how the previous `data ?? []` read a failed query.
  */
-async function groupSpend(memberIds: string[]): Promise<number | null> {
-  if (memberIds.length === 0) return 0;
-  const r = await spendSince({ userId: "", since: monthStartIso(), userIds: memberIds });
+async function groupSpend(groupId: string, memberIds: string[]): Promise<number | null> {
+  const r = await groupSpendSince(groupId, monthStartIso(), memberIds);
   if (!r.ok) {
     console.warn(`[budget] group spend lookup failed: ${r.error}`);
     return null;
@@ -235,13 +236,17 @@ export async function getBudgetDecision(
           .from("iam_group_members")
           .select("user_id")
           .eq("group_id", m.group_id);
-        const spend = await groupSpend((members ?? []).map((x) => x.user_id));
+        const spend = await groupSpend(
+          m.group_id,
+          (members ?? []).map((x) => x.user_id),
+        );
         if (spend === null) {
           // Unknown, not zero. Same rule as the other two scopes.
           if (budgetFailsClosed()) {
             decision = { over: true, scope: "group", spend: 0, cap };
             break;
           }
+
           continue;
         }
         if (spend >= cap) {
@@ -259,6 +264,52 @@ export async function getBudgetDecision(
     for (const [k, v] of scopeCache) if (Date.now() - v.at > TTL_MS) scopeCache.delete(k);
   }
   return decision;
+}
+
+export async function getCaseBudgetDecision(
+  binding: CaseExecutionBinding,
+  scope?: CostScope,
+): Promise<BudgetDecision> {
+  if (!binding.budget_subject_group_id) {
+    if (!binding.budget_subject_user_id)
+      throw new Error("CASE_EXECUTION_BUDGET_PRINCIPAL_REQUIRED");
+    return getBudgetDecision(binding.budget_subject_user_id, scope);
+  }
+  const allow: BudgetDecision = { over: false, scope: null, spend: 0, cap: 0 };
+  if (!budgetEnforcementEnabled()) return allow;
+  const cap = await capFor("group", binding.budget_subject_group_id);
+  if (cap > 0) {
+    const result = await groupSpendSince(binding.budget_subject_group_id, monthStartIso());
+    if (!result.ok) {
+      console.warn(`[budget] Case group lookup failed: ${result.error}`);
+      if (budgetFailsClosed()) return { over: true, scope: "group", cap, spend: 0 };
+    } else {
+      if (
+        result.spend >= cap ||
+        ((result.unpriced === null || result.unpriced > 0) && budgetFailsClosed())
+      ) {
+        return { over: true, scope: "group", cap, spend: result.spend };
+      }
+      if (result.unpriced === null || result.unpriced > 0)
+        console.warn("[budget] Case group total is a floor; unpriced calls exist");
+    }
+  }
+  if (scope) {
+    const keyCap = await capFor(scope.type, scope.id);
+    if (keyCap > 0) {
+      const result = await spendSince({ userId: "", since: monthStartIso(), scope });
+      if (!result.ok) {
+        console.warn(`[budget] Case key lookup failed: ${result.error}`);
+        if (budgetFailsClosed()) return { over: true, scope: "credential", cap: keyCap, spend: 0 };
+      } else if (
+        result.spend >= keyCap ||
+        ((result.unpriced === null || result.unpriced > 0) && budgetFailsClosed())
+      ) {
+        return { over: true, scope: "credential", cap: keyCap, spend: result.spend };
+      }
+    }
+  }
+  return allow;
 }
 
 /** Human-readable refusal for a blocked call. */

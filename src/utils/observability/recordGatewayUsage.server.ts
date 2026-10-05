@@ -10,6 +10,7 @@ import { bodyJson, bodyText } from "@/utils/observability/redaction.server";
 import { approxTokens, isImageModel } from "./pricing";
 import { priceCall } from "./priceResolver";
 import { providerReportedCost } from "./providerCost";
+import type { CaseTraceBudget } from "@/axtn/workbenches/cases/caseExecution.server";
 
 export type GatewayCallSurface =
   | "BI Agent: Plan"
@@ -36,6 +37,7 @@ export type UsageKind = "text" | "embedding" | "image";
 
 export type RecordGatewayCallArgs = {
   userId: string;
+  caseBudget?: CaseTraceBudget;
   surface: GatewayCallSurface;
   model: string;
   // Provide explicit token counts when the upstream returns them. If absent,
@@ -133,6 +135,13 @@ export async function recordGatewayCall(args: RecordGatewayCallArgs): Promise<vo
 
     const insertRow = {
       user_id: args.userId,
+      ...(args.caseBudget
+        ? {
+            budget_execution_run_id: args.caseBudget.runId,
+            budget_subject_user_id: args.caseBudget.userId,
+            budget_subject_group_id: args.caseBudget.groupId,
+          }
+        : {}),
       agent_id: args.agentId ?? null,
       // Real column, not just jsonb: the /traces UI nests child rounds under
       // their parent turn and the OTel exporter joins them into one
@@ -158,6 +167,7 @@ export async function recordGatewayCall(args: RecordGatewayCallArgs): Promise<vo
     const { error } = await (supabaseAdmin.from("execution_traces") as any).insert(insertRow);
     if (error) {
       console.error("[recordGatewayCall] insert failed:", error.message, "surface:", args.surface);
+      if (args.caseBudget) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
     }
 
     // Fire-and-forget: check the user's monthly AI spend cap and email
@@ -166,16 +176,21 @@ export async function recordGatewayCall(args: RecordGatewayCallArgs): Promise<vo
     try {
       const { checkAndNotifyBudget, checkAndNotifyGroupBudgets } =
         await import("@/lib/email/budgetAlertTrigger.server");
-      void checkAndNotifyBudget(args.userId);
+      const budgetUser = args.caseBudget ? args.caseBudget.userId : args.userId;
+      if (budgetUser) void checkAndNotifyBudget(budgetUser);
       // Team caps warn on the same path. Enforcement for groups already
       // existed; only the warning did not, so a team went from 0% to blocked
       // with nobody told.
-      void checkAndNotifyGroupBudgets(args.userId);
+      void checkAndNotifyGroupBudgets(
+        budgetUser ?? args.userId,
+        args.caseBudget?.groupId ?? undefined,
+      );
     } catch (e) {
       console.error("[recordGatewayCall] budget alert check failed to load:", e);
     }
   } catch (e) {
     console.error("[recordGatewayCall] exception:", e);
+    if (args.caseBudget) throw e;
   }
 }
 

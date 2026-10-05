@@ -5,6 +5,91 @@ Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
 
+## Native Case execution candidate: isolated proof, convergence withheld
+
+The subsequent execution candidate is **IMPLEMENTED_PARTIAL / ISOLATED_TESTED /
+TYPECHECK_RESOURCE_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**. The exact
+published candidate belongs to the same DraftPR14 and five existing Cases;
+it is not the deployed image revision. No Case was completed or accepted.
+
+Concrete gap: native runs, provider lookup and traces previously conflated
+Case custody, execution identity and funding. Migration
+`20261005210000_case_execution_binding.sql` extends the existing Case JSON,
+`swarm_runs`, checkpoints, `execution_traces`, native budget RPC and audit.
+There is no new runner, scheduler, Approval/Case store or retry engine.
+Provider/ChatGPT-plan adapters are deliberately not rebuilt under pilot D2.
+
+The server derives Case/Attempt identity and immutable node routes from the
+native run snapshot, authenticates the persisted principal, freezes the
+execution/funding subject and namespaces routes by native run/node.
+Personal credential resolution excludes foreign grants, environment keys
+and gateway fallback; system resolution requires exactly one eligible
+configured/granted connection. New roots cannot replay an existing Work
+Attempt, including after trusted run retention; generic authenticated
+deletion cannot erase protected Case execution identity. Case requests need
+bounded idempotency keys, cannot take over failed legacy ledger entries,
+reject undeclared top-level fields and validate cached run ownership,
+Swarm, Case, principal, success state and response shape before readback.
+API cached-readback validation still needs a functional endpoint proof.
+
+Private trace custody stays with the original custodian. The separate
+personal payer or configured responsible-group funding subject is protected
+and frozen; a payer receives its authorized scalar total, not another
+user's private prompts. Native aggregates count each trace once per scope,
+exclude other group-funded expense and preserve API-key totals, historical
+funding and existing budget enforcement/alert policy. Tool rounds propagate
+the same subject, provider and resource scope.
+
+Native nested runs use immutable parent/node identity and existing
+checkpoints. Parent resume neither recreates nor approves a suspended child;
+authorized child completion is read back from its full retained checkpoint,
+not the truncated run summary. Typed provider/plan failures cannot become
+`onError: continue` success. Case-only provider stream projection strips
+vendor debug/error bodies; typed terminal SSE errors survive the existing
+headless reader. Evidence-write failure explicitly fails the turn.
+Blocking reuses atomic native Processing and audit, reconciles repeat
+readback after run completion and never overwrites Human takeover.
+
+Actual rollback SQL proof on the owned
+`dms_native_contract_pilot_live_canary_20261005` passes: stable sequential
+group balancing, sticky principal/funding, exact personal/operator/company/
+overlapping-group/key totals, private-prompt RLS, generic forgery/deletion
+denial, nested Attempt/node uniqueness, system missing/ambiguous connection,
+personal no-grant fallback, membership revocation, unauthorized block
+no-change, atomic failure audit, terminal replay and Human-state preservation.
+Eight candidate functions and candidate schema were installed incrementally
+only in this canary, not as a PROD migration or fresh-install acceptance.
+No provider inference, token, real colleague or independent Acceptance is
+fabricated by these fixtures.
+
+Focused functional tests cover budget separation, native nested recovery and
+typed/secret-safe failure transport, including a real existing-executor
+partial-output failure fixture. The complete unit run initially identified
+only two stale source assertions: the exact DMS dependency inventory and
+the shared-reader wiring assertion; these are corrected without weakening
+the functional checks. Final complete unit suite passes596 files/9938 tests,
+with40 existing skips (9978 total). Lint passes with zero errors and235
+warnings; documentation, Markdown, command and infrastructure checks pass
+(PowerShell parsing remains the existing unavailable-tool skip).
+
+Current source typecheck is **not verified**: conventional/2304-MiB and
+2048-MiB bounded attempts exit137; the 1536-MiB bounded attempt exhausts V8
+heap (exit134, measured peak1645480KiB). The 2048-MiB attempt peaks2014420KiB
+and is killed by shared-host memory pressure. No service is stopped, no
+infrastructure or local MCP configuration is changed, and no build/deploy
+gate is bypassed. Earlier intermediate typecheck success does not certify
+this later candidate. Complete build, concurrency, endpoint/encrypted
+credential-path proof, minimized execution UI, real providers, exact-source
+PROD/restart evidence and independent Acceptance remain open.
+
+Fresh live readback remains healthy App
+`79f0d3911a2865798ea8034597c1357b5deec06b`, image
+`sha256:6537525158b812f9d0dfd394f23f291f39389d37ecaeb8df6c14e666bbff0288`,
+ledger295/latest `20261005200000_case_responsibility.sql`, zero running
+native runs and the same genuine suspended Development run. Migration2100
+is not applied to PROD. Source and canary progress do not change the overall
+SC01-18/35-question/E1-9 or neighboring DMS/Development Acceptance boundary.
+
 ## Initial checkpoint and coordination
 
 Verified host `aleXation`, Linux user `alex`, native Gitea smart HTTP loopback

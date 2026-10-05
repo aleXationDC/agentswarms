@@ -25,7 +25,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { monthStartIso, spendSince } from "@/utils/budgetSpend.server";
+import { groupSpendSince, monthStartIso } from "@/utils/budgetSpend.server";
 import { requireSuperadmin } from "@/utils/iam.server";
 import { scanRows } from "@/lib/cursorScan";
 
@@ -76,6 +76,23 @@ export const groupSpendTotals = createServerFn({ method: "POST" })
       if (list) list.push(m.user_id);
       else byGroup.set(m.group_id, [m.user_id]);
     }
+    const groups = await scanRows<{ id: string }>(
+      async (after, pageSize) => {
+        let q = supabaseAdmin
+          .from("iam_groups")
+          .select("id")
+          .order("id", { ascending: true })
+          .limit(pageSize);
+        if (after) q = q.gt("id", after);
+        const { data, error } = await q;
+        if (error) throw new Error(error.message);
+        return data ?? [];
+      },
+      (r) => r.id,
+      { maxRows: MAX_MEMBERSHIPS },
+    );
+    if (!groups.complete) throw new Error("Group directory could not be read in full");
+    for (const group of groups.rows) if (!byGroup.has(group.id)) byGroup.set(group.id, []);
 
     const out: Record<string, GroupSpend> = {};
     for (const [groupId, userIds] of byGroup) {
@@ -85,7 +102,7 @@ export const groupSpendTotals = createServerFn({ method: "POST" })
         out[groupId] = { ok: false, error: "Group membership could not be read in full" };
         continue;
       }
-      const r = await spendSince({ userId: "", since: monthStartIso(), userIds });
+      const r = await groupSpendSince(groupId, monthStartIso(), userIds);
       out[groupId] = r.ok
         ? { ok: true, total: r.spend, unpricedRows: r.unpriced }
         : { ok: false, error: r.error };

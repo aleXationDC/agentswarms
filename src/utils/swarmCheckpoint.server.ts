@@ -27,12 +27,14 @@ export async function saveCheckpoint(args: {
   checkpoint: SwarmCheckpoint;
   source: string;
   depth: number;
-  required?: boolean | "document";
+  required?: boolean | "document" | "case";
 }): Promise<void> {
   try {
     const row = toRow(args.checkpoint);
     if (args.required === "document" && !documentCheckpointRow.safeParse(row).success)
       throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+    if (args.required === "case" && !documentCheckpointRow.safeParse(row).success)
+      throw new Error("CASE_EXECUTION_CHECKPOINT_COMPLETE_STATE_REQUIRED");
     const { error } = await supabaseAdmin.from("swarm_run_checkpoints").upsert(
       {
         run_id: args.runId,
@@ -47,6 +49,7 @@ export async function saveCheckpoint(args: {
     );
     if (error) {
       if (args.required === "document") throw new Error("DOCUMENT_CHECKPOINT_WRITE_FAILED");
+      if (args.required === "case") throw new Error("CASE_EXECUTION_CHECKPOINT_WRITE_FAILED");
       if (args.required) throw new Error(`Native Approval checkpoint failed: ${error.message}`);
       console.warn("[swarmCheckpoint] save failed:", error.message);
     }
@@ -66,7 +69,7 @@ export async function saveCheckpoint(args: {
 export async function loadCheckpoint(
   runId: string,
   userId: string,
-  required: boolean | "document" = false,
+  required: boolean | "document" | "case" = false,
 ): Promise<SwarmCheckpoint | null> {
   try {
     const { data, error } = await supabaseAdmin
@@ -81,6 +84,12 @@ export async function loadCheckpoint(
       if (error) throw new Error("DOCUMENT_CHECKPOINT_READ_FAILED");
       const parsed = documentCheckpointRow.safeParse(data);
       if (!parsed.success) throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+      return fromRow(parsed.data);
+    }
+    if (required === "case") {
+      if (error) throw new Error("CASE_EXECUTION_CHECKPOINT_READ_FAILED");
+      const parsed = documentCheckpointRow.safeParse(data);
+      if (!parsed.success) throw new Error("CASE_EXECUTION_CHECKPOINT_COMPLETE_STATE_REQUIRED");
       return fromRow(parsed.data);
     }
     if (error && required)

@@ -232,7 +232,7 @@ describe("a spend total that counted unpriced calls as free", () => {
   it("keeps 'none' and 'could not tell' apart", () => {
     // Collapsing them is the same mistake as reading a failed sum as $0: one
     // means the total is exact, the other means its quality is unknown.
-    expect(spend).toContain("if (error) return null;");
+    expect(spend).toContain("if (!native || !missingBudgetColumns(error)) return null;");
     expect(spend).toMatch(/unpriced: number \| null;/);
   });
 

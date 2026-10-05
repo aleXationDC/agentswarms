@@ -23,8 +23,19 @@ import {
   applyOutputGuardrails,
   type OutputDecision,
 } from "@/utils/guardrails";
-import { budgetMessage, getBudgetDecision } from "@/utils/budgetGuard.server";
+import {
+  budgetMessage,
+  getBudgetDecision,
+  getCaseBudgetDecision,
+} from "@/utils/budgetGuard.server";
 import { internalSecretMatches } from "@/utils/internalOrigin.server";
+import {
+  resolveCaseChat,
+  caseProviderFailure,
+  caseProviderLine,
+  caseFailureStatus,
+  type CaseTraceBudget,
+} from "@/axtn/workbenches/cases/caseExecution.server";
 import {
   resolveMemoryConfig,
   loadMemoryContext,
@@ -448,7 +459,9 @@ type TraceContext = {
    */
   internalRun?: boolean;
   /** The gateway key this turn is billed to (internal runs only). */
-  costScope?: { type: "gateway_key"; id: string };
+  costScope?: { type: "gateway_key" | "swarm_api_key"; id: string };
+  caseBudget?: CaseTraceBudget;
+  casePersonal?: boolean;
   agentId?: string;
   agentName: string;
   provider: string;
@@ -571,7 +584,9 @@ async function recordTrace(opts: {
   // this server rather than supplied by whoever called it. The IAM model-rule
   // lookup on the same request already uses supabaseAdmin for the same reason.
   const sb =
-    trace.internalRun && !trace.authToken ? supabaseAdmin : getServerSupabase(trace.authToken);
+    trace.caseBudget || (trace.internalRun && !trace.authToken)
+      ? supabaseAdmin
+      : getServerSupabase(trace.authToken);
   if (!sb) {
     console.warn("[trace] skipped — no supabase client");
     return;
@@ -664,6 +679,13 @@ async function recordTrace(opts: {
       agent_name: trace.agentName,
       cost_scope_type: trace.costScope?.type ?? null,
       cost_scope_id: trace.costScope?.id ?? null,
+      ...(trace.caseBudget
+        ? {
+            budget_execution_run_id: trace.caseBudget.runId,
+            budget_subject_user_id: trace.caseBudget.userId,
+            budget_subject_group_id: trace.caseBudget.groupId,
+          }
+        : {}),
       llm_provider: trace.provider,
       llm_model: trace.model,
       prompt: bodyText(trace.promptText.slice(0, 4000)),
@@ -683,6 +705,7 @@ async function recordTrace(opts: {
     const { error } = await (sb.from("execution_traces") as any).upsert(insertRow);
     if (error) {
       console.error("[trace] insert failed:", error.message, error.details);
+      if (trace.caseBudget) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
     } else {
       // One structured line per completed turn — the greppable/shippable
       // correlation point between user reports, logs and the trace row.
@@ -716,6 +739,7 @@ async function recordTrace(opts: {
     }
   } catch (e) {
     console.error("[trace] exception:", e);
+    if (trace.caseBudget) throw e;
   }
 
   // Fire-and-forget: alert the user by email if they've crossed an alert
@@ -723,12 +747,13 @@ async function recordTrace(opts: {
   try {
     const { checkAndNotifyBudget, checkAndNotifyGroupBudgets } =
       await import("@/lib/email/budgetAlertTrigger.server");
-    void checkAndNotifyBudget(userId);
+    const budgetUser = trace.caseBudget ? trace.caseBudget.userId : userId;
+    if (budgetUser) void checkAndNotifyBudget(budgetUser);
     // BOTH call sites, deliberately. There are two places that fire budget
     // alerts — here and recordGatewayUsage — and wiring only one is the exact
     // mistake made when the fail-open spend bug was fixed in budgetGuard and
     // left in this file.
-    void checkAndNotifyGroupBudgets(userId);
+    void checkAndNotifyGroupBudgets(budgetUser ?? userId, trace.caseBudget?.groupId ?? undefined);
   } catch (e) {
     console.error("[trace] budget alert check failed to load:", e);
   }
@@ -805,17 +830,27 @@ function withTraceTap(
           const { done, value } = await reader.read();
           if (done) break;
           if (!value) continue;
-          controller.enqueue(value);
+          if (!trace.caseBudget) controller.enqueue(value);
           textBuffer += decoder.decode(value, { stream: true });
           let idx: number;
           while ((idx = textBuffer.indexOf("\n")) !== -1) {
             let line = textBuffer.slice(0, idx);
             textBuffer = textBuffer.slice(idx + 1);
             if (line.endsWith("\r")) line = line.slice(0, -1);
-            consumeLine(line);
+            const safeLine = trace.caseBudget
+              ? caseProviderLine(line, Boolean(trace.casePersonal))
+              : line;
+            consumeLine(safeLine);
+            if (trace.caseBudget) controller.enqueue(new TextEncoder().encode(`${safeLine}\n`));
           }
         }
-        if (textBuffer.trim()) consumeLine(textBuffer.trim());
+        if (textBuffer.trim()) {
+          const line = trace.caseBudget
+            ? caseProviderLine(textBuffer.trim(), Boolean(trace.casePersonal))
+            : textBuffer.trim();
+          consumeLine(line);
+          if (trace.caseBudget) controller.enqueue(new TextEncoder().encode(`${line}\n`));
+        }
         // Count generated images in the assembled assistant payload.
         const imgMatches = assistantText.match(IMAGE_MD_RE);
         if (imgMatches) imageCount = imgMatches.length;
@@ -898,13 +933,33 @@ function withTraceTap(
         }
         controller.close();
       } catch (err) {
-        await recordTrace({
-          trace,
-          status: "error",
-          errorMessage: err instanceof Error ? err.message : "Stream error",
-          assistantText,
-        });
-        controller.error(err);
+        let failure = trace.caseBudget
+          ? new Error(caseProviderFailure(err, Boolean(trace.casePersonal)))
+          : err;
+        try {
+          await recordTrace({
+            trace,
+            status: "error",
+            errorMessage: failure instanceof Error ? failure.message : "Stream error",
+            assistantText,
+          });
+        } catch (evidenceError) {
+          failure = trace.caseBudget
+            ? new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED")
+            : evidenceError;
+          console.error("[chat] stream evidence write failed:", failure);
+        } finally {
+          await reader.cancel(failure).catch(() => {});
+          if (trace.caseBudget) {
+            const code = failure instanceof Error ? failure.message : "PROVIDER_UNAVAILABLE";
+            controller.enqueue(
+              new TextEncoder().encode(
+                `event: error\ndata: ${JSON.stringify({ error: code })}\n\n`,
+              ),
+            );
+            controller.close();
+          } else controller.error(failure);
+        }
       }
     },
     async cancel(reason) {
@@ -1017,6 +1072,8 @@ export const Route = createFileRoute("/api/chat")({
       },
 
       POST: async ({ request }) => {
+        let caseBoundRequest = false;
+        let casePersonal = false;
         try {
           const body = (await request.json()) as {
             messages: ChatMessage[];
@@ -1030,6 +1087,9 @@ export const Route = createFileRoute("/api/chat")({
             // service secret and name the owner here (see the internal-auth
             // block below). Ignored for normal browser requests.
             internalUserId?: string;
+            runId?: string;
+            nodeId?: string;
+            operationKey?: string;
             // A swarm run passes its run id so every node turn is correlated
             // to the same decision. A standalone chat turn omits it and
             // becomes a decision of its own (see provenance/decision.server).
@@ -1121,14 +1181,14 @@ export const Route = createFileRoute("/api/chat")({
             );
           }
 
-          const provider = (body.provider || "openrouter") as ProviderId;
+          let provider = (body.provider || "openrouter") as ProviderId;
           if (!VALID_PROVIDERS.includes(provider)) {
             return new Response(JSON.stringify({ error: `Unsupported provider: ${provider}` }), {
               status: 400,
               headers: { "Content-Type": "application/json", ...corsHeaders },
             });
           }
-          const model = body.model || process.env.OPENROUTER_DEFAULT_MODEL || "openai/gpt-4o-mini";
+          let model = body.model || process.env.OPENROUTER_DEFAULT_MODEL || "openai/gpt-4o-mini";
 
           // ===== Auth + trace context =====
           // Resolve userId up-front so every provider path can record
@@ -1146,21 +1206,48 @@ export const Route = createFileRoute("/api/chat")({
           // Constant-time compare against INTERNAL_RUN_SECRET (falling back to
           // the service-role key) so the secret can't be probed by timing.
           const isInternalRun = internalSecretMatches(request.headers.get("x-internal-run-secret"));
-          const userId = isInternalRun
-            ? (body.internalUserId ?? null)
-            : await getUserIdFromRequest(request);
+          caseBoundRequest = Boolean(isInternalRun && body.runId);
+          const caseExecution =
+            isInternalRun && body.runId
+              ? await resolveCaseChat({
+                  runId: body.runId,
+                  nodeId: body.nodeId ?? "",
+                  operationKey: body.operationKey ?? "",
+                })
+              : null;
+          caseBoundRequest = Boolean(caseExecution);
+          if (caseExecution) {
+            casePersonal = caseExecution.binding.execution_class === "PERSONAL_CONNECTION";
+            const selectedProvider = VALID_PROVIDERS.find(
+              (candidate) => candidate === caseExecution.route.provider_id,
+            );
+            if (!selectedProvider) throw new Error("PROVIDER_CAPABILITY_UNSUPPORTED");
+            provider = selectedProvider;
+            model = caseExecution.route.model_id;
+            if (isImageModel(model)) throw new Error("PROVIDER_CAPABILITY_UNSUPPORTED");
+          }
+          const userId =
+            caseExecution?.binding.data_scope_user_id ??
+            (isInternalRun ? (body.internalUserId ?? null) : await getUserIdFromRequest(request));
+          const policyUserId = caseExecution?.binding.policy_user_id ?? userId;
+          const caseCostScope =
+            caseExecution?.principal?.kind === "swarm_api_key"
+              ? { type: "swarm_api_key" as const, id: caseExecution.principal.id }
+              : undefined;
 
           // IAM model governance: a user subject to model rules (their own or
           // any of their groups') may only call allowed provider/model
           // combinations. Users with no applicable rules are unrestricted.
-          if (userId) {
-            const iamSb = authToken
-              ? getServerSupabase(authToken)
-              : isInternalRun
-                ? supabaseAdmin
-                : null;
+          if (policyUserId) {
+            const iamSb = caseExecution
+              ? supabaseAdmin
+              : authToken
+                ? getServerSupabase(authToken)
+                : isInternalRun
+                  ? supabaseAdmin
+                  : null;
             if (iamSb) {
-              const modelRules = await getEffectiveModelRules(iamSb, userId);
+              const modelRules = await getEffectiveModelRules(iamSb, policyUserId);
               if (modelRules && !isModelAllowed(modelRules, provider, model)) {
                 return new Response(
                   JSON.stringify({
@@ -1176,7 +1263,9 @@ export const Route = createFileRoute("/api/chat")({
             // and a no-op when no cap is set. Same chokepoint as the model gate,
             // so it covers playground, saved agents and every swarm node.
             // Checks the user's own cap AND every IAM group they belong to.
-            const budget = await getBudgetDecision(userId);
+            const budget = caseExecution
+              ? await getCaseBudgetDecision(caseExecution.binding, caseCostScope)
+              : await getBudgetDecision(policyUserId, caseCostScope);
             if (budget.over) {
               return new Response(
                 JSON.stringify({
@@ -1441,14 +1530,25 @@ export const Route = createFileRoute("/api/chat")({
             traceId,
             decisionId,
             userId,
+            ...(caseExecution
+              ? {
+                  caseBudget: {
+                    runId: caseExecution.credentialContext.runId,
+                    userId: caseExecution.binding.budget_subject_user_id,
+                    groupId: caseExecution.binding.budget_subject_group_id,
+                  },
+                }
+              : {}),
+            casePersonal: caseExecution?.binding.execution_class === "PERSONAL_CONNECTION",
             authToken,
             internalRun: isInternalRun,
             costScope:
-              isInternalRun &&
+              caseCostScope ??
+              (isInternalRun &&
               body.costScope?.type === "gateway_key" &&
               typeof body.costScope.id === "string"
                 ? { type: "gateway_key", id: body.costScope.id }
-                : undefined,
+                : undefined),
             agentId: body.agentId,
             agentName,
             provider,
@@ -1461,6 +1561,7 @@ export const Route = createFileRoute("/api/chat")({
             ),
             startedAt: Date.now(),
             requestPayload: {
+              ...(caseExecution ? { caseExecution: caseExecution.binding } : {}),
               provider,
               model,
               agentId: body.agentId ?? null,
@@ -1808,7 +1909,7 @@ export const Route = createFileRoute("/api/chat")({
           }
 
           // ===== External providers — require auth + per-user credentials =====
-          if (!userId) {
+          if (!userId || !policyUserId) {
             return new Response(
               JSON.stringify({ error: "Authentication required for external providers" }),
               { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } },
@@ -1890,11 +1991,16 @@ export const Route = createFileRoute("/api/chat")({
               : rawAllowList;
             // Owner-scope tool data access on headless runs (RLS is off there).
             const toolScopeUserId = isInternalRun && userId ? userId : undefined;
-            const transport = await resolveOpenAICompatTransport({
-              userId,
+            if (caseExecution && gatewayOverride) throw new Error("ROUTING_DECISION_REQUIRED");
+            const transportPromise = resolveOpenAICompatTransport({
+              userId: policyUserId,
               provider,
               gateway: gatewayOverride,
-            }).catch(() => null);
+              credentialContext: caseExecution?.credentialContext,
+            });
+            const transport = caseExecution
+              ? await transportPromise
+              : await transportPromise.catch(() => null);
 
             // ===== Image-generation models (Gemini "Nano Banana" family, etc.) =====
             // These models don't speak chat-completion-with-tools — they
@@ -2159,6 +2265,8 @@ export const Route = createFileRoute("/api/chat")({
             // the only way to keep that promise is to run the loop that can
             // serve it.
             const wantsToolLoop = (allowList && allowList.length > 0) || deferredSkills.length > 0;
+            if (caseExecution && wantsToolLoop && !transport)
+              throw new Error("PROVIDER_CAPABILITY_UNSUPPORTED");
             if (transport && transport.apiKey && sbForTools && wantsToolLoop) {
               const mergedConfigs = resolveToolConfigs();
               const resolved = await resolveAgentTools(
@@ -2209,6 +2317,9 @@ export const Route = createFileRoute("/api/chat")({
                   organizationId: transport.organizationId,
                   onToolEvent: (e) => toolEvents.push(e),
                   userId: userId ?? null,
+                  caseBudget: trace.caseBudget,
+                  costScope: trace.costScope,
+                  ...(caseExecution ? { provider } : {}),
                   parentTraceId: trace?.traceId ?? null,
                   // Client abort must stop the loop server-side too — without
                   // this, Stop closed the browser connection while tool rounds
@@ -2247,7 +2358,7 @@ export const Route = createFileRoute("/api/chat")({
                   toolEvents.flatMap((e) => (e.type === "tool_result" ? (e.sources ?? []) : [])),
                 );
                 const withMem = withMemoryUsedPreamble(withSrc, recalledItems, memorySummaryUsed);
-                const memoryApiKey = process.env.OPENROUTER_API_KEY;
+                const memoryApiKey = caseExecution ? undefined : process.env.OPENROUTER_API_KEY;
                 const withPostMem = memoryApiKey
                   ? withPostTurnMemory(withMem, {
                       userId,
@@ -2278,7 +2389,7 @@ export const Route = createFileRoute("/api/chat")({
 
             // No tools (or unsupported provider for tools) — plain stream.
             const upstream = await streamWithProvider({
-              userId,
+              userId: policyUserId,
               provider,
               modelId: model,
               systemPrompt: effectiveSystemPrompt,
@@ -2286,12 +2397,13 @@ export const Route = createFileRoute("/api/chat")({
               temperature: body.temperature,
               maxTokens: body.maxTokens,
               gateway: gatewayOverride,
+              credentialContext: caseExecution?.credentialContext,
             });
             const tapped = withTraceTap(upstream.body, trace);
             const withCits = withCitationsPreamble(tapped, citations);
             const withSrc = withSourcesTrailer(withCits, citationSources(citations), []);
             const withMem = withMemoryUsedPreamble(withSrc, recalledItems, memorySummaryUsed);
-            const memoryApiKey = process.env.OPENROUTER_API_KEY;
+            const memoryApiKey = caseExecution ? undefined : process.env.OPENROUTER_API_KEY;
             const withPostMem = memoryApiKey
               ? withPostTurnMemory(withMem, {
                   userId,
@@ -2330,8 +2442,12 @@ export const Route = createFileRoute("/api/chat")({
               }).catch(() => {});
               return new Response(null, { status: 499 });
             }
-            const message = err instanceof Error ? err.message : "Provider error";
-            console.error(`Provider ${provider} error:`, err);
+            const message = caseExecution
+              ? caseProviderFailure(err, casePersonal)
+              : err instanceof Error
+                ? err.message
+                : "Provider error";
+            console.error(`Provider ${provider} error:`, caseExecution ? message : err);
             await recordTrace({
               trace,
               status: "error",
@@ -2339,7 +2455,7 @@ export const Route = createFileRoute("/api/chat")({
               assistantText: "",
             });
             return new Response(JSON.stringify({ error: message }), {
-              status: 502,
+              status: caseExecution ? caseFailureStatus(message) : 502,
               headers: {
                 "Content-Type": "application/json",
                 "X-Trace-Id": trace.traceId,
@@ -2348,10 +2464,14 @@ export const Route = createFileRoute("/api/chat")({
             });
           }
         } catch (e) {
-          console.error("chat route error:", e);
+          const code = caseBoundRequest ? caseProviderFailure(e, casePersonal) : null;
+          console.error("chat route error:", code ?? e);
           return new Response(
-            JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-            { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } },
+            JSON.stringify({ error: code ?? (e instanceof Error ? e.message : "Unknown error") }),
+            {
+              status: code ? caseFailureStatus(code) : 500,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            },
           );
         }
       },

@@ -16,7 +16,7 @@ import { render } from "@react-email/components";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { TEMPLATES } from "@/lib/email-templates/registry";
 import { sendMail } from "@/lib/email/mailer.server";
-import { monthStartIso, spendSince } from "@/utils/budgetSpend.server";
+import { groupSpendSince, monthStartIso, spendSince } from "@/utils/budgetSpend.server";
 
 // Self-hosted: the instance's public URL (used for links inside the email).
 const SITE_URL = process.env.SITE_URL || "http://localhost:8080";
@@ -267,7 +267,10 @@ export async function checkAndNotifyBudget(userId: string): Promise<void> {
  *
  * Never throws — the caller is fire-and-forget on the hot path.
  */
-export async function checkAndNotifyGroupBudgets(userId: string): Promise<void> {
+export async function checkAndNotifyGroupBudgets(
+  userId: string,
+  fundedGroupId?: string,
+): Promise<void> {
   if (!userId) return;
   try {
     const sb = supabaseAdmin;
@@ -275,10 +278,10 @@ export async function checkAndNotifyGroupBudgets(userId: string): Promise<void> 
     // Only the groups this caller belongs to. A call can only move the spend
     // of their own teams, so checking every group in the workspace on every
     // call would be work that cannot change an answer.
-    const { data: memberships } = await sb
-      .from("iam_group_members")
-      .select("group_id")
-      .eq("user_id", userId);
+    const { data: memberships, error: membershipError } = fundedGroupId
+      ? { data: [{ group_id: fundedGroupId }], error: null }
+      : await sb.from("iam_group_members").select("group_id").eq("user_id", userId);
+    if (membershipError) throw new Error(membershipError.message);
     const groupIds = (memberships ?? []).map((m) => m.group_id);
     if (groupIds.length === 0) return;
 
@@ -317,18 +320,14 @@ export async function checkAndNotifyGroupBudgets(userId: string): Promise<void> 
 
       // Every member's spend, not just this caller's — a TEAM cap is a sum
       // across the team.
-      const { data: members } = await sb
+      const { data: members, error: membersError } = await sb
         .from("iam_group_members")
         .select("user_id")
         .eq("group_id", limit.scope_id);
       const memberIds = (members ?? []).map((m) => m.user_id);
-      if (memberIds.length === 0) continue;
+      if (membersError) throw new Error(membersError.message);
 
-      const result = await spendSince({
-        userId,
-        since: monthStartIso(),
-        userIds: memberIds,
-      });
+      const result = await groupSpendSince(limit.scope_id, monthStartIso(), memberIds);
       if (!result.ok) {
         // Unknown is not zero. Treating a failed lookup as no spend would
         // silence the alert exactly when the query is slow because the month

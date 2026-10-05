@@ -2804,6 +2804,9 @@ export type Database = {
       };
       execution_traces: {
         Row: {
+          budget_subject_user_id: string | null;
+          budget_subject_group_id: string | null;
+          budget_execution_run_id: string | null;
           agent_id: string | null;
           agent_name: string;
           cost_scope_id: string | null;
@@ -2827,6 +2830,9 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          budget_subject_user_id?: string | null;
+          budget_subject_group_id?: string | null;
+          budget_execution_run_id?: string | null;
           agent_id?: string | null;
           agent_name: string;
           cost_scope_id?: string | null;
@@ -2850,6 +2856,9 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          budget_subject_user_id?: string | null;
+          budget_subject_group_id?: string | null;
+          budget_execution_run_id?: string | null;
           agent_id?: string | null;
           agent_name?: string;
           cost_scope_id?: string | null;
@@ -7641,6 +7650,13 @@ export type Database = {
       swarm_runs: {
         Row: {
           cancel_requested: boolean;
+          case_id: string | null;
+          case_attempt_id: string | null;
+          case_parent_run_id: string | null;
+          case_parent_node_id: string | null;
+          case_execution_principal: Json | null;
+          case_execution_binding: Json | null;
+          case_semantic_claims: Json;
           created_at: string;
           error_count: number;
           error_message: string | null;
@@ -7663,6 +7679,13 @@ export type Database = {
         };
         Insert: {
           cancel_requested?: boolean;
+          case_id?: string | null;
+          case_attempt_id?: string | null;
+          case_parent_run_id?: string | null;
+          case_parent_node_id?: string | null;
+          case_execution_principal?: Json | null;
+          case_execution_binding?: Json | null;
+          case_semantic_claims?: Json;
           created_at?: string;
           error_count?: number;
           error_message?: string | null;
@@ -7685,6 +7708,13 @@ export type Database = {
         };
         Update: {
           cancel_requested?: boolean;
+          case_id?: string | null;
+          case_attempt_id?: string | null;
+          case_parent_run_id?: string | null;
+          case_parent_node_id?: string | null;
+          case_execution_principal?: Json | null;
+          case_execution_binding?: Json | null;
+          case_semantic_claims?: Json;
           created_at?: string;
           error_count?: number;
           error_message?: string | null;
@@ -8353,6 +8383,14 @@ export type Database = {
       };
       axtn_case_assignment: {
         Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
+      axtn_case_execution: {
+        Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
+      axtn_case_group_spend: {
+        Args: { p_group_id: string; p_since: string };
         Returns: Json;
       };
       axtn_case_capacity: {

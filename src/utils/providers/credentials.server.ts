@@ -37,6 +37,10 @@ import type {
 // through the encrypted provider_credentials table. The chat route checks
 // the legacy table first, so the Integrations card takes precedence.
 import { resolveIntegrationConfig } from "./integrationConfig.server";
+import {
+  loadCaseCredential,
+  type CaseCredentialContext,
+} from "@/axtn/workbenches/cases/caseExecution.server";
 
 const LEGACY_PROVIDERS = new Set<ProviderId>([
   "grok",
@@ -51,7 +55,23 @@ const LEGACY_PROVIDERS = new Set<ProviderId>([
   "nvidia",
 ]);
 
-async function loadLegacyConfig(userId: string, provider: ProviderId) {
+async function loadLegacyConfig(
+  userId: string,
+  provider: ProviderId,
+  context?: CaseCredentialContext,
+) {
+  if (context) {
+    const selected = await loadCaseCredential(context, provider);
+    if (selected.source !== "integration") return null;
+    return {
+      ...selected.row,
+      config: await resolveIntegrationConfig(
+        selected.row.user_id,
+        "llm_provider",
+        selected.row.config as Record<string, unknown>,
+      ),
+    };
+  }
   // Users can end up with duplicate rows for the same provider (e.g. one
   // inactive + one active after re-saving). `.maybeSingle()` blows up in that
   // case with "JSON object requested, multiple (or no) rows returned", so we
@@ -173,7 +193,15 @@ async function loadGrantedLegacyConfig(userId: string, provider: ProviderId) {
 }
 
 /** Own encrypted credential first, then one granted via IAM. */
-export async function loadCredentialRowShared(userId: string, provider: ProviderId) {
+export async function loadCredentialRowShared(
+  userId: string,
+  provider: ProviderId,
+  context?: CaseCredentialContext,
+) {
+  if (context) {
+    const selected = await loadCaseCredential(context, provider);
+    return selected.source === "provider_credential" ? selected.row : null;
+  }
   // loadCredentialRow answers null for "no row" and throws only for a failed
   // read. Catching the throw here made a failed read "no own credential", and
   // the call then failed downstream with "No credentials configured" — the
@@ -236,6 +264,7 @@ export async function resolveOpenAICompatTransport(args: {
   userId: string;
   provider: ProviderId;
   gateway?: GatewayOverride;
+  credentialContext?: CaseCredentialContext;
 }): Promise<OpenAICompatTransport | null> {
   const { userId, provider } = args;
   if (!OPENAI_COMPAT_PROVIDERS.has(provider)) return null;
@@ -243,8 +272,10 @@ export async function resolveOpenAICompatTransport(args: {
   // Gateway resolution: an explicit override from the caller (per-agent
   // opt-in) wins; otherwise honor the user's "route all LLM traffic" gateway
   // setting here, at the one chokepoint every OpenAI-compat surface shares.
-  const gateway =
-    args.gateway ?? (await resolveUserGatewayOverride(userId, { requireRouteAll: true }));
+  if (args.credentialContext && args.gateway) throw new Error("ROUTING_DECISION_REQUIRED");
+  const gateway = args.credentialContext
+    ? undefined
+    : (args.gateway ?? (await resolveUserGatewayOverride(userId, { requireRouteAll: true })));
 
   // Gateway override short-circuits per-provider creds — every gateway we
   // support (LiteLLM/Portkey/Helicone) speaks OpenAI Chat Completions.
@@ -255,12 +286,13 @@ export async function resolveOpenAICompatTransport(args: {
     };
   }
 
-  let row = await loadLegacyConfig(userId, provider);
+  let row = await loadLegacyConfig(userId, provider, args.credentialContext);
   // Own key first; an IAM-granted credential second; env fallback last.
-  if (!row || !row.is_active) {
+  if (!args.credentialContext && (!row || !row.is_active)) {
     row = await loadGrantedLegacyConfig(userId, provider);
   }
   if (!row || !row.is_active) {
+    if (args.credentialContext) return null;
     // No user-saved OpenRouter key — fall back to the operator's shared
     // OPENROUTER_API_KEY (if configured) so OpenRouter can act as the
     // app-wide zero-config default provider. BYOK always wins when present.
@@ -386,15 +418,17 @@ async function streamLegacyProvider(args: {
   temperature?: number;
   maxTokens?: number;
   gateway?: GatewayOverride;
+  credentialContext?: CaseCredentialContext;
 }): Promise<Response> {
   const { userId, provider, modelId, systemPrompt, messages, temperature, maxTokens, gateway } =
     args;
-  let row = await loadLegacyConfig(userId, provider);
+  let row = await loadLegacyConfig(userId, provider, args.credentialContext);
   // Own key first; an IAM-granted credential second; env fallback last.
-  if (!row || !row.is_active) {
+  if (!args.credentialContext && (!row || !row.is_active)) {
     row = await loadGrantedLegacyConfig(userId, provider);
   }
   if (!row || !row.is_active) {
+    if (args.credentialContext) throw new Error("CASE_EXECUTION_CREDENTIAL_CHANGED");
     if (provider === "openrouter") {
       const envKey = getEnvOpenRouterKey();
       if (envKey) {
@@ -720,15 +754,20 @@ export async function streamWithProvider(args: {
   temperature?: number;
   maxTokens?: number;
   gateway?: GatewayOverride;
+  credentialContext?: CaseCredentialContext;
 }): Promise<Response> {
   const { userId, provider, modelId, systemPrompt, messages, temperature, maxTokens, gateway } =
     args;
+  if (args.credentialContext && gateway) throw new Error("ROUTING_DECISION_REQUIRED");
+  const selected = args.credentialContext
+    ? await loadCaseCredential(args.credentialContext, provider)
+    : null;
 
   // Legacy providers (grok, openai, gemini, ollama) store creds in the
   // older `integrations` table as plaintext config. Route them through
   // a dedicated dispatcher so the chat route works for every provider
   // listed in the Integrations page.
-  if (LEGACY_PROVIDERS.has(provider)) {
+  if (LEGACY_PROVIDERS.has(provider) && selected?.source !== "provider_credential") {
     return streamLegacyProvider({
       userId,
       provider,
@@ -738,6 +777,7 @@ export async function streamWithProvider(args: {
       temperature,
       maxTokens,
       gateway,
+      credentialContext: args.credentialContext,
     });
   }
 
@@ -760,7 +800,10 @@ export async function streamWithProvider(args: {
   }
 
   // Own encrypted credential first, then one shared with this user via IAM.
-  const row = await loadCredentialRowShared(userId, provider);
+  const row =
+    selected?.source === "provider_credential"
+      ? selected.row
+      : await loadCredentialRowShared(userId, provider, args.credentialContext);
   if (!row)
     throw new Error(`No ${provider} credentials configured. Add them in Provider Integrations.`);
   const decrypted = await decryptJson<Record<string, unknown>>(

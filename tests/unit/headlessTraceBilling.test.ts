@@ -67,7 +67,7 @@ describe("headless turns write their trace, so their spend is billable", () => {
     // to an arbitrary account.
     const i = chat.indexOf("const isInternalRun");
     expect(i).toBeGreaterThan(0);
-    const window = chat.slice(i, i + 400).replace(/\s+/g, " ");
+    const window = chat.slice(i, chat.indexOf("const policyUserId", i)).replace(/\s+/g, " ");
     expect(window).toContain("internalSecretMatches");
     expect(window).toMatch(/isInternalRun\s*\?\s*\(?body\.internalUserId/);
   });

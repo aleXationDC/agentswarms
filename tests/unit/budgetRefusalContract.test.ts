@@ -33,7 +33,7 @@ const GUARD = readFileSync("src/utils/budgetGuard.server.ts", "utf8");
 
 describe("a refused call is refused the same way everywhere", () => {
   it("the chat route answers 402 with a budget_exceeded code", () => {
-    const block = CHAT.slice(CHAT.indexOf("const budget = await getBudgetDecision"));
+    const block = CHAT.slice(CHAT.indexOf("const budget = caseExecution"));
     expect(block).toContain('error: "budget_exceeded"');
     expect(block.slice(0, 900)).toContain("status: 402");
   });
