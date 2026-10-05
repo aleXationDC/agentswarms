@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   }[],
   insertFailed: false,
   resumeFound: true,
+  writeError: false,
+  readError: false,
 }));
 const runId = "33333333-3333-4333-8333-333333333333";
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -48,8 +50,14 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         async maybeSingle() {
           return { data: state.resumeFound ? { id: runId } : null, error: null };
         },
-        then(resolve: (value: { data: unknown[]; error: null }) => unknown) {
-          return Promise.resolve({ data: [], error: null }).then(resolve);
+        then(resolve: (value: { data: unknown[]; error: { message: string } | null }) => unknown) {
+          return Promise.resolve({
+            data: [],
+            error:
+              state.writeError || state.readError
+                ? { message: "ORIGINAL_DATABASE_ERROR_LEAKAGE_MARKER" }
+                : null,
+          }).then(resolve);
         },
       };
       return chain;
@@ -79,6 +87,8 @@ beforeEach(() => {
   state.writes = [];
   state.insertFailed = false;
   state.resumeFound = true;
+  state.writeError = false;
+  state.readError = false;
   vi.stubEnv("PERSIST_PROMPT_BODIES", "true");
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -172,4 +182,135 @@ describe("actual native headless DMS Parent ingress trace writer", () => {
     state.insertFailed = true;
     expect(await createServerSwarmTracer({ ...opts, swarmId: owner })).toBeNull();
   });
+  it.each(["true", "false"])(
+    "excludes all headless Parent step/tool/edge/final/error bodies with global retention %s",
+    async (retention) => {
+      vi.stubEnv("PERSIST_PROMPT_BODIES", retention);
+      const tracer = await createServerSwarmTracer(opts);
+      expect(tracer).not.toBeNull();
+      const marker = "ORIGINAL_DOCUMENT_LEAKAGE_MARKER";
+      await tracer!.startStep({ nodeId: "step", input: { text: marker } });
+      await tracer!.finishStep("step", {
+        status: "error",
+        output: marker,
+        errorMessage: marker,
+        toolCalls: [{ arguments: marker, result: marker }],
+        tokensIn: 3,
+        tokensOut: 4,
+        costUsd: 0.25,
+        latencyMs: 12,
+        llmModel: "existing-model",
+        llmProvider: "existing-provider",
+      });
+      await tracer!.recordEdge({
+        sourceNodeId: "step",
+        targetNodeId: "next",
+        payloadPreview: marker,
+        bytes: 18,
+      });
+      await tracer!.finish({ status: "error", finalOutput: marker, errorMessage: marker });
+      expect(JSON.stringify(state.writes)).not.toContain(marker);
+      expect(state.writes[1].value.input).toEqual({
+        schemaVersion: "document-trace-redaction-v1",
+        redacted: true,
+      });
+      expect(state.writes[2].value).toMatchObject({
+        output: null,
+        error_message: "DOCUMENT_NATIVE_NODE_FAILED",
+        tool_calls: [],
+        tokens_in: 3,
+        tokens_out: 4,
+        cost_usd: 0.25,
+        latency_ms: 12,
+        llm_model: "existing-model",
+        llm_provider: "existing-provider",
+      });
+      expect(state.writes[3].value).toMatchObject({ payload_preview: null, bytes: 18 });
+      expect(state.writes[4].value).toMatchObject({
+        final_output: null,
+        error_message: "DOCUMENT_NATIVE_RUN_FAILED",
+        total_tokens_in: 3,
+        total_tokens_out: 4,
+        total_cost_usd: 0.25,
+        total_latency_ms: 12,
+        step_count: 1,
+        error_count: 1,
+      });
+    },
+  );
+  it("preserves generic headless step/tool/edge/final/error bodies", async () => {
+    const tracer = await createServerSwarmTracer({ ...opts, swarmId: owner });
+    const body = "GENERIC_BODY_UNCHANGED";
+    await tracer!.startStep({ nodeId: "step", input: { text: body } });
+    await tracer!.finishStep("step", {
+      status: "error",
+      output: body,
+      errorMessage: body,
+      toolCalls: [{ result: body }],
+    });
+    await tracer!.recordEdge({ sourceNodeId: "step", targetNodeId: "next", payloadPreview: body });
+    await tracer!.finish({ status: "error", finalOutput: body, errorMessage: body });
+    expect(state.writes[1].value.input).toEqual({ text: body });
+    expect(state.writes[2].value).toMatchObject({
+      output: body,
+      error_message: body,
+      tool_calls: [{ result: body }],
+    });
+    expect(state.writes[3].value.payload_preview).toBe(body);
+    expect(state.writes[4].value).toMatchObject({ final_output: body, error_message: body });
+  });
+  it("fails DMS prior-step recovery explicitly instead of silently resetting native totals", async () => {
+    state.readError = true;
+    await expect(createServerSwarmTracer({ ...opts, resumeRunId: runId })).rejects.toThrow(
+      "DOCUMENT_NATIVE_TRACE_PERSISTENCE_FAILED",
+    );
+  });
+  it("fails a missing DMS step identity explicitly", async () => {
+    const tracer = await createServerSwarmTracer(opts);
+    await expect(tracer!.finishStep("missing", { status: "success" })).rejects.toThrow(
+      "DOCUMENT_NATIVE_TRACE_STEP_ID_REQUIRED",
+    );
+  });
+  it("fails DMS step insertion without emitting original database error content", async () => {
+    const tracer = await createServerSwarmTracer(opts);
+    state.insertFailed = true;
+    const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await expect(tracer!.startStep({ nodeId: "step" })).rejects.toThrow(
+        "DOCUMENT_NATIVE_TRACE_STEP_PERSISTENCE_FAILED",
+      );
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+  it.each(["step", "edge", "close"])(
+    "fails DMS %s persistence explicitly without logging raw database messages",
+    async (operation) => {
+      vi.useFakeTimers();
+      const log = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      try {
+        const tracer = await createServerSwarmTracer(opts);
+        await tracer!.startStep({ nodeId: "step" });
+        state.writeError = true;
+        const write =
+          operation === "step"
+            ? tracer!.finishStep("step", { status: "error" })
+            : operation === "edge"
+              ? tracer!.recordEdge({ sourceNodeId: "step", targetNodeId: "next" })
+              : tracer!.finish({ status: "error" });
+        const expected = expect(write).rejects.toThrow(
+          `DOCUMENT_NATIVE_TRACE_${operation === "close" ? "CLOSE" : operation.toUpperCase()}_PERSISTENCE_FAILED`,
+        );
+        await vi.runAllTimersAsync();
+        await expected;
+        expect(log).not.toHaveBeenCalled();
+        if (operation === "close")
+          expect(state.writes.filter((row) => row.table === "swarm_runs")).toHaveLength(3);
+      } finally {
+        log.mockRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
 });

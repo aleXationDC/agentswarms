@@ -929,6 +929,33 @@ Production/Development/local MCP and existing providers
 remain unchanged; full DMS restore, effects/receipts, protected rights/privacy/
 evaluator and independent Acceptance remain incomplete.
 
+### Scoped headless Parent trace-body increment
+
+Minimized ingress is committed at `e7eebda4` and bound to the same draft PR11
+and three OPEN SupaCases, with canonical push/mirror completion verified.
+The next bounded extension uses that same source-defined Parent identity in
+the existing native headless tracer. It omits step inputs/outputs, tool
+arguments/results, edge previews, final bodies and free-form errors while
+retaining technical status, topology, provider/model, token/latency/cost/byte
+metadata. Generic/Development and global opt-out behavior remain unchanged.
+No graph sequencing, model/provider configuration, Case authority, checkpoint,
+native Approval routing or production state is changed.
+
+Native DMS trace persistence/recovery failures are explicit content-free errors
+rather than swallowed failures or raw database-error logging. The existing
+two-attempt final-close behavior remains unchanged. An executed retry-count
+fixture caught an early failure check preceding the existing retry; corrected
+placement and the actual two-write assertion now pass.
+Four focused suites pass **78 tests**, including 20 actual tracer tests;
+typecheck and targeted lint pass. Final ordered typecheck/lint/documentation/
+command/infra/full-unit gates and unchanged resource-bounded client/SSR build
+passed: **585 files / 9,712 tests PASS / 40 skipped**. One existing tool-retention
+source-string assertion was updated to the scoped conditional; actual generic
+tool-body preservation remains exercised, not disabled.
+This is only headless Parent trace protection, not full L19: child/canvas,
+direct database writers, separate model traces, checkpoints, callbacks/cache
+and historical retention still need protection and actual runtime proof.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

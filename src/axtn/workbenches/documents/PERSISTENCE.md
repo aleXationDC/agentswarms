@@ -2,8 +2,8 @@
 
 This increment minimizes the existing headless native **Document Management
 Parent run's input** and adds compatible hashed-input/ACK readback.
-It is **not complete L19 original-free runtime persistence**: step/tool/model
-bodies, all checkpoints, browser/canvas direct writes, API/callback/cache
+It is **not complete L19 original-free runtime persistence**: separate model
+traces, child traces, all checkpoints, browser/canvas direct writes, API/callback/cache
 responses and historical records still require scoped protection and proof.
 No global environment flag, provider, model, local MCP or deployment is changed.
 
@@ -65,3 +65,15 @@ in the explicitly isolated native PostgreSQL database and compares actual
 results with the server codec for UUID casing, NUL framing, quotes, escapes,
 UTF8 and owner separation. Algorithm parity is not source/privacy authority
 or a complete native runtime persistence proof.
+
+The same headless Parent tracer also excludes step inputs/outputs, tool
+arguments/results, edge previews, final outputs and free-form errors, regardless
+of the global free-body flag. It preserves native IDs, status, topology,
+model/provider identity, tokens, latency, bytes and costs. Input redaction is
+explicit; errors retain bounded node/run failure codes, not raw exception text.
+An unavailable step, edge, final close or prior-step/edge recovery fails with a
+content-free persistence error. Existing final-close retry remains unchanged.
+Actual writer tests exercise marker exclusion and preserve exact generic body
+behavior. The retained graph snapshot is still required by native Approval
+binding; this protection neither changes its routing nor minimizes checkpoint
+context, direct database writers or separate model/callback/cache bodies.

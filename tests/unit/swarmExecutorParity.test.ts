@@ -172,7 +172,7 @@ describe("a step records the tools it called, on both paths", () => {
 
   it("the step is finished with them, and the server tracer writes them where the canvas tracer does", () => {
     expect(server).toContain("toolCalls: nodeToolCalls.get(node.id) ?? [],");
-    expect(tracer).toContain("tool_calls: args.toolCalls ?? [],");
+    expect(tracer).toContain("tool_calls: documentParent ? [] : (args.toolCalls ?? []),");
     expect(canvas).toContain("toolCalls: toolCallsByNode.get(e.nodeId) ?? [],");
   });
 });

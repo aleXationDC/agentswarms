@@ -106,6 +106,7 @@ export async function createServerSwarmTracer(opts: {
           .select("id, node_id, status, latency_ms, tokens_in, tokens_out, cost_usd")
           .eq("run_id", resolved);
         if (priorErr) {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_PRIOR_STEPS_REQUIRED");
           console.warn(
             `[swarm-trace] run ${resolved} resumed, but the steps it already has could not be read: ${priorErr.message}; its totals restart from this half and a step it re-enters may be recorded twice`,
           );
@@ -124,10 +125,12 @@ export async function createServerSwarmTracer(opts: {
           totals.count += 1;
           if (s.status === "error") totals.errors += 1;
         }
-        const { data: priorEdges } = await supabaseAdmin
+        const { data: priorEdges, error: priorEdgesErr } = await supabaseAdmin
           .from("swarm_run_edges")
           .select("source_node_id, target_node_id")
           .eq("run_id", resolved);
+        if (documentParent && priorEdgesErr)
+          throw new Error("DOCUMENT_NATIVE_TRACE_PRIOR_EDGES_REQUIRED");
         for (const e of priorEdges ?? []) {
           edgesSeen.add(`${e.source_node_id}->${e.target_node_id}`);
         }
@@ -177,12 +180,15 @@ export async function createServerSwarmTracer(opts: {
               node_label: args.nodeLabel ?? null,
               node_kind: args.nodeKind ?? "agent",
               agent_id: args.agentId ?? null,
-              input: bodyJson(args.input ?? {}) as never,
+              input: (documentParent
+                ? { schemaVersion: "document-trace-redaction-v1", redacted: true }
+                : bodyJson(args.input ?? {})) as never,
               status: "running",
             } as never)
             .select("id")
             .single();
           if (data?.id) stepIdByNode.set(args.nodeId, (data as { id: string }).id);
+          else if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_REQUIRED");
           else if (stepErr) {
             // FOUND FROM THE SURVEY (R86). A supabase call answers with its
             // error rather than throwing, so this catch never saw one: a step
@@ -194,6 +200,7 @@ export async function createServerSwarmTracer(opts: {
             );
           }
         } catch {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_PERSISTENCE_FAILED");
           /* best-effort */
         }
       },
@@ -207,25 +214,33 @@ export async function createServerSwarmTracer(opts: {
         totals.count += 1;
         if (args.status === "error") totals.errors += 1;
         const stepId = stepIdByNode.get(nodeId);
-        if (!stepId) return;
+        if (!stepId) {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_ID_REQUIRED");
+          return;
+        }
         try {
           const { error: finishErr } = await supabaseAdmin
             .from("swarm_run_steps")
             .update({
               status: args.status,
-              output: bodyText(args.output ?? null),
-              error_message: args.errorMessage ?? null,
+              output: documentParent ? null : bodyText(args.output ?? null),
+              error_message: documentParent
+                ? args.errorMessage
+                  ? "DOCUMENT_NATIVE_NODE_FAILED"
+                  : null
+                : (args.errorMessage ?? null),
               llm_model: args.llmModel ?? null,
               llm_provider: args.llmProvider ?? null,
               tokens_in: args.tokensIn ?? 0,
               tokens_out: args.tokensOut ?? 0,
               cost_usd: args.costUsd ?? 0,
               latency_ms: args.latencyMs ?? 0,
-              tool_calls: args.toolCalls ?? [],
+              tool_calls: documentParent ? [] : (args.toolCalls ?? []),
               finished_at: new Date().toISOString(),
             } as never)
             .eq("id", stepId);
           if (finishErr) {
+            if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_FINISH_REQUIRED");
             // The step is over; its row still says running, and the run's
             // timeline will show it so for ever (R86).
             console.warn(
@@ -233,6 +248,7 @@ export async function createServerSwarmTracer(opts: {
             );
           }
         } catch {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_PERSISTENCE_FAILED");
           /* best-effort */
         }
       },
@@ -250,15 +266,17 @@ export async function createServerSwarmTracer(opts: {
             target_step_id: stepIdByNode.get(args.targetNodeId) ?? null,
             source_node_id: args.sourceNodeId,
             target_node_id: args.targetNodeId,
-            payload_preview: args.payloadPreview ?? null,
+            payload_preview: documentParent ? null : (args.payloadPreview ?? null),
             bytes: args.bytes ?? 0,
           } as never);
           if (edgeErr) {
+            if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_EDGE_REQUIRED");
             console.warn(
               `[swarm-trace] run ${runId}: the edge ${args.sourceNodeId} → ${args.targetNodeId} could not be recorded: ${edgeErr.message}; the graph will show the steps without it`,
             );
           }
         } catch {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_EDGE_PERSISTENCE_FAILED");
           /* best-effort */
         }
       },
@@ -274,8 +292,12 @@ export async function createServerSwarmTracer(opts: {
               .from("swarm_runs")
               .update({
                 status: args.status,
-                final_output: bodyText(args.finalOutput ?? null),
-                error_message: args.errorMessage ?? null,
+                final_output: documentParent ? null : bodyText(args.finalOutput ?? null),
+                error_message: documentParent
+                  ? args.errorMessage
+                    ? "DOCUMENT_NATIVE_RUN_FAILED"
+                    : null
+                  : (args.errorMessage ?? null),
                 finished_at: new Date().toISOString(),
                 total_latency_ms: totals.lat,
                 total_tokens_in: totals.tin,
@@ -291,11 +313,13 @@ export async function createServerSwarmTracer(opts: {
             ({ error: closeErr } = await close());
           }
           if (closeErr) {
+            if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_CLOSE_REQUIRED");
             console.warn(
               `[swarm-trace] run ${runId} finished ${args.status} but its record could not be closed after two attempts: ${closeErr.message}. It will show as running until it is closed.`,
             );
           }
         } catch {
+          if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_CLOSE_PERSISTENCE_FAILED");
           /* best-effort */
         }
       },
