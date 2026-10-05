@@ -38,6 +38,7 @@ import { deliverRunCallback, hashBody } from "@/utils/swarmWebhook.server";
 import { idempotencyVerdict, type IdempotencyRow } from "@/utils/swarmIdempotency";
 import { documentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck";
 import { readDocumentParentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck.server";
+import { documentSuspendedOutput } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -197,7 +198,7 @@ export const Route = createFileRoute("/api/swarm/run")({
                     throw new Error("DOCUMENT_PARENT_REGISTRATION_CACHED_RESPONSE_REQUIRED");
                   return json({
                     status: "suspended",
-                    output: cached.output,
+                    output: documentSuspendedOutput(key.swarm_id, cached.output),
                     runId: existing.run_id,
                     ...registration,
                   });
@@ -367,7 +368,10 @@ export const Route = createFileRoute("/api/swarm/run")({
                 const baseBody = {
                   runId: result.runId,
                   status: result.status,
-                  output: result.output,
+                  output:
+                    result.status === "suspended"
+                      ? documentSuspendedOutput(swarm.id, result.output)
+                      : result.output,
                   error: result.error,
                   swarmId: swarm.id,
                 };
@@ -431,7 +435,7 @@ export const Route = createFileRoute("/api/swarm/run")({
           if (result.status === "suspended") {
             const baseBody = {
               status: "suspended",
-              output: result.output,
+              output: documentSuspendedOutput(swarm.id, result.output),
               runId: result.runId,
             };
             await finishIdempotency("in_progress", baseBody);

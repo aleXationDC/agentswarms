@@ -14,6 +14,7 @@ import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
 import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
 import { NativeDocumentApprovalBinding } from "@/axtn/workbenches/documents/documentApproval.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import { documentSuspendedOutput } from "@/axtn/workbenches/documents/documentPersistence.server";
 import {
   assertNativeApprovalResume,
   createNativeWorkApproval,
@@ -266,7 +267,15 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
             ? await ensureFilingCase(run.user_id, run.input_prompt, result.output, approval.payload)
             : null;
         if (filingError) return filingError;
-        return { ok: true, status: result.status, runId: result.runId, output: result.output };
+        return {
+          ok: true,
+          status: result.status,
+          runId: result.runId,
+          output:
+            result.status === "suspended"
+              ? documentSuspendedOutput(run.swarm_id ?? "", result.output)
+              : result.output,
+        };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : "Resume failed" };
       }

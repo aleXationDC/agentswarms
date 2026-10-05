@@ -7,6 +7,8 @@ import {
   documentStoredIngress,
   minimizeDocumentIngress,
   minimizeDocumentRegistrationAck,
+  documentSuspendedOutput,
+  DOCUMENT_SUSPENDED_OUTPUT,
 } from "@/axtn/workbenches/documents/documentPersistence.server";
 import { documentInputHash } from "@/axtn/workbenches/documents/documentWork.server";
 
@@ -35,6 +37,14 @@ const ack = {
   input_hash: documentInputHash(documentIngressManifest(source)),
 };
 describe("DMS minimized storage codecs, not privacy or execution authority", () => {
+  it("omits suspended Parent free output but preserves unrelated output exactly", () => {
+    expect(
+      documentSuspendedOutput("9b9ea6c2-a554-4fa7-9c40-908dad632ae7", "ORIGINAL_LEAKAGE_MARKER"),
+    ).toBe(DOCUMENT_SUSPENDED_OUTPUT);
+    expect(documentSuspendedOutput("generic", "ORIGINAL_LEAKAGE_MARKER")).toBe(
+      "ORIGINAL_LEAKAGE_MARKER",
+    );
+  });
   it("serializes and reuses strict owner-bound minimized input without raw fields", () => {
     const stored = documentStoredIngress(owner, JSON.stringify(source));
     expect(stored).not.toContain("LEAKAGE_MARKER");

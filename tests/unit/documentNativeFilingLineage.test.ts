@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
-import { documentStoredIngress } from "@/axtn/workbenches/documents/documentPersistence.server";
+import {
+  documentStoredIngress,
+  DOCUMENT_SUSPENDED_OUTPUT,
+} from "@/axtn/workbenches/documents/documentPersistence.server";
 
 const state = vi.hoisted(() => ({
   payload: null as unknown,
   input: "",
   output: "READY_FOR_FILING",
   ensure: vi.fn(),
+  status: "success",
+  swarmId: "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
+  resume: vi.fn(),
+  load: vi.fn(),
 }));
 const owner = "11111111-1111-4111-8111-111111111111";
 const reviewer = "66666666-6666-4666-8666-666666666666";
@@ -51,7 +58,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           data: {
             id: runId,
             user_id: owner,
-            status: "success",
+            status: state.status,
+            swarm_id: state.swarmId,
             input_prompt: state.input,
             final_output: state.output,
             swarm_snapshot: {},
@@ -65,10 +73,13 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 vi.mock("@/axtn/workbenches/cases/caseManagement.server", () => ({
   ensureCaseForAcceptance: state.ensure,
 }));
-vi.mock("@/utils/swarmExecute.server", () => ({ resumeSwarmRun: vi.fn() }));
+vi.mock("@/utils/swarmExecute.server", () => ({ resumeSwarmRun: state.resume }));
+vi.mock("@/utils/swarmCheckpoint.server", () => ({ loadCheckpoint: state.load }));
 vi.mock("@/utils/swarmWorkApproval.server", () => ({
   assertNativeApprovalResume: vi.fn(),
-  createNativeWorkApproval: vi.fn(),
+  createNativeWorkApproval: vi
+    .fn()
+    .mockResolvedValue({ id: "44444444-4444-4444-8444-444444444444" }),
 }));
 const binding = {
   caseId,
@@ -90,6 +101,15 @@ beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "http://localhost");
   vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "nonfunctional-fixture");
   state.payload = { axtnDocument: binding };
+  state.status = "success";
+  state.swarmId = "9b9ea6c2-a554-4fa7-9c40-908dad632ae7";
+  state.load.mockReset().mockResolvedValue({ suspendedNodeId: "review", ctx: {} });
+  state.resume.mockReset().mockResolvedValue({
+    status: "suspended",
+    runId,
+    output: "ORIGINAL_PENDING_LEAKAGE_MARKER",
+    error: null,
+  });
   state.input = documentStoredIngress(
     owner,
     JSON.stringify({
@@ -112,6 +132,28 @@ const read = () =>
     data: { access_token: "nonfunctional-fixture", approval_id: approvalId },
   });
 describe("actual resume handler native filing lineage with minimized ingress", () => {
+  it("omits DMS free output when continuation parks at another native Approval", async () => {
+    state.status = "suspended";
+    expect(await read()).toEqual({
+      ok: true,
+      status: "suspended",
+      runId,
+      output: DOCUMENT_SUSPENDED_OUTPUT,
+    });
+    expect(state.ensure).not.toHaveBeenCalled();
+  });
+  it("preserves non-DMS pending continuation output", async () => {
+    state.status = "suspended";
+    state.swarmId = owner;
+    state.payload = {};
+    expect(await read()).toEqual({
+      ok: true,
+      status: "suspended",
+      runId,
+      output: "ORIGINAL_PENDING_LEAKAGE_MARKER",
+    });
+    expect(state.ensure).not.toHaveBeenCalled();
+  });
   it("recovers the existing Intake Case from protected native approval, not minimized prompt guesses", async () => {
     expect(await read()).toEqual({ ok: true, status: "success", runId, output: "" });
     expect(state.ensure).toHaveBeenCalledExactlyOnceWith({

@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   checkpoint: null as SwarmCheckpoint | null,
   missingDataset: "",
   failTable: "",
+  throwTable: "",
   queries: [] as { table: string; filters: Record<string, unknown> }[],
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
@@ -31,6 +32,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           return chain;
         },
         async maybeSingle() {
+          if (table === state.throwTable) throw new Error("ORIGINAL_DATABASE_LEAKAGE_MARKER");
           let data: unknown;
           if (table === "swarm_runs") data = state.run;
           else if (table === "user_data_tables")
@@ -45,7 +47,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           else throw new Error(`Unexpected table ${table}`);
           return {
             data,
-            error: table === state.failTable ? { message: "read unavailable" } : null,
+            error:
+              table === state.failTable ? { message: "ORIGINAL_DATABASE_LEAKAGE_MARKER" } : null,
           };
         },
       };
@@ -136,6 +139,7 @@ beforeEach(() => {
   state.queries = [];
   state.missingDataset = "";
   state.failTable = "";
+  state.throwTable = "";
   load.mockReset();
   load.mockImplementation(async () => state.checkpoint);
 });
@@ -376,7 +380,26 @@ describe("native Parent parked registration readback", () => {
     "surfaces %s read errors without an accepted fallback",
     async (table) => {
       state.failTable = table;
-      await expect(read()).rejects.toThrow("read unavailable");
+      await expect(read()).rejects.toThrow(
+        table === "swarm_runs"
+          ? "DOCUMENT_PARENT_REGISTRATION_RUN_READ"
+          : table === "user_data_tables"
+            ? "DOCUMENT_PARENT_REGISTRATION_DATASET_READ"
+            : "DOCUMENT_PARENT_REGISTRATION_ROW_READ",
+      );
+    },
+  );
+  it.each(["swarm_runs", "user_data_tables", "user_data_rows"])(
+    "bounds thrown %s database exceptions instead of exporting original text",
+    async (table) => {
+      state.throwTable = table;
+      await expect(read()).rejects.toThrow(
+        table === "swarm_runs"
+          ? "DOCUMENT_PARENT_REGISTRATION_RUN_READ"
+          : table === "user_data_tables"
+            ? "DOCUMENT_PARENT_REGISTRATION_DATASET_READ"
+            : "DOCUMENT_PARENT_REGISTRATION_ROW_READ",
+      );
     },
   );
 });

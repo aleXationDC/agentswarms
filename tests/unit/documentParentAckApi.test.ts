@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DOCUMENT_SUSPENDED_OUTPUT } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 type Handler = (context: { request: Request }) => Promise<Response>;
 type Result = { data: unknown; error: null };
@@ -149,7 +150,7 @@ describe("existing public API Parent ACK transport", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       status: "suspended",
-      output: "awaiting independent reviewer",
+      output: DOCUMENT_SUSPENDED_OUTPUT,
       runId,
       ...ack,
     });
@@ -177,7 +178,7 @@ describe("existing public API Parent ACK transport", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       status: "suspended",
-      output: "awaiting independent reviewer",
+      output: DOCUMENT_SUSPENDED_OUTPUT,
       runId,
       ...ack,
     });
@@ -219,7 +220,7 @@ describe("existing public API Parent ACK transport", () => {
     expect(state.callback.mock.calls[0][0].payload).toEqual({
       runId,
       status: "suspended",
-      output: "awaiting independent reviewer",
+      output: DOCUMENT_SUSPENDED_OUTPUT,
       error: null,
       swarmId: state.swarmId,
       ...ack,
@@ -238,7 +239,7 @@ describe("existing public API Parent ACK transport", () => {
       value: {
         status: "in_progress",
         run_id: runId,
-        response: { status: "suspended", output: "awaiting independent reviewer", runId },
+        response: { status: "suspended", output: DOCUMENT_SUSPENDED_OUTPUT, runId },
       },
     });
     expect(state.release).toHaveBeenCalledTimes(1);
@@ -275,5 +276,63 @@ describe("existing public API Parent ACK transport", () => {
     await expect(post()).rejects.toThrow("CACHED_RESPONSE_REQUIRED");
     expect(state.execute).not.toHaveBeenCalled();
     expect(state.writes).toEqual([]);
+  });
+  it("omits original pending content from DMS response, cache and callback without changing the ACK", async () => {
+    state.execute.mockResolvedValue({
+      status: "suspended",
+      output: "ORIGINAL_PENDING_LEAKAGE_MARKER",
+      error: null,
+      runId,
+    });
+    const response = await post();
+    expect(await response.json()).toEqual({
+      status: "suspended",
+      output: DOCUMENT_SUSPENDED_OUTPUT,
+      runId,
+      ...ack,
+    });
+    expect(JSON.stringify(state.writes)).not.toContain("ORIGINAL_PENDING_LEAKAGE_MARKER");
+    expect(state.writes.at(-1)?.value.response).toMatchObject({
+      output: DOCUMENT_SUSPENDED_OUTPUT,
+    });
+    await post({ async: true, callback_url: "https://example.invalid/native-callback" }, false);
+    await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
+    expect(state.callback.mock.calls[0][0].payload).toMatchObject({
+      output: DOCUMENT_SUSPENDED_OUTPUT,
+      ...ack,
+    });
+    expect(JSON.stringify(state.callback.mock.calls)).not.toContain(
+      "ORIGINAL_PENDING_LEAKAGE_MARKER",
+    );
+  });
+  it("does not reflect a legacy raw cached pending body during lost-response readback", async () => {
+    state.idem = {
+      status: "in_progress",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: { status: "suspended", output: "ORIGINAL_PENDING_LEAKAGE_MARKER", runId },
+    };
+    const response = await post();
+    expect(await response.json()).toEqual({
+      status: "suspended",
+      output: DOCUMENT_SUSPENDED_OUTPUT,
+      runId,
+      ...ack,
+    });
+    expect(state.writes).toEqual([]);
+    expect(state.execute).not.toHaveBeenCalled();
+  });
+  it("preserves generic suspended output and cache without a DMS marker", async () => {
+    state.swarmId = "development-fixture";
+    state.readAck.mockResolvedValue(null);
+    const response = await post();
+    expect(await response.json()).toEqual({
+      status: "suspended",
+      output: "awaiting independent reviewer",
+      runId,
+    });
+    expect(state.writes.at(-1)?.value.response).toMatchObject({
+      output: "awaiting independent reviewer",
+    });
   });
 });

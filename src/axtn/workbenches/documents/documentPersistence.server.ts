@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { CaseBoundRegistrationAck, DocumentRegistrationIngress } from "./documentRegistrationAck";
+import {
+  CaseBoundRegistrationAck,
+  DocumentRegistrationIngress,
+  DOCUMENT_MANAGEMENT_SWARM_ID,
+} from "./documentRegistrationAck";
 import {
   DocumentInputManifest,
   DocumentRevision,
@@ -45,6 +49,12 @@ export function documentScopedReferenceHash(userId: string, value: string): stri
 
 export function documentOwnerScopeHash(userId: string): string {
   return documentScopedReferenceHash(userId, "document-persistence-owner-v1");
+}
+
+export const DOCUMENT_SUSPENDED_OUTPUT = '{"schemaVersion":"document-suspended-output-v1"}';
+
+export function documentSuspendedOutput(swarmId: string, output: string): string {
+  return swarmId === DOCUMENT_MANAGEMENT_SWARM_ID ? DOCUMENT_SUSPENDED_OUTPUT : output;
 }
 
 export function documentIngressManifest(value: unknown) {

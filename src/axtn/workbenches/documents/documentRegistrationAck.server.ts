@@ -53,6 +53,14 @@ function parseJson(value: string, code: string): unknown {
   }
 }
 
+async function registrationRead<T>(query: PromiseLike<T>, code: string): Promise<T> {
+  try {
+    return await query;
+  } catch {
+    throw new Error(code);
+  }
+}
+
 /** Registration readback only; an ACK never completes the parked workflow. */
 export async function readDocumentParentRegistrationAck(args: {
   userId: string;
@@ -61,14 +69,17 @@ export async function readDocumentParentRegistrationAck(args: {
 }) {
   if (args.swarmId !== PARENT_ID) return null;
   if (!args.runId) throw new Error("DOCUMENT_PARENT_REGISTRATION_RUN_REQUIRED");
-  const { data: run, error: runError } = await supabaseAdmin
-    .from("swarm_runs")
-    .select("id, status, input_prompt, swarm_snapshot")
-    .eq("id", args.runId)
-    .eq("user_id", args.userId)
-    .eq("swarm_id", PARENT_ID)
-    .maybeSingle();
-  if (runError) throw new Error(`DOCUMENT_PARENT_REGISTRATION_RUN_READ: ${runError.message}`);
+  const { data: run, error: runError } = await registrationRead(
+    supabaseAdmin
+      .from("swarm_runs")
+      .select("id, status, input_prompt, swarm_snapshot")
+      .eq("id", args.runId)
+      .eq("user_id", args.userId)
+      .eq("swarm_id", PARENT_ID)
+      .maybeSingle(),
+    "DOCUMENT_PARENT_REGISTRATION_RUN_READ",
+  );
+  if (runError) throw new Error("DOCUMENT_PARENT_REGISTRATION_RUN_READ");
   if (!run) throw new Error("DOCUMENT_PARENT_REGISTRATION_OWNED_RUN_REQUIRED");
   if (run.status !== "suspended") return null;
   const checkpoint = await loadCheckpoint(args.runId, args.userId, "document");
@@ -121,13 +132,16 @@ export async function readDocumentParentRegistrationAck(args: {
   )
     throw new Error("DOCUMENT_PARENT_REGISTRATION_REQUEST_BINDING_REQUIRED");
   async function dataset(name: string) {
-    const { data, error } = await supabaseAdmin
-      .from("user_data_tables")
-      .select("id")
-      .eq("user_id", args.userId)
-      .eq("name", name)
-      .maybeSingle();
-    if (error) throw new Error(`DOCUMENT_PARENT_REGISTRATION_DATASET_READ: ${error.message}`);
+    const { data, error } = await registrationRead(
+      supabaseAdmin
+        .from("user_data_tables")
+        .select("id")
+        .eq("user_id", args.userId)
+        .eq("name", name)
+        .maybeSingle(),
+      "DOCUMENT_PARENT_REGISTRATION_DATASET_READ",
+    );
+    if (error) throw new Error("DOCUMENT_PARENT_REGISTRATION_DATASET_READ");
     if (!data) throw new Error("DOCUMENT_PARENT_REGISTRATION_OWNED_DATASET_REQUIRED");
     return data.id;
   }
@@ -135,14 +149,16 @@ export async function readDocumentParentRegistrationAck(args: {
     dataset("axtn_cases"),
     dataset("axtn_document_registry"),
   ]);
-  const caseResult = await supabaseAdmin
-    .from("user_data_rows")
-    .select("row")
-    .eq("table_id", caseDataset)
-    .eq("row->>case_id", storedAck.case_id)
-    .maybeSingle();
-  if (caseResult.error)
-    throw new Error(`DOCUMENT_PARENT_REGISTRATION_ROW_READ: ${caseResult.error.message}`);
+  const caseResult = await registrationRead(
+    supabaseAdmin
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", caseDataset)
+      .eq("row->>case_id", storedAck.case_id)
+      .maybeSingle(),
+    "DOCUMENT_PARENT_REGISTRATION_ROW_READ",
+  );
+  if (caseResult.error) throw new Error("DOCUMENT_PARENT_REGISTRATION_ROW_READ");
   if (!caseResult.data) throw new Error("DOCUMENT_PARENT_REGISTRATION_PERSISTED_ROWS_REQUIRED");
   const work = StoredCase.parse(caseResult.data.row);
   const ack = minimizedAck
@@ -179,14 +195,16 @@ export async function readDocumentParentRegistrationAck(args: {
         (minimizedIngress.source_kind !== "mail" && ack.next_location !== undefined)))
   )
     throw new Error("DOCUMENT_PARENT_REGISTRATION_MINIMIZED_BINDING_REQUIRED");
-  const registryResult = await supabaseAdmin
-    .from("user_data_rows")
-    .select("row")
-    .eq("table_id", registryDataset)
-    .eq("row->>source_ref", work.document_input.sourceRef)
-    .maybeSingle();
-  if (registryResult.error)
-    throw new Error(`DOCUMENT_PARENT_REGISTRATION_ROW_READ: ${registryResult.error.message}`);
+  const registryResult = await registrationRead(
+    supabaseAdmin
+      .from("user_data_rows")
+      .select("row")
+      .eq("table_id", registryDataset)
+      .eq("row->>source_ref", work.document_input.sourceRef)
+      .maybeSingle(),
+    "DOCUMENT_PARENT_REGISTRATION_ROW_READ",
+  );
+  if (registryResult.error) throw new Error("DOCUMENT_PARENT_REGISTRATION_ROW_READ");
   if (!registryResult.data) throw new Error("DOCUMENT_PARENT_REGISTRATION_PERSISTED_ROWS_REQUIRED");
   const registration = StoredRegistration.parse(registryResult.data.row);
   if (

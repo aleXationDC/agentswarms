@@ -1195,6 +1195,32 @@ Mocks prove wiring/order, not live roles, reviewer authority or atomic
 Approval/checkpoint/effect persistence. Original-free hydration and the
 remaining complete assignment remain pending; no runtime mutation.
 
+### Suspended native output transport minimization
+
+Canvas strict-write binding is committed/pushed/mirrored at `9ec31df4`.
+An existing immediate/scheduled mirror ref race reported rejection although
+the target already held this exact SHA. Retried only the existing sync;
+completion09:34:42+02 with empty error, PR11/same OPEN Cases then updated.
+No mirror settings or external repository architecture changed.
+
+DMS Parent free suspended output is replaced with an explicit omission marker
+in the existing pending cache, sync/async callback, legacy pending readback and
+native continuation response. The same owned top-level registration ACK
+and same pending run claim survive; no second execution or invented ACK.
+Generic/Development output is unchanged. Terminal outputs/errors and raw
+checkpoint contexts are intentionally not claimed protected by this increment.
+Returned/thrown registration database read errors now carry bounded codes.
+
+Five focused suites PASS **133 tests**, including actual API/cache/callback
+leakage markers, legacy pending recovery, unchanged generic output, native
+continuation and48 real readback fixtures. An initial helper was incorrectly
+nested inside the JSON parser; actual readback tests caught it, corrected
+module scope, no failure hidden. Targeted lint passes. Final full ordered
+type/lint/docs/commands/infra/unit gates PASS:
+**588 files /9,786 tests /40 skipped**; unchanged resource-bounded client/SSR
+build PASS. Protected-secret scan:2,437 source/evidence files PASS.
+No runtime/Development/local MCP change; complete DMS remains unfinished.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

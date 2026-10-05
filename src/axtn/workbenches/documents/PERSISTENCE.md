@@ -177,3 +177,19 @@ are bounded; Development retains boolean required writes and existing errors.
 Nine actual handler fixtures exercise these contracts with mocked native
 Approval/database services. Approval creation, checkpoint and status updates
 remain separate native writes, not an atomic effect or recovery guarantee.
+
+Suspended Parent free output is now the explicit
+`document-suspended-output-v1` omission marker in sync responses, the existing
+pending idempotency cache, async callbacks, legacy pending-cache readback and
+native continuation responses. The original pending text may contain
+document content and is not registration evidence. The top-level owned
+registration ACK remains unchanged and is still reconstructed from existing
+Case/Registry/run/checkpoint bindings; the pending claim is not completed or
+replayed as a fresh execution. Generic/Development output is unchanged.
+Returned/thrown registration database read errors retain explicit bounded
+codes, not raw database exception text. Actual API/cache/callback/continuation
+tests exercise marker omission and exact ACK/no-second-run behavior.
+
+This covers **suspended output only**, not terminal output/errors, direct
+database cache writes, existing stored historical bodies, callbacks' broader
+retention, or original-free checkpoint hydration. No blanket L19 PASS follows.

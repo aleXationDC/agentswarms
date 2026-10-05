@@ -318,7 +318,7 @@
       "name": "parent-registration-ack",
       "kind": "native-public-registration-readback",
       "source": "src/axtn/workbenches/documents/documentRegistrationAck.server.ts",
-      "sourceSHA256": "8a15e2202f6ca54a25e930e0448b3cd26c27c2e53b33531366431749e400171f",
+      "sourceSHA256": "425ce53ad62ca7ef56638c85490b7347c4f5e01cb510a64f4c1e1358e1836d9a",
       "dependencies": [
         "intake",
         "case-profile",
@@ -335,7 +335,7 @@
       "name": "document-minimized-ingress-codec",
       "kind": "native-dms-input-persistence-profile",
       "source": "src/axtn/workbenches/documents/documentPersistence.server.ts",
-      "sourceSHA256": "798dce22d529c45a5a16a2ae023baae1de2af4dd9e13254f35bf1fa198eda719",
+      "sourceSHA256": "43d0e407d4c1540f77691a01d42e9ed83071a636718a9e0f4a4da147046c6988",
       "dependencies": ["case-profile", "intake"],
       "implemented": "strict owner-scoped original-free hashed ingress and registration ACK codecs; headless Parent input writer and same-run identity/required persistence; native Filing preparation uses existing protected Approval Intake binding rather than prompt identity",
       "tested": "33 codec, 12 additional minimized parked registration, 20 actual headless tracer and six actual native resume lineage fixtures; isolated PostgreSQL hash parity; existing Parent API/legacy/generic resume/tracer regressions retained",
@@ -395,7 +395,7 @@
       "id": "document-native-resume-claim",
       "kind": "existing-native-approval-resume",
       "source": "src/utils/swarmResume.functions.ts",
-      "sourceSHA256": "93a674e0b07a98c7b762ed80458429a1b6c1a3149c619a8241d8335be1f04c3f",
+      "sourceSHA256": "90e6bd8f9717bf57d3a0bdf4d960942807456c2342077b41427c9a4e04c46506",
       "dependencies": ["document-nested-parent-provenance"],
       "implemented": "owned persisted Parent selects strict preliminary checkpoint read; same Approval validation and operation binding retained; DMS claim performed only after suspended routing validation in the existing executor",
       "tested": "actual Approval handler through real resume function with synthetic authority/storage: success, invalid routing before claim, lost/failed claim, already-running denial and preserved Development claim modes",
@@ -414,6 +414,18 @@
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Raw context remains. Approval creation and checkpoint/status writes are not atomic; broader hydration/effect/readback recovery remains pending."
+    },
+    {
+      "id": "document-suspended-output-transport",
+      "kind": "existing-native-api-output-profile",
+      "source": "src/routes/api/swarm.run.ts",
+      "sourceSHA256": "ef6667ecc4214ae56d5b20b40f0f6dffa4308e159c706a9915818f1579f3007e",
+      "dependencies": ["document-minimized-ingress-codec", "parent-registration-ack"],
+      "implemented": "DMS Parent suspended output is explicit omission marker in sync/async callback/pending cache/legacy pending readback and native continuation response; owned top-level ACK unchanged; generic outputs untouched; registration database exceptions bounded",
+      "tested": "actual API cache/callback/lost-response leakage marker and generic compatibility, native continuation handler and registration read exceptions;133 focused tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Only suspended free output minimized. Terminal output/error/cache/callback, direct database writes, historical retention and raw checkpoint context remain pending."
     },
     {
       "name": "privacy-preflight",
