@@ -956,6 +956,44 @@ This is only headless Parent trace protection, not full L19: child/canvas,
 direct database writers, separate model traces, checkpoints, callbacks/cache
 and historical retention still need protection and actual runtime proof.
 
+### Native Parent trace storage-barrier increment
+
+Headless trace protection is committed at `ff5966c2`, canonical-pushed/mirrored
+and bound to draft PR11 and the same three OPEN SupaCases. A new additive
+`20261004180000_document_parent_trace_bodies.sql` (SHA256
+`213797240197c09e691d41d34a6954868b047e4df87ab922372716436bdf50ae`)
+now protects the same Parent's step/edge and final/error bodies at their
+existing native tables, including authenticated/browser and service-role
+writes. Thinking/memory/RAG/extraction step bodies are also omitted. Persisted
+Parent identity/owner governs the profile, not caller privacy flags; rebinding
+run/owner or moving rows into/out of protection fails. Parent row locking
+retains classification across concurrent writes. The function is private.
+No second store, orchestrator, Approval or Case authority is introduced.
+
+Actual fresh isolated native clone `dms_native_contract_trace_20261005` adds
+this tenth migration to the exact empty nine-migration Policy basis. Executed
+role tests prove marker exclusion, owner/rebinding denial and preserved generic,
+technical and graph metadata. Sixteen independent native writer sessions and
+new-session readback preserve 16 steps/16 edges and exact token/byte totals
+with zero leakage markers; sixteen attempted Parent-identity downgrades fail.
+The existing Work/Approval/current-proposal/Registry/Feedback SQL role suites
+also pass against this exact schema. Expanded service/browser insert/update,
+foreign step/edge owner, owner/run/row rebinding and generic-to-Parent denial
+fixtures pass. All six existing native concurrency suites and actual bounded
+recognizer-to-report and report-to-disabled-Policy integration pass, including
+scoped key expiry/revocation and immutable response-loss recovery.
+Full lint/documentation/command/infra/unit gates pass on this database-only
+increment: **585 files / 9,712 tests PASS / 40 skipped**. Inventory exact-byte
+tests pass 3/3 after the new dependency was added. The unchanged TypeScript
+and client/SSR build were already verified at the preceding `ff5966c2`;
+this SQL/docs increment did not rerun the build. Missing PowerShell remains
+an explicit infra skip, not runtime evidence.
+
+This is a narrow write-time barrier, not full L19: raw historical records are
+not rewritten/deleted, ingress/snapshots/checkpoints unchanged, and child/
+model/cache/callback protection and original-free resume remain incomplete.
+Production migration ledger/config/image/Development/local MCP remain unchanged.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

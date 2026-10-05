@@ -77,3 +77,22 @@ Actual writer tests exercise marker exclusion and preserve exact generic body
 behavior. The retained graph snapshot is still required by native Approval
 binding; this protection neither changes its routing nor minimizes checkpoint
 context, direct database writers or separate model/callback/cache bodies.
+
+The additive `20261004180000_document_parent_trace_bodies.sql` applies the same
+body policy to direct native Parent step/edge writes and run final/error bodies,
+including authenticated browser and service-role writes. It also omits thinking,
+memory/RAG/extraction bodies on these step rows. Owner/run identity is checked
+against the persisted Parent; Parent and protected row identity cannot be
+rebound to escape the profile. Parent locking serializes protected child writes
+with identity updates. Generic rows retain existing bodies. No existing records
+are scanned/deleted, ingress or graph snapshots rewritten, or checkpoint state
+changed. Labels and technical model/provider identifiers are not arbitrary-body
+sanitizers; child/model/checkpoint/cache/retention protection remains incomplete.
+The trigger function is private and introduces no alternate store or authority.
+
+`documentParentTrace.sql` executes actual service-role and authenticated-role
+inserts/updates, owner/rebinding denial, private-function access, body markers
+and preserved generic/technical/routing data. The concurrency fixture uses
+sixteen independent native sessions and new-session readback, then cleans only
+its own fixture run. Both require the explicitly isolated native database; no
+production migration or runtime leakage PASS follows from these tests.

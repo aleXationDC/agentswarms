@@ -21,6 +21,7 @@
         "case-profile",
         "proposal-current",
         "parent-registration-ack",
+        "document-parent-trace-storage",
         "filing",
         "cleanup"
       ],
@@ -334,10 +335,22 @@
       "sourceSHA256": "798dce22d529c45a5a16a2ae023baae1de2af4dd9e13254f35bf1fa198eda719",
       "dependencies": ["case-profile", "intake"],
       "implemented": "strict owner-scoped original-free hashed ingress and registration ACK codecs; headless Parent input writer and same-run identity/required persistence; native Filing preparation uses existing protected Approval Intake binding rather than prompt identity",
-      "tested": "33 codec, 12 additional minimized parked registration, 11 actual headless constructor and six actual native resume lineage fixtures; existing Parent API/legacy/generic resume/tracer regressions retained",
+      "tested": "33 codec, 12 additional minimized parked registration, 20 actual headless tracer and six actual native resume lineage fixtures; isolated PostgreSQL hash parity; existing Parent API/legacy/generic resume/tracer regressions retained",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Only headless Parent run input/readback/lineage surface is minimized; full checkpoint hydration, all step/model/tool/browser/direct-write/API/callback/cache/retention barriers and live original-free/restart proof remain incomplete."
+      "gap": "Only headless Parent input/readback/lineage and step/tool/edge/final/error bodies are minimized; full checkpoint hydration, child/model/API/callback/cache/retention barriers and live original-free/restart proof remain incomplete."
+    },
+    {
+      "name": "document-parent-trace-storage",
+      "kind": "native-dms-trace-storage-profile",
+      "source": "supabase/migrations/20261004180000_document_parent_trace_bodies.sql",
+      "sourceSHA256": "213797240197c09e691d41d34a6954868b047e4df87ab922372716436bdf50ae",
+      "dependencies": ["document-minimized-ingress-codec"],
+      "implemented": "additive existing native Parent step/edge/final/error write-time body protection for browser/service roles; immutable persisted run/owner and row binding; technical metadata preserved; no snapshot/checkpoint rewrite",
+      "tested": "fresh tenth-migration native clone, actual role/body/binding fixtures and sixteen independent write/readback sessions plus sixteen downgrade attempts; existing DMS SQL role/concurrency suites",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Not full L19; child/model/checkpoint/cache/callback, historical retention, protected loader and original-free runtime/restart proof remain incomplete."
     },
     {
       "name": "privacy-preflight",
