@@ -80,3 +80,8 @@ QualityProfile, protected FilingReceipt, independent review/PR handoff and full
 live DMS graph/acceptance. Missing QualityProfile blocks promotion, not this
 inactive candidate function. Builder feedback/candidate creation is not
 independent Acceptance.
+
+The [deterministic comparison basis](EVALUATION.md) now executes the existing
+recognizer on bounded minimized projections and independently grouped splits.
+Its output is explicitly unattested, never protected privacy or promotion
+authority. Native evaluation persistence and the protected loader remain pending.

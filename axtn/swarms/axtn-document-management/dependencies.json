@@ -261,6 +261,18 @@
       "gap": "Pattern/baseline/profile semantics must be resolved by evaluation; no quality/evaluation/promotion/active policy/provider authority or production UI/restart proof."
     },
     {
+      "name": "document-evaluation-basis",
+      "kind": "bounded-deterministic-comparison",
+      "source": "src/axtn/workbenches/documents/documentEvaluation.ts",
+      "sourceSHA256": "ed080f1cb88122ac8e55951a2868644a4971b3f016011f539c0bde355af2b7a9",
+      "dependencies": ["recognition", "document-learning-candidate"],
+      "implemented": "existing bounded recognizer and shared classification metrics; numeric minimized feature projection, exact rule/dataset/split fingerprints, template/request leakage denial, held-out family/target metrics and measured work budgets; results explicitly UNATTESTED with no promotion authority",
+      "tested": "32 executed deterministic fixtures including real fuzzy improvement, severe wrong target despite perfect family score, actual-family regression, independent groups, NO_AI/UNRESOLVED/original injection denial and measured 19,939,168/20,050,560-cell budget boundary",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Protected vocabulary/features/privacy/rights loader, native immutable EvaluationEvidence persistence/recovery and independent review/PR handoff remain incomplete; input claims and source reference syntax are not authority."
+    },
+    {
       "name": "registry-seed",
       "kind": "native-dataset-seed",
       "source": "supabase/migrations/20261004120000_document_registry_seed.sql",

@@ -743,6 +743,54 @@ back zero owned auth users, datasets, audits, Swarms and keys. Actual protected
 credential scan passed across 2,518 own source/evidence files. Production
 remains healthy on the exact prior image with ledger278.
 
+### Side-effect-free evaluation basis increment
+
+The prior native Candidate increment is committed as
+`35c4af8495a1ad7f7cb2c3889b2834f545f9bac5`, canonical-pushed and immediately
+mirrored at `2026-10-05T04:58:14+02:00`. Draft PR11 and the same OPEN
+Parent/Inventory/Case Children carry its exact source/Host/n8n/PR/Evidence
+references. No prerequisites were falsely closed to start a Learning Child.
+
+The deterministic evaluation basis reuses the existing native recognition
+function and shared classification metrics. It compares only bounded numeric
+feature projections, exact existing rule revisions and held-out test partitions.
+Both template and business-request groups are fenced across three independent
+splits; dataset/split fingerprints reflect actual input. No original text/new
+condition literals, code/prompts, authority flags or enabled policy fields.
+NO_AI/UNRESOLVED, denied rights inputs, scope drift, unverified feedback revision
+and original-content injection are rejected before recognition.
+
+Thirty-two executed fixtures prove actual fuzzy improvement, severe wrong target
+despite perfect family score, real family regression, unknown-family abstention,
+source/identity/revision/split/condition fences and zero logging/effects.
+Aggregate work tests execute 19,939,168 fuzzy cells and reject 20,050,560 before
+recognition. An initial comparison treated elimination of an abstention-only
+predicted category as regression; the real fuzzy-improvement test exposed this
+and the gate now compares actual-family populations.
+
+Output is minimized to references/revisions, descriptive per-family counts,
+precision, correction/exception rates, severe targets, coverage, abstention,
+estimated Human interactions, local elapsed time and zero model/provider calls.
+Existing macro-F1/accuracy are family-only; assignment precision checks target.
+Null cost/zero-denominator precision are explicit. Wilson intervals are labelled
+unadjusted for within-split group correlation and are not promotion confidence.
+Verdict is FAIL or REVIEW_REQUIRED, never PASS. All output carries
+`UNATTESTED_MINIMIZED_INPUT`/`promotionAuthorized=false`; format-valid privacy/
+rights/source/evaluator claims are not protected receipts or actual Git loading.
+
+This increment adds no API, Dataset, Case/Approval mutation, scheduler, policy
+activation, provider call or live runtime wiring. Protected vocabulary/features/
+privacy/rights loading, native immutable EvaluationEvidence/recovery,
+independent review/PR handoff, disabled policy and FilingReceipt remain pending.
+Source-only comparison is not full Learning, DMS recovery or Acceptance.
+
+Final ordered validation passed on these exact source bytes: typecheck, lint
+(zero errors; existing 235 warnings), docs/Markdown/command/infra checks,
+580 test files with 9,565 passing tests and 40 skips, then successful client
+and SSR production build. The build uses the previously verified process-only
+memory parameters documented above; repository build scripts are unchanged.
+Infra reports one existing missing-tool skip. No failed gate is reported as PASS.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder
