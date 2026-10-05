@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DOCUMENT_SUSPENDED_OUTPUT } from "@/axtn/workbenches/documents/documentPersistence.server";
+import {
+  DOCUMENT_SUSPENDED_OUTPUT,
+  DOCUMENT_COMPLETED_OUTPUT,
+  DOCUMENT_FAILED_OUTPUT,
+} from "@/axtn/workbenches/documents/documentPersistence.server";
 
 type Handler = (context: { request: Request }) => Promise<Response>;
 type Result = { data: unknown; error: { message: string; code: string } | null };
@@ -20,6 +24,7 @@ const state = vi.hoisted(() => ({
   readError: false,
   claimError: "",
   writeError: false,
+  writeErrorsRemaining: 0,
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { server: { handlers: { POST: Handler } } }) => {
@@ -32,6 +37,14 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     from(table: string) {
       let method = "";
       const result = (): Result => {
+        const writeError =
+          state.writeError || (method === "update" && state.writeErrorsRemaining > 0);
+        if (
+          table === "swarm_run_idempotency" &&
+          method === "update" &&
+          state.writeErrorsRemaining > 0
+        )
+          state.writeErrorsRemaining--;
         if (table === "swarm_api_keys")
           return {
             data: {
@@ -52,7 +65,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             data: state.idem,
             error:
               (method === "insert" && state.claimError) ||
-              (method === "update" && state.writeError) ||
+              (method === "update" && writeError) ||
               (!method && state.readError)
                 ? { message: "ORIGINAL_DATABASE_LEAKAGE_MARKER", code: state.claimError || "XX000" }
                 : null,
@@ -155,6 +168,7 @@ beforeEach(() => {
   state.readError = false;
   state.claimError = "";
   state.writeError = false;
+  state.writeErrorsRemaining = 0;
   state.execute.mockReset().mockResolvedValue({
     status: "suspended",
     output: "awaiting independent reviewer",
@@ -167,6 +181,220 @@ beforeEach(() => {
 });
 
 describe("existing public API Parent ACK transport", () => {
+  it("retains the returned terminal run identity when async outcome persistence fails", async () => {
+    state.execute.mockResolvedValue({
+      status: "success",
+      output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+      error: null,
+      runId,
+    });
+    state.writeErrorsRemaining = 1;
+    await post({ async: true, callback_url: "https://example.invalid/native-callback" });
+    await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
+    expect(state.callback.mock.calls[0][0].payload).toEqual({
+      status: "error",
+      output: DOCUMENT_FAILED_OUTPUT,
+      error: "DOCUMENT_RUN_OUTCOME_WRITE_FAILED",
+      swarmId: state.swarmId,
+      runId,
+    });
+    expect(state.writes.at(-1)?.value).toMatchObject({
+      status: "failed",
+      run_id: runId,
+    });
+    expect(JSON.stringify(state.writes) + JSON.stringify(state.callback.mock.calls)).not.toContain(
+      "LEAKAGE_MARKER",
+    );
+    expect(state.execute).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(state.release).toHaveBeenCalledOnce());
+  });
+  it.each(["sync", "async"] as const)(
+    "preserves generic %s failed output/error/cache behavior",
+    async (mode) => {
+      state.swarmId = "development-fixture";
+      state.execute.mockResolvedValue({
+        status: "error",
+        output: "GENERIC_ERROR_OUTPUT",
+        error: "GENERIC_ERROR_DETAIL",
+        runId,
+      });
+      if (mode === "sync") {
+        const response = await post();
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: "GENERIC_ERROR_DETAIL", runId });
+      } else {
+        await post({ async: true, callback_url: "https://example.invalid/native-callback" });
+        await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
+        expect(state.callback.mock.calls[0][0].payload).toEqual({
+          runId,
+          status: "error",
+          output: "GENERIC_ERROR_OUTPUT",
+          error: "GENERIC_ERROR_DETAIL",
+          swarmId: state.swarmId,
+        });
+        await vi.waitFor(() => expect(state.release).toHaveBeenCalledOnce());
+      }
+      expect(state.writes.at(-1)?.value.status).toBe("failed");
+      expect(JSON.stringify(state.writes)).toContain("GENERIC_ERROR_DETAIL");
+      expect(state.execute).toHaveBeenCalledOnce();
+    },
+  );
+  it("minimizes successful terminal output in actual sync response and native completed cache", async () => {
+    state.execute.mockResolvedValue({
+      status: "success",
+      output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+      error: null,
+      runId,
+    });
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ output: DOCUMENT_COMPLETED_OUTPUT, runId });
+    expect(state.writes.at(-1)?.value).toMatchObject({
+      status: "completed",
+      response: { output: DOCUMENT_COMPLETED_OUTPUT, runId },
+    });
+    expect(JSON.stringify(state.writes)).not.toContain("LEAKAGE_MARKER");
+    expect(state.readAck).not.toHaveBeenCalled();
+  });
+  it.each(["success", "error"] as const)(
+    "minimizes %s terminal callback and cache without exposing output/error bodies",
+    async (status) => {
+      state.execute.mockResolvedValue({
+        status,
+        output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+        error: status === "error" ? "ORIGINAL_ERROR_LEAKAGE_MARKER" : null,
+        runId,
+      });
+      expect(
+        (await post({ async: true, callback_url: "https://example.invalid/native-callback" }))
+          .status,
+      ).toBe(202);
+      await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
+      expect(state.callback.mock.calls[0][0].payload).toEqual({
+        status,
+        runId,
+        swarmId: state.swarmId,
+        output: status === "success" ? DOCUMENT_COMPLETED_OUTPUT : DOCUMENT_FAILED_OUTPUT,
+        error: status === "error" ? "DOCUMENT_RUN_FAILED" : null,
+      });
+      expect(state.writes.at(-1)?.value.status).toBe(status === "success" ? "completed" : "failed");
+      expect(
+        JSON.stringify(state.writes) + JSON.stringify(state.callback.mock.calls),
+      ).not.toContain("LEAKAGE_MARKER");
+      await vi.waitFor(() => expect(state.release).toHaveBeenCalledOnce());
+    },
+  );
+  it("minimizes actual sync error and failed cache without a successful ACK", async () => {
+    state.execute.mockResolvedValue({
+      status: "error",
+      output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+      error: "ORIGINAL_ERROR_LEAKAGE_MARKER",
+      runId,
+    });
+    const response = await post();
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "DOCUMENT_RUN_FAILED", runId });
+    expect(state.writes.at(-1)?.value.status).toBe("failed");
+    expect(JSON.stringify(state.writes)).not.toContain("LEAKAGE_MARKER");
+    expect(state.readAck).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    "bounds thrown executor text in actual %s async transport",
+    async (async) => {
+      state.execute.mockRejectedValue(new Error("ORIGINAL_THROWN_LEAKAGE_MARKER"));
+      if (async) {
+        await post({ async, callback_url: "https://example.invalid/native-callback" });
+        await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
+        expect(state.callback.mock.calls[0][0].payload.error).toBe("DOCUMENT_RUN_FAILED");
+        expect(
+          JSON.stringify(state.callback.mock.calls) + JSON.stringify(state.writes),
+        ).not.toContain("LEAKAGE_MARKER");
+        await vi.waitFor(() => expect(state.release).toHaveBeenCalledOnce());
+      } else await expect(post()).rejects.toThrow(/^DOCUMENT_RUN_FAILED$/);
+    },
+  );
+  it("minimizes a legacy successful replay without reflecting unknown cached bodies or executing again", async () => {
+    state.idem = {
+      status: "completed",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: {
+        output: "ORIGINAL_LEGACY_LEAKAGE_MARKER",
+        runId,
+        nested: { private: "ORIGINAL_EXTRA_LEAKAGE_MARKER" },
+      },
+    };
+    const response = await post();
+    expect(await response.json()).toEqual({ output: DOCUMENT_COMPLETED_OUTPUT, runId });
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
+  it("preserves a valid legacy async replay's native status and swarm identity, never arbitrary extras", async () => {
+    state.idem = {
+      status: "completed",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: {
+        status: "success",
+        output: "ORIGINAL_LEGACY_LEAKAGE_MARKER",
+        runId,
+        error: null,
+        swarmId: state.swarmId,
+        extras: "ORIGINAL_EXTRA_LEAKAGE_MARKER",
+      },
+    };
+    expect(await (await post()).json()).toEqual({
+      status: "success",
+      output: DOCUMENT_COMPLETED_OUTPUT,
+      runId,
+      error: null,
+      swarmId: state.swarmId,
+    });
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
+  it.each([
+    { output: null },
+    { runId: "wrong-run" },
+    { status: "suspended" },
+    { status: "error" },
+    { error: "ORIGINAL_ERROR_LEAKAGE_MARKER" },
+  ])("requires same-run readback for an inconsistent terminal replay %j", async (change) => {
+    state.idem = {
+      status: "completed",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: { output: "ORIGINAL_LEGACY_LEAKAGE_MARKER", runId, ...change },
+    };
+    const response = await post();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED",
+      runId,
+    });
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
+  it("preserves successful generic response, cache and replay exactly", async () => {
+    state.swarmId = "development-fixture";
+    state.execute.mockResolvedValue({
+      status: "success",
+      output: "GENERIC_TERMINAL_BODY",
+      error: null,
+      runId,
+    });
+    const body = { output: "GENERIC_TERMINAL_BODY", runId };
+    expect(await (await post()).json()).toEqual(body);
+    expect(state.writes.at(-1)?.value.response).toEqual(body);
+    state.idem = {
+      status: "completed",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: { ...body, extra: "existing-generic-replay" },
+    };
+    expect(await (await post()).json()).toEqual({ ...body, extra: "existing-generic-replay" });
+    expect(state.execute).toHaveBeenCalledOnce();
+  });
   it("sync projects registration without completing the suspended idempotency claim", async () => {
     const response = await post();
     expect(response.status).toBe(200);

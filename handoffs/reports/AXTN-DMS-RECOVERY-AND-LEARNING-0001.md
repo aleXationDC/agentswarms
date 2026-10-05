@@ -1330,6 +1330,42 @@ build PASS. Full assignment gate ledger added with explicit PARTIAL/PENDING/
 BLOCKED states; documentation checks rerun PASS. Protected-secret scan:
 2,437 source/evidence files PASS. Production unchanged.
 
+### Native terminal transport boundary increment
+
+After the fully tested detector repair `39a112ec` was canonical-pushed/
+mirrored10:25:55+02 and bound to draftPR11/same OPEN Cases, the existing native
+Parent output profile was extended to terminal success/error output. Explicit
+completed/failed omission markers cover sync results, existing outcome caches,
+async callbacks and Approval continuation/cache results. Exact known fixed
+error codes are allowlisted; unknown error text and fake code prefixes cannot
+be reflected. Native Filing preparation retains the actual in-memory output
+and existing protected Intake Case before response minimization.
+
+Legacy completed replay is projected into known safe fields only. Invalid
+output/run/status/error bindings return409same-run recovery, never a new
+execution or successful fallback. Terminal async outcome-persistence failure
+retains the actual returned run ID. Returned/thrown continuation outcome
+writes and Filing projection failures are bounded, explicit and do not create
+another Case. All generic/Development output/error/cache-extra behavior is
+retained; no graph, sequencing, Approval authority or provider changed.
+
+**129 focused actual codec/API/callback/cache/native continuation/real executor
+tests PASS**. One new failed-write fixture first consumed its one error at
+the unrelated API-key last-used stamp; fixed to target only the native outcome
+table, then all129PASS. Known source hashes and inventory updated.
+The initially wider nullable/optional error helper return type failed the
+existing required-nullable callback contract in TypeScript. Exact overloads
+preserve the caller's nullable contract without a cast or silent default.
+Then ordered Type/Lint/Docs/doc-command/Infra/fullUnit PASS:
+**588 files/9835 tests/40 skipped**; unchanged bounded client/SSR build PASS.
+Inventory plus129 focused tests **132PASS**; protected credential scan
+**2547 source/evidence files**, generated browser assets/runtime logs PASS.
+Fresh live readback retains exact10df3a86 source/1f3e476e image healthy,
+278-migration ledger, no running Swarm and the same suspended Development run.
+Development App/Host/MCP worktrees remain clean. Direct cache database writers,
+historical retention, raw checkpoint hydration, current source/rights/privacy
+authority and full live L19 proof remain pending. No PROD/independent Acceptance.
+
 ### Actual local detector counterexample repair
 
 Native API recovery barrier and full61gate ledger are committed/pushed/

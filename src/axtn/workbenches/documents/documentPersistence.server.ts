@@ -52,9 +52,67 @@ export function documentOwnerScopeHash(userId: string): string {
 }
 
 export const DOCUMENT_SUSPENDED_OUTPUT = '{"schemaVersion":"document-suspended-output-v1"}';
+export const DOCUMENT_COMPLETED_OUTPUT = '{"schemaVersion":"document-completed-output-v1"}';
+export const DOCUMENT_FAILED_OUTPUT = '{"schemaVersion":"document-failed-output-v1"}';
+
+const documentFailureCodes = new Set([
+  "DOCUMENT_RUN_IDEMPOTENCY_READ_FAILED",
+  "DOCUMENT_RUN_CLAIM_FAILED",
+  "DOCUMENT_RUN_OUTCOME_WRITE_FAILED",
+  "DOCUMENT_PARENT_REGISTRATION_RUN_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_RUN_READ",
+  "DOCUMENT_PARENT_REGISTRATION_OWNED_RUN_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_CHECKPOINT_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_CACHED_RESPONSE_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_COMPLETED_INTAKE_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_REQUEST_BINDING_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_DATASET_READ",
+  "DOCUMENT_PARENT_REGISTRATION_OWNED_DATASET_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_ROW_READ",
+  "DOCUMENT_PARENT_REGISTRATION_PERSISTED_ROWS_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_MINIMIZED_BINDING_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_PERSISTED_BINDING_REQUIRED",
+  "DOCUMENT_PARENT_REGISTRATION_FIRST_CASE_REQUIRED",
+  "DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED",
+  "DOCUMENT_CHECKPOINT_WRITE_FAILED",
+  "DOCUMENT_CHECKPOINT_READ_FAILED",
+  "DOCUMENT_PROVENANCE_OWNED_PARENT_REQUIRED",
+  "DOCUMENT_RESUME_SUSPENDED_PARENT_REQUIRED",
+  "DOCUMENT_RESUME_GRAPH_REQUIRED",
+  "DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED",
+  "DOCUMENT_RESUME_APPROVAL_DECISION_REQUIRED",
+  "DOCUMENT_RESUME_CLAIM_FAILED",
+  "DOCUMENT_RESUME_CLAIM_UNAVAILABLE",
+]);
+
+export function documentRunOutput(
+  swarmId: string,
+  status: "success" | "error" | "suspended",
+  output: string,
+): string {
+  if (swarmId !== DOCUMENT_MANAGEMENT_SWARM_ID) return output;
+  return status === "suspended"
+    ? DOCUMENT_SUSPENDED_OUTPUT
+    : status === "success"
+      ? DOCUMENT_COMPLETED_OUTPUT
+      : DOCUMENT_FAILED_OUTPUT;
+}
+
+export function documentRunError(swarmId: string, error: string | null): string | null;
+export function documentRunError(
+  swarmId: string,
+  error: string | null | undefined,
+): string | null | undefined;
+export function documentRunError(
+  swarmId: string,
+  error: string | null | undefined,
+): string | null | undefined {
+  if (swarmId !== DOCUMENT_MANAGEMENT_SWARM_ID || error == null) return error;
+  return documentFailureCodes.has(error) ? error : "DOCUMENT_RUN_FAILED";
+}
 
 export function documentSuspendedOutput(swarmId: string, output: string): string {
-  return swarmId === DOCUMENT_MANAGEMENT_SWARM_ID ? DOCUMENT_SUSPENDED_OUTPUT : output;
+  return documentRunOutput(swarmId, "suspended", output);
 }
 
 export function documentIngressManifest(value: unknown) {

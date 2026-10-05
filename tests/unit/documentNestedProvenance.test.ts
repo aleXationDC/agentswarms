@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeSwarmServer, resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
 import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
+import { DOCUMENT_COMPLETED_OUTPUT } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 const state = vi.hoisted(() => ({
   parentFound: true,
@@ -358,7 +359,7 @@ describe("actual native Approval handler and DMS executor resume claim ordering"
       ok: true,
       status: "success",
       runId,
-      output: "unchanged",
+      output: DOCUMENT_COMPLETED_OUTPUT,
     });
     expect(state.load.mock.calls).toEqual([
       [runId, owner, "document"],

@@ -9,6 +9,10 @@ import {
   minimizeDocumentRegistrationAck,
   documentSuspendedOutput,
   DOCUMENT_SUSPENDED_OUTPUT,
+  documentRunOutput,
+  documentRunError,
+  DOCUMENT_COMPLETED_OUTPUT,
+  DOCUMENT_FAILED_OUTPUT,
 } from "@/axtn/workbenches/documents/documentPersistence.server";
 import { documentInputHash } from "@/axtn/workbenches/documents/documentWork.server";
 
@@ -37,6 +41,29 @@ const ack = {
   input_hash: documentInputHash(documentIngressManifest(source)),
 };
 describe("DMS minimized storage codecs, not privacy or execution authority", () => {
+  it.each([
+    ["suspended", DOCUMENT_SUSPENDED_OUTPUT],
+    ["success", DOCUMENT_COMPLETED_OUTPUT],
+    ["error", DOCUMENT_FAILED_OUTPUT],
+  ] as const)("omits Parent %s output while preserving generic output", (status, expected) => {
+    expect(
+      documentRunOutput("9b9ea6c2-a554-4fa7-9c40-908dad632ae7", status, "ORIGINAL_LEAKAGE_MARKER"),
+    ).toBe(expected);
+    expect(documentRunOutput("generic", status, "ORIGINAL_LEAKAGE_MARKER")).toBe(
+      "ORIGINAL_LEAKAGE_MARKER",
+    );
+  });
+  it.each([
+    ["ORIGINAL_LEAKAGE_MARKER", "DOCUMENT_RUN_FAILED"],
+    ["DOCUMENT_UNLISTED_LEAKAGE_MARKER", "DOCUMENT_RUN_FAILED"],
+    ["DOCUMENT_CHECKPOINT_WRITE_FAILED original text", "DOCUMENT_RUN_FAILED"],
+    ["DOCUMENT_CHECKPOINT_WRITE_FAILED", "DOCUMENT_CHECKPOINT_WRITE_FAILED"],
+    [null, null],
+    [undefined, undefined],
+  ])("allows only exact known diagnostic codes, never prefix-shaped text %s", (error, expected) => {
+    expect(documentRunError("9b9ea6c2-a554-4fa7-9c40-908dad632ae7", error)).toBe(expected);
+    expect(documentRunError("generic", error)).toBe(error);
+  });
   it("omits suspended Parent free output but preserves unrelated output exactly", () => {
     expect(
       documentSuspendedOutput("9b9ea6c2-a554-4fa7-9c40-908dad632ae7", "ORIGINAL_LEAKAGE_MARKER"),

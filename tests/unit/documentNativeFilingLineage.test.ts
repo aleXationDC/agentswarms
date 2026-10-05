@@ -3,6 +3,8 @@ import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
 import {
   documentStoredIngress,
   DOCUMENT_SUSPENDED_OUTPUT,
+  DOCUMENT_COMPLETED_OUTPUT,
+  DOCUMENT_FAILED_OUTPUT,
 } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 const state = vi.hoisted(() => ({
@@ -14,6 +16,9 @@ const state = vi.hoisted(() => ({
   swarmId: "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
   resume: vi.fn(),
   load: vi.fn(),
+  writes: [] as Record<string, unknown>[],
+  writeError: false,
+  writeThrow: false,
 }));
 const owner = "11111111-1111-4111-8111-111111111111";
 const reviewer = "66666666-6666-4666-8666-666666666666";
@@ -50,10 +55,14 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    from: () => {
+    from: (table: string) => {
       const chain = {
         select: () => chain,
         eq: () => chain,
+        update: (value: Record<string, unknown>) => {
+          if (table === "swarm_run_idempotency") state.writes.push(value);
+          return chain;
+        },
         maybeSingle: async () => ({
           data: {
             id: runId,
@@ -65,6 +74,17 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             swarm_snapshot: {},
           },
         }),
+        then<A = { error: { message: string } | null }, B = never>(
+          resolve?: ((value: { error: { message: string } | null }) => A | PromiseLike<A>) | null,
+          reject?: ((reason: unknown) => B | PromiseLike<B>) | null,
+        ) {
+          const result = state.writeThrow
+            ? Promise.reject(new Error("ORIGINAL_DATABASE_LEAKAGE_MARKER"))
+            : Promise.resolve({
+                error: state.writeError ? { message: "ORIGINAL_DATABASE_LEAKAGE_MARKER" } : null,
+              });
+          return result.then(resolve, reject);
+        },
       };
       return chain;
     },
@@ -103,6 +123,9 @@ beforeEach(() => {
   state.payload = { axtnDocument: binding };
   state.status = "success";
   state.swarmId = "9b9ea6c2-a554-4fa7-9c40-908dad632ae7";
+  state.writes = [];
+  state.writeError = false;
+  state.writeThrow = false;
   state.load.mockReset().mockResolvedValue({ suspendedNodeId: "review", ctx: {} });
   state.resume.mockReset().mockResolvedValue({
     status: "suspended",
@@ -132,6 +155,114 @@ const read = () =>
     data: { access_token: "nonfunctional-fixture", approval_id: approvalId },
   });
 describe("actual resume handler native filing lineage with minimized ingress", () => {
+  it("minimizes successful continuation/cache while retaining native Filing preparation and Intake Case", async () => {
+    state.status = "suspended";
+    state.resume.mockResolvedValue({
+      status: "success",
+      runId,
+      output: "READY_FOR_FILING ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+      error: null,
+    });
+    expect(await read()).toEqual({
+      ok: true,
+      status: "success",
+      runId,
+      output: DOCUMENT_COMPLETED_OUTPUT,
+    });
+    expect(state.writes).toEqual([
+      expect.objectContaining({
+        status: "completed",
+        response: {
+          status: "success",
+          output: DOCUMENT_COMPLETED_OUTPUT,
+          runId,
+          error: null,
+        },
+      }),
+    ]);
+    expect(JSON.stringify(state.writes)).not.toContain("LEAKAGE_MARKER");
+    expect(state.ensure).toHaveBeenCalledExactlyOnceWith({
+      userId: owner,
+      documentId: binding.documentId,
+      canonical: { document_id: binding.documentId, intake_case_id: caseId },
+    });
+  });
+  it("minimizes a failed continuation and native failed cache without Filing preparation", async () => {
+    state.status = "suspended";
+    state.resume.mockResolvedValue({
+      status: "error",
+      runId,
+      output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+      error: "ORIGINAL_ERROR_LEAKAGE_MARKER",
+    });
+    expect(await read()).toEqual({
+      ok: true,
+      status: "error",
+      runId,
+      output: DOCUMENT_FAILED_OUTPUT,
+    });
+    expect(state.writes[0]).toMatchObject({
+      status: "failed",
+      response: {
+        status: "error",
+        output: DOCUMENT_FAILED_OUTPUT,
+        runId,
+        error: "DOCUMENT_RUN_FAILED",
+      },
+    });
+    expect(JSON.stringify(state.writes)).not.toContain("LEAKAGE_MARKER");
+    expect(state.ensure).not.toHaveBeenCalled();
+  });
+  it.each(["returned", "thrown"])(
+    "bounds a %s native terminal-cache persistence failure without exposing database text",
+    async (failure) => {
+      state.status = "suspended";
+      state.writeError = failure === "returned";
+      state.writeThrow = failure === "thrown";
+      state.resume.mockResolvedValue({
+        status: "success",
+        runId,
+        output: "ORIGINAL_TERMINAL_LEAKAGE_MARKER",
+        error: null,
+      });
+      const result = await read();
+      expect(result).toEqual({
+        ok: false,
+        error: "DOCUMENT_RUN_OUTCOME_WRITE_FAILED",
+      });
+      expect(JSON.stringify(result) + JSON.stringify(state.writes)).not.toContain("LEAKAGE_MARKER");
+      expect(state.ensure).not.toHaveBeenCalled();
+    },
+  );
+  it("bounds a thrown continuation error, including a fake code prefix", async () => {
+    state.status = "suspended";
+    state.resume.mockRejectedValue(
+      new Error("DOCUMENT_RESUME_CLAIM_FAILED ORIGINAL_ERROR_LEAKAGE_MARKER"),
+    );
+    expect(await read()).toEqual({ ok: false, error: "DOCUMENT_RUN_FAILED" });
+    expect(state.writes).toEqual([]);
+    expect(state.ensure).not.toHaveBeenCalled();
+  });
+  it("preserves exact generic terminal continuation and cached bodies", async () => {
+    state.status = "suspended";
+    state.swarmId = owner;
+    state.payload = {};
+    state.resume.mockResolvedValue({
+      status: "success",
+      runId,
+      output: "GENERIC_TERMINAL_BODY",
+      error: null,
+    });
+    expect(await read()).toEqual({
+      ok: true,
+      status: "success",
+      runId,
+      output: "GENERIC_TERMINAL_BODY",
+    });
+    expect(state.writes[0]).toMatchObject({
+      response: { status: "success", output: "GENERIC_TERMINAL_BODY", runId, error: null },
+    });
+  });
   it("omits DMS free output when continuation parks at another native Approval", async () => {
     state.status = "suspended";
     expect(await read()).toEqual({
@@ -174,7 +305,7 @@ describe("actual resume handler native filing lineage with minimized ingress", (
     state.input = JSON.stringify({ document_id: "forged-document" });
     expect(await read()).toEqual({
       ok: false,
-      error: "Filing acceptance had no valid native Document binding.",
+      error: "DOCUMENT_FILING_CASE_PROJECTION_FAILED",
     });
     expect(state.ensure).not.toHaveBeenCalled();
   });
@@ -182,7 +313,7 @@ describe("actual resume handler native filing lineage with minimized ingress", (
     state.ensure.mockRejectedValueOnce(new Error("DOCUMENT_INTAKE_CASE_REQUIRED"));
     expect(await read()).toEqual({
       ok: false,
-      error: "Case acceptance failed: DOCUMENT_INTAKE_CASE_REQUIRED",
+      error: "DOCUMENT_FILING_CASE_PROJECTION_FAILED",
     });
   });
   it("keeps legacy non-DMS acceptance-context compatibility", async () => {

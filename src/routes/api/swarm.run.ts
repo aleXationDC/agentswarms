@@ -41,7 +41,11 @@ import {
   DOCUMENT_MANAGEMENT_SWARM_ID,
 } from "@/axtn/workbenches/documents/documentRegistrationAck";
 import { readDocumentParentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck.server";
-import { documentSuspendedOutput } from "@/axtn/workbenches/documents/documentPersistence.server";
+import {
+  documentRunError,
+  documentRunOutput,
+  documentSuspendedOutput,
+} from "@/axtn/workbenches/documents/documentPersistence.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -100,6 +104,7 @@ export const Route = createFileRoute("/api/swarm/run")({
         if (!scopes.includes("run")) {
           return denyKey("missing_scope", "This API key is not allowed to run swarms.", 403);
         }
+        const documentParent = key.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
 
         // A swarm run is expensive and can hold a worker for minutes, so bound
         // both the request rate and how many may be in flight for this key.
@@ -157,7 +162,6 @@ export const Route = createFileRoute("/api/swarm/run")({
           // A retried POST (client timeout, proxy retry, at-least-once queue)
           // used to re-run the whole swarm and re-bill it. With a key we
           // return the original result instead.
-          const documentParent = key.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
           const requestedIdemKey = (request.headers.get("idempotency-key") || "").trim();
           if (documentParent && (!requestedIdemKey || requestedIdemKey.length > 200))
             return json({ error: "DOCUMENT_RUN_IDEMPOTENCY_KEY_REQUIRED" }, 400);
@@ -181,6 +185,28 @@ export const Route = createFileRoute("/api/swarm/run")({
             }
             if (verdict.action === "replay") {
               const response = verdict.response as Record<string, unknown>;
+              if (documentParent) {
+                if (
+                  !response ||
+                  typeof response !== "object" ||
+                  Array.isArray(response) ||
+                  typeof response.output !== "string" ||
+                  !existing?.run_id ||
+                  response.runId !== existing.run_id ||
+                  (response.status !== undefined && response.status !== "success") ||
+                  response.error != null
+                )
+                  return json(
+                    { error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED", runId: existing?.run_id },
+                    409,
+                  );
+                return json({
+                  output: documentRunOutput(key.swarm_id, "success", response.output),
+                  runId: existing.run_id,
+                  ...(response.status === "success" ? { status: "success", error: null } : {}),
+                  ...(response.swarmId === key.swarm_id ? { swarmId: key.swarm_id } : {}),
+                });
+              }
               return json({
                 ...response,
                 ...(response.status !== "suspended" && !response.error
@@ -391,16 +417,20 @@ export const Route = createFileRoute("/api/swarm/run")({
             // run, and release it in this task rather than the outer finally.
             void (async () => {
               let parkedRunId: string | null = null;
+              let returnedRunId: string | null = null;
               try {
                 const result = await runSwarm();
+                returnedRunId = result.runId;
                 const baseBody = {
                   runId: result.runId,
                   status: result.status,
-                  output:
-                    result.status === "suspended"
-                      ? documentSuspendedOutput(swarm.id, result.output)
-                      : result.output,
-                  error: result.error,
+                  output: documentRunOutput(swarm.id, result.status, result.output),
+                  error: documentRunError(
+                    swarm.id,
+                    documentParent && result.status === "error"
+                      ? (result.error ?? "Run failed")
+                      : result.error,
+                  ),
                   swarmId: swarm.id,
                 };
                 if (result.status === "suspended") {
@@ -433,10 +463,12 @@ export const Route = createFileRoute("/api/swarm/run")({
                 });
               } catch (e) {
                 const body = {
-                  runId: parkedRunId,
+                  runId: documentParent ? returnedRunId : parkedRunId,
                   status: "error" as const,
-                  output: "",
-                  error: (e as Error).message,
+                  output: documentRunOutput(swarm.id, "error", ""),
+                  error: documentParent
+                    ? documentRunError(swarm.id, e instanceof Error ? e.message : "Run failed")
+                    : (e as Error).message,
                   swarmId: swarm.id,
                 };
                 if (!parkedRunId) await finishIdempotency("failed", body);
@@ -456,7 +488,13 @@ export const Route = createFileRoute("/api/swarm/run")({
           // ── Synchronous mode (default) ────────────────────────────────
           const result = await runSwarm();
           if (result.status === "error") {
-            const body = { error: result.error, runId: result.runId };
+            const body = {
+              error: documentRunError(
+                swarm.id,
+                documentParent ? (result.error ?? "Run failed") : result.error,
+              ),
+              runId: result.runId,
+            };
             await finishIdempotency("failed", body);
             return json(body, 400);
           }
@@ -478,12 +516,18 @@ export const Route = createFileRoute("/api/swarm/run")({
             return json(body);
           }
           const body = {
-            output: result.output,
+            output: documentRunOutput(swarm.id, result.status, result.output),
             runId: result.runId,
             ...documentRegistrationAck(swarm.id, result.output),
           };
           await finishIdempotency("completed", body);
           return json(body);
+        } catch (error) {
+          if (!documentParent) throw error;
+          throw new Error(
+            documentRunError(key.swarm_id, error instanceof Error ? error.message : "Run failed") ??
+              "DOCUMENT_RUN_FAILED",
+          );
         } finally {
           // Give the concurrency slot back — except in async mode, where the
           // detached task owns it until the run actually finishes.

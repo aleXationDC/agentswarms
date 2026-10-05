@@ -190,9 +190,32 @@ Returned/thrown registration database read errors retain explicit bounded
 codes, not raw database exception text. Actual API/cache/callback/continuation
 tests exercise marker omission and exact ACK/no-second-run behavior.
 
-This covers **suspended output only**, not terminal output/errors, direct
-database cache writes, existing stored historical bodies, callbacks' broader
-retention, or original-free checkpoint hydration. No blanket L19 PASS follows.
+The same authenticated Parent profile now covers terminal free output with
+`document-completed-output-v1` and `document-failed-output-v1` markers.
+Sync responses, existing native outcome caches, async callbacks and Approval
+continuation/cache writes omit result bodies. Errors retain only exact known
+content-free diagnostic codes from an explicit allowlist; unknown text, fake
+code prefixes and extra content become `DOCUMENT_RUN_FAILED`. This is a
+failure, not a successful result, retry authorization or provider receipt.
+The native Filing preparation still consumes the real in-memory result and
+protected Intake binding before the public continuation is minimized.
+Filing projection failure is explicit without exposing database text.
+
+Legacy completed Parent replay projects only known output/run/status/swarm
+fields, never arbitrary cached extras. A malformed/error/suspended terminal
+cache or mismatching run ID requires same-run readback with409 and cannot
+start another execution. Generic/Development results, cache extras, errors
+and continuation output retain their existing contracts. An async terminal
+outcome-persistence failure retains the actual returned run ID, not null;
+it never repeats the graph/provider effect to repair the cache.
+
+Actual tests exercise sync/async success/error/cache/callbacks, throw/returned
+storage failures, lost legacy responses, exact routing-before-claim, native
+Filing lineage and generic compatibility. The native handler-to-executor
+fixture is still real code over synthetic storage/Approval authority.
+Direct database cache writes, stored historical bodies, callback delivery
+retention and original-free checkpoint hydration remain pending. No blanket
+L19 or live original-free PASS follows.
 
 For the authenticated source-defined Parent, the public API now requires the
 existing `Idempotency-Key` header (nonempty, at most 200 characters; no silent

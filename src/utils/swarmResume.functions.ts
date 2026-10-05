@@ -14,7 +14,10 @@ import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
 import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
 import { NativeDocumentApprovalBinding } from "@/axtn/workbenches/documents/documentApproval.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
-import { documentSuspendedOutput } from "@/axtn/workbenches/documents/documentPersistence.server";
+import {
+  documentRunError,
+  documentRunOutput,
+} from "@/axtn/workbenches/documents/documentPersistence.server";
 import {
   assertNativeApprovalResume,
   createNativeWorkApproval,
@@ -106,6 +109,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
     async ({
       data,
     }): Promise<Fail | { ok: true; status: string; runId: string | null; output: string }> => {
+      let documentParent = false;
       try {
         const url = process.env.SUPABASE_URL;
         const key = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -143,6 +147,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           .eq("id", approval.swarm_run_id)
           .maybeSingle();
         if (!run) return { ok: false, error: "Run not found" };
+        documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
         if (run.status === "success" || run.status === "error") {
           if (run.status === "success") {
             const filingError = await ensureFilingCase(
@@ -151,7 +156,10 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
               run.final_output,
               approval.payload,
             );
-            if (filingError) return filingError;
+            if (filingError)
+              return documentParent
+                ? { ok: false, error: "DOCUMENT_FILING_CASE_PROJECTION_FAILED" }
+                : filingError;
           }
           // Not an error worth shouting about: a second click, or a run that
           // was already resumed.
@@ -178,7 +186,6 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           !Array.isArray(approval.payload) &&
           ("axtnDevelopment" in approval.payload || "axtnDocument" in approval.payload),
         );
-        const documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
         const checkpoint = await loadCheckpoint(
           run.id,
           run.user_id,
@@ -245,39 +252,54 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         });
         if (!result) return { ok: false, error: "This run can no longer be resumed" };
         if (result.status !== "suspended") {
-          const { error: outcomeError } = await supabaseAdmin
-            .from("swarm_run_idempotency")
-            .update({
-              status: result.status === "success" ? "completed" : "failed",
-              response: {
-                status: result.status,
-                output: result.output,
-                runId: result.runId,
-                error: result.error,
-              },
-              completed_at: new Date().toISOString(),
-            })
-            .eq("run_id", run.id)
-            .eq("status", "in_progress");
-          if (outcomeError)
-            throw new Error(`Native resumed outcome persistence failed: ${outcomeError.message}`);
+          try {
+            const { error: outcomeError } = await supabaseAdmin
+              .from("swarm_run_idempotency")
+              .update({
+                status: result.status === "success" ? "completed" : "failed",
+                response: {
+                  status: result.status,
+                  output: documentRunOutput(run.swarm_id ?? "", result.status, result.output),
+                  runId: result.runId,
+                  error: documentRunError(run.swarm_id ?? "", result.error),
+                },
+                completed_at: new Date().toISOString(),
+              })
+              .eq("run_id", run.id)
+              .eq("status", "in_progress");
+            if (outcomeError)
+              throw new Error(
+                documentParent
+                  ? "DOCUMENT_RUN_OUTCOME_WRITE_FAILED"
+                  : `Native resumed outcome persistence failed: ${outcomeError.message}`,
+              );
+          } catch (error) {
+            if (documentParent) throw new Error("DOCUMENT_RUN_OUTCOME_WRITE_FAILED");
+            throw error;
+          }
         }
         const filingError =
           result.status === "success"
             ? await ensureFilingCase(run.user_id, run.input_prompt, result.output, approval.payload)
             : null;
-        if (filingError) return filingError;
+        if (filingError)
+          return documentParent
+            ? { ok: false, error: "DOCUMENT_FILING_CASE_PROJECTION_FAILED" }
+            : filingError;
         return {
           ok: true,
           status: result.status,
           runId: result.runId,
-          output:
-            result.status === "suspended"
-              ? documentSuspendedOutput(run.swarm_id ?? "", result.output)
-              : result.output,
+          output: documentRunOutput(run.swarm_id ?? "", result.status, result.output),
         };
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Resume failed" };
+        const error = e instanceof Error ? e.message : "Resume failed";
+        return {
+          ok: false,
+          error: documentParent
+            ? (documentRunError(DOCUMENT_MANAGEMENT_SWARM_ID, error) ?? "DOCUMENT_RUN_FAILED")
+            : error,
+        };
       }
     },
   );
