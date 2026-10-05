@@ -13,6 +13,7 @@ import {
   assertWorkPullHead,
   assertParentWorkCompletion,
 } from "@/axtn/workbenches/cases/workAcceptance.server";
+import { executeCaseWork } from "@/axtn/workbenches/cases/work.server";
 
 const caseId = "11111111-1111-4111-8111-111111111111";
 const sessionId = "22222222-2222-4222-8222-222222222222";
@@ -86,6 +87,31 @@ function setup() {
       maybeSingle: vi.fn(async () => ({ data: rows[table], error: null })),
     };
     return query;
+  });
+  rpc.mockImplementation(async (_name, args) => {
+    if (args.p_operation === "case_access") {
+      const stored = rows.user_data_rows as { row: Record<string, unknown> } | null;
+      return {
+        data: {
+          scope: "AUTHORIZED_CASES",
+          total: stored ? 1 : 0,
+          offset: 0,
+          limit: 1,
+          cases: stored
+            ? [
+                {
+                  case_id: caseId,
+                  subject: "Native Work",
+                  case_access_mode: "CUSTODIAN",
+                  ...stored.row,
+                },
+              ]
+            : [],
+        },
+        error: null,
+      };
+    }
+    return { error: null };
   });
   return rows;
 }
@@ -179,5 +205,94 @@ describe("independent exact-revision native Acceptance source boundary", () => {
     expect(git).toHaveBeenCalledOnce();
     rows.user_data_rows = { row: { case_type: "DEVELOPMENT_CHANGE", candidate_sha: candidateSHA } };
     await expect(assertParentWorkCompletion("owner", caseId)).rejects.toThrow("Approval required");
+  });
+  it("uses authorized native access and actual actor for shared non-Parent completion", async () => {
+    const rows = setup();
+    rows.user_data_rows = {
+      row: { case_type: "DEVELOPMENT_VERIFY", case_access_mode: "RESPONSIBLE" },
+    };
+    await expect(
+      assertParentWorkCompletion("assignee", caseId, { kind: "user_session", id: "assignee" }),
+    ).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith("axtn_case_assignment", {
+      p_user_id: "assignee",
+      p_operation: "case_access",
+      p_payload: {
+        caseId,
+        sharedOnly: false,
+        offset: 0,
+        limit: 1,
+        _principal: { kind: "user_session", id: "assignee" },
+      },
+    });
+    expect(from).not.toHaveBeenCalled();
+    expect(git).not.toHaveBeenCalled();
+  });
+  it("wires shared Completion through the same Work endpoint without impersonating custody", async () => {
+    const rows = setup();
+    rows.user_data_rows = {
+      row: { case_type: "DEVELOPMENT_BUILD", case_access_mode: "RESPONSIBLE" },
+    };
+    await executeCaseWork(
+      "assignee",
+      {
+        operation: "transition",
+        transition: {
+          caseId,
+          transitionKey: "shared-completion",
+          eventType: "COMPLETED",
+          reasonCode: "SYNTHETIC_BUILD",
+          actorRef: "forged-client-actor",
+          references: [
+            { kind: "evidence", repository: "aXtn/aXtn-agentswarms", id: "synthetic-proof" },
+          ],
+        },
+      },
+      { kind: "user_session", id: "assignee" },
+    );
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "axtn_case_work",
+      expect.objectContaining({
+        p_user_id: "assignee",
+        p_operation: "transition",
+        p_payload: expect.objectContaining({
+          caseId,
+          eventType: "COMPLETED",
+          actorRef: "assignee",
+          _principal: { kind: "user_session", id: "assignee" },
+        }),
+      }),
+    );
+    expect(from).not.toHaveBeenCalled();
+    expect(git).not.toHaveBeenCalled();
+  });
+  it("does not turn shared responsibility into private Parent Acceptance authority", async () => {
+    const rows = setup();
+    rows.user_data_rows = {
+      row: {
+        case_type: "DEVELOPMENT_CHANGE",
+        candidate_sha: candidateSHA,
+        accepted_approval_id: approvalId,
+        integration_phase: "PR_READY",
+        case_access_mode: "RESPONSIBLE",
+      },
+    };
+    await expect(
+      assertParentWorkCompletion("assignee", caseId, { kind: "user_session", id: "assignee" }),
+    ).rejects.toThrow("CASE_ACCEPTANCE_CUSTODIAN_REQUIRED");
+    expect(from).not.toHaveBeenCalled();
+    expect(git).not.toHaveBeenCalled();
+  });
+  it("denies a missing or revoked Case and propagates native read failures before effects", async () => {
+    const rows = setup();
+    rows.user_data_rows = null;
+    await expect(assertParentWorkCompletion("owner", caseId)).rejects.toThrow("CASE_ACCESS_DENIED");
+    rpc.mockResolvedValue({ data: null, error: { message: "native access failed" } });
+    await expect(assertParentWorkCompletion("owner", caseId)).rejects.toThrow(
+      "native access failed",
+    );
+    expect(git).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
   });
 });

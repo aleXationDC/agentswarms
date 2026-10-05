@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / BUILD_PASSED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / SOURCE_TESTED / CURRENT_BUILD_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -449,7 +449,7 @@ Independent integration Case stays open; builder does not self-accept.
 
 ## Native responsibility and selective collaboration increment
 
-Candidate is the immutable commit containing this section, following
+Candidate `f3e9baf7a7c5642a2918e7552593c074296f5256` follows
 `1805781076c2096b3f215d0bf5f0689d11ca88c8`; the same DraftPR14 and native
 Parent/Children bind its exact SHA after publication. This increment is
 **IMPLEMENTED / ISOLATED_TESTED / BUILD_PASSED / NOT_DEPLOYED**. It does not
@@ -500,7 +500,7 @@ cannot read generic Case rows/table metadata/private calendar or call trusted
 RPC directly. The additional exact shared Work-view fixture confirms public
 contract/scenario/initial-mode projections and private identity exclusion.
 
-Current complete source gates pass: typecheck, lint, documentation/command/
+At that candidate, complete source gates pass: typecheck, lint, documentation/command/
 infra checks and593 unit files with9912 passing/40 skipped tests (9952 total).
 Unmodified canonical `npm run build` passes for client and SSR. The actual
 protected-credential scan passes for source/evidence, task artifacts, browser
@@ -520,3 +520,69 @@ PROD convergence and restart persistence, the real-document use-case gates and
 genuine independent reviewer. Route fields are metadata, not execution or
 PERSONAL_CONNECTION billing evidence. Existing Development/DMS, provider
 integrations and working local MCP configuration remain unchanged.
+
+### Shared Work completion precheck repair
+
+Following `f3e9baf7a7c5642a2918e7552593c074296f5256`, the existing Work
+endpoint's completion precheck now reads the same native authorized Case
+projection, with the actual principal, rather than querying only the actor's
+physical dataset. Non-Parent Work can reach the existing native completion
+contract without impersonating custody. A shared `DEVELOPMENT_CHANGE` still
+receives explicit `CASE_ACCEPTANCE_CUSTODIAN_REQUIRED` before any private
+Approval/receipt/Git read; assignment alone does not authorize those reads.
+Existing custodian exact-revision Acceptance revalidation is unchanged.
+
+Targeted55 tests in4 files, typecheck and scoped lint pass. Actual isolated SQL
+also proves shared synthetic Build start/completion, one durable audit and
+same-key replay under stable custody/actual actor. Shared Verify without exact
+hard checks remains denied with no state/audit change. This is Work-completion
+contract evidence, not a real Build result or new Acceptance grant. Shared
+private Verify execution and Parent Acceptance remain separate open authority
+paths; no original DMS document or integration credential access is added.
+
+### Shared external references and handover repair
+
+Concrete native gap: existing `axtn_case_environment` still assumed actor and
+Case custodian were identical. Its existing contract now derives custody for
+Case-bound reference/handover operations through the same locked native
+authorization helper, preserves the actual actor in replay/audit, and returns
+the same minimized shared projection. Integration confirmation/configuration
+and the selected handover integration remain the authenticated actor's own
+authority; Case assignment never delegates a foreign integration or credential.
+Binding queries/confirmation no longer require an unrelated owned Case dataset.
+Exact correlation selects only authorized Cases and excludes foreign automation
+access. Foreign private account/contact metadata is not a shared correlation
+filter; hidden Cases never contribute ambiguity/counts.
+
+Migration1600 is amended before first PROD application, not layered into another
+environment store. Fresh exact schema database
+`dms_native_contract_environment_responsibility_v9_20261005` passes actual
+backfill preservation, all13 SQL fixtures and all256 independent sessions.
+Additional real SQL checks cover shared references/replay/audit, byte-exact
+minimized handover through the assignee's own confirmed binding, foreign
+integration denial and correlation excluding an identically bound hidden Case
+and foreign automation. Targeted73 tests in5 files and scoped lint pass.
+Evidence: `pilot-shared-handover-native-v9.log`,
+`pilot-shared-handover-concurrency-v9.log` and
+`pilot-shared-completion-proof.log`. These remain isolated synthetic proofs,
+not a real external send or independent Acceptance.
+Current full typecheck/lint/docs/commands/infra/unit gates pass:593 files,
+9916 passing/40 skipped tests (9956 total). Exact log:
+`pilot-shared-handover-final-gates.log`.
+
+Current production-build gate is **BLOCKED**, not PASS inherited fromf3e9baf7.
+Two unchanged canonical4GiB runs terminate during rendering/gzip; the equivalent
+production Vite invocation at3072MiB completes client then exits137 during SSR.
+Measured2304/2816MiB runs explicitly fail with JavaScript heap OOM; the final
+3072MiB reduced-young-generation run again exits137 during SSR. No successful
+complete current artifact exists. Build/config/provider/dependency source and
+live services were not changed to circumvent this measured resource limit.
+Detailed logs use the `pilot-shared-completion-build` prefix in session evidence.
+Further identical build retries are deferred until adequate measured headroom,
+not represented as implementation success.
+
+Fresh live readback still shows healthy App10df3a869c5dcb6c377840ca7a048a87d1aa4c6f
+and image1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a;
+native runs3cancelled/9error/1suspended/0running. Clean DMS Hostc1a25fef remains
+unchanged. No PROD schema/image/config mutation or restart has occurred.
+All Cases remain open and independent Acceptance remains pending.

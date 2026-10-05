@@ -91,7 +91,7 @@ export async function executeCaseWork(
   }
   if (request.operation === "transition" && request.transition.eventType === "COMPLETED") {
     const { assertParentWorkCompletion } = await import("./workAcceptance.server");
-    await assertParentWorkCompletion(userId, request.transition.caseId);
+    await assertParentWorkCompletion(userId, request.transition.caseId, principal);
   }
   const payload =
     request.operation === "ensure"

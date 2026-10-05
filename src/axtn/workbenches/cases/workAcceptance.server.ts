@@ -5,6 +5,9 @@ import { readDevelopmentGit } from "@/utils/notebookRuntime/developmentSource.se
 import { DevelopmentReceipt } from "@/utils/notebookRuntime/development.server";
 import { canonicalJson } from "@/utils/provenance/canonical";
 import { WorkReference, type WorkRequest } from "./workContract";
+import { CaseAccessView } from "./caseAssignmentContract";
+import { executeCaseAssignment } from "./caseAssignment.server";
+import type { WorkPrincipal } from "./work.server";
 
 const Binding = z.object({
   caseId: z.string().uuid(),
@@ -133,21 +136,20 @@ export async function assertWorkPullHead(
   }
 }
 
-export async function assertParentWorkCompletion(userId: string, caseId: string) {
-  const { data: table, error: tableError } = await supabaseAdmin
-    .from("user_data_tables")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("name", "axtn_cases")
-    .maybeSingle();
-  if (tableError || !table) throw new Error("Owned Case dataset unavailable");
-  const { data: row, error } = await supabaseAdmin
-    .from("user_data_rows")
-    .select("row")
-    .eq("table_id", table.id)
-    .filter("row->>case_id", "eq", caseId)
-    .maybeSingle();
-  if (error || !row) throw new Error("Owned Case unavailable");
+export async function assertParentWorkCompletion(
+  userId: string,
+  caseId: string,
+  principal: WorkPrincipal = { kind: "swarm", id: userId },
+) {
+  const view = CaseAccessView.parse(
+    await executeCaseAssignment(
+      userId,
+      { operation: "case_access", caseId, sharedOnly: false, offset: 0, limit: 1 },
+      principal,
+    ),
+  );
+  const row = view.cases.find((value) => value.case_id === caseId);
+  if (!row) throw new Error("CASE_ACCESS_DENIED");
   const work = z
     .object({
       case_type: z.string(),
@@ -155,8 +157,9 @@ export async function assertParentWorkCompletion(userId: string, caseId: string)
       accepted_approval_id: z.string().uuid().optional(),
       integration_phase: z.string().optional(),
     })
-    .parse(row.row);
+    .parse(row);
   if (work.case_type !== "DEVELOPMENT_CHANGE") return;
+  if (row.case_access_mode !== "CUSTODIAN") throw new Error("CASE_ACCEPTANCE_CUSTODIAN_REQUIRED");
   if (!work.accepted_approval_id || !work.candidate_sha)
     throw new Error("Independent native Approval required");
   if (work.integration_phase !== "PR_READY")

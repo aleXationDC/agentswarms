@@ -30,6 +30,7 @@ DECLARE a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); c uuid:=gen_random
   barrier jsonb; barrier_child jsonb; closed_child jsonb; private_root jsonb; shared_leaf jsonb;
   value jsonb; request jsonb; work jsonb; allocation jsonb; commitment jsonb; booking jsonb;
   usage_id uuid:=gen_random_uuid(); before_count bigint; attempt text:=gen_random_uuid()::text;
+  shared_integration uuid:=gen_random_uuid(); private_integration uuid:=gen_random_uuid();
 BEGIN
   INSERT INTO auth.users(id,email,invited_at) VALUES(a,a||'@assignment.invalid',now()),
     (b,b||'@assignment.invalid',now()),(c,c||'@assignment.invalid',now());
@@ -92,6 +93,56 @@ BEGIN
     OR value::text LIKE '%'||(private_root->>'case_id')||'%'
     OR value->'rootCase'->'parent_case_id'<>'null'::jsonb
   THEN RAISE EXCEPTION 'Shared projection disclosed private hierarchy/content'; END IF;
+  INSERT INTO integrations(id,user_id,type,name,is_active,config) VALUES
+    (shared_integration,b,'notification','Synthetic shared ticket binding',true,'{}'),
+    (private_integration,a,'notification','Private synthetic ticket binding',true,'{}');
+  PERFORM axtn_case_environment(b,'environment_binding',jsonb_build_object(
+    'integrationId',shared_integration,'environmentId',' synthetic shared environment ',
+    'enabled',true,'expectedVersion',0,'transitionKey','shared-env-binding',
+    '_principal',jsonb_build_object('kind','user_session','id',b)));
+  PERFORM axtn_case_environment(a,'environment_binding',jsonb_build_object(
+    'integrationId',private_integration,'environmentId',' synthetic shared environment ',
+    'enabled',true,'expectedVersion',0,'transitionKey','private-env-binding',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  request:=jsonb_build_object('caseId',shared_leaf->>'case_id','expectedVersion',0,
+    'transitionKey','shared-external-refs','patch',jsonb_build_object(
+      'external_environment_id',' synthetic shared environment ','external_ref_id','shared opaque ticket',
+      'external_parent_ref_id','foreign-only parent'),
+    '_principal',jsonb_build_object('kind','user_session','id',b));
+  value:=axtn_case_environment(b,'external_references',request);
+  before_count:=(SELECT count(*) FROM audit_events);
+  IF value::text LIKE '%PRIVATE_SYNTHETIC%' OR value->'parent_case_id'<>'null'::jsonb
+    OR value ? 'source_id' OR value->>'external_ref_id'<>'shared opaque ticket'
+    OR axtn_case_environment(b,'external_references',request) IS DISTINCT FROM value
+    OR (SELECT count(*) FROM audit_events)<>before_count
+    OR NOT EXISTS(SELECT 1 FROM audit_events WHERE user_id=a
+      AND detail->>'transitionKey'='shared-external-refs' AND detail->'principal'->>'id'=b::text)
+  THEN RAISE EXCEPTION 'Shared external references lost privacy/custody/actual actor/replay'; END IF;
+  value:=axtn_case_environment(b,'external_handover',jsonb_build_object(
+    'caseId',shared_leaf->>'case_id','integrationId',shared_integration,'expectedVersion',1,
+    '_principal',jsonb_build_object('kind','user_session','id',b)));
+  IF value IS DISTINCT FROM request->'patch'
+  THEN RAISE EXCEPTION 'Shared minimized handover changed the exact triple'; END IF;
+  BEGIN
+    PERFORM axtn_case_environment(b,'external_handover',jsonb_build_object(
+      'caseId',shared_leaf->>'case_id','integrationId',private_integration,'expectedVersion',1,
+      '_principal',jsonb_build_object('kind','user_session','id',b)));
+    RAISE EXCEPTION 'Shared Case assignment granted foreign integration authority';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'CASE_ENVIRONMENT_OWNED_INTEGRATION_REQUIRED' THEN RAISE; END IF;
+  END;
+  PERFORM axtn_case_environment(a,'external_references',request||jsonb_build_object(
+    'caseId',private_root->>'case_id','transitionKey','private-external-refs',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  request:=jsonb_build_object('integrationId',shared_integration,
+    'external_environment_id',' synthetic shared environment ','external_ref_id','shared opaque ticket',
+    '_principal',jsonb_build_object('kind','user_session','id',b));
+  value:=axtn_case_environment(b,'external_correlate',request);
+  IF value->>'status'<>'MATCHED' OR value->'candidates'<>jsonb_build_array(shared_leaf->>'case_id')
+    OR axtn_case_environment(b,'external_correlate',request||jsonb_build_object(
+      '_principal',jsonb_build_object('kind','swarm','id',b)))->>'status'<>'NO_MATCH'
+  THEN RAISE EXCEPTION 'Correlation leaked hidden Case counts or granted foreign automation access'; END IF;
+  RAISE NOTICE 'PASS: shared exact references/readback/minimized handover and correlation preserve real actor/custody; integration configuration stays with its owner and hidden/foreign-automation Cases remain excluded';
   value:=axtn_case_manual(b,'update',jsonb_build_object(
     'row',jsonb_build_object('case_id',shared_leaf->>'case_id','subject','Collaborative manual takeover'),
     'expectedVersion',1,'transitionKey','shared-manual',
@@ -226,6 +277,54 @@ BEGIN
   IF jsonb_array_length(value->'cases')<>2 OR jsonb_array_length(value->'events')<>3
     OR value::text LIKE '%PRIVATE_SYNTHETIC%'
   THEN RAISE EXCEPTION 'Shared Work/event view leaked identity or omitted work'; END IF;
+  PERFORM axtn_case_work(b,'transition',jsonb_build_object(
+    'caseId',work->>'case_id','transitionKey','shared-verify-start','eventType','STARTED',
+    'reasonCode','SYNTHETIC_VERIFY','actorRef',b,'references','[]'::jsonb,
+    '_principal',jsonb_build_object('kind','user_session','id',b)));
+  before_count:=(SELECT count(*) FROM audit_events);
+  BEGIN
+    PERFORM axtn_case_work(b,'transition',jsonb_build_object(
+      'caseId',work->>'case_id','transitionKey','shared-forged-verify-completion','eventType','COMPLETED',
+      'reasonCode','SYNTHETIC_VERIFY','actorRef',b,
+      'references',jsonb_build_array(jsonb_build_object('kind','evidence',
+        'repository','aXtn/aXtn-agentswarms','id','tests/integration/caseAssignment.sql')),
+      '_principal',jsonb_build_object('kind','user_session','id',b)));
+    RAISE EXCEPTION 'Shared assignee completed Verify without exact hard checks';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'Verify Work completion requires exact hard checks' THEN RAISE; END IF;
+  END;
+  IF (SELECT count(*) FROM audit_events)<>before_count
+    OR NOT EXISTS(SELECT 1 FROM user_data_rows WHERE table_id=dataset
+      AND row->>'case_id'=work->>'case_id' AND row->>'status'='OPEN')
+  THEN RAISE EXCEPTION 'Denied shared Verify completion changed state or audit'; END IF;
+  work:=axtn_case_work(b,'ensure',jsonb_build_object(
+    'sourceId','synthetic-shared-build','subject','Synthetic shared completion','caseType','DEVELOPMENT_BUILD',
+    'parentCaseId',shared_leaf->>'case_id',
+    'workContractRef',jsonb_build_object('kind','contract','repository','aXtn/aXtn-agentswarms',
+      'id','tests/integration/caseAssignment.sql','revision',repeat('a',40)),
+    'scenarioClass','regression','scenarioId','synthetic-shared-completion',
+    'processingMode','HUMAN','executionChannel','HUMAN','actorRef',b,
+    'requiredDependencies','[]'::jsonb,'references','[]'::jsonb,
+    '_principal',jsonb_build_object('kind','user_session','id',b)));
+  PERFORM axtn_case_work(b,'transition',jsonb_build_object(
+    'caseId',work->>'case_id','transitionKey','shared-build-start','eventType','STARTED',
+    'reasonCode','SYNTHETIC_BUILD','actorRef',b,'references','[]'::jsonb,
+    '_principal',jsonb_build_object('kind','user_session','id',b)));
+  request:=jsonb_build_object('caseId',work->>'case_id','transitionKey','shared-build-complete',
+    'eventType','COMPLETED','reasonCode','SYNTHETIC_BUILD','actorRef',b,
+    'references',jsonb_build_array(jsonb_build_object('kind','evidence',
+      'repository','aXtn/aXtn-agentswarms','id','tests/integration/caseAssignment.sql')),
+    '_principal',jsonb_build_object('kind','user_session','id',b));
+  value:=axtn_case_work(b,'transition',request);
+  before_count:=(SELECT count(*) FROM audit_events);
+  IF value->>'status'<>'CLOSED' OR value->>'actor_ref'<>b::text
+    OR axtn_case_work(b,'transition',request) IS DISTINCT FROM value
+    OR (SELECT count(*) FROM audit_events)<>before_count
+    OR NOT EXISTS(SELECT 1 FROM audit_events WHERE user_id=a
+      AND action='axtn_work.COMPLETED' AND detail->>'transitionKey'='shared-build-complete'
+      AND detail->'principal'->>'id'=b::text)
+  THEN RAISE EXCEPTION 'Shared native completion lost actual actor/custody/replay'; END IF;
+  RAISE NOTICE 'PASS: shared native Work completion preserves custody/actual actor/replay; missing Verify hard checks denies without state or audit change';
   DELETE FROM iam_group_members WHERE group_id=fixture_group AND user_id=b;
   BEGIN
     PERFORM axtn_case_processing(b,'subtree',jsonb_build_object('caseId',root->>'case_id',

@@ -104,6 +104,7 @@ CREATE TRIGGER guard_axtn_case_environment_audit BEFORE INSERT OR UPDATE OR DELE
 CREATE FUNCTION public.axtn_case_environment(p_user_id uuid,p_operation text,p_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE
+  actor_id uuid := p_user_id;
   principal jsonb := p_payload->'_principal';
   payload jsonb := p_payload-'_principal';
   dataset uuid;
@@ -120,7 +121,8 @@ DECLARE
   candidates jsonb;
   stamp timestamptz := clock_timestamp();
 BEGIN
-  IF NOT EXISTS(SELECT 1 FROM auth.users WHERE id=p_user_id)
+  IF NOT EXISTS(SELECT 1 FROM auth.users WHERE id=p_user_id AND deleted_at IS NULL
+    AND (banned_until IS NULL OR banned_until<=clock_timestamp()))
     OR COALESCE(principal->>'kind','') NOT IN ('user_session','swarm','swarm_api_key')
     OR COALESCE(principal->>'id','')=''
   THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_AUTHENTICATED_OWNER_REQUIRED'; END IF;
@@ -156,14 +158,18 @@ BEGIN
       OR COALESCE(payload->>'expectedVersion','') !~ '^[0-9]{1,16}$'
       OR (payload->>'expectedVersion')::numeric>9007199254740991)
   THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_PAYLOAD_REQUIRED'; END IF;
+  IF p_operation IN ('external_references','external_handover') THEN
+    p_user_id:=axtn_case_custodian(actor_id,payload->>'caseId',principal);
+  END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('axtn-case-work:'||p_user_id::text,0));
   stamp := clock_timestamp();
   SELECT id INTO dataset FROM user_data_tables WHERE user_id=p_user_id AND name='axtn_cases';
-  IF dataset IS NULL THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_DATASET_REQUIRED'; END IF;
+  IF dataset IS NULL AND p_operation IN ('external_references','external_handover')
+  THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_DATASET_REQUIRED'; END IF;
 
   IF payload ? 'integrationId' THEN
     SELECT * INTO integration FROM integrations WHERE id=(payload->>'integrationId')::uuid
-      AND user_id=p_user_id FOR UPDATE;
+      AND user_id=actor_id FOR UPDATE;
     IF integration.id IS NULL THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_OWNED_INTEGRATION_REQUIRED'; END IF;
     binding := integration.config->'axtn_environment_binding';
   END IF;
@@ -236,7 +242,7 @@ BEGIN
     IF prior IS NOT NULL THEN
       IF revision IS DISTINCT FROM (prior->>'resultVersion')::bigint
       THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_STALE_REPLAY'; END IF;
-      RETURN current_case;
+      RETURN axtn_case_project(actor_id,p_user_id,current_case);
     END IF;
     IF revision IS DISTINCT FROM (payload->>'expectedVersion')::bigint
     THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_VERSION_CONFLICT'; END IF;
@@ -245,7 +251,7 @@ BEGIN
     result := current_case||patch||jsonb_build_object(
       'external_reference_version',revision+1,'updated_at',stamp);
     IF principal->>'kind'<>'user_session' AND NOT EXISTS(SELECT 1 FROM integrations i
-      WHERE i.user_id=p_user_id AND axtn_case_environment_binding_valid(i)
+      WHERE i.user_id=actor_id AND axtn_case_environment_binding_valid(i)
         AND i.config->'axtn_environment_binding'->>'environmentId'=result->>'external_environment_id')
     THEN RAISE EXCEPTION 'CASE_ENVIRONMENT_CONFIRMED_BINDING_REQUIRED'; END IF;
     UPDATE user_data_tables t SET columns=t.columns||(
@@ -261,7 +267,7 @@ BEGIN
           'transitionKey',payload->>'transitionKey','requestHash',request_hash,
           'principal',principal,'fromVersion',revision,'resultVersion',revision+1,
           'fields',(SELECT jsonb_agg(field) FROM jsonb_object_keys(patch) field)));
-    RETURN result;
+    RETURN axtn_case_project(actor_id,p_user_id,result);
   END IF;
   IF p_operation='external_handover' THEN
     IF revision IS DISTINCT FROM (payload->>'expectedVersion')::bigint
@@ -295,22 +301,27 @@ BEGIN
         AND t.name='axtn_contacts' AND r.row->>'contact_id'=payload->>'contactId'
         AND (NOT payload ? 'accountId' OR r.row->>'account_id'=payload->>'accountId'))
   THEN RETURN jsonb_build_object('status','CONFLICT','reason','COUNTERPARTY_CONTEXT_CONFLICT','candidates','[]'::jsonb); END IF;
-  SELECT COALESCE(jsonb_agg(row->>'case_id' ORDER BY row->>'case_id'),'[]'::jsonb)
-    INTO candidates FROM user_data_rows WHERE table_id=dataset
-      AND row->>'external_environment_id'=payload->>'external_environment_id'
-      AND row->>'external_ref_id'=payload->>'external_ref_id';
+  SELECT COALESCE(jsonb_agg(r.row->>'case_id' ORDER BY r.row->>'case_id'),'[]'::jsonb)
+    INTO candidates FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+      WHERE t.name='axtn_cases' AND axtn_case_visible(actor_id,t.user_id,r.row)
+      AND (t.user_id=actor_id OR principal->>'kind'='user_session')
+      AND r.row->>'external_environment_id'=payload->>'external_environment_id'
+      AND r.row->>'external_ref_id'=payload->>'external_ref_id';
   IF jsonb_array_length(candidates)=0 THEN
     RETURN jsonb_build_object('status','NO_MATCH','reason','NO_EXACT_REFERENCE','candidates',candidates);
   END IF;
-  SELECT COALESCE(jsonb_agg(row->>'case_id' ORDER BY row->>'case_id'),'[]'::jsonb)
-    INTO candidates FROM user_data_rows WHERE table_id=dataset
-      AND row->>'external_environment_id'=payload->>'external_environment_id'
-      AND row->>'external_ref_id'=payload->>'external_ref_id'
-      AND (NOT payload ? 'accountId' OR row->>'account_id'=payload->>'accountId')
-      AND (NOT payload ? 'contactId' OR row->>'primary_contact_id'=payload->>'contactId')
+  SELECT COALESCE(jsonb_agg(r.row->>'case_id' ORDER BY r.row->>'case_id'),'[]'::jsonb)
+    INTO candidates FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+      WHERE t.name='axtn_cases' AND axtn_case_visible(actor_id,t.user_id,r.row)
+      AND (t.user_id=actor_id OR principal->>'kind'='user_session')
+      AND r.row->>'external_environment_id'=payload->>'external_environment_id'
+      AND r.row->>'external_ref_id'=payload->>'external_ref_id'
+      AND (t.user_id=actor_id OR NOT payload ? 'accountId' AND NOT payload ? 'contactId')
+      AND (NOT payload ? 'accountId' OR r.row->>'account_id'=payload->>'accountId')
+      AND (NOT payload ? 'contactId' OR r.row->>'primary_contact_id'=payload->>'contactId')
       AND (payload->>'external_parent_ref_id' IS NULL
-        OR row->>'external_parent_ref_id' IS NULL
-        OR row->>'external_parent_ref_id'=payload->>'external_parent_ref_id');
+        OR r.row->>'external_parent_ref_id' IS NULL
+        OR r.row->>'external_parent_ref_id'=payload->>'external_parent_ref_id');
   RETURN jsonb_build_object('status',CASE jsonb_array_length(candidates)
       WHEN 0 THEN 'CONFLICT' WHEN 1 THEN 'MATCHED' ELSE 'NEEDS_CLARIFICATION' END,
     'reason',CASE jsonb_array_length(candidates)
