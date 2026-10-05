@@ -171,10 +171,10 @@
       "kind": "dataset-contract",
       "logicalName": "axtn_document_recognition_patterns",
       "source": "src/axtn/workbenches/documents/documentRecognition.ts",
-      "sourceSHA256": "bbc8c00f9dbda43d8756e6911943ad4f9b50d0f3f85bf20d603332266d84d597",
+      "sourceSHA256": "698a38327c0d45842a3a356ba50b539bc19f515ea49f5d71388123ff0783f97c",
       "recovered": true,
-      "implemented": "pure exact/fuzzy contains/not_contains AND/OR basis",
-      "tested": "pure deterministic fixtures",
+      "implemented": "pure exact/fuzzy contains/not_contains AND/OR basis; exact invocation-scoped privacy token normalization without retaining namespace/sequence",
+      "tested": "15 deterministic fixtures, including all nine actual privacy token categories and cross-invocation compatibility with legacy conditions; sample compatibility pattern is not an active Registry seed",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Native persisted registry/editor and protected privacy binding pending."

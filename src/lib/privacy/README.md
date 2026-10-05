@@ -82,3 +82,11 @@ fixture as complete coverage. Generated markers do not appear in analyzer logs.
 This is bounded capability evidence, **not privacy eligibility**. No live
 activation is justified by these fixtures; an accepted real language/model/
 coverage profile and protected source/rights/Case receipt remain required.
+
+The existing pure recognition normalizer understands these exact random-token
+frames and reduces them to generic type placeholders, retaining neither
+namespace nor sequence. Legacy tokens remain compatible; all nine actual
+emitted token categories and cross-invocation matching are exercised. This
+does not establish identity across documents, seed a rule, authorize semantic
+processing or activate Learning. The persisted rule/candidate/evaluation
+contracts and bounded evaluation budget remain unfinished.

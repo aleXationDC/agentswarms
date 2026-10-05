@@ -81,6 +81,10 @@ export const DOCUMENT_RECOGNITION_PATTERNS: readonly DocumentRecognitionPattern[
 
 export function normalizeRecognitionText(value: string): string {
   return value
+    .replace(
+      /\[(PERSON|EMAIL|ADDRESS|PHONE|IBAN|PAYMENT_CARD|TAX_ID|ID_DOCUMENT|PII)_[a-f0-9]{24}_[1-9][0-9]{0,4}\]/g,
+      "[$1_X]",
+    )
     .replace(/\b(?:PERSON|EMAIL|ADDRESS|PHONE|LOCATION)_\d+\b/gi, (token) =>
       token.replace(/_\d+$/i, "_X"),
     )

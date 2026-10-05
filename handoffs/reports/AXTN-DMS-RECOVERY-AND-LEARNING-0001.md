@@ -553,6 +553,28 @@ isolated restart proof; its immutable image and minimized evidence remain.
 No production service/network/config, DMS migration, native key or workflow
 was activated. Full DMS remains IN_PROGRESS/NOT_DEPLOYED/ACCEPTANCE_PENDING.
 
+### Privacy-token recognition compatibility
+
+The newly restored transform emits random invocation-scoped tokens. The
+existing pure recognition normalizer understood only legacy numbered tokens,
+so existing characteristic conditions could never match those fresh frames
+and their namespaces would remain in normalized features. Its existing seam
+now reduces exactly the nine emitted token categories to generic type
+placeholders, preserving legacy behavior and leaving unrelated/malformed
+frames alone. It retains neither namespace, sequence nor raw identity.
+
+Fifteen actual recognition tests plus 23 transform tests pass (38/38), including
+real transform output for every category, two distinct source values/namespaces
+normalizing identically, cross-invocation legacy-condition matching and malformed
+frames. Existing compatibility sample rules remain unseeded; no classifier,
+policy, feedback path or Learning activation was added. Source inventory binds
+the exact new normalizer bytes; bounded fuzzy/evaluation budget and the full
+append-only Learning contracts remain unfinished.
+The full Component gate for these exact recognition bytes passes typecheck,
+lint, docs/commands, infrastructure checks, 576 test files / 9,410 tests
+(40 skipped), and production build. Focused byte-exact inventory/recognition/
+transform tests pass 41/41; actual credential scan remains PASS (2,506 files).
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder
