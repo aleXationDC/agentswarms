@@ -137,6 +137,24 @@ beforeEach(() => {
 });
 
 describe("native Parent parked registration readback", () => {
+  it("binds the explicit original source independently of the delivery idempotency key", async () => {
+    state.run = {
+      ...run,
+      input_prompt: JSON.stringify({
+        ...ingress,
+        source_ref: manifest.sourceRef,
+        idempotency_key: `${manifest.sourceRef}:attempt:7`,
+      }),
+    };
+    expect(await read()).toEqual(ack);
+  });
+  it.each(["drive:other", "", null, "drive:bad\nid"])(
+    "rejects conflicting or malformed explicit source %j without fallback",
+    async (source_ref) => {
+      state.run = { ...run, input_prompt: JSON.stringify({ ...ingress, source_ref }) };
+      await expect(read()).rejects.toThrow();
+    },
+  );
   it("returns only the durable minimized ACK; repeated reads do not mutate or execute", async () => {
     const before = structuredClone({ run: state.run, work: state.work, registry: state.registry });
     expect(await read()).toEqual(ack);

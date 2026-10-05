@@ -1,5 +1,12 @@
 # aXtn Document Intake seed
 
+Explicit `source_ref` is the stable provider-item identity used by Registry,
+Case manifest and persisted Parent ACK readback. `idempotency_key` belongs to
+transport submission and may differ across deliveries/attempts; it is only the
+legacy source fallback when `source_ref` is absent. A malformed explicit source
+never falls back. This distinction does not create a new business request from
+a source revision or supersede the protected immutable Case input. seed
+
 `graph.mjs` restores the last committed DMS R1 graph source from
 `7123d0ef167e72b39ee39a944e418003a253f50f`. The fresh Greenfield Supabase
 database inspected on 2026-10-01 had no row for this swarm, so its definition

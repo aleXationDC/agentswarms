@@ -37,7 +37,13 @@ const processing_route = ROUTES[state];
 // every later write (see the immutable/generate directives at the bottom of
 // this file). A snippet here could not mint one correctly even if it wanted
 // to: this sandbox is built with no host globals, so it has no CSPRNG.
-const source_ref = String(env.idempotency_key).trim();
+if (env.source_ref !== undefined && (
+  typeof env.source_ref !== "string" || !env.source_ref.trim() ||
+  env.source_ref.length > 500 || /[\u0000-\u001f\u007f]/.test(env.source_ref)
+)) throw new Error("INVALID_ENVELOPE: invalid source_ref");
+const source_ref = env.source_ref === undefined
+  ? String(env.idempotency_key).trim()
+  : env.source_ref;
 if (!source_ref) throw new Error("INVALID_ENVELOPE: empty idempotency_key");
 
 const mail = env.mail && typeof env.mail === "object" ? env.mail : {};

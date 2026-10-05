@@ -43,6 +43,19 @@
       "runtimeVerified": false
     },
     {
+      "name": "drive-case-ingress",
+      "kind": "n8n-ingress",
+      "sourceRepository": "aXtn/aXtn-n8n",
+      "sourceRevision": "5a90b70825c983e283fe9374d30404a49743472c",
+      "source": "workflows/aXtn-Drive-Document-Intake.json",
+      "dependencies": ["intake", "case-profile", "parent-registration-ack"],
+      "implemented": "native deterministic Request/Delivery/exact provider version/original hash fields with stable source/business identity and paired source ACK guard",
+      "tested": "139 native n8n tests plus actual cross-repository Drive emitter to Intake mapping/minimized Case request; no provider effects or live publication",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Real OAuth/source-read/provider revision authority and current Case input revision advancement remain unproven; Mail equivalent incomplete."
+    },
+    {
       "id": "6dcd7938-f9fb-4254-be9e-6f9a06793f0e",
       "kind": "swarm",
       "name": "privacy",
@@ -237,7 +250,7 @@
       "name": "parent-registration-ack",
       "kind": "native-public-registration-readback",
       "source": "src/axtn/workbenches/documents/documentRegistrationAck.server.ts",
-      "sourceSHA256": "8e2ba2f3c20ee3962f9243976fec515c5f64fd3225e50966ca2f85e98c9c9461",
+      "sourceSHA256": "b33c29732d5534cba2cf5ae87e25bf1f9ae53c32c7fb71d5fb299c97ebb859e5",
       "dependencies": ["intake", "case-profile", "document-registry"],
       "implemented": "existing API/callback projection from owned persisted native checkpoint/snapshot and protected Case/Registry; pending idempotency replay without workflow execution",
       "tested": "executable isolated adapter and API handler sync/callback/lost-response/failure/identity/destination fixtures",
@@ -249,7 +262,17 @@
       "name": "privacy-preflight",
       "kind": "service",
       "recovered": "historical local Presidio contracts",
-      "implemented": false,
+      "dependencies": ["local-pseudonymization"],
+      "implemented": "bounded offline pseudonymization restored; protected detector/source/rights/coverage receipt and privacy authority remain missing",
+      "deployed": false,
+      "runtimeVerified": false
+    },
+    {
+      "name": "local-pseudonymization",
+      "kind": "local-transform",
+      "source": "src/lib/privacy/pseudonymize.server.ts",
+      "implemented": "ephemeral validated complete overlapping-span union with Python code-point offsets and invocation-only random tokens; no detection or eligibility authority",
+      "tested": "23 actual-body tests including 500 complete coverage permutations, malformed/limits/unicode/overlap/local token/zero logging fixtures",
       "deployed": false,
       "runtimeVerified": false
     },
@@ -281,7 +304,7 @@
       "id": "axtnDriveDeletionExecutor",
       "recovered": "later canonical Source export exists; absent from active Host pin",
       "sourceRepository": "aXtn/aXtn-n8n",
-      "sourceRevision": "dd4dcb8ff8455e65b39ff16c3664a4c6e66f8942",
+      "sourceRevision": "5a90b70825c983e283fe9374d30404a49743472c",
       "source": "workflows/aXtn-Drive-Deletion-Executor.json",
       "implemented": "own native source verifier requires exact readable trashed file; generic errors/missing/mismatched/404 are never deletion proof; protected effect/rights/receipt binding incomplete",
       "tested": "103 native source tests, actual exported verifier, unchanged provider nodes/connections/settings and byte-idempotent regeneration",

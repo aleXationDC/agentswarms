@@ -398,6 +398,82 @@ restart/full empty-state, real filing/delete or Learning/promotion PASS claimed.
 
 ## Concrete unresolved dependencies and next packages
 
+### Stable source identity and bounded local pseudonymization
+
+The real native n8n envelope already separates stable `source_ref` from the
+provider-version/attempt transport `idempotency_key`. The Intake Registry
+mapping and protected Parent ACK readback instead keyed on idempotency.
+They now consistently use valid explicit `source_ref`, retaining the legacy
+transport-key fallback only when the field is absent. Empty/non-string/
+oversized/control-character explicit identities fail, never silently fall back.
+Different delivery submissions for one source retain the same Registry key and
+Case manifest identity. Business request/revision update remains separately
+protected; a source revision does not authorize a new Case or replace inputs.
+Actual native mapping/Case/Parent adapter/API tests pass 82/82.
+
+The historical offline pseudonymization source was inspected at 7123.
+Its highest-score non-overlap selection could leave the uncovered tail of an
+overlapping lower-score finding visible. `src/lib/privacy/pseudonymize.server.ts`
+restores that one bounded local transformation with complete interval-union
+coverage and exact Presidio/Python Unicode code-point offsets instead of
+JavaScript UTF-16 slicing. Low/zero-score/unknown/whitespace findings are all
+covered; malformed findings, partial results, invalid Unicode, out-of-bounds
+spans or resource overruns fail the whole operation.
+Tokens use random per-invocation namespaces with exact local reuse, not stable
+cross-document IDs. Raw-to-token maps are neither returned nor logged/persisted.
+
+This helper is not a detector, privacy receipt or ELIGIBLE decision. Empty
+findings do not prove complete coverage. The unsafe historical endpoint
+fallbacks, category claims, sensitivity thresholds/defaults and authority
+setter were not restored. The capability is not exposed to clients/tools or
+activated in a live graph. Native routing, Case, Approval, traces and provider
+authority remain outside it; complete protected detector/source/rights/
+coverage evidence and L19 trace/checkpoint retention gates remain incomplete.
+Twenty-three actual-body transform tests pass, including 500 deterministic
+overlap permutations comparing all visible output against the exact complement
+of the original covered code points. The combined focused gate passes 105/105;
+changed-file lint, docs/commands and actual three-repository credential scan
+pass (2,503 files). The historical helper signature is not blindly retained:
+its unused database/owner arguments implied persistence/authority this bounded
+transformation does not possess. No current caller depended on that missing
+historical signature.
+The initial full Component gate correctly rejected the old Parent adapter
+inventory hash after the stable-source fix. The inventory now binds the actual
+validated source bytes
+`b33c29732d5534cba2cf5ae87e25bf1f9ae53c32c7fb71d5fb299c97ebb859e5`;
+the source/hash check was not disabled. The combined targeted Inventory/
+Intake/Case/Parent/pseudonymization gate passes 108/108.
+The corrected full Component gate passes typecheck, lint, docs/commands,
+infrastructure checks, 575 test files / 9,342 tests (40 skipped), and the
+production build. Actual isolated Work, Approval, current-proposal and Registry
+SQL suites plus 16-session Work/Registry/Local Table concurrency and readback
+also pass. Production still runs exact App `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`
+and image `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a`;
+this source gate is not a DMS deployment or independent acceptance.
+
+The native Drive emitter is now persisted in n8n commit
+`5a90b70825c983e283fe9374d30404a49743472c`, immediately mirrored at
+`2026-10-05T02:08:59+02:00` and read back in the same draft PR 2.
+Its existing deterministic original-byte crypto/extraction path now emits
+business request, delivery and exact provider revision. Missing or malformed
+provider decimal-string version/original lowercase SHA-256 fails before
+dispatch. Scheduled initial intake is one request `drive-intake:<file-id>`;
+version changes distinguish delivery, not new business requests or source.
+Explicit independently accountable request IDs also scope transport keys;
+invalid explicit values never fall back to initial intake. The protected Case
+still rejects changed immutable input, pending proper revision advancement.
+All Case-bound ACKs must match the paired original source before transport
+handling; ordinary legacy output compatibility is retained.
+
+The complete native n8n suite passes 139/139. Actual synthetic cross-repository
+execution proves generated Drive envelope → native Intake Registry mapping →
+minimized Case request, exact original hash/revision, replay, source/request
+stability across versions and distinct explicit-request idempotency.
+No original document text enters the derived Case request. Provider node
+operation/credentials/topology/settings/inactive state remain unchanged;
+regeneration is byte-idempotent. Mail equivalent source provenance, genuine
+provider authority, protected privacy/receipts and live graph remain pending.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

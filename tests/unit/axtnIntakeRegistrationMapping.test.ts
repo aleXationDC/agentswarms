@@ -61,6 +61,28 @@ const DRIVE_ENVELOPE = {
 };
 
 describe("intake registration mapping", () => {
+  it("retains the explicit source identity across distinct transport submissions", () => {
+    const source_ref = DRIVE_ENVELOPE.idempotency_key;
+    const first = runValidate({
+      ...DRIVE_ENVELOPE,
+      source_ref,
+      idempotency_key: `${source_ref}:attempt:7`,
+    });
+    const replay = runValidate({
+      ...DRIVE_ENVELOPE,
+      source_ref,
+      idempotency_key: `${source_ref}:attempt:8`,
+    });
+    expect(first.key_value).toBe(source_ref);
+    expect(replay).toEqual(first);
+    expect(first.row).not.toHaveProperty("delivery_id");
+    expect(first.row).not.toHaveProperty("business_request_id");
+  });
+  it.each([null, "", " ", 42, {}, "x".repeat(501), "drive:bad\nid"])(
+    "rejects a malformed explicit source identity without transport-key fallback %j",
+    (source_ref) =>
+      expect(() => runValidate({ ...DRIVE_ENVELOPE, source_ref })).toThrow("invalid source_ref"),
+  );
   it("keys the registry row on the deterministic source identity", () => {
     const call = runValidate(DRIVE_ENVELOPE);
 

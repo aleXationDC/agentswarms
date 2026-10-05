@@ -22,6 +22,16 @@ const Snapshot = z.object({
 const Ingress = z.object({
   business_request_id: z.string().min(1),
   idempotency_key: z.string().trim().min(1),
+  source_ref: z
+    .string()
+    .min(1)
+    .max(500)
+    .refine(
+      (value) =>
+        !!value.trim() &&
+        !Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127),
+    )
+    .optional(),
   source_type: z.enum(["google_drive", "imap", "gmail", "mail", "fixture"]),
   source_revision: z.string().optional(),
   source_identity: z.object({
@@ -109,7 +119,7 @@ export async function readDocumentParentRegistrationAck(args: {
         : ingress.source_type === "fixture"
           ? "fixture"
           : "mail",
-    sourceRef: ingress.idempotency_key,
+    sourceRef: ingress.source_ref ?? ingress.idempotency_key,
     sourceRevision:
       ingress.source_revision ||
       ingress.source_identity.provider_revision ||
