@@ -419,7 +419,7 @@
       "name": "document-suspended-output-transport",
       "kind": "existing-native-api-output-profile",
       "source": "src/routes/api/swarm.run.ts",
-      "sourceSHA256": "6b581eab0a83de0e31be9dc0f8b811d195a02641884783403307ad0b3e075093",
+      "sourceSHA256": "685c4b230a1d7b33c1a00703267b506c602af811549ab463ae67ccacfa06ba15",
       "dependencies": ["document-minimized-ingress-codec", "parent-registration-ack"],
       "implemented": "DMS Parent suspended and terminal outputs are explicit omission markers in sync/async callback/cache/legacy replay/native continuation; exact allowlisted error codes only; owned top-level pending ACK and Filing lineage preparation unchanged; generic outputs untouched",
       "tested": "129 actual API/cache/callback/lost-response/continuation/codec/real-executor fixtures with leakage markers, malformed terminal-cache recovery without second run, retained terminal run identity on outcome failure, generic success/error/output compatibility",
@@ -428,10 +428,22 @@
       "gap": "Source-only native Parent transport protection. Direct database cache writers, persisted historical bodies, callback delivery retention, raw checkpoint context, full original-free live/runtime/restart proof remain pending."
     },
     {
+      "name": "document-parent-idempotency-storage",
+      "kind": "existing-native-cache-storage-profile",
+      "source": "supabase/migrations/20261005080000_document_parent_idempotency_bodies.sql",
+      "sourceSHA256": "c7f0a0bfc5202cefe7bf6de430553640eaf06f2d0cbb7c778e6346b083bd40e4",
+      "dependencies": ["document-suspended-output-transport"],
+      "implemented": "private native trigger guards require strict existing Parent marker/code cache DTOs; owned key/run profile and immutable request/key/run bindings; native revocation and generic/RLS behavior preserved; API terminal replay verifies owned persisted success rather than trusting cached identity alone",
+      "tested": "fresh isolated twelfth-additive-migration clone; actual browser/service/foreign-owner role and eight DMS SQL regression suites; native codec parity28 accepted/7 rejected diagnostics and all3 statuses;16 independent upserts with16 concurrent identity denials at max16sessions/new-session single-row readback;134 focused actual handler/codec/resume tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Source-only; no history sweep, log/retention/checkpoint hydration, provider receipt/current-rights/effect claim or Case completion authority. Full live L19/independent Acceptance remains pending."
+    },
+    {
       "name": "document-native-api-recovery-guard",
       "kind": "existing-native-api-idempotency",
       "source": "src/routes/api/swarm.run.ts",
-      "sourceSHA256": "6b581eab0a83de0e31be9dc0f8b811d195a02641884783403307ad0b3e075093",
+      "sourceSHA256": "685c4b230a1d7b33c1a00703267b506c602af811549ab463ae67ccacfa06ba15",
       "dependencies": ["document-suspended-output-transport"],
       "implemented": "authenticated stable Parent requires existing nonempty idempotency header up to200chars; no automatic failed/incomplete-result takeover or post-collision retry; explicit read/claim/outcome errors; existing generic verdict/atomic failed takeover retained",
       "tested": "23 actual API fixtures and existing generic verdict/readback tests,82PASS; exact200/201key boundary; existing three n8n ingresses retain native idempotency headers",

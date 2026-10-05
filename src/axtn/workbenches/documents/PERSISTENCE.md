@@ -213,9 +213,45 @@ Actual tests exercise sync/async success/error/cache/callbacks, throw/returned
 storage failures, lost legacy responses, exact routing-before-claim, native
 Filing lineage and generic compatibility. The native handler-to-executor
 fixture is still real code over synthetic storage/Approval authority.
-Direct database cache writes, stored historical bodies, callback delivery
-retention and original-free checkpoint hydration remain pending. No blanket
+Stored historical bodies, callback delivery retention and original-free
+checkpoint hydration remain pending. No blanket
 L19 or live original-free PASS follows.
+
+The additive `20261005080000_document_parent_idempotency_bodies.sql` now
+guards direct writes to the **existing** native idempotency cache. The private
+trigger selects the profile from persisted key/run identity, holds shared
+identity locks and checks owner/Parent binding. Once protected, the key's
+ID/owner/Swarm and cache record's ID/key/request hash/delivery/creation time
+cannot be rebound; a linked run cannot be detached or replaced. Initial
+null-run claims may still acquire the actual owned Parent once.
+Native key revocation and generic key/cache behavior are unchanged.
+
+Non-null Parent cache responses must already be strict existing output DTOs,
+with matching run/status/Swarm, explicit output markers and exact known
+diagnostic codes. Raw output, extra bodies, wrong types or code-prefix text
+are **rejected**, not silently converted into accepted results. Null/incomplete
+outcomes remain incomplete and require readback; this does not complete a
+Case, authorize an effect, add retries or create a new store. Existing RLS
+still permits owner reads but not authenticated cache writes.
+Completed API replay also reads the actual owned Parent and requires persisted
+native success: missing/foreign/non-success runs return same-run409recovery,
+read errors are bounded, and none starts a second execution.
+
+The new migration was applied only to the explicitly isolated
+`dms_native_contract_cache_guard_20261005` clone of the prior eleven-additive-
+migration basis. Actual service/browser/foreign-role tests and all eight DMS
+SQL role/regression suites pass. Actual server codec versus SQL writes admits
+28 exact diagnostic codes and rejects7 unknown/prefix variants; all three
+output states round-trip unchanged. Sixteen concurrent upserts raced16
+key/run identity attempts, at most16 native sessions; new-session readback
+finds exactly one same owned cache row. Only owned ephemeral cache/key/run/
+Swarm fixtures are cleaned; the synthetic auth identity and isolated database
+remain. No production migration, real provider action or independent
+Acceptance was performed.
+
+This does not sweep historical records, control SQL statement/error logs,
+cover all callback/audit retention or hydrate raw checkpoints originally free
+of document content. These remain explicit L19 boundaries.
 
 For the authenticated source-defined Parent, the public API now requires the
 existing `Idempotency-Key` header (nonempty, at most 200 characters; no silent

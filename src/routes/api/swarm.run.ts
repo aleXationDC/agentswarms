@@ -200,6 +200,19 @@ export const Route = createFileRoute("/api/swarm/run")({
                     { error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED", runId: existing?.run_id },
                     409,
                   );
+                const { data: finished, error: runError } = await supabaseAdmin
+                  .from("swarm_runs")
+                  .select("id, status")
+                  .eq("id", existing.run_id)
+                  .eq("user_id", key.user_id)
+                  .eq("swarm_id", key.swarm_id)
+                  .maybeSingle();
+                if (runError) throw new Error("DOCUMENT_PARENT_REGISTRATION_RUN_READ");
+                if (!finished || finished.status !== "success")
+                  return json(
+                    { error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED", runId: existing.run_id },
+                    409,
+                  );
                 return json({
                   output: documentRunOutput(key.swarm_id, "success", response.output),
                   runId: existing.run_id,

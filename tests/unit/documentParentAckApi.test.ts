@@ -25,6 +25,9 @@ const state = vi.hoisted(() => ({
   claimError: "",
   writeError: false,
   writeErrorsRemaining: 0,
+  replayStatus: "success" as string | null,
+  replayReadError: false,
+  reads: [] as { table: string; filters: Record<string, unknown> }[],
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { server: { handlers: { POST: Handler } } }) => {
@@ -35,6 +38,8 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from(table: string) {
+      const filters: Record<string, unknown> = {};
+      state.reads.push({ table, filters });
       let method = "";
       const result = (): Result => {
         const writeError =
@@ -75,13 +80,21 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             data: { id: state.swarmId, name: "DMS fixture", nodes: [], edges: [] },
             error: null,
           };
+        if (table === "swarm_runs")
+          return {
+            data: state.replayStatus ? { id: runId, status: state.replayStatus } : null,
+            error: state.replayReadError
+              ? { message: "ORIGINAL_DATABASE_LEAKAGE_MARKER", code: "XX000" }
+              : null,
+          };
         throw new Error(`Unexpected table ${table}`);
       };
       const chain = {
         select() {
           return chain;
         },
-        eq() {
+        eq(key: string, value: unknown) {
+          filters[key] = value;
           return chain;
         },
         insert(value: Record<string, unknown>) {
@@ -169,6 +182,9 @@ beforeEach(() => {
   state.claimError = "";
   state.writeError = false;
   state.writeErrorsRemaining = 0;
+  state.replayStatus = "success";
+  state.replayReadError = false;
+  state.reads = [];
   state.execute.mockReset().mockResolvedValue({
     status: "suspended",
     output: "awaiting independent reviewer",
@@ -326,6 +342,43 @@ describe("existing public API Parent ACK transport", () => {
     };
     const response = await post();
     expect(await response.json()).toEqual({ output: DOCUMENT_COMPLETED_OUTPUT, runId });
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+    expect(state.reads.find((read) => read.table === "swarm_runs")?.filters).toEqual({
+      id: runId,
+      user_id: "owner-fixture",
+      swarm_id: state.swarmId,
+    });
+  });
+  it.each([null, "running", "suspended", "error"])(
+    "requires actual owned-run readback when completed cache disagrees with %s run",
+    async (status) => {
+      state.replayStatus = status;
+      state.idem = {
+        status: "completed",
+        request_hash: "request-hash",
+        run_id: runId,
+        response: { output: DOCUMENT_COMPLETED_OUTPUT, runId },
+      };
+      const response = await post();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED",
+        runId,
+      });
+      expect(state.execute).not.toHaveBeenCalled();
+      expect(state.writes).toEqual([]);
+    },
+  );
+  it("bounds a failed persisted owned-run read rather than returning cached completion", async () => {
+    state.replayReadError = true;
+    state.idem = {
+      status: "completed",
+      request_hash: "request-hash",
+      run_id: runId,
+      response: { output: DOCUMENT_COMPLETED_OUTPUT, runId },
+    };
+    await expect(post()).rejects.toThrow(/^DOCUMENT_PARENT_REGISTRATION_RUN_READ$/);
     expect(state.execute).not.toHaveBeenCalled();
     expect(state.writes).toEqual([]);
   });

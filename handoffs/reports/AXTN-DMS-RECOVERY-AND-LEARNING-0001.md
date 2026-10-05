@@ -1330,6 +1330,61 @@ build PASS. Full assignment gate ledger added with explicit PARTIAL/PENDING/
 BLOCKED states; documentation checks rerun PASS. Protected-secret scan:
 2,437 source/evidence files PASS. Production unchanged.
 
+### Native cache storage and persisted replay increment
+
+Terminal transport candidate `e89eddba` is canonical-pushed/mirrored
+10:47:16+02 and bound to draftPR11/same3OPEN Cases. Its source profile alone
+could not prevent direct cache writes. The twelfth additive candidate migration
+`20261005080000_document_parent_idempotency_bodies.sql` uses private triggers
+on the existing native key/cache tables, not another store or engine.
+Owned persisted Parent profile, shared identity locks, immutable key/owner/
+Swarm and cache/request/delivery/linked-run binding prevent profile evasion.
+Native key revocation and existing owner-read/browser-write RLS remain intact.
+
+Non-null protected response DTOs must already contain the known minimized
+output/error markers and exact matching native run/status/Swarm. Raw bodies,
+extras, malformed shapes and fake diagnostic prefixes are rejected, not
+successfully normalized. Initial null-run claims may acquire the owned Parent;
+later detach/rebind is denied. The public completed replay additionally verifies
+the actual persisted owned Parent status, not just the cached run ID. Missing/
+foreign/running/suspended/error state requires409readback without execution;
+returned read failures expose bounded codes.
+
+Actual fresh isolated `dms_native_contract_cache_guard_20261005`, cloned from
+the retained11-migration basis, accepted the new migration. All **eight actual
+DMS SQL role suites PASS**, including protected Case/Approval/current proposal/
+Registry/Feedback/Parent trace/model/cache regression. Actual native codec/SQL
+parity: **28 exact codes accepted,7 unknown/prefix values rejected,3 output
+statuses preserved**. **16 independent upserts race16 identity denials at
+maximum16sessions**; new-session readback proves one same cache row and stable
+key/run identities. Only owned ephemeral key/cache/run/Swarm objects are cleaned;
+synthetic auth fixture/isolated database remain.
+
+The first native key fixture failed its actual auth.users FK; its finally
+cleaned the owned Swarm. Added the existing legitimate isolated auth/sample-KB
+setup, then native parity/concurrency and complete role fixtures PASS repeatedly.
+No Production auth/reviewer/provider was invented. Actual handler/codec/native
+resume **134focused tests PASS**, plus3inventory gates.
+Full ordered Type/Lint/Docs/doc-command/Infra/fullUnit PASS:
+**588 files/9840 tests/40 skipped**; unchanged bounded client/SSR build PASS.
+Protected credential scan **2550source/evidence files**, generated browser
+assets/current runtime logs PASS.
+
+Extended native compatibility first passed Work/Registry/Feedback but correctly
+stopped at the existing Candidate's strict no-preexisting-fixture fence: the
+cache FK proof deliberately retains synthetic auth ownercc. No fence was
+relaxed or retained identity removed. A separate fresh auth-empty
+`dms_native_contract_cache_compat_20261005` clone received the exact same
+migration; **all nine native concurrency/learning/evaluation/disabled-policy/
+trace compatibility scripts PASS**, including current owned Case/delivery
+dedup and atomic same-revision disabled policy behavior. Both isolated
+databases remain; Production retains278migrations/no running Swarm and the
+same10df/1f3e healthy App.
+No production migration or graph/provider/Case execution/independent Acceptance.
+History, statement/error logs, audit/callback retention, original-free checkpoint
+hydration, current source/rights/privacy authority and effect receipts remain
+unfinished. Strict DTO storage is not provider or completion authority.
+
 ### Native terminal transport boundary increment
 
 After the fully tested detector repair `39a112ec` was canonical-pushed/
