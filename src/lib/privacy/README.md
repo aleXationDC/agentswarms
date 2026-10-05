@@ -73,15 +73,32 @@ user `1001`, at most 1536 MiB memory, and exact stock image
 It uses only ephemeral synthetic input and Docker-exec HTTP transport; it
 does not join a production network or borrow any live provider credential.
 
-**Actual negative evidence matters:** this image reports the six base entities
-and detects all ten requested labels in positive English fixtures, but it
-does not support German-language analysis and leaves the generated
-`example.invalid` email marker uncovered. The probe retains that counterexample,
-including after restart, rather than presenting a more convenient positive
-fixture as complete coverage. Generated markers do not appear in analyzer logs.
-This is bounded capability evidence, **not privacy eligibility**. No live
-activation is justified by these fixtures; an accepted real language/model/
-coverage profile and protected source/rights/Case receipt remain required.
+**Actual negative evidence matters:** the earlier stock-only request detected
+all ten requested labels in positive English fixtures but left a generated
+`example.invalid` email marker uncovered. This failure is now repaired with
+one additional standard per-request Presidio PatternRecognizer for the
+existing `EMAIL_ADDRESS` entity. It conservatively covers non-space text on
+both sides of `@` rather than treating a public-TLD catalog as privacy
+authority. It may over-redact punctuation and non-address strings; its
+technical regex score does not grant eligibility or policy confidence.
+The zero score filtering and existing exact text/span/overlap safeguards remain.
+
+The real pinned image probe now requires actual Python-offset email findings
+covering all four generated variants: `.invalid`, single-label internal
+domain, plus-tag/subdomain and Unicode local/domain text. Every marker is
+absent from transformed output and analyzer logs, before and after the
+isolated fixture restart. All ten existing requested entities remain detected.
+The image still does **not** support German-language analysis, which must fail
+before original text is sent. Positive examples are not exhaustive coverage.
+No live activation is justified by these fixtures; an accepted real language/
+model/coverage profile and protected source/rights/Case receipt remain required.
+
+Historical `privacyPreflight.server.ts` and its native `privacy_preflight`
+Tool registration were reread at the authoritative recovery revision. Its
+client category claims, default language and silent empty-dataset fallback
+cannot be restored as authority. The current native tool is not registered:
+safe source/rights/privacy binding remains a real integration gap, not permission
+to mark UNRESOLVED input eligible after this local transformation.
 
 The existing pure recognition normalizer understands these exact random-token
 frames and reduces them to generic type placeholders, retaining neither

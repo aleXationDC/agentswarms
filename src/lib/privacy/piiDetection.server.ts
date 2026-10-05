@@ -42,6 +42,11 @@ const GERMAN_RECOGNIZERS = [
     context: ["reisepass", "passnummer", "reisepassnummer"],
   },
 ] as const;
+const STRUCTURAL_EMAIL_RECOGNIZER = {
+  name: "DocumentStructuralEmailRecognizer",
+  supported_entity: "EMAIL_ADDRESS",
+  patterns: [{ name: "structural_email", regex: "[^\\s@<>]+@[^\\s@<>]+", score: 0.5 }],
+};
 const REQUESTED_ENTITIES = [
   ...BASE_ENTITIES,
   ...GERMAN_RECOGNIZERS.map((recognizer) => recognizer.supported_entity),
@@ -172,7 +177,7 @@ export async function detectDocumentPii(
     score_threshold: 0,
     return_decision_process: false,
     allow_list: [],
-    ad_hoc_recognizers: GERMAN_RECOGNIZERS.map((recognizer) => ({
+    ad_hoc_recognizers: [...GERMAN_RECOGNIZERS, STRUCTURAL_EMAIL_RECOGNIZER].map((recognizer) => ({
       ...recognizer,
       supported_language: language,
     })),

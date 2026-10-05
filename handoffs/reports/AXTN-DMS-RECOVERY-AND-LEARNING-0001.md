@@ -1330,6 +1330,45 @@ build PASS. Full assignment gate ledger added with explicit PARTIAL/PENDING/
 BLOCKED states; documentation checks rerun PASS. Protected-secret scan:
 2,437 source/evidence files PASS. Production unchanged.
 
+### Actual local detector counterexample repair
+
+Native API recovery barrier and full61gate ledger are committed/pushed/
+mirrored at `df262133`; PR11/same OPEN Cases updated10:06:21+02.
+The historical native `privacy_preflight` tool and its full local implementation
+were reread at `7123d0ef167e72b39ee39a944e418003a253f50f`.
+Its source-only restored detector/pseudonymizer exist, but the current native
+tool registry binding and protected source/rights/coverage/Case receipt are
+still absent. Historical client category claims/default language/silent empty
+dataset fallbacks cannot safely grant eligibility and were not restored.
+
+The previously measured real stock Analyzer structural-email miss is repaired
+using its existing standard per-request PatternRecognizer mechanism, not a
+new service or detector engine. One conservative EMAIL_ADDRESS pattern
+redacts non-space text around `@`, independent of public TLD. It may over-redact;
+no eligibility/QualityProfile confidence or thresholds are inferred.
+The existing zero-score filtering, bounded internal-only transport, exact
+Python offsets and full overlapping-span union remain.
+
+62 actual HTTP/body tests plus23 pseudonymization tests PASS: **85 tests**.
+Actual exact stock image`d459...` fixture, network-none/no-port/nonroot1001/
+read-only/1536MiB/2CPU/128PID, was healthy, exercised and restarted.
+The real probe requires actual EMAIL_ADDRESS findings covering each of four
+generated `.invalid`/internal/plus-subdomain/Unicode addresses, no output or
+log markers and all ten requested labels. Both final before/after-restart
+probes PASS. Only this task's exact owned container was stopped/removed;
+no shared services/networks/providers changed.
+
+German remains unsupported and is rejected before original text transmission.
+Four positive examples are not exhaustive coverage or accepted privacy
+authority; no current tool/graph registration, Case privacy setter or real
+external semantic/provider execution was enabled. Ordered Type/Lint/Docs/
+doc-command/Infra/fullUnit PASS: **588 files/9803 tests/40 skipped**;
+the unchanged process-only bounded client/SSR build PASS (3584MiB V8,
+8MiB semi-space,2malloc arenas,optimize-for-size,no sourcemaps).
+Protected credential scan **2547 source/evidence files**, generated browser
+assets and existing runtime logs PASS. Complete R7/L19/full-DMS Acceptance
+remains incomplete; no production mutation or independent Acceptance.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

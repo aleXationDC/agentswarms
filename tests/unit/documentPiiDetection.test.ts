@@ -99,6 +99,7 @@ describe("one bounded standard local Presidio capability, without privacy author
           { supported_entity: "DE_TAX_NUMBER", supported_language: language },
           { supported_entity: "DE_ID_CARD", supported_language: language },
           { supported_entity: "DE_PASSPORT", supported_language: language },
+          { supported_entity: "EMAIL_ADDRESS", supported_language: language },
         ],
       });
       expect(result.requestedEntities).toHaveLength(10);
@@ -113,10 +114,45 @@ describe("one bounded standard local Presidio capability, without privacy author
           ),
         })
         .parse(request);
-      const examples = ["12345678901", "12/345/67890", "C7D8F9G0H", "C7D8F9G0H"];
+      const examples = [
+        "12345678901",
+        "12/345/67890",
+        "C7D8F9G0H",
+        "C7D8F9G0H",
+        "fixture-original@example.invalid",
+      ];
       manifest.ad_hoc_recognizers.forEach((recognizer, index) => {
         expect(new RegExp(recognizer.patterns[0].regex).test(examples[index])).toBe(true);
       });
+    },
+  );
+
+  it.each([
+    "fixture@example.invalid",
+    "fixture@internal",
+    "fixture+tag@sub.example.invalid",
+    "fixture@xn--bcher-kva.invalid",
+    "müller@bücher.invalid",
+  ])(
+    "requests conservative structural email coverage without a public-TLD allowlist %s",
+    async (email) => {
+      fetchMock.mockResolvedValueOnce(json(entities)).mockResolvedValueOnce(json([]));
+      await detectDocumentPii(email, "en");
+      const request = z
+        .object({
+          ad_hoc_recognizers: z.array(
+            z.object({
+              name: z.string(),
+              patterns: z.array(z.object({ regex: z.string() })),
+            }),
+          ),
+        })
+        .parse(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)));
+      const recognizer = request.ad_hoc_recognizers.find(
+        (item) => item.name === "DocumentStructuralEmailRecognizer",
+      );
+      if (!recognizer) throw new Error("Expected structural email recognizer");
+      expect(new RegExp(recognizer.patterns[0].regex).exec(email)?.[0]).toBe(email);
     },
   );
 

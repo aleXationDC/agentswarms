@@ -444,7 +444,7 @@
       "kind": "service",
       "recovered": "historical local Presidio contracts",
       "dependencies": ["local-pii-detection", "local-pseudonymization"],
-      "implemented": "bounded standard local analyzer transport and offline pseudonymization restored; protected source/rights/coverage receipt and privacy authority remain missing",
+      "implemented": "bounded standard local analyzer transport and offline pseudonymization restored; historical privacy_preflight tool has no current registry binding; protected source/rights/coverage receipt and privacy authority must precede safe tool restoration",
       "deployed": false,
       "runtimeVerified": false
     },
@@ -452,13 +452,13 @@
       "name": "local-pii-detection",
       "kind": "standard-service-client",
       "source": "src/lib/privacy/piiDetection.server.ts",
-      "sourceSHA256": "3cb194697946c66b61d2c82e88fdeb2edd05dd95bd34c291be2f1c99eef38671",
+      "sourceSHA256": "39eb3ac325ebade641e9fb908b33e96130f0df878267d8c43097371a90d8105e",
       "recovered": "historical standard Presidio capability adapted fail-closed; no new service or orchestration",
       "implemented": "explicit single internal endpoint, actual language-specific supported-entity preflight, fixed German ad-hoc recognizers, zero score threshold, bounded streaming/deadline and all-or-nothing code-point finding validation",
-      "tested": "57 actual-body/HTTP tests plus actual pinned stock image with network-none/non-root/read-only/resource limits and restart; all ten requested labels fire on positive fixtures, uncovered structural-email counterexample retained",
+      "tested": "62 actual-body/HTTP tests plus exact pinned stock image with network-none/non-root/read-only/resource limits and restart; all ten requested labels and four real structural-email variants detected/redacted by Python-offset findings; historical example.invalid failure corrected",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Actual image d459 is isolated evidence only: German language unsupported and structural example.invalid email remains uncovered. Necessary base-entity metadata is not sufficient coverage. Accepted real language/model/coverage profile, live private-network/source/rights/Case receipt and semantic authorization remain absent."
+      "gap": "Actual image d459 is isolated evidence only: German language unsupported; four corrected structural-email examples are not exhaustive coverage. Accepted real language/model/coverage profile, live private-network/source/rights/Case receipt and semantic authorization remain absent."
     },
     {
       "name": "local-pseudonymization",

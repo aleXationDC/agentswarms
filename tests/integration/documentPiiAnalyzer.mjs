@@ -85,8 +85,14 @@ globalThis.fetch = async (url, options) => {
 };
 
 const marker = randomUUID();
+const structuralEmails = [
+  `fixture-${marker}@example.invalid`,
+  `fixture-${marker}@internal`,
+  `fixture+${marker}@sub.example.invalid`,
+  `müller-${marker}@bücher.invalid`,
+];
 const text = `John Smith lives in New York.
-Email: fixture-${marker}@example.invalid
+${structuralEmails.map((email) => `Email: ${email}`).join("\n")}
 Phone: +1 202-555-0100
 IBAN: DE89370400440532013000
 Credit card: 4111 1111 1111 1111
@@ -95,15 +101,22 @@ Steuernummer: 12/345/67890
 Personalausweis: C7D8F9G0H
 Reisepass: C7D8F9G0H`;
 
-// Preserve the genuine counterexample; supported labels do not prove coverage.
-const negative = await detectDocumentPii(text, "en");
+// The prior stock-only counterexample must now be covered by the native ad-hoc request.
+const structural = await detectDocumentPii(text, "en");
+const points = Array.from(text);
+for (const email of structuralEmails) {
+  assert(
+    structural.findings.some(
+      (finding) =>
+        finding.label === "EMAIL_ADDRESS" &&
+        points.slice(finding.start, finding.end).join("").includes(email),
+    ),
+    "STRUCTURAL_EMAIL_NOT_DETECTED",
+  );
+}
 assert(
-  !negative.findings.some((finding) => finding.label === "EMAIL_ADDRESS"),
-  "COUNTEREXAMPLE_CHANGED",
-);
-assert(
-  pseudonymizeDocumentText(text, negative.findings).pseudonymizedText.includes(marker),
-  "COUNTEREXAMPLE_CHANGED",
+  !pseudonymizeDocumentText(text, structural.findings).pseudonymizedText.includes(marker),
+  "STRUCTURAL_EMAIL_MARKER_RETAINED",
 );
 const positiveText = text.replace("@example.invalid", "@example.com");
 const result = await detectDocumentPii(positiveText, "en");
@@ -136,7 +149,8 @@ console.log(
     actualRequestedLabelsDetected: [...found].sort(),
     zeroOriginalMarkerInLogs: true,
     unsupportedLanguageRejectedBeforeText: true,
-    structuralEmailCounterexampleUncovered: true,
+    historicalStructuralEmailCounterexampleCorrected: true,
+    structuralEmailVariantsRedacted: structuralEmails.length,
     eligibilityAuthority: false,
     image,
     network: "none",
