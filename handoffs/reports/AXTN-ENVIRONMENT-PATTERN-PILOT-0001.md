@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / SOURCE_TESTED / CURRENT_BUILD_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / SOURCE_TESTED / BUILD_PASSED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -586,3 +586,36 @@ and image1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a;
 native runs3cancelled/9error/1suspended/0running. Clean DMS Hostc1a25fef remains
 unchanged. No PROD schema/image/config mutation or restart has occurred.
 All Cases remain open and independent Acceptance remains pending.
+
+### Resolved build pressure and measured controlled Learning
+
+After a fresh read-only headroom check showed6997MiB available (rather than
+the previously constrained host), the unchanged canonical `npm run build` at
+exact candidate02a3851c8bdbfac3fd75bce14709911cfb80e8e2 passes client and SSR.
+No source/config/provider/dependency/service workaround was required.
+Evidence: `pilot-02a3851c-canonical-build.log`. The resource block above is
+historical, not the current candidate's gate.
+
+`tests/integration/environmentPatternLearning.mjs` adds an executed synthetic
+signal -> hypothesis -> existing native Improvement Work -> explicit synthetic
+authenticated-Human promotion -> deterministic intervention/verification ->
+two repeat measurements -> versioned assurance/readback. The fault-injected
+legacy adapter strips whitespace from an opaque ticket ref: actual native
+correlation returns NO_MATCH. The intervention removes that adapter defect and
+uses unchanged native exact handover/correlation: MATCHED and exact roundtrip
+in the verification and both reuses. Each measurement records actual wall-clock
+milliseconds, bytes, one-sample scope and a content hash, not hours, tokens or
+ROI. Native Work completes the controlled synthetic intervention, does not
+grant independent Acceptance, and preserves the original negative usage after
+assurance. The original Case remains open; positive reuses are separate native
+Child usages. This is a bounded native contract-test artifact, not product
+sequencing, an automatic promoter, a real colleague decision or empirical
+business improvement.
+
+The actual v9 run passes; baseline sample273.88ms/155bytes/NO_MATCH, verified
+sample273.05ms/159bytes/MATCHED, reuse samples273.36ms and257.68ms/MATCHED.
+These single samples do not justify a latency comparison or causal savings.
+Evidence: `pilot-measured-learning-v4.log`, hash
+`919e4331e907e7c13c61ee731fc55116b707f2d6b47ab83894e04402dcb2f522`.
+This pre-publication run uses the prior source SHA; the versioned fixture is
+rerun after publication to bind evidence to the exact commit containing it.
