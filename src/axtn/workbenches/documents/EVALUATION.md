@@ -74,7 +74,12 @@ Run the actual deterministic fixtures with:
 npx vitest run tests/unit/documentEvaluation.test.ts tests/unit/documentRecognition.test.ts tests/unit/documentCandidate.test.ts
 ```
 
-Remaining: protected feature/vocabulary/rights/privacy loader, immutable native
-EvaluationEvidence storage and replay, independent review/PR handoff, disabled
+Remaining: protected feature/vocabulary/rights/privacy loader, independently
+attested EvaluationEvidence, independent review/PR handoff, disabled
 AutomationPolicy, QualityProfile and complete live Learning/Acceptance. This
 comparison must not be used as a substitute for those contracts.
+
+The separate [native report persistence](EVALUATION-PERSISTENCE.md) now stores
+strictly minimized unattested submissions append-only through the same Case API.
+That storage does not attest the supplied metrics or replace the protected loader,
+independent evaluator receipts, quality contract or Acceptance.

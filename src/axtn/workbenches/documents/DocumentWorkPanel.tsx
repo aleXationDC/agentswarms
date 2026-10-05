@@ -18,6 +18,7 @@ import {
   DocumentLearningCandidate,
   DocumentLearningCandidateRecord,
 } from "./documentCandidateContract";
+import { DocumentEvaluationEvidence, DocumentEvaluationRecord } from "./documentEvaluationContract";
 
 const CandidateDraft = DocumentLearningCandidate.omit({
   candidateId: true,
@@ -61,6 +62,9 @@ export function DocumentWorkPanel({
   const [targetId, setTargetId] = useState("");
   const [targetName, setTargetName] = useState("");
   const [proposals, setProposals] = useState<z.infer<typeof StoredProposals>>([]);
+  const [evaluationId, setEvaluationId] = useState(() => crypto.randomUUID());
+  const [evaluationDraft, setEvaluationDraft] = useState("");
+  const [evaluations, setEvaluations] = useState<z.infer<typeof DocumentEvaluationRecord>[]>([]);
   const [proposalId, setProposalId] = useState(() => crypto.randomUUID());
   const [feedbackId, setFeedbackId] = useState(() => crypto.randomUUID());
   const [feedbackEvents, setFeedbackEvents] = useState<z.infer<typeof DocumentFeedbackRecord>[]>(
@@ -98,14 +102,16 @@ export function DocumentWorkPanel({
       call({ operation: "document_proposals", caseId }),
       call({ operation: "document_feedback_events", caseId }),
       call({ operation: "document_candidates", caseId }),
+      call({ operation: "document_evaluations", caseId }),
     ])
-      .then(([value, decisions, feedback, candidateRecords]) => {
+      .then(([value, decisions, feedback, candidateRecords, evaluationRecords]) => {
         if (cancelled) return;
         const next = WorkState.parse(value);
         setState(next);
         setProposals(StoredProposals.parse(decisions));
         setFeedbackEvents(z.array(DocumentFeedbackRecord).parse(feedback));
         setCandidates(z.array(DocumentLearningCandidateRecord).parse(candidateRecords));
+        setEvaluations(z.array(DocumentEvaluationRecord).parse(evaluationRecords));
         const record = next.cases.find((row) => row.case_id === caseId);
         if (record) {
           setSubject(record.subject);
@@ -122,6 +128,39 @@ export function DocumentWorkPanel({
   }, [call, caseId]);
   const record = state?.cases.find((row) => row.case_id === caseId);
   const human = record?.processing_mode === "HUMAN";
+  async function recordEvaluation(candidate: z.infer<typeof DocumentLearningCandidateRecord>) {
+    if (!record) throw new Error("Current Document Case required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const evaluation = DocumentEvaluationEvidence.parse(JSON.parse(evaluationDraft));
+      if (evaluation.candidateId !== candidate.candidate_id || evaluation.caseId !== caseId)
+        throw new Error("Evaluation must reference this exact Candidate and Case.");
+      DocumentEvaluationRecord.parse(
+        await call({
+          operation: "document_evaluation",
+          submission: {
+            evaluationId,
+            candidateRevision: candidate.revision,
+            attemptId: record.attempt_id,
+            inputHash: record.input_hash,
+            evaluation,
+          },
+        }),
+      );
+      setEvaluations(
+        z
+          .array(DocumentEvaluationRecord)
+          .parse(await call({ operation: "document_evaluations", caseId })),
+      );
+      setEvaluationId(crypto.randomUUID());
+      await onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Document Evaluation recording failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
   async function createCandidate(feedback: z.infer<typeof DocumentFeedbackRecord>) {
     if (!record) throw new Error("Current Document Case required.");
     setSaving(true);
@@ -534,9 +573,36 @@ export function DocumentWorkPanel({
               </div>
             ))}
             {candidates.map((candidate) => (
-              <p key={candidate.candidate_id}>
-                Candidate {candidate.candidate_id} · Child {candidate.improvement_case_id} · created
-                NEW, policy disabled · <code>{candidate.revision}</code>
+              <div key={candidate.candidate_id}>
+                <p>
+                  Candidate {candidate.candidate_id} · Child {candidate.improvement_case_id} ·
+                  created NEW, policy disabled · <code>{candidate.revision}</code>
+                </p>
+                <Button
+                  disabled={saving || !human || !evaluationDraft}
+                  onClick={() => void recordEvaluation(candidate)}
+                >
+                  Record unattested report for this Candidate (not Acceptance)
+                </Button>
+              </div>
+            ))}
+            <strong>Minimized descriptive Evaluation report</strong>
+            <p>
+              Strict report JSON only, without samples or original content. Stored reports remain
+              UNATTESTED_MINIMIZED_INPUT; caller metrics and references do not prove privacy,
+              rights, quality or independent Acceptance and cannot authorize promotion.
+            </p>
+            <Textarea
+              aria-label="Minimized unattested evaluation report"
+              maxLength={64000}
+              value={evaluationDraft}
+              onChange={(event) => setEvaluationDraft(event.target.value)}
+            />
+            {evaluations.map((evaluation) => (
+              <p key={evaluation.evaluation_id}>
+                {evaluation.created_at} · {evaluation.evaluation_id} ·
+                {evaluation.document_evaluation.verdict} · unattested, promotion denied ·
+                <code>{evaluation.revision}</code>
               </p>
             ))}
             <strong>Durable transitions</strong>

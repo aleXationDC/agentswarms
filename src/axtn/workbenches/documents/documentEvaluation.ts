@@ -6,6 +6,8 @@ import { classificationMetrics } from "@/lib/mlEvaluation";
 import { DocumentLearningCandidate } from "./documentCandidateContract";
 import { DocumentFeedbackEvent } from "./documentFeedbackContract";
 import { recognizeProviderSafeDocument } from "./documentRecognition";
+import { DocumentEvaluationEvidence } from "./documentEvaluationContract";
+export { DocumentEvaluationEvidence } from "./documentEvaluationContract";
 
 const revision = DocumentFeedbackEvent.shape.decisionRevision;
 const identifier = DocumentFeedbackEvent.shape.before.shape.family.unwrap();
@@ -75,76 +77,6 @@ export const DocumentEvaluationRequest = z
     dataset: DocumentEvaluationDataset,
   })
   .strict();
-
-const fraction = z.number().finite().min(0).max(1).nullable();
-const count = z.number().int().nonnegative().max(256);
-const familyMetric = z
-  .object({
-    family: identifier.nullable(),
-    sampleCount: count,
-    predictionCount: count,
-    correctCount: count,
-    precision: fraction,
-    precisionInterval95: z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]).nullable(),
-    severeWrongTargetCount: count,
-    correctionCount: count,
-    correctionRate: fraction,
-    exceptionCount: count,
-    exceptionRate: fraction,
-    abstentionCount: count,
-    coverage: fraction,
-    estimatedHumanInteractionsPerDocument: z.number().finite().min(0).max(1).nullable(),
-  })
-  .strict();
-const modelMetric = z
-  .object({
-    families: z.array(familyMetric).min(1).max(65),
-    sampleCount: count,
-    macroF1: z.number().finite().min(0).max(1),
-    accuracy: z.number().finite().min(0).max(1),
-    uncertainty: z.literal("BINOMIAL_UNADJUSTED_FOR_WITHIN_SPLIT_GROUPING"),
-    severeWrongTargetCount: count,
-    abstentionCount: count,
-    elapsedMs: z.number().finite().nonnegative(),
-    modelCalls: z.literal(0),
-    providerWrites: z.literal(0),
-    monetaryCost: z.null(),
-  })
-  .strict();
-export const DocumentEvaluationEvidence = z
-  .object({
-    schemaVersion: z.literal("document-evaluation-evidence-v1"),
-    candidateId: z.string().uuid(),
-    caseId: z.string().uuid(),
-    baselineSHA: z.string().regex(/^[a-f0-9]{40}(?![\s\S])/),
-    candidateSHA: z.string().regex(/^[a-f0-9]{40}(?![\s\S])/),
-    evaluatorRevision: revision,
-    datasetRevision: revision,
-    splitRevision: revision,
-    featureSchemaRevision: revision,
-    vocabularyRevision: revision,
-    baselineRuleRevision: revision,
-    candidateRuleRevision: revision,
-    evaluatedSplit: z.literal("test"),
-    authority: z.literal("UNATTESTED_MINIMIZED_INPUT"),
-    baseline: modelMetric,
-    candidate: modelMetric,
-    hardGates: z
-      .object({
-        privacyInputContract: z.literal(true),
-        rightsInputContract: z.literal(true),
-        independentSplit: z.literal(true),
-        boundedScope: z.literal(true),
-        severeWrongTarget: z.boolean(),
-        familyRegression: z.boolean(),
-      })
-      .strict(),
-    verdict: z.enum(["FAIL", "REVIEW_REQUIRED"]),
-    promotionAuthorized: z.literal(false),
-    evidence: DocumentLearningCandidate.shape.evidence,
-  })
-  .strict();
-export type DocumentEvaluationEvidence = z.infer<typeof DocumentEvaluationEvidence>;
 
 export function documentEvaluationRevision(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");

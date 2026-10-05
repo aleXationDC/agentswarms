@@ -791,6 +791,55 @@ and SSR production build. The build uses the previously verified process-only
 memory parameters documented above; repository build scripts are unchanged.
 Infra reports one existing missing-tool skip. No failed gate is reported as PASS.
 
+### Native append-only descriptive Evaluation persistence increment
+
+Prior side-effect-free basis is committed as
+`9b91638612eb287a0eddd72d7837f2000883125d`, canonical-pushed/mirrored and
+bound to draft PR11 and the same OPEN implementation Cases.
+This increment extends the same Case API/RPC/Human panel and native owner
+Dataset/audit. It stores strict minimized Evaluation reports append-only,
+binding exact Candidate revision/baseline and existing Improvement Child,
+current source/worker/Attempt/Input and revalidated native Candidate privacy/
+Decision/verified Feedback gates. No new orchestrator or authority.
+
+All reports remain `UNATTESTED_MINIMIZED_INPUT`, FAIL/REVIEW_REQUIRED and
+`promotion_authorized=false`. Internal count/rate/gate/verdict consistency is
+validated by shared schema and SQL independently. Descriptive caller metrics,
+source/dataset/evaluator reference syntax and input claims are explicitly not
+an independent evaluator receipt, protected feature loader, quality threshold
+or privacy authority. Original/sample/feature/prompt payloads are not stored.
+Creation/replay do not start/promote the Child or change source effects.
+
+Thirty-five executed validator/service/readback tests and four actual shared
+API readback tests prove owner/hash binding, strict authority/leakage guards,
+minimized count/gate consistency and native errors. Actual sixteen-session
+SQL fixtures prove one report/audit, immutable response-loss recovery and current
+Candidate/Child binding. Direct authenticated/service Row/Dataset writes,
+marker omission, LocalTable overwrite, foreign owner and real key scope-loss/
+expiry/revocation are denied. Exact authorized replay survives privacy drift;
+new reports fail. Timing and repeated/reordered Evidence cannot duplicate reports.
+
+The actual recognizer/comparison is also executed against the same owned native
+Candidate and its numeric fixture, persisted through the native RPC and read
+back after a lost response. Its measured fuzzy regression remains FAIL, never
+invented PASS. No samples/features are copied into stored report. Synthetic
+protected privacy fields are privileged isolated fixtures, not live coverage.
+Initial migration8 syntax failure was transactionally rolled back in the own
+isolated DB; corrected CASE parentheses applied successfully without partial
+schema artifacts or production changes.
+
+Existing native Work/Approval/current proposal/Registry/Feedback SQL suites pass
+with migration8, including a clean final eight-migration install. Complete
+ordered canonical typecheck/lint/docs/command/infra/full-unit gates pass:
+581 files, 9,604 tests PASS, 40 skipped. The unchanged production client and
+SSR build passes with the process-only resource bounds documented above;
+no repository build script was changed. These counts cover this persistence
+increment, not the subsequent isolated disabled-policy work in progress.
+Owned fixture auth/Dataset/audit/key counts return to zero.
+Full live semantic recovery, protected feature/privacy/source
+loading, policy/effects/receipts, minimized checkpoints, production convergence
+and independent Acceptance remain unfinished.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

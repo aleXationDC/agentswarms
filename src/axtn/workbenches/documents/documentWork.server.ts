@@ -64,7 +64,9 @@ export async function executeDocumentWork(
                       ),
                     },
                   }
-                : { caseId: request.caseId };
+                : request.operation === "document_evaluation"
+                  ? { ...request.submission, caseId: request.submission.evaluation.caseId }
+                  : { caseId: request.caseId };
   if (
     !human &&
     (request.operation === "document_assign" ||
@@ -85,7 +87,9 @@ export async function executeDocumentWork(
           ? { feedbackRevision: documentInputHash(request.feedback) }
           : request.operation === "document_candidate"
             ? { candidateRevision: documentInputHash(payload) }
-            : {}),
+            : request.operation === "document_evaluation"
+              ? { evaluationRevision: documentInputHash(request.submission) }
+              : {}),
     actorRef: principal.id,
     _principal: principal,
   };

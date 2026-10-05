@@ -127,6 +127,66 @@ describe("actual same Case API inactive Candidate boundary", () => {
       }),
     );
   });
+
+  describe("actual same Case API minimized Evaluation readback boundary", () => {
+    it("binds authenticated identity and reuses the native owner-bound service", async () => {
+      expect(
+        (await requestBody({ operation: "document_evaluations", caseId: event.caseId })).status,
+      ).toBe(200);
+      expect(state.rpc).toHaveBeenCalledExactlyOnceWith(
+        "axtn_case_document",
+        expect.objectContaining({
+          p_user_id: owner,
+          p_operation: "document_evaluations",
+          p_payload: expect.objectContaining({
+            caseId: event.caseId,
+            _principal: { kind: "user_session", id: owner },
+          }),
+        }),
+      );
+    });
+    it("rejects unauthenticated readback", async () => {
+      expect(
+        (await requestBody({ operation: "document_evaluations", caseId: event.caseId }, null))
+          .status,
+      ).toBe(401);
+      expect(state.rpc).not.toHaveBeenCalled();
+    });
+    it("rejects caller owner and broad report injection", async () => {
+      expect(
+        (await requestBody({ operation: "document_evaluations", caseId: event.caseId, owner }))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await requestBody({
+            operation: "document_evaluation",
+            submission: {
+              evaluationId: owner,
+              candidateRevision: "a".repeat(64),
+              attemptId: owner,
+              inputHash: "b".repeat(64),
+              evaluation: { approved: true, original: "forbidden" },
+            },
+          })
+        ).status,
+      ).toBe(400);
+      expect(state.rpc).not.toHaveBeenCalled();
+    });
+    it("surfaces native readback denial without returning a report", async () => {
+      state.rpc.mockResolvedValueOnce({
+        data: null,
+        error: { message: "DOCUMENT_CASE_KEY_DENIED" },
+      });
+      expect(
+        (await requestBody({ operation: "document_evaluations", caseId: event.caseId })).status,
+      ).toBe(409);
+      expect(console.warn).toHaveBeenCalledWith(
+        "[case-work] operation rejected:",
+        "DOCUMENT_CASE_KEY_DENIED",
+      );
+    });
+  });
   it("derives a scoped machine principal but delegates eligibility to protected native state", async () => {
     expect(
       (await requestBody({ operation: "document_candidate", candidate }, "sk_swarm_fixture"))
