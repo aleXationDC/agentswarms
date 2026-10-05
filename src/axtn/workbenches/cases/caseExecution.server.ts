@@ -182,7 +182,7 @@ export async function readCaseExecutionView(
   const authorized = await supabaseAdmin.rpc("axtn_case_assignment", {
     p_user_id: userId,
     p_operation: "case_access",
-    p_payload: { caseId, offset: 0, limit: 1, _principal: principal },
+    p_payload: { caseId, sharedOnly: false, offset: 0, limit: 1, _principal: principal },
   });
   if (authorized.error) throw new Error(authorized.error.message);
   const view = CaseAccessView.parse(authorized.data);

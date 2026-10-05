@@ -7,6 +7,42 @@ No enterprise, independent Acceptance or complete neighboring assignment PASS.
 
 ## Native Case execution candidate: isolated proof, convergence withheld
 
+### Productive readback repair
+
+Exact source `a5f53aba13479c196763a68d721396f3bba6ce81` passed all source
+gates and its canonical native image build. Controlled App/additive2100
+convergence preserved original Case content/custody, users, integrations,
+Approvals, native runs/trace IDs and all38 unrelated service identities/
+start times. Ledger295->296; fresh PostgreSQL/active-config checkpoint was
+streamed to authenticated age encryption. All14 real PROD rollback SQL
+contracts passed.
+
+An actual provider-free native HTTP execution on the existing reporting
+Case produced successful run `14368475-8d77-4d7a-b097-57d393d797d7`,
+same-key exact replay, different-body422 and undeclared-control400, without
+a semantic credential or provider call. Its explicitly synthetic published
+fixture is retained as runtime evidence; the temporary scoped proof key
+was revoked. No new work Case or fake independent reviewer was created.
+
+That actual HTTP test then exposed `CASE_ASSIGNMENT_VIEW_REQUIRED`409:
+the private execution-view access call omitted the existing RPC's required
+`sharedOnly:false` field. The mocked earlier projection fixture had not
+checked this parameter. The native caller now sends the complete contract;
+the regression fixture rejects any omission. App alone was restored from
+the authenticated encrypted active-config checkpoint to healthy79f0d391;
+the exact compatible additive296 schema remains, with no destructive
+database restore or neighboring-service restart. Repaired source gates,
+exact image convergence and real view/UI/restart proof follow; the initial
+deployment is not misreported as complete runtime Acceptance.
+
+The precise parameter repair passes typecheck and14 targeted view/HTTP
+tests. A conventional host build finishes the client but is interrupted
+during SSR; a2560-MiB host-safe identical Vite attempt reaches the heap
+limit (exit134). The repaired immutable candidate therefore remains
+BUILD_PENDING until the existing canonical native Docker build actually
+completes its `npm run build`; no partial browser build is a deploy gate.
+The actual rollback is recorded on the same Parent/reporting Case.
+
 Continuation after the resource block: recovered host memory permits the
 canonical typecheck and client/SSR build to pass without changing tooling or
 stopping services. The historical resource failures below remain actual

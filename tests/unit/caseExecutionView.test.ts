@@ -6,24 +6,27 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    rpc: async () => ({
-      data: {
-        scope: "AUTHORIZED_CASES",
-        total: fixture.allowed ? 1 : 0,
-        offset: 0,
-        limit: 1,
-        cases: fixture.allowed
-          ? [
-              {
-                case_id: "99111111-1111-4111-8111-111111111111",
-                subject: "Synthetic Case",
-                case_access_mode: "RESPONSIBLE",
-              },
-            ]
-          : [],
-      },
-      error: null,
-    }),
+    rpc: async (_name: string, args: { p_payload: { sharedOnly: boolean } }) => {
+      if (args.p_payload.sharedOnly !== false) throw new Error("CASE_ASSIGNMENT_VIEW_REQUIRED");
+      return {
+        data: {
+          scope: "AUTHORIZED_CASES",
+          total: fixture.allowed ? 1 : 0,
+          offset: 0,
+          limit: 1,
+          cases: fixture.allowed
+            ? [
+                {
+                  case_id: "99111111-1111-4111-8111-111111111111",
+                  subject: "Synthetic Case",
+                  case_access_mode: "RESPONSIBLE",
+                },
+              ]
+            : [],
+        },
+        error: null,
+      };
+    },
     from: (table: string) => {
       fixture.reads.push(table);
       const query = {
