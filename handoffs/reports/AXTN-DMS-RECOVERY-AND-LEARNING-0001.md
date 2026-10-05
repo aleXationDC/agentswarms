@@ -28,7 +28,7 @@ Working local Copilot MCP, existing providers and Development worktrees preserve
 
 ## Delivered source increment
 
-- Separate registered DOCUMENT_* profile in the existing owner-bound Case API,
+- Separate registered DOCUMENT\_\* profile in the existing owner-bound Case API,
   same datasets, advisory lock and append-only audit. Original Development
   schemas/RPC/receipt/Approval verification remain unchanged.
 - Atomic Case-before-Registry ensure, request/delivery dedup and immutable
@@ -656,11 +656,92 @@ and immutable image `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bf
 remain healthy; Development App/Host/MCP heads and own Host/n8n worktrees are
 unchanged. No production migration, key, workflow or provider change occurred.
 
-This is not complete Learning: Improvement Candidate Child creation,
-privacy-gated side-effect-free evaluation/splits/metrics, immutable disabled
+This is not complete Learning: the following increment adds inactive Improvement
+Candidate Child creation; privacy-gated side-effect-free evaluation/splits/metrics, immutable disabled
 policy, quality promotion, review/PR handoff, provider FilingReceipt and actual
 Human UI/restart acceptance remain unfinished. Same implementation Cases stay
 OPEN/NEW according to dependencies, with no false prerequisite completion.
+
+### Native inactive Improvement Candidate increment
+
+Source follows committed App `422e0fa4cc1ebe5407c64cdd5f8d50fe3215ba3a`
+on the same own DMS worktree/branch. The full revision-0.5 request, DMS HANDOFF
+and current AGENTS were reread. Canonical branch still matched 422 before edits.
+No additional writer or runtime mutation was introduced.
+
+The existing Case API/RPC, owner Dataset, advisory lock and audit now register
+`document_candidate`/`document_candidates`. Strict inactive existing-rule
+manifests, exact baseline/test-profile references, hypothesis/risk codes and
+verified Feedback provenance feed one atomic NEW
+`DOCUMENT_IMPROVEMENT_CANDIDATE` Child and one immutable artifact. No new control
+plane, Workflow sequencing, Approval, policy activation or provider effect.
+Server identity/time/revision, protected ELIGIBLE revision, current worker,
+Input/Source/Decision pointer, confirmed family/target and terminal feedback
+agreement are checked. NO_AI/UNRESOLVED, unverified/superseded/conflicting feedback,
+forged authority and stale revisions fail without state/audit mutation.
+
+Verified historical feedback remains usable across a responsibility/Attempt
+change only with the same current Input/Source/Decision. Stable hypothesis dedup
+excludes CandidateID and responsibility dimensions, preserving the same Child
+without rewriting its original author. Exact immutable replay is readback-only
+after drift; logical aliases must still pass current gates. Returned canonical
+Candidate/Child IDs and revision are authoritative, not assumed request IDs.
+
+The existing Human Case panel creates and lists these minimized records using
+the shared validators/API. It never auto-selects a ground-truth assignment or
+activates a policy. Actual production UI/restart acceptance is not claimed.
+Pattern existence/revision/index resolution and baseline/profile semantics
+remain evaluation obligations, not authority inferred from format-valid refs.
+Direct authenticated/service Row/Dataset writes, marker omission, LocalTable
+overwrite and private delegate access are denied.
+
+Focused source evidence: 43 Candidate validator/service/readback tests and
+10 actual shared API handler tests in addition to the unchanged 11 feedback
+handler tests. Actual isolated PostgreSQL concurrency runs sixteen independent
+service-role sessions, lost-response/new-session readback and exactly one NEW
+Child/artifact/audit. Responsibility handoff reuses that Child; real scoped
+machine-key loss/expiry/revocation deny even recovery. Synthetic privacy fields
+are explicitly privileged fixtures, not a coverage/live privacy setter proof.
+The test also proves confirmed-tip conflict/supersession, NO_AI/UNRESOLVED,
+privacy/Decision drift and preserved parent state.
+
+Initial rerun found four own auth-bootstrap deletion audits after cleanup;
+cleanup now deletes only its owned synthetic auth/Swarm/key rows before the
+final audit cleanup. All concurrent sessions settle before cleanup. The final
+fixture reruns pass with no leftover fixture principal or business Case.
+The initial new API-test placement was corrected after measured counts showed
+they were not registered; all ten new tests now actually run (21 handler tests).
+The Human panel's initial unknown-input type error was corrected using the same
+strict manifest parser, not a cast.
+
+Production remains healthy App `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`,
+image `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a`,
+278 migrations/latest `20261004060000_native_work_approval_binding.sql`.
+Development App/Host/MCP heads remain 6bf776e/85dbb72/6e18b49.
+No production migration, key, Swarm, provider, Host or local MCP change.
+Full recovery/evaluation/disabled policy/receipts/minimized persistence,
+native graph convergence and independent Acceptance remain unfinished.
+
+Final Candidate validation: canonical `npm run check` passed typecheck, lint
+(zero errors), documentation/command/infra gates and all 579 test files,
+9,533 tests with 40 skips. Its SSR build was terminated; direct trace confirmed
+exit 137 and the existing shared user cgroup reported OOM kills. Lowering the
+heap to 3,072 MiB exposed an explicit V8 heap exhaustion rather than fixing it.
+The identical production Vite build then completed client and SSR successfully
+with process-only resource parameters, without repository build/config changes:
+`MALLOC_ARENA_MAX=2 node --optimize-for-size --max-old-space-size=3584 --max-semi-space-size=8 node_modules/vite/bin/vite.js build --sourcemap false`.
+This is a successful resource-bounded build plus the complete preceding gates,
+not a claim that the original uninterrupted `npm run check` exited zero.
+No shared service was stopped or memory/network/provider configuration changed.
+
+Final migration bytes were installed atomically from a clean six-migration
+isolated baseline into `dms_native_contract_candidate_final_20261005`.
+Candidate concurrency/roles and all existing Work/Approval/current-proposal/
+Registry/Feedback SQL suites passed. Existing Work, Registry and Feedback
+concurrency also passed with migration7. Final Candidate fixture cleanup read
+back zero owned auth users, datasets, audits, Swarms and keys. Actual protected
+credential scan passed across 2,518 own source/evidence files. Production
+remains healthy on the exact prior image with ledger278.
 
 ### Native Local Table draft provisioning increment
 

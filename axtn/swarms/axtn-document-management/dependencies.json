@@ -248,6 +248,19 @@
       "gap": "Human UI runtime/restart acceptance, Improvement Child/Candidate construction, privacy-gated evaluation/PR handoff, disabled policy and FilingReceipt remain unfinished. Feedback grants no privacy, effects, promotion or independent acceptance."
     },
     {
+      "name": "document-learning-candidate",
+      "kind": "native-case-inactive-candidate",
+      "logicalName": "axtn_document_learning_candidates",
+      "source": "supabase/migrations/20261004150000_document_learning_candidate.sql",
+      "sourceSHA256": "b0df4520d10b656de765b7e69491bfab9962d476907fb11d79f0e21caaf1d0cc",
+      "dependencies": ["case-profile", "proposal-current", "document-feedback"],
+      "implemented": "same protected Case API/RPC/Human panel; strict inactive existing-rule manifest, baseline/test-profile/verified feedback provenance, atomic NEW Improvement Child and append-only artifact, current privacy/source/worker fences and stable dedup across responsibility handoff",
+      "tested": "43 contract/service/readback and 10 actual shared API handler fixtures; isolated migration7 install, 16 real service-role sessions, one Child/artifact/audit, ambiguity/supersession/drift, authenticated/marker-omission/broker guards and real scoped-key denial",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Pattern/baseline/profile semantics must be resolved by evaluation; no quality/evaluation/promotion/active policy/provider authority or production UI/restart proof."
+    },
+    {
       "name": "registry-seed",
       "kind": "native-dataset-seed",
       "source": "supabase/migrations/20261004120000_document_registry_seed.sql",

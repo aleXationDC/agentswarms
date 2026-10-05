@@ -50,7 +50,7 @@ const event = {
     },
   ],
 };
-const request = (feedback: unknown = event, credential: string | null = "fixture-user-session") => {
+const requestBody = (body: unknown, credential: string | null = "fixture-user-session") => {
   if (!state.handler) throw new Error("Actual Case API handler required");
   return state.handler({
     request: new Request("http://localhost/api/cases/work", {
@@ -59,10 +59,12 @@ const request = (feedback: unknown = event, credential: string | null = "fixture
         "content-type": "application/json",
         ...(credential ? { authorization: `Bearer ${credential}` } : {}),
       },
-      body: JSON.stringify({ operation: "document_feedback", feedback }),
+      body: JSON.stringify(body),
     }),
   });
 };
+const request = (feedback: unknown = event, credential: string | null = "fixture-user-session") =>
+  requestBody({ operation: "document_feedback", feedback }, credential);
 beforeEach(() => {
   state.rpc.mockReset().mockResolvedValue({ data: { feedback_id: event.eventId }, error: null });
   state.getUser.mockReset().mockResolvedValue({ data: { user: { id: owner } }, error: null });
@@ -77,11 +79,110 @@ beforeEach(() => {
     },
     error: null,
   });
-  afterEach(() => vi.restoreAllMocks());
+
   state.limited.mockReset().mockResolvedValue(false);
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
+afterEach(() => vi.restoreAllMocks());
 
+const candidate = {
+  schemaVersion: "document-learning-candidate-v1",
+  candidateId: event.eventId,
+  caseId: event.caseId,
+  decisionId: event.decisionId,
+  decisionRevision: event.decisionRevision,
+  attemptId: event.attemptId,
+  inputHash: event.inputHash,
+  baseline: { ...event.evidence[0], kind: "repository", revision: "a".repeat(40) },
+  feedback: [{ eventId: event.eventId, revision: "b".repeat(64) }],
+  hypothesis: "MATCH_TOO_NARROW",
+  risks: ["FAMILY_REGRESSION"],
+  testProfile: { ...event.evidence[0], kind: "contract", revision: "a".repeat(40) },
+  changeManifest: {
+    schemaVersion: "document-rule-change-v1",
+    patternId: "fixture-rule",
+    patternRevision: "c".repeat(64),
+    conditionChanges: [{ index: 0, matchMode: "fuzzy", maxDeviationPercent: 10 }],
+    family: "fixture",
+    targetId: null,
+    sourceKind: "fixture",
+    operation: "CLASSIFY",
+    enabled: false,
+  },
+  evidence: event.evidence,
+};
+describe("actual same Case API inactive Candidate boundary", () => {
+  it("uses authenticated Human identity and server revision without a second endpoint", async () => {
+    expect((await requestBody({ operation: "document_candidate", candidate })).status).toBe(200);
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith(
+      "axtn_case_document",
+      expect.objectContaining({
+        p_operation: "document_candidate",
+        p_user_id: owner,
+        p_payload: expect.objectContaining({
+          actorRef: owner,
+          _principal: { kind: "user_session", id: owner },
+          candidateRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      }),
+    );
+  });
+  it("derives a scoped machine principal but delegates eligibility to protected native state", async () => {
+    expect(
+      (await requestBody({ operation: "document_candidate", candidate }, "sk_swarm_fixture"))
+        .status,
+    ).toBe(200);
+    expect(state.rpc.mock.calls[0][1].p_payload._principal).toEqual({
+      kind: "swarm_api_key",
+      id: keyId,
+    });
+  });
+  it.each(["_principal", "enabled", "approved", "text", "candidateRevision"])(
+    "rejects injected Candidate %s before any RPC",
+    async (field) => {
+      expect(
+        (
+          await requestBody({
+            operation: "document_candidate",
+            candidate: { ...candidate, [field]: "forbidden" },
+          })
+        ).status,
+      ).toBe(400);
+      expect(state.rpc).not.toHaveBeenCalled();
+    },
+  );
+  it("requires authentication for Candidate findability", async () => {
+    expect(
+      (await requestBody({ operation: "document_candidates", caseId: candidate.caseId }, null))
+        .status,
+    ).toBe(401);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+  it("keeps Case scope mandatory for Candidate writes", async () => {
+    state.maybeSingle.mockResolvedValueOnce({
+      data: { id: keyId, user_id: owner, scopes: ["run"], is_active: true },
+      error: null,
+    });
+    expect(
+      (await requestBody({ operation: "document_candidate", candidate }, "sk_swarm_fixture"))
+        .status,
+    ).toBe(403);
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+  it("surfaces native privacy denial without returning a NEW Child", async () => {
+    state.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "DOCUMENT_CANDIDATE_PROTECTED_PRIVACY_REQUIRED" },
+    });
+    const response = await requestBody({ operation: "document_candidate", candidate });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Case operation rejected" });
+    expect(console.warn).toHaveBeenCalledWith(
+      "[case-work] operation rejected:",
+      "DOCUMENT_CANDIDATE_PROTECTED_PRIVACY_REQUIRED",
+    );
+  });
+});
 describe("actual shared Case API feedback boundary without LLM/orchestrator", () => {
   it("binds the authenticated user, not request owner/actor/prompt labels", async () => {
     expect((await request()).status).toBe(200);

@@ -40,7 +40,31 @@ export async function executeDocumentWork(
             ? request.proposal
             : request.operation === "document_feedback"
               ? request.feedback
-              : { caseId: request.caseId };
+              : request.operation === "document_candidate"
+                ? {
+                    ...request.candidate,
+                    feedback: [...request.candidate.feedback].sort((a, b) =>
+                      a.eventId.localeCompare(b.eventId),
+                    ),
+                    risks: [...request.candidate.risks].sort(),
+                    evidence: [
+                      ...new Map(
+                        request.candidate.evidence.map((reference) => [
+                          JSON.stringify(canonical(reference)),
+                          reference,
+                        ]),
+                      ).entries(),
+                    ]
+                      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+                      .map(([, reference]) => reference),
+                    changeManifest: {
+                      ...request.candidate.changeManifest,
+                      conditionChanges: [...request.candidate.changeManifest.conditionChanges].sort(
+                        (a, b) => a.index - b.index,
+                      ),
+                    },
+                  }
+                : { caseId: request.caseId };
   if (
     !human &&
     (request.operation === "document_assign" ||
@@ -59,7 +83,9 @@ export async function executeDocumentWork(
         ? { decisionRevision: documentInputHash(request.proposal) }
         : request.operation === "document_feedback"
           ? { feedbackRevision: documentInputHash(request.feedback) }
-          : {}),
+          : request.operation === "document_candidate"
+            ? { candidateRevision: documentInputHash(payload) }
+            : {}),
     actorRef: principal.id,
     _principal: principal,
   };

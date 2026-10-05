@@ -62,8 +62,10 @@ production deployment. A Human may record minimized feedback for NO_AI work
 without granting semantic authority; this does not authorize a Learner/Judge
 to process its original or unapproved features.
 
-**Incomplete and not activated:** LearningCandidate Child construction,
-side-effect-free evaluation/splits/metrics, immutable disabled AutomationPolicy,
+Inactive [native Candidate Child construction](CANDIDATES.md) is implemented
+separately through the same Case service; feedback itself never starts learning.
+
+**Incomplete and not activated:** side-effect-free evaluation/splits/metrics, immutable disabled AutomationPolicy,
 quality promotion, protected provider FilingReceipt, full native graph and
 live UI/restart acceptance still require completion. Feedback writes do not
 create/promote a candidate, enable a policy, trigger learning or re-file.

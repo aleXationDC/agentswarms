@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { WorkState } from "../cases/workContract";
 import {
   CaseRequest,
@@ -13,6 +14,21 @@ import {
   DocumentDecisionProposal,
 } from "./documentWorkContract";
 import { DocumentFeedbackRecord } from "./documentFeedbackContract";
+import {
+  DocumentLearningCandidate,
+  DocumentLearningCandidateRecord,
+} from "./documentCandidateContract";
+
+const CandidateDraft = DocumentLearningCandidate.omit({
+  candidateId: true,
+  caseId: true,
+  decisionId: true,
+  decisionRevision: true,
+  attemptId: true,
+  inputHash: true,
+  feedback: true,
+  evidence: true,
+});
 
 const StoredProposals = z.array(
   z.object({
@@ -52,6 +68,11 @@ export function DocumentWorkPanel({
   );
   const [correctedFamily, setCorrectedFamily] = useState("");
   const [correctedTargetId, setCorrectedTargetId] = useState("");
+  const [candidateId, setCandidateId] = useState(() => crypto.randomUUID());
+  const [candidateDraft, setCandidateDraft] = useState("");
+  const [candidates, setCandidates] = useState<z.infer<typeof DocumentLearningCandidateRecord>[]>(
+    [],
+  );
   const call = useCallback(async (input: unknown) => {
     const body = CaseRequest.parse(input);
     const { data } = await supabase.auth.getSession();
@@ -76,13 +97,15 @@ export function DocumentWorkPanel({
       call({ operation: "list" }),
       call({ operation: "document_proposals", caseId }),
       call({ operation: "document_feedback_events", caseId }),
+      call({ operation: "document_candidates", caseId }),
     ])
-      .then(([value, decisions, feedback]) => {
+      .then(([value, decisions, feedback, candidateRecords]) => {
         if (cancelled) return;
         const next = WorkState.parse(value);
         setState(next);
         setProposals(StoredProposals.parse(decisions));
         setFeedbackEvents(z.array(DocumentFeedbackRecord).parse(feedback));
+        setCandidates(z.array(DocumentLearningCandidateRecord).parse(candidateRecords));
         const record = next.cases.find((row) => row.case_id === caseId);
         if (record) {
           setSubject(record.subject);
@@ -99,6 +122,44 @@ export function DocumentWorkPanel({
   }, [call, caseId]);
   const record = state?.cases.find((row) => row.case_id === caseId);
   const human = record?.processing_mode === "HUMAN";
+  async function createCandidate(feedback: z.infer<typeof DocumentFeedbackRecord>) {
+    if (!record) throw new Error("Current Document Case required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const manifest = DocumentInputManifest.parse(record.document_input);
+      if (manifest.privacyStatus !== "ELIGIBLE")
+        throw new Error("Candidate creation requires protected ELIGIBLE privacy evidence.");
+      const draft = CandidateDraft.parse(JSON.parse(candidateDraft));
+      DocumentLearningCandidateRecord.parse(
+        await call({
+          operation: "document_candidate",
+          candidate: {
+            ...draft,
+            candidateId,
+            caseId,
+            decisionId: feedback.document_feedback.decisionId,
+            decisionRevision: feedback.document_feedback.decisionRevision,
+            attemptId: record.attempt_id,
+            inputHash: record.input_hash,
+            feedback: [{ eventId: feedback.feedback_id, revision: feedback.revision }],
+            evidence: [{ kind: "evidence", repository: "aXtn/aXtn-agentswarms", id: evidencePath }],
+          },
+        }),
+      );
+      setCandidates(
+        z
+          .array(DocumentLearningCandidateRecord)
+          .parse(await call({ operation: "document_candidates", caseId })),
+      );
+      setCandidateId(crypto.randomUUID());
+      await onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Document Candidate creation failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
   async function recordFeedback(
     proposal: z.infer<typeof StoredProposals>[number],
     correction: boolean,
@@ -433,10 +494,49 @@ export function DocumentWorkPanel({
               value={correctedTargetId}
               onChange={(event) => setCorrectedTargetId(event.target.value)}
             />
+            <strong>Inactive Improvement Candidate</strong>
+            <p>
+              Minimized draft JSON: exact baseline and test profile references, hypothesis, risk
+              codes and bounded existing-rule change manifest. No originals, new condition text,
+              executable code or enabled policies. The server checks current privacy, source and
+              confirmed feedback. Creating the NEW Child does not start work or promote a policy.
+            </p>
+            <Textarea
+              aria-label="Minimized inactive learning candidate draft"
+              maxLength={24000}
+              value={candidateDraft}
+              onChange={(event) => setCandidateDraft(event.target.value)}
+            />
             {feedbackEvents.map((feedback) => (
-              <p key={feedback.feedback_id}>
-                {feedback.created_at} · {feedback.document_feedback.eventType} ·{" "}
-                {feedback.verified ? "HUMAN_CONFIRMED" : "UNVERIFIED"} · {feedback.feedback_id}
+              <div key={feedback.feedback_id}>
+                <p>
+                  {feedback.created_at} · {feedback.document_feedback.eventType} ·{" "}
+                  {feedback.verified ? "HUMAN_CONFIRMED" : "UNVERIFIED"} · {feedback.feedback_id}
+                </p>
+                <Button
+                  disabled={
+                    saving ||
+                    !human ||
+                    !evidencePath ||
+                    !candidateDraft ||
+                    !feedback.verified ||
+                    DocumentInputManifest.safeParse(record.document_input).data?.privacyStatus !==
+                      "ELIGIBLE" ||
+                    feedbackEvents.some(
+                      (successor) =>
+                        successor.document_feedback.supersedesEventId === feedback.feedback_id,
+                    )
+                  }
+                  onClick={() => void createCandidate(feedback)}
+                >
+                  Create NEW Candidate from this confirmed feedback
+                </Button>
+              </div>
+            ))}
+            {candidates.map((candidate) => (
+              <p key={candidate.candidate_id}>
+                Candidate {candidate.candidate_id} · Child {candidate.improvement_case_id} · created
+                NEW, policy disabled · <code>{candidate.revision}</code>
               </p>
             ))}
             <strong>Durable transitions</strong>
