@@ -3,9 +3,9 @@ BEGIN;
 INSERT INTO public.knowledge_bases(id,user_id,name,is_sample)
   VALUES('a9ed1b51-4c3d-4f87-9c5a-1d2e3f4a5b00',NULL,'AgentSwarms — How-To Guide',true)
   ON CONFLICT(id) DO NOTHING;
-INSERT INTO auth.users(id,aud,role,email) VALUES
-  ('11111111-1111-4111-8111-111111111111','authenticated','authenticated','trace-fixture@example.invalid'),
-  ('22222222-2222-4222-8222-222222222222','authenticated','authenticated','trace-other@example.invalid')
+INSERT INTO auth.users(id,aud,role,email,invited_at) VALUES
+  ('11111111-1111-4111-8111-111111111111','authenticated','authenticated','trace-fixture@example.invalid',now()),
+  ('22222222-2222-4222-8222-222222222222','authenticated','authenticated','trace-other@example.invalid',now())
   ON CONFLICT(id) DO NOTHING;
 SET LOCAL ROLE service_role;
 INSERT INTO swarm_runs(id,user_id,swarm_id,input_prompt,swarm_snapshot,final_output,error_message) VALUES

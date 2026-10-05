@@ -3,9 +3,9 @@ BEGIN;
 INSERT INTO public.knowledge_bases(id,user_id,name,is_sample)
   VALUES('a9ed1b51-4c3d-4f87-9c5a-1d2e3f4a5b00',NULL,'AgentSwarms — How-To Guide',true)
   ON CONFLICT(id) DO NOTHING;
-INSERT INTO auth.users(id,aud,role,email) VALUES
-  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','authenticated','authenticated','cache-owner@example.invalid'),
-  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','authenticated','authenticated','cache-other@example.invalid')
+INSERT INTO auth.users(id,aud,role,email,invited_at) VALUES
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','authenticated','authenticated','cache-owner@example.invalid',now()),
+  ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','authenticated','authenticated','cache-other@example.invalid',now())
   ON CONFLICT(id) DO NOTHING;
 SET LOCAL ROLE service_role;
 INSERT INTO public.swarms(id,user_id,name) VALUES

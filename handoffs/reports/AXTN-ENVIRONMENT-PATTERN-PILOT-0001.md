@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / SOURCE_TESTED / BUILD_PASSED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / SOURCE_TESTED / DEPLOYED_PARTIAL / RESTART_VERIFIED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -619,3 +619,97 @@ Evidence: `pilot-measured-learning-v4.log`, hash
 `919e4331e907e7c13c61ee731fc55116b707f2d6b47ab83894e04402dcb2f522`.
 This pre-publication run uses the prior source SHA; the versioned fixture is
 rerun after publication to bind evidence to the exact commit containing it.
+
+## Controlled native PROD convergence and durable readback
+
+The preceding non-deployment/build blockers are historical checkpoints.
+Exact deployed App source is `79f0d3911a2865798ea8034597c1357b5deec06b`;
+immutable image
+`sha256:6537525158b812f9d0dfd394f23f291f39389d37ecaeb8df6c14e666bbff0288`,
+healthy. Own Host execution revision
+`e33a73112fb280aa8d0974b304c7f1777a8b67b1`, based on retained DMS Hostc1a25fef.
+This report/test-only follow-up does not relabel that immutable image or imply
+that its later documentation SHA has been deployed.
+
+Native targeted image preparation exposed a genuine restrictive-umask bug:
+Git checkout source0700/0600 was unreadable to Docker `USER node`. The existing
+Host convergence helper now normalizes only tracked public source to Git
+0644/0755 while protecting runtime/candidate parents0700 and environments0600.
+Actual restrictive-umask regression plus existing Host safety tests pass.
+Canonical image client/SSR build and all six DuckDB extension bakes pass.
+No provider, Dockerfile, production architecture or local MCP change.
+
+Before serial convergence, a fully authenticated age-encrypted native database
+and configuration checkpoint was restored into the actual-data isolated canary.
+All17 pending native DMS/pilot migrations and native ledger entries applied
+atomically: ledger278 ->295. Original IDs/custody, Case content excluding
+additive responsibility fields, users, integrations, Approvals and runs were
+unchanged. The same real-data canary passed the five pilot and eight DMS SQL
+fixtures plus portable transfer, faults and measured Learning.
+
+Five older DMS SQL fixtures initially failed the retained invite-only IAM
+policy. They now explicitly invite their synthetic users with `invited_at`;
+no public signup policy, assertion or product authorization was weakened.
+Those test-only changes were used for the actual-data and live rollback proofs
+and are versioned in this report follow-up, not falsely attributed to the
+previous deployed test sources.
+
+The same open Parent and three executor Children recorded CANARY_STARTED at
+the exact candidate, with repository-backed Host rollback evidence. A fresh
+encrypted checkpoint followed; only the App was stopped. The exact tested17
+migrations applied in one transaction, with unchanged protected state before/
+after and ledger295. Existing native Compose then started only the exact App.
+No full bootstrap, provider reset, n8n/website/Caddy/Tailscale convergence or
+neighboring repository write occurred.
+
+Actual live preservation hashes before = after atomic migration:
+
+| Surface | Hash |
+| --- | --- |
+| Original Case content, excluding additive defaults | b2c84e3f6838df6fc4c2313485746ad1 |
+| Original Case IDs/custody | a03188372cf02de893a6e5ebc12a70df |
+| Users | 720ab2c184412e0c02745ff18e80d658 |
+| Integrations | a3781255354a72c6cb38a3dd999a3023 |
+| Approvals | 425a5cee5dc5d79337a7e3bd13d3dd14 |
+| Runs | a0865afffc942d2d3bb252f9887b7f35 |
+
+All13 native pilot/DMS SQL contracts subsequently pass against the actual PROD
+schema and IAM policy. Every synthetic write is in a verified BEGIN/ROLLBACK
+fixture; no synthetic user/Approval/Case fixture is retained in PROD.
+The live Approval regression proves builder/owner/unrouted denial, authorized
+reviewer/group, revocation, atomic audit and immutable bindings without deciding
+the genuine pending Approval.
+
+A real authenticated headless browser on the existing private HTTPS8446 origin
+loads responsibility, processing/subtree, capacity and Pattern panels on all
+five existing pilot Cases and the top-level Workbench. Same-assignment and
+ACTIVE processing writes on the existing reporting Child persist across reload,
+without custody, credential or Acceptance changes. No browser JavaScript errors
+or settled panel alerts. This is authorized host-browser proof, not independent
+public-internet visibility or a colleague's Acceptance.
+
+Controlled native App restart passes exact durable readback for all five Cases,
+Work events, responsibility, subtree rows/counts, capacity and Pattern views.
+All native audit history, the original one pending Approval, run states and
+integrations remain unchanged, as do protected runtime configuration and all38
+unrelated running services. Volatile query `asOf` and calendar durations are
+not confused with persisted data. Existing providers/local MCP and preserved
+Development/DMS source branches remain untouched.
+
+Evidence: own Host
+`evidence/environment-pattern/20261005T-pilot-preflight.md` and local bounded
+`pilot-native-deployed.json`, `pilot-native-live-fixtures.json`,
+`pilot-native-browser.json`, `pilot-native-restart.json`. Protected backup/
+configuration/credential material remains outside Git. Immediate rollback is
+the retained original App image/configuration with additive schema preserved;
+no destructive live database restore is authorized or executed. Rollback was
+not needed.
+
+This is **partial deployed functional evidence**, not whole-pilot Acceptance.
+The actual server-derived sticky Case/run/Attempt execution binding and
+deterministic Group claim remain a concrete implementation gap; existing route
+metadata must not be interpreted as a PERSONAL_CONNECTION budget/credential
+binding. Real three-document use-case gates, actual independent reviewer,
+remote autonomous environments and unresolved P01-P38 definitions remain
+truthfully open. Continue the same assignment/Cases; do not merge, self-accept
+or close the Parent.
