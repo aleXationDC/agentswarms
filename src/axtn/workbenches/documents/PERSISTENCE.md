@@ -96,3 +96,26 @@ and preserved generic/technical/routing data. The concurrency fixture uses
 sixteen independent native sessions and new-session readback, then cleans only
 its own fixture run. Both require the explicitly isolated native database; no
 production migration or runtime leakage PASS follows from these tests.
+
+`20261004190000_document_parent_model_trace_bodies.sql` protects model traces
+whose existing `decision_id` is the persisted owned Parent run. Prompt,
+request/response payload, tool bodies and free-form error are replaced with
+explicit redaction markers/bounded codes; model/provider, token/cost/latency
+and native cost-scope columns remain. Rebinding an already protected trace or
+moving a generic historical trace into this identity fails. Protected trace
+markers also prevent body injection after the referenced run has been deleted.
+This is not source/privacy authority and does not cover initial writes missing
+the correlation, nested calls currently lacking the Parent run ID, separate
+gateway calls, audit/log bodies, callbacks/cache or checkpoint context.
+
+The isolated native model role fixture uses actual auth rows and checks
+browser/service writes, owner/detach/rebinding/deleted-Parent denial, technical
+usage and generic bodies. Concurrent upserts and detach attempts exercise
+independent sessions with new-session readback; only own fixture rows are
+cleaned. No production migration or global free-body flag is changed.
+
+Model request metadata retains only typed boolean estimated/missing/replayed
+flags, allowlisted price-source categories and numeric whole-turn token/cost/
+image counts. This preserves measured-zero versus unknown-price semantics and
+native repricing discovery without retaining arbitrary request bodies. Wrong
+types and free-text masquerading as usage metadata are excluded.

@@ -994,6 +994,47 @@ not rewritten/deleted, ingress/snapshots/checkpoints unchanged, and child/
 model/cache/callback protection and original-free resume remain incomplete.
 Production migration ledger/config/image/Development/local MCP remain unchanged.
 
+### Native Parent-correlated model trace storage increment
+
+Parent step/edge storage protection is committed at `bfd0dd4c`, pushed/mirrored
+and bound to draft PR11 and the same three OPEN SupaCases. Additive migration
+`20261004190000_document_parent_model_trace_bodies.sql` (SHA256
+`44ad2cc8485f439fe4f85eec5d566ec65762112ecf0b5c1702c8c024fae17dfb`)
+now minimizes existing native model traces whose `decision_id` matches the
+persisted owned Parent run. Explicit request/response markers, null prompt,
+empty tool events and bounded errors preserve real model/provider, latency,
+tokens/cost and cost-scope columns. Trace identity/owner cannot be detached or
+rebound into/out of protection. A protected stored marker also prevents
+body reinjection after its Parent run has been deleted. The guard is private,
+not a new persistence, orchestration or privacy/source authority.
+
+The fresh isolated native eleven-migration clone
+`dms_native_contract_model_trace_final_20261005` passes actual auth/browser and
+service-role insert/update, forged owner, identity/detach/rebinding,
+deleted-Parent protection and exact generic/technical behavior tests.
+Sixteen independent model upserts retain exactly one redacted trace with
+tokens=7/cost=0.25; sixteen detach/injection attempts fail, with new-session
+identity readback. Existing Parent body/concurrency and Work/Approval/current
+proposal/Registry/Feedback SQL suites pass against this exact schema.
+One initial fixture lacked actual auth rows and correctly failed its native
+foreign key; proper isolated auth setup fixed the fixture, not the constraint.
+The final fresh schema also retains typed estimated/missing/replayed pricing
+flags, allowlisted price-source and numeric turn/image usage, keeping native
+repricing/unknown-price semantics. Forged free-text/wrong-type usage fields
+are excluded. The previous full regression run targeted the earlier iteration;
+final exact-checksum source/native regressions also pass: all seven SQL role
+suites, both trace concurrency suites, existing Work/Registry/Feedback/
+Candidate/Evaluation concurrency and actual recognizer/report/disabled-Policy
+integration. Full lint/docs/command/infra/unit gates pass **585 files /
+9,712 tests / 40 skipped**, including exact-byte inventory checks. The unchanged
+TypeScript/client/SSR build remains the preceding `ff5966c2` proof; no build
+was rerun for this additive SQL/docs-only increment.
+
+This is not full L19: nested model calls currently lose root correlation;
+missing-correlated initial writes, separate gateway traces, logs/audit,
+checkpoint context, callbacks/cache and historical retention still need work.
+No production migration, provider/model/MCP setting or Development state changed.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder
