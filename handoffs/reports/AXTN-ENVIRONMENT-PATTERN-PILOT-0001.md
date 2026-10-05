@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / BUILD_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / BUILD_PASSED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -197,7 +197,7 @@ No external reference is inherited by a new Child.
 
 Current source paths: `src/axtn/workbenches/cases/caseEnvironment*`,
 `caseProcessing*`, `CaseEnvironmentPanel.tsx`, `CaseProcessingPanel.tsx`,
-`caseApi.client.ts`, `caseManagement.{functions,server}.ts`, existing
+`caseApi.ts`, `caseManagement.{functions,server}.ts`, existing
 `work.server.ts`, `documents/documentWorkContract.ts` and Case routes.
 
 Actual fresh isolated PostgreSQL v10 proof passed:
@@ -235,7 +235,8 @@ and infrastructure checks PASS. Full unit suite:590 files,9869 passing tests,
 on the fresh v10 schema, not inferred from an earlier candidate.
 Earlier failed isolated/mocked candidates were corrected, not applied to PROD.
 
-Production build is **NOT YET PASSED**. Three actual standard Vite attempts
+Historical build failures, superseded by the successful capacity build below:
+three actual standard Vite attempts
 completed their client build but failed SSR:3584MiB old heap/arena2 exited137;
 2560MiB and3072MiB/arena1 exhausted V8 heap and exited134. Kernel attribution
 for exit137 was unavailable; it is not reported as a proven kernel OOM event.
@@ -244,11 +245,11 @@ services remain healthy. A process-only jitless probe failed before Vite because
 Node's native fetch requires Wasm. The separate bounded baseline-JIT attempt
 preserved native fetch/Wasm, completed the client build in6minutes, then exited137
 during SSR transformation. Only its own OOM priority was raised, not other
-processes'. The full production build remains **BUILD_BLOCKED**, not a successful
+processes'. At that checkpoint the full production build remained **BUILD_BLOCKED**, not a successful
 client-only proxy. No swap, provider, local
 MCP, dependency, global configuration or production runtime changes were made.
 Production remains `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`, healthy.
-The candidate is **NOT_DEPLOYED**, not deployable evidence until the complete
+The historical candidate was **NOT_DEPLOYED**, not deployable evidence until the complete
 build, remaining functional packages and exact runtime/rollback gates pass.
 Current authority/writer readback: own canonical execution branch matched local
 HEAD before commit; #10 remains docs-only at
@@ -287,6 +288,79 @@ Final production readback remains healthy App10df/Supabase; native
 `axtn_host.migration_ledger` remains278 entries. The session cgroup OOM-kill
 counter advanced32 to33; this corroborates pressure but is not process-specific
 kernel attribution.
+
+## Native capacity increment and resolved build gate
+
+Source-verified gap: native Cases/Work metrics record lifecycle and state-time,
+not explicit calendar allocations, commitments or Human consumption. D6
+authorizes a small dataset extension outside the Case core. The implementation
+uses existing `user_data_tables`, `user_data_rows`, `audit_events`, native
+principal checks, owner locking and the same `/api/cases/work`/`case_work` API.
+No scheduler, timesheet monitor, new history/Case store or credential authority.
+
+Additive migration `20261005180000_case_capacity.sql` introduces the bounded
+`axtn_case_capacity` RPC and protected `axtn_case_capacity` dataset:
+
+- Provider/pool/context/date-period allocation with explicit gross hours and
+  aggregate unavailable hours, net subtracted once. Overlapping allocations
+  for the same provider, even in another pool/context, are rejected rather than
+  counting a Human specialist twice.
+- Commitments against one allocation, limited transactionally to its net
+  availability and permitted context subtree.
+- Human-authenticated consumption against a commitment, explicit date/hours/
+  capability/purpose DELIVERY, CAPABILITY_UPLIFT or ASSURANCE. No automated
+  inference of worked hours from mode, calendar duration or activity.
+- Stable IDs/replay and immutable originals with append-only `supersedes`
+  correction chains; competing corrections and consumed/committed-hour
+  overruns fail without extra records/audit.
+- One owned-local query for personal/all-context and any Case subtree. Full
+  Actual/purpose totals are independent of record paging. Current hierarchy
+  and recorded historical booking/commitment scopes are explicit; reparenting
+  does not rewrite history and later corrections retain original scope.
+  Forecast/remaining estimate/EAC remain UNKNOWN, not invented.
+- Actual browser/service/LocalTable direct-write guards. Restrictive native RLS
+  prevents generic IAM table grants from exposing private calendar/capacity.
+  Later shared commitments require a selective projection, not a calendar grant.
+
+Visible paths: Case Dashboard has the personal/all-owned capacity view; any
+Case detail has the same current/recorded projection and allocation/commitment/
+consumption/correction inputs. Unknown responses retain the identical request/
+ID for reconciliation rather than creating another booking.
+
+Fresh isolated capacity v3: capacity SQL plus both earlier pilot SQL and all
+eight DMS SQL fixtures PASS. Capacity tests include three synthetic providers,
+all three purposes, net20-minus5, explicit1.5h consumption distinct from a
+synthetic20h state interval, parent/child dedup, historical correction after
+reparent, actual service-role bypass denial and actual authenticated browser
+denial despite a generic table grant.64 real parallel capacity sessions prove
+allocation/booking replay, net-limit commitment races and correction-fork
+races. The earlier96-session external/manual/processing proof also PASS on
+this same candidate schema. These are synthetic fixtures, not real colleague
+activity or acceptance of three unidentified real documents.
+
+Typecheck and targeted lint PASS;49 adapter tests in4 files PASS.
+Full repository lint PASS (235 warnings/zero errors); full unit regression
+PASS:591 files,9884 passing/40 skipped,9924 total. Docs/markdown/doc-command/
+infra gates PASS (PowerShell parser absent, explicitly skipped).
+Actual protected-credential scan includes pilot artifacts as well as2577
+source/evidence files, built browser assets and current native runtime logs:
+PASS. Capacity migration SHA256:
+`4e244dc3504cb62c1d0a2ca2fdf9348bb7310ad1a9a95b343bda9df82f14a840`.
+The measured host memory headroom increased from about4.1GiB to5.6GiB without
+killing/reconfiguring any service. Canonical `npm run build` then reached SSR
+and found an actual source defect: `.client.ts` helper filename was disallowed
+when imported by SSR-rendered Case panels. Renaming the otherwise SSR-safe
+session-on-demand helper to `caseApi.ts` preserves normal import protection.
+Unchanged canonical `npm run build` subsequently **PASS**, including client and
+SSR (SSR59.52s). No build guard was disabled, no Vite/dependency/provider/MCP/
+architecture change was made. Own build process had lower scheduling/raised
+OOM priority; production services were untouched.
+
+Remaining next native gap: existing `agent_skills` carries mutable body/name,
+not per-Case versioned Pattern Usage/R/E/I/outcome/assurance. Native exact
+`WorkReference` Git/artifact revisions and existing Improvement Work/
+promotion can be reused; no new global pattern registry or autonomous
+promotion is authorized. Capacity alone is not completion of Capacity/Learning.
 
 Remaining mandatory packages are not hidden: Issue10 responsibility/shared
 Case-specific access and sticky Attempt integration; explicit allocations/
