@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "environment-pattern-fixture-v1",
+  "artifactId": "exact-ticket-reference-handover",
+  "artifactVersion": "2",
+  "nativeDependencies": [
+    "axtn_case_environment(uuid,text,jsonb)",
+    "axtn_case_manual(uuid,text,jsonb)"
+  ],
+  "requiredBindings": ["ticketEnvironment", "ticketIntegration"],
+  "skill": {
+    "name": "Exact ticket-reference handover",
+    "description": "Use the native Case external-reference contract with a confirmed local counterpart binding.",
+    "body": "Preserve external_environment_id, external_ref_id and external_parent_ref_id exactly. Use the existing case_work external_handover and external_correlate operations. Never dereference opaque references or infer local ancestry from an external parent. Unknown counterpart binding or ambiguous candidates require clarification. Read-only handover is not a send receipt. Never infer Acceptance, provider authority, consumed hours or ROI from a reference.",
+    "tags": ["environment-pilot", "synthetic-transfer-fixture", "native-case-contract"]
+  }
+}

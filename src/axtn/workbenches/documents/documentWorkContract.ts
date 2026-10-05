@@ -7,6 +7,7 @@ import { DisabledDocumentAutomationPolicySubmission } from "./documentAutomation
 import { CaseEnvironmentRequest } from "../cases/caseEnvironmentContract";
 import { CaseProcessingRequest } from "../cases/caseProcessingContract";
 import { CaseCapacityRequest } from "../cases/caseCapacityContract";
+import { CasePatternRequest } from "../cases/casePatternContract";
 
 const opaque = z
   .string()
@@ -242,6 +243,7 @@ export const DocumentWorkRequest = z.discriminatedUnion("operation", [
 ]);
 export type DocumentWorkRequest = z.infer<typeof DocumentWorkRequest>;
 export const CaseRequest = z.union([
+  CasePatternRequest,
   CaseCapacityRequest,
   WorkRequest,
   DocumentWorkRequest,

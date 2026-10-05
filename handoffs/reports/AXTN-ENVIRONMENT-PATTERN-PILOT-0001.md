@@ -362,6 +362,81 @@ not per-Case versioned Pattern Usage/R/E/I/outcome/assurance. Native exact
 promotion can be reused; no new global pattern registry or autonomous
 promotion is authorized. Capacity alone is not completion of Capacity/Learning.
 
+## Native Pattern Usage and bounded learning increment
+
+Per-Case `pattern_usages` references existing Git/skill artifacts at exact
+revisions, not a new global registry. The source-verified missing per-Case
+version/classification/outcome contract is filled by additive
+`20261005190000_case_pattern_usage.sql`, existing Case rows and append-only
+`audit_events`, using the same owner lock and native Case endpoint.
+Every usage includes purpose, R0-R4/E0-E3/I0-I3, POSITIVE/NEGATIVE/UNKNOWN and
+minimized exact-version evidence. Evidence-based Human reclassification
+increments the usage version with before/after audit, preserving artifact and
+outcome. It does not confer Approval or Acceptance.
+
+Owned personal/Case-subtree Pattern view returns authoritative full sample,
+distinct-Case and positive/negative/unknown counts independently of paging.
+Ordinal classes are never multiplied, forecast remains EXPERIMENTAL_DISABLED,
+ROI remains unknown. Negative and unknown samples are not filtered out.
+Visible Case detail offers usage/reclassification/signal inputs; Dashboard
+reuses the same aggregate component.
+
+Signal plus bounded hypothesis can idempotently ensure the existing native
+`DEVELOPMENT_IMPROVEMENT_CANDIDATE` Work type with exact artifact/signal evidence.
+No new improvement engine, auto-promotion, executable intervention payload or
+policy/prompt/graph/deployment mutation. The existing Work contract denies
+STARTED before explicit promotion and denies automated PROMOTED; an explicit
+synthetic Human promotion in the isolated test enables the same native Work
+path without granting Acceptance. A fully measured authorized intervention/
+verification cycle remains open, not inferred from candidate creation.
+
+Fresh isolated pattern v2: Pattern SQL, Capacity, external/processing and all
+eight DMS SQL fixtures PASS.48 independent Pattern sessions prove same-key
+usage replay, optimistic one-winner Assurance and concurrent creation of the
+same native Improvement Work, with durable versions/audit and no promotion.
+The64 capacity and96 reference/manual/processing sessions also PASS on the
+same schema (208 independent concurrency sessions).
+Two synthetic positive usages plus one negative usage exercise distinct-Case
+and exact-artifact aggregation; this is metadata/contract proof, not a claimed
+business ROI or evidence that an arbitrary opaque artifact worked.
+
+Portable native skill fixture:
+`tests/fixtures/environment-pattern/portable-skill.json`, SHA256
+`648efd6d0a77b376f64a7999a19c4103f9c3fda771a91cbea516e8344743f006`.
+`environmentPatternTransfer.mjs` actually imports its unchanged body/tags into
+existing `agent_skills` for two synthetic native owners, checks installed RPC
+dependencies and distinct local integration/environment bindings, and performs
+exact minimized reference export/correlation. Missing confirmed binding,
+incompatible manifest schema and injected runtime-field negatives PASS.
+Same opaque ticket ref in different environments stays separate. This is
+fixture-based native transfer proof, not a new general importer, real colleague
+collaboration, external send or two independent autonomous live environments.
+The same native minimized export also excludes a synthetic sensitive marker
+and reduces UTF-8 payload bytes by more than90%; no model/token-cost comparison
+or semantic call is inferred from that deterministic measurement.
+
+`environmentPatternFaults.mjs` PASS on the same isolated schema: real native
+commit followed by a deliberately lost caller response, identical readback/
+replay, duplicates, old version/out-of-order, schema drift, spoofed binding,
+partial null update and stale replay denial. A foreign Ticket-only mock covers
+timeout-before-write and lost acknowledgment with one idempotent effect and
+readback. Unknown mock outcome is not a native success/Acceptance receipt.
+No product retry engine or real foreign-system effect was added.
+
+Latest source gates: typecheck/targeted lint and60 adapter tests in5 files PASS;
+full lint235 warnings/zero errors and full592-file unit suite PASS:
+9895 passing/40 skipped,9935 total. Unchanged canonical production build PASS,
+client and SSR (SSR1minute). The three additional transfer/fault fixtures are
+executed independently against the actual native isolated RPCs, not counted as
+unit assertions or production Acceptance.
+
+Next concrete native gap: #10 is still documentation-only. Existing IAM users/
+groups and owner-scoped Case rows exist, but responsibility assignment,
+controlled inheritance and Case-specific shared reads/mutations do not.
+The locked #10 fields/Case custody contract will be reused, not competing
+owner/team fields. Existing provider integrations remain unchanged; no new
+ChatGPT-plan adapter is part of this pilot.
+
 Remaining mandatory packages are not hidden: Issue10 responsibility/shared
 Case-specific access and sticky Attempt integration; explicit allocations/
 bookings/corrections; versioned Pattern Usage/assurance/reuse; controlled

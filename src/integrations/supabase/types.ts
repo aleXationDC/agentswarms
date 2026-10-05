@@ -8355,6 +8355,10 @@ export type Database = {
         Args: { p_user_id: string; p_operation: string; p_payload: Json };
         Returns: Json;
       };
+      axtn_case_pattern: {
+        Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
       axtn_case_manual: {
         Args: { p_user_id: string; p_operation: string; p_payload: Json };
         Returns: Json;

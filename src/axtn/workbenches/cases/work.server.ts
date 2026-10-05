@@ -6,6 +6,7 @@ import { DocumentWorkRequest } from "../documents/documentWorkContract";
 import { CaseEnvironmentRequest } from "./caseEnvironmentContract";
 import { CaseProcessingRequest } from "./caseProcessingContract";
 import { CaseCapacityRequest } from "./caseCapacityContract";
+import { CasePatternRequest } from "./casePatternContract";
 
 export type WorkPrincipal = {
   kind: "user_session" | "swarm_api_key" | "swarm";
@@ -17,6 +18,11 @@ export async function executeCaseWork(
   input: unknown,
   principal: WorkPrincipal = { kind: "swarm", id: userId },
 ) {
+  const patternRequest = CasePatternRequest.safeParse(input);
+  if (patternRequest.success) {
+    const { executeCasePattern } = await import("./casePattern.server");
+    return executeCasePattern(userId, patternRequest.data, principal);
+  }
   const capacityRequest = CaseCapacityRequest.safeParse(input);
   if (capacityRequest.success) {
     const { executeCaseCapacity } = await import("./caseCapacity.server");
