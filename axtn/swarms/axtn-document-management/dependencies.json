@@ -171,10 +171,10 @@
       "kind": "dataset-contract",
       "logicalName": "axtn_document_recognition_patterns",
       "source": "src/axtn/workbenches/documents/documentRecognition.ts",
-      "sourceSHA256": "698a38327c0d45842a3a356ba50b539bc19f515ea49f5d71388123ff0783f97c",
+      "sourceSHA256": "e10ae6caf2122304095e66057e74e9c22254b4df8766eec52be825bd96a5bdba",
       "recovered": true,
-      "implemented": "pure exact/fuzzy contains/not_contains AND/OR basis; exact invocation-scoped privacy token normalization without retaining namespace/sequence",
-      "tested": "15 deterministic fixtures, including all nine actual privacy token categories and cross-invocation compatibility with legacy conditions; sample compatibility pattern is not an active Registry seed",
+      "implemented": "pure bounded exact/fuzzy contains/not_contains AND/OR basis; exact invocation-scoped privacy token normalization without retaining namespace/sequence",
+      "tested": "36 deterministic fixtures including exact resource thresholds, aggregate budget/invalid-manifest refusal before first match, all nine actual privacy token categories and legacy compatibility; sample is not an active Registry seed",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Native persisted registry/editor and protected privacy binding pending."
@@ -233,6 +233,19 @@
       "deployed": false,
       "runtimeVerified": false,
       "gap": "No provider permission, effect receipt, closure or real independent Acceptance."
+    },
+    {
+      "name": "document-feedback",
+      "kind": "native-case-feedback",
+      "logicalName": "axtn_document_feedback",
+      "source": "supabase/migrations/20261004140000_document_feedback.sql",
+      "sourceSHA256": "a2f1db28bb71e338f7069b4dd3967a480592957b02c25170e2aafd785ec23a59",
+      "dependencies": ["case-profile", "proposal-current"],
+      "implemented": "same authenticated Case API/RPC and Human panel; immutable minimized feedback, server-derived authority/time, current Case/Attempt/Input/Source/Decision, confirmed correction chain, canonical content dedup and protected Dataset/Row/LocalTable storage",
+      "tested": "38 validator/service/readback plus 11 actual API handler fixtures; atomic migration-6 install on isolated five-migration baseline, actual service roles and 16-session event/16-session correction dedup with eight competing successor denials",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Human UI runtime/restart acceptance, Improvement Child/Candidate construction, privacy-gated evaluation/PR handoff, disabled policy and FilingReceipt remain unfinished. Feedback grants no privacy, effects, promotion or independent acceptance."
     },
     {
       "name": "registry-seed",

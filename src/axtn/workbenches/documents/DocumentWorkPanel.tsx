@@ -10,7 +10,9 @@ import {
   DocumentInputManifest,
   DocumentRevision,
   DocumentWorkTransition,
+  DocumentDecisionProposal,
 } from "./documentWorkContract";
+import { DocumentFeedbackRecord } from "./documentFeedbackContract";
 
 const StoredProposals = z.array(
   z.object({
@@ -18,6 +20,7 @@ const StoredProposals = z.array(
     revision: DocumentRevision,
     status: z.literal("PROPOSED"),
     current: z.boolean(),
+    document_decision: DocumentDecisionProposal,
   }),
 );
 
@@ -43,6 +46,12 @@ export function DocumentWorkPanel({
   const [targetName, setTargetName] = useState("");
   const [proposals, setProposals] = useState<z.infer<typeof StoredProposals>>([]);
   const [proposalId, setProposalId] = useState(() => crypto.randomUUID());
+  const [feedbackId, setFeedbackId] = useState(() => crypto.randomUUID());
+  const [feedbackEvents, setFeedbackEvents] = useState<z.infer<typeof DocumentFeedbackRecord>[]>(
+    [],
+  );
+  const [correctedFamily, setCorrectedFamily] = useState("");
+  const [correctedTargetId, setCorrectedTargetId] = useState("");
   const call = useCallback(async (input: unknown) => {
     const body = CaseRequest.parse(input);
     const { data } = await supabase.auth.getSession();
@@ -66,12 +75,14 @@ export function DocumentWorkPanel({
     void Promise.all([
       call({ operation: "list" }),
       call({ operation: "document_proposals", caseId }),
+      call({ operation: "document_feedback_events", caseId }),
     ])
-      .then(([value, decisions]) => {
+      .then(([value, decisions, feedback]) => {
         if (cancelled) return;
         const next = WorkState.parse(value);
         setState(next);
         setProposals(StoredProposals.parse(decisions));
+        setFeedbackEvents(z.array(DocumentFeedbackRecord).parse(feedback));
         const record = next.cases.find((row) => row.case_id === caseId);
         if (record) {
           setSubject(record.subject);
@@ -88,6 +99,75 @@ export function DocumentWorkPanel({
   }, [call, caseId]);
   const record = state?.cases.find((row) => row.case_id === caseId);
   const human = record?.processing_mode === "HUMAN";
+  async function recordFeedback(
+    proposal: z.infer<typeof StoredProposals>[number],
+    correction: boolean,
+  ) {
+    if (!record) throw new Error("Current Document Case required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const manifest = DocumentInputManifest.parse(record.document_input);
+      const verified = feedbackEvents.filter(
+        (feedback) =>
+          feedback.verified &&
+          feedback.document_feedback.decisionId === proposal.decision_id &&
+          feedback.document_feedback.decisionRevision === proposal.revision,
+      );
+      const tips = verified.filter(
+        (feedback) =>
+          !verified.some(
+            (next) => next.document_feedback.supersedesEventId === feedback.feedback_id,
+          ),
+      );
+      if (tips.length > 1)
+        throw new Error("Ambiguous confirmed feedback; no automatic predecessor selection.");
+      const previous = tips[0];
+      if (!correction && previous)
+        throw new Error("Assignment already confirmed; append an explicit correction instead.");
+      if (correction && !previous) throw new Error("A confirmed feedback predecessor is required.");
+      const before = previous?.document_feedback.after ?? {
+        family: proposal.document_decision.family,
+        targetId: proposal.document_decision.target?.id ?? null,
+      };
+      await call({
+        operation: "document_feedback",
+        feedback: {
+          schemaVersion: "document-feedback-v1",
+          eventId: feedbackId,
+          caseId,
+          decisionId: proposal.decision_id,
+          decisionRevision: proposal.revision,
+          attemptId: record.attempt_id,
+          inputHash: record.input_hash,
+          sourceRevision: manifest.sourceRevision,
+          eventType: correction ? "CORRECTION" : "VERIFIED_CORRECT",
+          before,
+          after: correction
+            ? { family: correctedFamily || null, targetId: correctedTargetId || null }
+            : before,
+          reasonCode: correction
+            ? before.targetId !== (correctedTargetId || null)
+              ? "WRONG_TARGET"
+              : "WRONG_FAMILY"
+            : "HUMAN_CONFIRMED",
+          supersedesEventId: previous?.feedback_id ?? null,
+          evidence: [{ kind: "evidence", repository: "aXtn/aXtn-agentswarms", id: evidencePath }],
+        },
+      });
+      setFeedbackEvents(
+        z
+          .array(DocumentFeedbackRecord)
+          .parse(await call({ operation: "document_feedback_events", caseId })),
+      );
+      setFeedbackId(crypto.randomUUID());
+      await onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Document feedback failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
   async function propose() {
     if (!record) return;
     setSaving(true);
@@ -294,9 +374,69 @@ export function DocumentWorkPanel({
               Record proposal (not Approval)
             </Button>
             {proposals.map((proposal) => (
-              <p key={proposal.decision_id}>
-                {proposal.status} · {proposal.current ? "CURRENT" : "NON_CURRENT"} ·{" "}
-                {proposal.decision_id} · <code>{proposal.revision}</code>
+              <div key={proposal.decision_id}>
+                <p>
+                  {proposal.status} · {proposal.current ? "CURRENT" : "NON_CURRENT"} ·{" "}
+                  {proposal.decision_id} · <code>{proposal.revision}</code>
+                </p>
+                {proposal.current && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={
+                        saving ||
+                        !human ||
+                        !evidencePath ||
+                        feedbackEvents.some(
+                          (feedback) =>
+                            feedback.verified &&
+                            feedback.document_feedback.decisionId === proposal.decision_id &&
+                            feedback.document_feedback.decisionRevision === proposal.revision,
+                        )
+                      }
+                      onClick={() => void recordFeedback(proposal, false)}
+                    >
+                      Confirm assignment feedback (not Acceptance)
+                    </Button>
+                    <Button
+                      disabled={
+                        saving ||
+                        !human ||
+                        !evidencePath ||
+                        !feedbackEvents.some(
+                          (feedback) =>
+                            feedback.verified &&
+                            feedback.document_feedback.decisionId === proposal.decision_id &&
+                            feedback.document_feedback.decisionRevision === proposal.revision,
+                        )
+                      }
+                      onClick={() => void recordFeedback(proposal, true)}
+                    >
+                      Record correction feedback (no re-filing)
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <strong>Minimized Human feedback</strong>
+            <p>
+              Only taxonomy/family and target identifiers, never original text or filenames.
+              Feedback does not approve work, activate a policy or change provider files.
+              Corrections append to an explicitly confirmed predecessor.
+            </p>
+            <Input
+              aria-label="Corrected feedback family identifier"
+              value={correctedFamily}
+              onChange={(event) => setCorrectedFamily(event.target.value)}
+            />
+            <Input
+              aria-label="Corrected feedback target identifier"
+              value={correctedTargetId}
+              onChange={(event) => setCorrectedTargetId(event.target.value)}
+            />
+            {feedbackEvents.map((feedback) => (
+              <p key={feedback.feedback_id}>
+                {feedback.created_at} · {feedback.document_feedback.eventType} ·{" "}
+                {feedback.verified ? "HUMAN_CONFIRMED" : "UNVERIFIED"} · {feedback.feedback_id}
               </p>
             ))}
             <strong>Durable transitions</strong>

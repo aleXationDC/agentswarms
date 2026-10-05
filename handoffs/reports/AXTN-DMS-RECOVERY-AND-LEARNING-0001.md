@@ -575,6 +575,93 @@ lint, docs/commands, infrastructure checks, 576 test files / 9,410 tests
 (40 skipped), and production build. Focused byte-exact inventory/recognition/
 transform tests pass 41/41; actual credential scan remains PASS (2,506 files).
 
+### Bounded deterministic recognition workload
+
+The recovered pure recognizer used unbounded whole-text Levenshtein work and
+re-normalized the complete text per condition. It now normalizes input once
+and preflights the complete active manifest before ordered matching. Explicit
+limits bound input/rules/conditions and aggregate exact/fuzzy work. Invalid
+operators/connectors/modes, blank/oversized conditions and nonfinite/out-of-range
+deviations fail explicitly instead of creating a false positive or implicit
+semantic fallback. Ordered AND/OR and valid existing rule behavior remain.
+Inactive rules remain inactive; no seeded policy or arbitrary quality threshold
+was introduced.
+
+Thirty-six recognition tests plus 23 transform tests pass (59/59), including
+the exact two-million-cell boundary and one-cell-over rejection, aggregate
+work refusal even after an earlier matching rule, independent exact scan cap,
+rule/condition/text thresholds and invalid active manifests. This is a bounded
+deterministic capability, not the full Learning/evaluation/acceptance package.
+
+### Append-only native minimized feedback
+
+The first real Learning prerequisite now extends the same authenticated
+`/api/cases/work`, strict Document Work adapter, native `axtn_case_document`,
+owner-bound logical Datasets and native audit. It is not a new Case/state
+service, scheduler, learner, acceptance authority or workflow. The existing
+Human Case panel uses those exact schemas and server guards for confirmation
+and explicitly predecessor-bound correction, including without an LLM or
+running Swarm orchestrator.
+
+`document-feedback-v1` binds Case/Attempt/Input, exact provider SourceRevision,
+current immutable DecisionID/Revision, minimized before/after family/target
+identifiers, reason code and canonical Evidence references. Server identity,
+timestamp, revision and verification authority are not client fields. Only a
+real authenticated current Human may confirm/correct; machines may submit only
+explicit UNVERIFIED observations. No original body/filename, free-text reason,
+arbitrary URL, client owner/verified/approved flag or prompt is accepted.
+This records minimized metadata for NO_AI Human work without enabling its
+semantic processing, Learner/Judge or independent Acceptance.
+
+Feedback is append-only. Same-ID conflicting content fails. Exact replay and
+content duplicates with different IDs/reordered/repeated Evidence return the
+canonical original row without another audit. Corrections require a verified
+predecessor, exact before/after continuity and one successor; UNVERIFIED cannot
+supersede confirmation. Current Decision/Attempt/Input/Source drift forbids
+new events; immutable readback remains possible. No Case/Decision/privacy/
+provider state is changed. Same owner advisory lock and native unique keys
+serialize events. The returned canonical feedback ID must be used by successors.
+
+Additive migration `20261004140000_document_feedback.sql` extends existing
+Dataset/Row/LocalTable bypass guards; delegates remain private. Actual direct
+service-role writes/deletes/metadata renaming and generic LocalTable mutation
+are denied, while the registered native RPC works. Postgres retains its
+existing administrative fixture authority, not new client permission.
+
+Actual isolated SQL/role fixtures pass, including foreign owner, forged
+machine confirmation, stale Attempt/Source/Decision, invented assignment,
+unminimized/extra fields, replay after drift, immutable correction chain and
+no lifecycle mutation. Actual independent service-role sessions prove
+16-way event dedup, 16-way correction dedup, eight competing successors denied,
+new-session findability and exactly two events/audits. Migration 6 also installs
+atomically on a separate isolated five-migration baseline with empty feedback
+storage; all existing Work/Approval/current-proposal/Registry suites and
+Work/Registry/LocalTable concurrency remain passing.
+
+Thirty-eight validator/service/readback tests and 11 actual API handler tests
+pass; combined Work/recognition/inventory gate passes 117/117. Changed-file lint
+and TypeScript pass. Early SQL syntax/variable-ambiguity and lint defects were
+fixed only in own unapplied source/isolated fixtures, not deployed migrations.
+No failed gate was reported as success. The full exact combined candidate
+gate passes typecheck, lint, docs/commands, infrastructure checks, 578 test files
+/ 9,480 tests (40 skipped) and production build. Actual credential scan passes
+across 2,513 source/evidence files, browser assets and runtime logs.
+Additional actual native machine-key fixtures confirm UNVERIFIED remains
+unverified, confirmed events are denied, and lost Case scope/expiry/revocation
+also deny immutable replay. Their protected privacy fields are explicitly
+privileged synthetic receipt fixtures, not proof of a real privacy setter.
+Production still has 278 migrations, one auth principal, no running Swarm and
+the same suspended Development run. App `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`
+and immutable image `sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a`
+remain healthy; Development App/Host/MCP heads and own Host/n8n worktrees are
+unchanged. No production migration, key, workflow or provider change occurred.
+
+This is not complete Learning: Improvement Candidate Child creation,
+privacy-gated side-effect-free evaluation/splits/metrics, immutable disabled
+policy, quality promotion, review/PR handoff, provider FilingReceipt and actual
+Human UI/restart acceptance remain unfinished. Same implementation Cases stay
+OPEN/NEW according to dependencies, with no false prerequisite completion.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

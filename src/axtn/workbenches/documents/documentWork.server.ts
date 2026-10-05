@@ -38,10 +38,13 @@ export async function executeDocumentWork(
           ? request.assignment
           : request.operation === "document_propose"
             ? request.proposal
-            : { caseId: request.caseId };
+            : request.operation === "document_feedback"
+              ? request.feedback
+              : { caseId: request.caseId };
   if (
     !human &&
     (request.operation === "document_assign" ||
+      (request.operation === "document_feedback" && request.feedback.eventType !== "UNVERIFIED") ||
       ("processingMode" in payload && payload.processingMode === "HUMAN") ||
       ("executionChannel" in payload && payload.executionChannel === "HUMAN") ||
       (request.operation === "document_transition" &&
@@ -54,7 +57,9 @@ export async function executeDocumentWork(
       ? { inputHash: documentInputHash(request.work.inputManifest) }
       : request.operation === "document_propose"
         ? { decisionRevision: documentInputHash(request.proposal) }
-        : {}),
+        : request.operation === "document_feedback"
+          ? { feedbackRevision: documentInputHash(request.feedback) }
+          : {}),
     actorRef: principal.id,
     _principal: principal,
   };

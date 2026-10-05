@@ -89,4 +89,10 @@ namespace nor sequence. Legacy tokens remain compatible; all nine actual
 emitted token categories and cross-invocation matching are exercised. This
 does not establish identity across documents, seed a rule, authorize semantic
 processing or activate Learning. The persisted rule/candidate/evaluation
-contracts and bounded evaluation budget remain unfinished.
+contracts remain unfinished. The existing recognizer now rejects manifests
+before matching if they exceed 100 rules, 32 conditions per active rule,
+1000 active conditions, one million input UTF-16 units, 4096 units per condition,
+two million aggregate fuzzy comparison cells or fifty million aggregate
+exact-scan characters. Modes/operators/connectors and finite deviations from
+0 through 100 are validated before an earlier rule can hide an invalid later
+rule. Disabled rules stay disabled; no threshold or promotion policy is invented.

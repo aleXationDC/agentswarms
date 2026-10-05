@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WorkReference, WorkRequest } from "../cases/workContract";
+import { DocumentFeedbackEvent } from "./documentFeedbackContract";
 
 const opaque = z
   .string()
@@ -181,6 +182,18 @@ export const DocumentWorkRequest = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("document_proposals"),
+      caseId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("document_feedback"),
+      feedback: DocumentFeedbackEvent,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("document_feedback_events"),
       caseId: z.string().uuid(),
     })
     .strict(),

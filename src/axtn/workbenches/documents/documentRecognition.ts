@@ -111,12 +111,11 @@ function levenshtein(left: string, right: string): number {
 }
 
 function matchCondition(
-  content: string,
+  normalized: string,
   condition: RecognitionCondition,
   pattern: DocumentRecognitionPattern,
 ) {
   const expected = normalizeRecognitionText(condition.value);
-  const normalized = normalizeRecognitionText(content);
   const mode = condition.match_mode ?? pattern.match_settings?.default_mode ?? "exact";
   if (mode === "exact") {
     const matched = normalized.includes(expected);
@@ -134,6 +133,64 @@ function matchCondition(
     matched: condition.operator === "not_contains" ? !fuzzyMatched : fuzzyMatched,
     percent: Math.max(0, Math.round(100 - deviation)),
   };
+}
+
+function boundedConditions(
+  normalized: string,
+  patterns: readonly DocumentRecognitionPattern[],
+): Array<{ pattern: DocumentRecognitionPattern; conditions: RecognitionCondition[] }> {
+  if (!Array.isArray(patterns) || patterns.length > 100)
+    throw new Error("DOCUMENT_RECOGNITION_PATTERN_LIMIT");
+  let conditionCount = 0;
+  let fuzzyCells = 0;
+  let exactCharacters = 0;
+  const prepared = [];
+  const deviation = (value: number | undefined) => {
+    if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 100))
+      throw new Error("DOCUMENT_RECOGNITION_INVALID_DEVIATION");
+  };
+  const mode = (value: RecognitionMatchMode | undefined) => {
+    if (value !== undefined && value !== "exact" && value !== "fuzzy")
+      throw new Error("DOCUMENT_RECOGNITION_INVALID_MODE");
+  };
+  for (const pattern of patterns) {
+    if (!pattern || typeof pattern.active !== "boolean")
+      throw new Error("DOCUMENT_RECOGNITION_INVALID_PATTERN");
+    if (!pattern.active) continue;
+    mode(pattern.match_mode);
+    mode(pattern.match_settings?.default_mode);
+    deviation(pattern.max_deviation_percent);
+    deviation(pattern.match_settings?.max_deviation_percent);
+    if (!Array.isArray(pattern.conditions))
+      throw new Error("DOCUMENT_RECOGNITION_INVALID_CONDITIONS");
+    const conditions = normalizedConditions(pattern);
+    if (conditions.length > 32) throw new Error("DOCUMENT_RECOGNITION_CONDITION_LIMIT");
+    conditionCount += conditions.length;
+    if (conditionCount > 1_000) throw new Error("DOCUMENT_RECOGNITION_CONDITION_LIMIT");
+    for (const condition of conditions) {
+      if (
+        !condition ||
+        typeof condition.value !== "string" ||
+        !condition.value.trim() ||
+        condition.value.length > 4_096 ||
+        (condition.operator !== "contains" && condition.operator !== "not_contains") ||
+        (condition.connector !== undefined &&
+          condition.connector !== "AND" &&
+          condition.connector !== "OR")
+      )
+        throw new Error("DOCUMENT_RECOGNITION_INVALID_CONDITION");
+      mode(condition.match_mode);
+      deviation(condition.max_deviation_percent);
+      const expected = normalizeRecognitionText(condition.value);
+      if ((condition.match_mode ?? pattern.match_settings?.default_mode ?? "exact") === "fuzzy")
+        fuzzyCells += normalized.length * expected.length;
+      else exactCharacters += normalized.length + expected.length;
+      if (fuzzyCells > 2_000_000 || exactCharacters > 50_000_000)
+        throw new Error("DOCUMENT_RECOGNITION_WORK_BUDGET");
+    }
+    prepared.push({ pattern, conditions });
+  }
+  return prepared;
 }
 
 function normalizedConditions(pattern: DocumentRecognitionPattern): RecognitionCondition[] {
@@ -168,12 +225,14 @@ export function recognizeProviderSafeDocument(
   providerSafeContent: string,
   patterns: readonly DocumentRecognitionPattern[] = DOCUMENT_RECOGNITION_PATTERNS,
 ): RecognitionResult {
-  for (const pattern of patterns) {
-    if (!pattern.active) continue;
-    const conditions = normalizedConditions(pattern);
+  if (typeof providerSafeContent !== "string" || providerSafeContent.length > 1_000_000)
+    throw new Error("DOCUMENT_RECOGNITION_TEXT_LIMIT");
+  const normalized = normalizeRecognitionText(providerSafeContent);
+  // Validate the whole active manifest before returning an early ordered match.
+  for (const { pattern, conditions } of boundedConditions(normalized, patterns)) {
     const results = conditions.map((condition) => ({
       value: condition.value,
-      ...matchCondition(providerSafeContent, condition, pattern),
+      ...matchCondition(normalized, condition, pattern),
     }));
     if (!results.length) continue;
     const matched = results.reduce(
