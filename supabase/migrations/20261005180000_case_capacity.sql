@@ -43,6 +43,7 @@ CREATE TRIGGER guard_axtn_case_capacity_audit BEFORE INSERT OR UPDATE OR DELETE 
 CREATE FUNCTION public.axtn_case_capacity(p_user_id uuid,p_operation text,p_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE principal jsonb:=p_payload->'_principal'; payload jsonb:=p_payload-'_principal';
+  actor_id uuid:=p_user_id;
   dataset uuid; cases uuid; kind text; identity text; target_case text; current_row jsonb;
   allocation jsonb; commitment jsonb; previous jsonb; result jsonb; prior jsonb;
   revision bigint; request_hash text; stamp timestamptz; lineage jsonb; selected jsonb;
@@ -61,10 +62,17 @@ BEGIN
           'capabilityRef','purpose','supersedes','expectedVersion','transitionKey']
         ELSE ARRAY['caseId','scope','offset','limit'] END))
   THEN RAISE EXCEPTION 'CASE_CAPACITY_PAYLOAD_REQUIRED'; END IF;
+  target_case:=COALESCE(payload->>'caseId',payload->>'contextCaseId');
+  IF target_case IS NOT NULL THEN
+    p_user_id:=axtn_case_custodian(actor_id,target_case,principal);
+  END IF;
+  IF actor_id<>p_user_id AND p_operation IN ('capacity_allocation','capacity_commitment')
+  THEN RAISE EXCEPTION 'CASE_ASSIGNMENT_CUSTODIAN_REQUIRED'; END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('axtn-case-work:'||p_user_id::text,0));
   stamp:=clock_timestamp();
   SELECT id INTO cases FROM user_data_tables WHERE user_id=p_user_id AND name='axtn_cases';
-  IF cases IS NULL THEN RAISE EXCEPTION 'CASE_CAPACITY_CASE_DATASET_REQUIRED'; END IF;
+  IF cases IS NULL AND (p_operation<>'capacity_view' OR payload ? 'caseId')
+  THEN RAISE EXCEPTION 'CASE_CAPACITY_CASE_DATASET_REQUIRED'; END IF;
   SELECT id INTO dataset FROM user_data_tables WHERE user_id=p_user_id AND name='axtn_case_capacity';
   IF p_operation='capacity_view' THEN
     IF COALESCE(payload->>'scope','') NOT IN ('CURRENT','RECORDED')
@@ -79,32 +87,46 @@ BEGIN
     THEN RAISE EXCEPTION 'CASE_CAPACITY_AUTHORIZED_CASE_REQUIRED'; END IF;
     page_offset:=(payload->>'offset')::integer; page_limit:=(payload->>'limit')::integer;
     WITH RECURSIVE subtree AS (
-      SELECT row->>'case_id' id,ARRAY[row->>'case_id'] path FROM user_data_rows WHERE table_id=cases
-        AND (NOT payload ? 'caseId' OR row->>'case_id'=payload->>'caseId')
+      SELECT r.row->>'case_id' id,ARRAY[r.row->>'case_id'] path FROM user_data_rows r
+        JOIN user_data_tables t ON t.id=r.table_id WHERE t.name='axtn_cases'
+        AND (principal->>'kind'='user_session' OR t.user_id=actor_id)
+        AND axtn_case_visible(actor_id,t.user_id,r.row)
+        AND (NOT payload ? 'caseId' OR r.table_id=cases AND r.row->>'case_id'=payload->>'caseId')
       UNION ALL
       SELECT r.row->>'case_id',s.path||(r.row->>'case_id') FROM subtree s JOIN user_data_rows r
         ON r.table_id=cases AND r.row->>'parent_case_id'=s.id
         WHERE payload ? 'caseId' AND NOT r.row->>'case_id'=ANY(s.path)
+          AND axtn_case_visible(actor_id,p_user_id,r.row)
     ) SELECT COALESCE(jsonb_agg(id),'[]') INTO scoped_ids FROM subtree;
-    SELECT COALESCE(jsonb_agg(r.row ORDER BY r.row->>'id'),'[]'),count(*) INTO selected,total
-      FROM user_data_rows r WHERE r.table_id=dataset
+    SELECT COALESCE(jsonb_agg(axtn_case_capacity_project(actor_id,t.user_id,r.row)
+      ORDER BY r.row->>'id'),'[]'),count(*) INTO selected,total
+      FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+      WHERE t.name='axtn_case_capacity'
+        AND (t.user_id=actor_id OR principal->>'kind'='user_session' AND r.row->>'kind'<>'allocation')
+        AND EXISTS(SELECT 1 FROM user_data_rows cr JOIN user_data_tables ct ON ct.id=cr.table_id
+          WHERE ct.name='axtn_cases' AND ct.user_id=t.user_id AND cr.row->>'case_id'=r.row->>'caseId'
+            AND axtn_case_visible(actor_id,t.user_id,cr.row))
         AND (NOT payload ? 'caseId' OR CASE WHEN payload->>'scope'='RECORDED'
           THEN r.row->'recordedScope' ? (payload->>'caseId')
           ELSE scoped_ids ? (r.row->>'caseId') END);
-    RETURN jsonb_build_object('scope','OWNED_LOCAL_CASES','hierarchyScope',payload->>'scope',
+    RETURN jsonb_build_object('scope',CASE WHEN actor_id=p_user_id AND payload ? 'caseId'
+      THEN 'OWNED_LOCAL_CASES' ELSE 'AUTHORIZED_CASES' END,'hierarchyScope',payload->>'scope',
+      'canAllocate',actor_id=p_user_id,'canCommit',actor_id=p_user_id,
       'total',total,'offset',page_offset,'limit',page_limit,'asOf',stamp,
       'records',(SELECT COALESCE(jsonb_agg(value ORDER BY value->>'id'),'[]') FROM
         (SELECT value FROM jsonb_array_elements(selected) ORDER BY value->>'id'
           OFFSET page_offset LIMIT page_limit) page),
       'actualHours',(SELECT COALESCE(sum((b->>'hours')::numeric),0)
         FROM jsonb_array_elements(selected) b WHERE b->>'kind'='consumption'
-          AND NOT EXISTS(SELECT 1 FROM user_data_rows n WHERE n.table_id=dataset
-            AND n.row->>'supersedes'=b->>'id')),
+          AND NOT EXISTS(SELECT 1 FROM user_data_rows n JOIN user_data_tables nt ON nt.id=n.table_id
+            WHERE nt.name='axtn_case_capacity' AND n.row->>'caseId'=b->>'caseId'
+              AND n.row->>'supersedes'=b->>'id')),
       'purposeHours',(SELECT COALESCE(jsonb_object_agg(purpose,hours),'{}') FROM (
         SELECT b->>'purpose' purpose,sum((b->>'hours')::numeric) hours
           FROM jsonb_array_elements(selected) b WHERE b->>'kind'='consumption'
-            AND NOT EXISTS(SELECT 1 FROM user_data_rows n WHERE n.table_id=dataset
-              AND n.row->>'supersedes'=b->>'id') GROUP BY 1) grouped),
+            AND NOT EXISTS(SELECT 1 FROM user_data_rows n JOIN user_data_tables nt ON nt.id=n.table_id
+              WHERE nt.name='axtn_case_capacity' AND n.row->>'caseId'=b->>'caseId'
+                AND n.row->>'supersedes'=b->>'id') GROUP BY 1) grouped),
       'capacityPeriods',(SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'allocationId',a->>'id','providerRef',a->>'providerRef','poolRef',a->>'poolRef',
         'startsOn',a->>'startsOn','endsOn',a->>'endsOn',
@@ -137,7 +159,7 @@ BEGIN
     THEN RAISE EXCEPTION 'CASE_CAPACITY_REPLAY_CONFLICT'; END IF;
     SELECT row INTO result FROM user_data_rows WHERE table_id=dataset AND row->>'id'=identity;
     IF result IS NULL THEN RAISE EXCEPTION 'CASE_CAPACITY_STALE_REPLAY'; END IF;
-    RETURN result;
+    RETURN axtn_case_capacity_project(actor_id,p_user_id,result);
   END IF;
   SELECT row INTO current_row FROM user_data_rows WHERE table_id=dataset AND row->>'id'=identity;
   revision:=COALESCE((current_row->>'version')::bigint,0);
@@ -192,6 +214,9 @@ BEGIN
         AND row->>'id'=payload->>'commitmentId' AND row->>'kind'='commitment';
       SELECT row INTO allocation FROM user_data_rows WHERE table_id=dataset
         AND row->>'id'=commitment->>'allocationId' AND row->>'kind'='allocation';
+      IF actor_id<>p_user_id AND NOT EXISTS(SELECT 1 FROM user_data_rows WHERE table_id=cases
+        AND row->>'case_id'=commitment->>'caseId' AND axtn_case_visible(actor_id,p_user_id,row))
+      THEN RAISE EXCEPTION 'CASE_CAPACITY_COMMITMENT_REQUIRED'; END IF;
       IF payload ? 'supersedes' THEN
         SELECT row INTO previous FROM user_data_rows WHERE table_id=dataset
           AND row->>'id'=payload->>'supersedes' AND row->>'kind'='consumption';
@@ -235,7 +260,7 @@ BEGIN
     VALUES(p_user_id,'axtn_case_capacity.'||upper(kind),'axtn_case_capacity',identity::uuid,stamp,
       jsonb_build_object('transitionKey',payload->>'transitionKey','requestHash',request_hash,
         'principal',principal,'caseId',target_case,'resultVersion',1,'supersedes',payload->'supersedes'));
-  RETURN result;
+  RETURN axtn_case_capacity_project(actor_id,p_user_id,result);
 END;
 $$;
 REVOKE ALL ON FUNCTION public.axtn_case_capacity(uuid,text,jsonb) FROM PUBLIC,anon,authenticated;

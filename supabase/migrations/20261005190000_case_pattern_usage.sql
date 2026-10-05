@@ -36,6 +36,7 @@ CREATE TRIGGER guard_axtn_case_pattern_audit BEFORE INSERT OR UPDATE OR DELETE O
 CREATE FUNCTION public.axtn_case_pattern(p_user_id uuid,p_operation text,p_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE principal jsonb:=p_payload->'_principal'; payload jsonb:=p_payload-'_principal';
+  actor_id uuid:=p_user_id;
   dataset uuid; row_id bigint; current_case jsonb; usage jsonb; usages jsonb; result jsonb; prior jsonb;
   request_hash text; revision bigint; stamp timestamptz; selected jsonb; scoped_ids jsonb; total bigint;
   candidate jsonb; candidate_identity text; page_offset integer; page_limit integer;
@@ -53,10 +54,14 @@ BEGIN
           'scenarioClass','transitionKey','expectedVersion']
         ELSE ARRAY['caseId','offset','limit'] END))
   THEN RAISE EXCEPTION 'CASE_PATTERN_PAYLOAD_REQUIRED'; END IF;
+  IF payload ? 'caseId' THEN
+    p_user_id:=axtn_case_custodian(actor_id,payload->>'caseId',principal);
+  END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('axtn-case-work:'||p_user_id::text,0));
   stamp:=clock_timestamp();
   SELECT id INTO dataset FROM user_data_tables WHERE user_id=p_user_id AND name='axtn_cases';
-  IF dataset IS NULL THEN RAISE EXCEPTION 'CASE_PATTERN_DATASET_REQUIRED'; END IF;
+  IF dataset IS NULL AND (p_operation<>'pattern_view' OR payload ? 'caseId')
+  THEN RAISE EXCEPTION 'CASE_PATTERN_DATASET_REQUIRED'; END IF;
   IF p_operation='pattern_view' THEN
     IF jsonb_typeof(payload->'offset') IS DISTINCT FROM 'number'
       OR COALESCE(payload->>'offset','') !~ '^[0-9]{1,9}$'
@@ -69,18 +74,25 @@ BEGIN
     THEN RAISE EXCEPTION 'CASE_PATTERN_AUTHORIZED_CASE_REQUIRED'; END IF;
     page_offset:=(payload->>'offset')::integer; page_limit:=(payload->>'limit')::integer;
     WITH RECURSIVE subtree AS (
-      SELECT row->>'case_id' id,ARRAY[row->>'case_id'] path FROM user_data_rows WHERE table_id=dataset
-        AND (NOT payload ? 'caseId' OR row->>'case_id'=payload->>'caseId')
+      SELECT r.row->>'case_id' id,ARRAY[r.row->>'case_id'] path FROM user_data_rows r
+        JOIN user_data_tables t ON t.id=r.table_id WHERE t.name='axtn_cases'
+        AND (principal->>'kind'='user_session' OR t.user_id=actor_id)
+        AND axtn_case_visible(actor_id,t.user_id,r.row)
+        AND (NOT payload ? 'caseId' OR r.table_id=dataset AND r.row->>'case_id'=payload->>'caseId')
       UNION ALL SELECT r.row->>'case_id',s.path||(r.row->>'case_id') FROM subtree s
         JOIN user_data_rows r ON r.table_id=dataset AND r.row->>'parent_case_id'=s.id
         WHERE payload ? 'caseId' AND NOT r.row->>'case_id'=ANY(s.path)
+          AND axtn_case_visible(actor_id,p_user_id,r.row)
     ) SELECT COALESCE(jsonb_agg(id),'[]') INTO scoped_ids FROM subtree;
     SELECT COALESCE(jsonb_agg(u||jsonb_build_object('caseId',r.row->>'case_id')
       ORDER BY r.row->>'case_id',u->>'usageId'),'[]'),count(*) INTO selected,total
-      FROM user_data_rows r CROSS JOIN LATERAL jsonb_array_elements(
+      FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+        CROSS JOIN LATERAL jsonb_array_elements(
         COALESCE(r.row->'pattern_usages','[]')) u
-      WHERE r.table_id=dataset AND scoped_ids ? (r.row->>'case_id');
-    RETURN jsonb_build_object('scope','OWNED_LOCAL_CASES','total',total,
+      WHERE t.name='axtn_cases' AND scoped_ids ? (r.row->>'case_id')
+        AND axtn_case_visible(actor_id,t.user_id,r.row);
+    RETURN jsonb_build_object('scope',CASE WHEN actor_id=p_user_id AND payload ? 'caseId'
+      THEN 'OWNED_LOCAL_CASES' ELSE 'AUTHORIZED_CASES' END,'total',total,
       'offset',page_offset,'limit',page_limit,'asOf',stamp,
       'usages',(SELECT COALESCE(jsonb_agg(value),'[]') FROM (
         SELECT value FROM jsonb_array_elements(selected) ORDER BY value->>'caseId',value->>'usageId'
@@ -158,7 +170,7 @@ BEGIN
     candidate_identity:='pattern-improvement:'||encode(extensions.digest(
       jsonb_build_object('caseId',payload->>'caseId','usageId',payload->>'usageId',
         'artifact',usage->'artifact','hypothesis',payload->>'hypothesis')::text,'sha256'),'hex');
-    candidate:=axtn_case_work(p_user_id,'ensure',jsonb_build_object(
+    candidate:=axtn_case_work(actor_id,'ensure',jsonb_build_object(
       'sourceId',candidate_identity,'subject','Pattern improvement: '||(payload->>'hypothesis'),
       'caseType','DEVELOPMENT_IMPROVEMENT_CANDIDATE','parentCaseId',payload->>'caseId',
       'workContractRef',jsonb_build_object('kind','contract',

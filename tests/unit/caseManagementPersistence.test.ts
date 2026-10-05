@@ -143,9 +143,54 @@ describe("SupaCase acceptance persistence", () => {
         args: {
           p_user_id: string;
           p_operation: string;
-          p_payload: { row: Record<string, unknown>; expectedVersion: number };
+          p_payload: {
+            row: Record<string, unknown>;
+            expectedVersion: number;
+            caseId?: string;
+            offset?: number;
+            limit?: number;
+          };
         },
       ) => {
+        if (name === "axtn_case_assignment") {
+          const ownedIds = store.tables
+            .filter((table) => table.name === "axtn_cases" && table.user_id === args.p_user_id)
+            .map((table) => table.id);
+          const cases = store.rows.flatMap((entry) => {
+            if (!entry.row || typeof entry.row !== "object" || Array.isArray(entry.row)) return [];
+            const row = entry.row as Record<string, unknown>;
+            if (
+              (!ownedIds.includes(entry.table_id) &&
+                row.responsible_principal_id !== args.p_user_id) ||
+              (args.p_payload.caseId && row.case_id !== args.p_payload.caseId)
+            )
+              return [];
+            const owned = ownedIds.includes(entry.table_id);
+            return [
+              {
+                ...(owned
+                  ? row
+                  : Object.fromEntries(
+                      Object.entries(row).filter(
+                        ([key]) => !["private_payload", "parent_case_id"].includes(key),
+                      ),
+                    )),
+                case_access_mode: owned ? "CUSTODIAN" : "RESPONSIBLE",
+              },
+            ];
+          });
+          return {
+            data: {
+              scope: "AUTHORIZED_CASES",
+              total: cases.length,
+              cases: cases.slice(
+                args.p_payload.offset ?? 0,
+                (args.p_payload.offset ?? 0) + (args.p_payload.limit ?? 200),
+              ),
+            },
+            error: null,
+          };
+        }
         if (name !== "axtn_case_manual") return { data: { ok: true }, error: null };
         let table = store.tables.find(
           (item) => item.user_id === args.p_user_id && item.name === "axtn_cases",
@@ -333,6 +378,7 @@ describe("SupaCase acceptance persistence", () => {
       subject: "Follow up",
       priority: 2,
     });
+
     const common = {
       case_id: caseId,
       subject: "Follow up",
@@ -368,6 +414,36 @@ describe("SupaCase acceptance persistence", () => {
     });
     const cleared = await listCaseManagementData("owner-1");
     expect(cleared.cases[0].status_reason).toBeNull();
+  });
+
+  it("passes a shared partial update with actual actor and without masked parent/private fields", async () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const actor = "22222222-2222-4222-8222-222222222222";
+    const { caseId } = await createCaseForUser(owner, { subject: "Shared Case" });
+    const entry = store.rows.find(
+      (item) =>
+        item.row &&
+        typeof item.row === "object" &&
+        "case_id" in item.row &&
+        item.row.case_id === caseId,
+    )!;
+    entry.row = {
+      ...(entry.row as Record<string, unknown>),
+      responsible_principal_id: actor,
+      parent_case_id: "33333333-3333-4333-8333-333333333333",
+      private_payload: "SYNTHETIC_PRIVATE",
+    };
+    await updateCaseForUser(actor, {
+      case_id: caseId,
+      subject: "Manual collaboration",
+      case_version: 1,
+    });
+    const manual = rpc.mock.calls.filter(([name]) => name === "axtn_case_manual").at(-1)!;
+    expect(manual[1].p_user_id).toBe(actor);
+    expect(manual[1].p_payload._principal).toEqual({ kind: "user_session", id: actor });
+    expect(manual[1].p_payload.row).not.toHaveProperty("parent_case_id");
+    expect(manual[1].p_payload.row).not.toHaveProperty("private_payload");
+    expect(manual[1].p_payload.row).not.toHaveProperty("case_access_mode");
   });
 
   it("requires an owned Contact and follow-up before entering WAITING_CONTACT", async () => {

@@ -17,7 +17,9 @@ const CapacityRecord = z.object({
   supersedes: z.string().uuid().optional(),
 });
 const CapacityView = z.object({
-  scope: z.literal("OWNED_LOCAL_CASES"),
+  scope: z.enum(["OWNED_LOCAL_CASES", "AUTHORIZED_CASES"]),
+  canAllocate: z.boolean(),
+  canCommit: z.boolean(),
   total: z.number().int().nonnegative(),
   records: z.array(CapacityRecord),
   actualHours: z.number().nonnegative(),
@@ -75,6 +77,7 @@ export function CaseCapacityPanel({ caseId }: { caseId?: string }) {
       .then((result) => {
         if (!cancelled) {
           setView(result);
+          if (!result.canAllocate || !result.canCommit) setAction("consumption");
           setError(null);
         }
       })
@@ -181,8 +184,12 @@ export function CaseCapacityPanel({ caseId }: { caseId?: string }) {
                   }
                 }}
               >
-                <option value="allocation">Allocation / calendar availability</option>
-                <option value="commitment">Commitment within net allocation</option>
+                <option value="allocation" disabled={!view?.canAllocate}>
+                  Allocation / calendar availability
+                </option>
+                <option value="commitment" disabled={!view?.canCommit}>
+                  Commitment within net allocation
+                </option>
                 <option value="consumption">Explicit consumption / append-only correction</option>
               </select>
             </label>

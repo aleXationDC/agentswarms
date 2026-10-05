@@ -18,7 +18,7 @@ const CaseProjection = z.object({
   required_capability_ref: WorkReference.nullable().optional(),
 });
 const View = z.object({
-  scope: z.literal("OWNED_LOCAL_CASES"),
+  scope: z.enum(["OWNED_LOCAL_CASES", "AUTHORIZED_CASES"]),
   rootCase: CaseProjection.nullable(),
   cases: z.array(CaseProjection),
   total: z.number().int().nonnegative(),

@@ -9,6 +9,7 @@ import {
   type CaseDraft,
   type CaseStatus,
 } from "./caseContract";
+import { executeCaseAssignment } from "./caseAssignment.server";
 
 type JsonObject = { [key: string]: Json | undefined };
 
@@ -108,10 +109,40 @@ async function insertRow(userId: string, key: keyof typeof DATASETS, row: Record
   if (error) throw new Error(error.message);
 }
 
+async function accessibleCases(userId: string, caseId?: string): Promise<JsonObject[]> {
+  const rows: JsonObject[] = [];
+  for (let offset = 0; ; offset += 200) {
+    const result = await executeCaseAssignment(
+      userId,
+      {
+        operation: "case_access",
+        ...(caseId ? { caseId } : {}),
+        sharedOnly: false,
+        offset,
+        limit: 200,
+      },
+      { kind: "user_session", id: userId },
+    );
+    if (
+      !result ||
+      !isJsonObject(result) ||
+      !Array.isArray(result.cases) ||
+      typeof result.total !== "number"
+    )
+      throw new Error("CASE_ASSIGNMENT_VIEW_INVALID");
+    for (const row of result.cases) {
+      if (!isJsonObject(row)) throw new Error("CASE_ASSIGNMENT_VIEW_INVALID");
+      rows.push(row);
+    }
+    if (offset + result.cases.length >= result.total) return rows;
+    if (result.cases.length === 0) throw new Error("CASE_ASSIGNMENT_VIEW_INCOMPLETE");
+  }
+}
+
 async function validateCaseReferences(userId: string, draft: CaseDraft) {
   const checks = [
     draft.parent_case_id
-      ? rowsFor(userId, "cases").then((items) => {
+      ? accessibleCases(userId, draft.parent_case_id).then((items) => {
           if (!items.some((row) => row.case_id === draft.parent_case_id)) {
             throw new Error("Parent Case not found.");
           }
@@ -136,8 +167,9 @@ async function validateCaseReferences(userId: string, draft: CaseDraft) {
 }
 
 export async function listCaseManagementData(userId: string) {
+  await ensureDataset(userId, "cases");
   const [cases, accounts, contacts, relations] = await Promise.all([
-    rowsFor(userId, "cases"),
+    accessibleCases(userId),
     rowsFor(userId, "accounts"),
     rowsFor(userId, "contacts"),
     rowsFor(userId, "relations"),
@@ -292,16 +324,8 @@ export async function updateCaseForUser(
     access_token?: string;
   },
 ) {
-  const tableId = await ensureDataset(userId, "cases");
-  const { data: current, error } = await supabaseAdmin
-    .from("user_data_rows")
-    .select("id, row")
-    .eq("table_id", tableId)
-    .eq("row->>case_id", data.case_id)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!current || !isJsonObject(current.row)) throw new Error("Case not found.");
-  const before = current.row;
+  const [before] = await accessibleCases(userId, data.case_id);
+  if (!before) throw new Error("CASE_ACCESS_DENIED");
   const {
     case_id,
     actor,
@@ -329,12 +353,25 @@ export async function updateCaseForUser(
   } as Record<string, unknown>;
   if (actor === "automation" && before.priority === 0 && next.priority !== 0)
     throw new Error("Automation cannot overwrite Human Critical priority 0.");
-  validateCaseDraft(next as CaseDraft, actor ?? "human");
-  await validateCaseReferences(userId, next as CaseDraft);
+  const shared = before.case_access_mode === "RESPONSIBLE";
+  if (!shared) {
+    validateCaseDraft(next as CaseDraft, actor ?? "human");
+    await validateCaseReferences(userId, next as CaseDraft);
+  }
+  const persistedRow = shared
+    ? {
+        ...patch,
+        case_id,
+        status: next.status,
+        status_reason: next.status_reason,
+        priority: next.priority,
+        closed_at: next.closed_at,
+      }
+    : Object.fromEntries(Object.entries(next).filter(([key]) => key !== "case_access_mode"));
   const persisted = await persistManualCase(
     userId,
     "update",
-    next as Json,
+    persistedRow as Json,
     case_version ?? 0,
     transitionKey ?? crypto.randomUUID(),
   );

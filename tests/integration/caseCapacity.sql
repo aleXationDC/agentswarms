@@ -27,7 +27,7 @@ BEGIN
       'scope','CURRENT','offset',0,'limit',50,'_principal',human));
     RAISE EXCEPTION 'Foreign capacity scope exposed';
   EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM<>'CASE_CAPACITY_AUTHORIZED_CASE_REQUIRED' THEN RAISE; END IF;
+    IF SQLERRM<>'CASE_ACCESS_DENIED' THEN RAISE; END IF;
   END;
   request:=jsonb_build_object('allocationId',allocation,'contextCaseId',root->>'case_id',
     'providerRef','synthetic:human-specialist','poolRef','synthetic:review-pool',

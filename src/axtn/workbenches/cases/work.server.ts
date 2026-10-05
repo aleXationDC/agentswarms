@@ -7,6 +7,7 @@ import { CaseEnvironmentRequest } from "./caseEnvironmentContract";
 import { CaseProcessingRequest } from "./caseProcessingContract";
 import { CaseCapacityRequest } from "./caseCapacityContract";
 import { CasePatternRequest } from "./casePatternContract";
+import { CaseAssignmentRequest } from "./caseAssignmentContract";
 
 export type WorkPrincipal = {
   kind: "user_session" | "swarm_api_key" | "swarm";
@@ -18,6 +19,11 @@ export async function executeCaseWork(
   input: unknown,
   principal: WorkPrincipal = { kind: "swarm", id: userId },
 ) {
+  const assignmentRequest = CaseAssignmentRequest.safeParse(input);
+  if (assignmentRequest.success) {
+    const { executeCaseAssignment } = await import("./caseAssignment.server");
+    return executeCaseAssignment(userId, assignmentRequest.data, principal);
+  }
   const patternRequest = CasePatternRequest.safeParse(input);
   if (patternRequest.success) {
     const { executeCasePattern } = await import("./casePattern.server");

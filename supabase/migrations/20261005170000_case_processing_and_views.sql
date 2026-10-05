@@ -2,7 +2,8 @@
 CREATE FUNCTION public.assert_axtn_case_principal(owner_id uuid,principal jsonb)
 RETURNS void LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 BEGIN
-  IF NOT EXISTS(SELECT 1 FROM auth.users WHERE id=owner_id)
+  IF NOT EXISTS(SELECT 1 FROM auth.users WHERE id=owner_id AND deleted_at IS NULL
+    AND (banned_until IS NULL OR banned_until<=now()))
     OR jsonb_typeof(principal) IS DISTINCT FROM 'object'
     OR COALESCE(principal->>'kind','') NOT IN ('user_session','swarm','swarm_api_key')
     OR COALESCE(principal->>'id','')=''
@@ -87,6 +88,8 @@ CREATE TRIGGER guard_z_axtn_case_processing_audit BEFORE INSERT OR UPDATE OR DEL
 CREATE FUNCTION public.axtn_case_manual(p_user_id uuid,p_operation text,p_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE principal jsonb:=p_payload->'_principal'; payload jsonb:=p_payload-'_principal';
+  actor_id uuid:=p_user_id;
+  trusted_context text:=COALESCE(current_setting('axtn.case_principal',true),'');
   proposed jsonb:=payload->'row'; before_row jsonb; after_row jsonb; dataset uuid; row_id bigint;
   revision bigint; prior jsonb; prior_case_id uuid; request_hash text; stamp timestamptz:=clock_timestamp();
   allowed text[]:=ARRAY['subject','case_type','status','status_reason','priority','due_date',
@@ -94,8 +97,14 @@ DECLARE principal jsonb:=p_payload->'_principal'; payload jsonb:=p_payload-'_pri
     'external_environment_id','external_ref_id','external_parent_ref_id','updated_at','closed_at'];
 BEGIN
   PERFORM assert_axtn_case_principal(p_user_id,principal);
+  PERFORM set_config('axtn.case_principal',principal::text,true);
   IF principal->>'kind'<>'user_session'
   THEN RAISE EXCEPTION 'CASE_MANUAL_AUTHENTICATED_HUMAN_REQUIRED'; END IF;
+  IF p_operation='update' THEN
+    p_user_id:=axtn_case_custodian(actor_id,proposed->>'case_id',principal);
+  ELSIF proposed->>'parent_case_id' IS NOT NULL THEN
+    p_user_id:=axtn_case_custodian(actor_id,proposed->>'parent_case_id',principal);
+  END IF;
   IF COALESCE(p_operation,'') NOT IN ('create','update') OR jsonb_typeof(payload) IS DISTINCT FROM 'object'
     OR EXISTS(SELECT 1 FROM jsonb_object_keys(payload) k
       WHERE k NOT IN ('row','expectedVersion','transitionKey'))
@@ -135,7 +144,8 @@ BEGIN
     THEN RAISE EXCEPTION 'CASE_MANUAL_REPLAY_CONFLICT'; END IF;
     IF revision IS DISTINCT FROM (prior->>'resultVersion')::bigint
     THEN RAISE EXCEPTION 'CASE_MANUAL_STALE_REPLAY'; END IF;
-    RETURN before_row;
+    PERFORM set_config('axtn.case_principal',trusted_context,true);
+    RETURN axtn_case_project(actor_id,p_user_id,before_row);
   END IF;
   IF p_operation='create' AND before_row IS NOT NULL
     OR p_operation='update' AND before_row IS NULL
@@ -145,14 +155,23 @@ BEGIN
   IF p_operation='update' THEN
     IF before_row->>'source_kind' IN ('development_work','document_work')
     THEN RAISE EXCEPTION 'CASE_EXISTING_WORK_CONTRACT_REQUIRED'; END IF;
-    IF EXISTS(SELECT 1 FROM jsonb_object_keys(before_row||proposed) k
+    IF actor_id<>p_user_id AND EXISTS(SELECT 1 FROM unnest(ARRAY[
+      'parent_case_id','account_id','primary_contact_id','related_entity']) k
+      WHERE proposed ? k AND before_row->k IS DISTINCT FROM proposed->k)
+    THEN RAISE EXCEPTION 'CASE_ASSIGNMENT_CUSTODIAN_REQUIRED'; END IF;
+    IF EXISTS(SELECT 1 FROM jsonb_object_keys(proposed) k
       WHERE NOT k=ANY(allowed) AND before_row->k IS DISTINCT FROM proposed->k)
     THEN RAISE EXCEPTION 'CASE_MANUAL_PROTECTED_FIELD_DENIED'; END IF;
+    proposed:=before_row||proposed;
   ELSIF EXISTS(SELECT 1 FROM jsonb_object_keys(proposed) k
     WHERE NOT k=ANY(allowed||ARRAY['case_id','source_kind','source_id','created_at']))
     OR proposed->>'source_kind' IS DISTINCT FROM 'manual'
-    OR proposed->>'source_id' IS DISTINCT FROM p_user_id::text
+    OR proposed->>'source_id' IS DISTINCT FROM actor_id::text
   THEN RAISE EXCEPTION 'CASE_MANUAL_PROTECTED_FIELD_DENIED'; END IF;
+  IF p_operation='create' AND actor_id<>p_user_id AND (
+    proposed->>'account_id' IS NOT NULL OR proposed->>'primary_contact_id' IS NOT NULL
+      OR proposed->>'related_entity' IS NOT NULL)
+  THEN RAISE EXCEPTION 'CASE_ASSIGNMENT_CUSTODIAN_REQUIRED'; END IF;
   IF jsonb_typeof(proposed->'subject') IS DISTINCT FROM 'string'
     OR length(btrim(proposed->>'subject')) NOT BETWEEN 1 AND 500
     OR COALESCE(proposed->>'status','') NOT IN ('NEW','OPEN','WAITING_CONTACT','CLOSED')
@@ -189,8 +208,8 @@ BEGIN
     FROM jsonb_object_keys(after_row) k WHERE NOT EXISTS(
       SELECT 1 FROM jsonb_array_elements(t.columns) c WHERE c->>'name'=k)) WHERE t.id=dataset;
   IF p_operation='create' THEN
-    INSERT INTO user_data_rows(table_id,row) VALUES(dataset,after_row);
-  ELSE UPDATE user_data_rows SET row=after_row WHERE id=row_id;
+    INSERT INTO user_data_rows(table_id,row) VALUES(dataset,after_row) RETURNING row INTO after_row;
+  ELSE UPDATE user_data_rows SET row=after_row WHERE id=row_id RETURNING row INTO after_row;
   END IF;
   INSERT INTO audit_events(user_id,action,resource_type,resource_id,created_at,detail)
     VALUES(p_user_id,'axtn_case_processing.MANUAL_'||upper(p_operation),'axtn_case',
@@ -201,7 +220,8 @@ BEGIN
         'processingStage',after_row->'processing_stage',
         'reasonCode','MANUAL_'||upper(p_operation),
         'occurredAt',stamp,'recordedAt',stamp));
-  RETURN after_row;
+  PERFORM set_config('axtn.case_principal',trusted_context,true);
+  RETURN axtn_case_project(actor_id,p_user_id,after_row);
 END;
 $$;
 REVOKE ALL ON FUNCTION public.axtn_case_manual(uuid,text,jsonb) FROM PUBLIC,anon,authenticated;
@@ -210,11 +230,15 @@ GRANT EXECUTE ON FUNCTION public.axtn_case_manual(uuid,text,jsonb) TO service_ro
 CREATE FUNCTION public.axtn_case_processing(p_user_id uuid,p_operation text,p_payload jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 DECLARE principal jsonb:=p_payload->'_principal'; payload jsonb:=p_payload-'_principal';
+  actor_id uuid:=p_user_id;
   dataset uuid; current_case jsonb; result jsonb; row_id bigint; patch jsonb:=payload->'patch';
   revision bigint; prior jsonb; request_hash text; stamp timestamptz:=clock_timestamp();
   selected jsonb; total bigint; states jsonb; durations jsonb; page_offset integer; page_limit integer;
 BEGIN
   PERFORM assert_axtn_case_principal(p_user_id,principal);
+  IF payload ? 'caseId' THEN
+    p_user_id:=axtn_case_custodian(actor_id,payload->>'caseId',principal);
+  END IF;
   IF COALESCE(p_operation,'') NOT IN ('processing','subtree')
     OR jsonb_typeof(payload) IS DISTINCT FROM 'object'
     OR EXISTS(SELECT 1 FROM jsonb_object_keys(payload) k WHERE NOT k=ANY(
@@ -224,7 +248,8 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended('axtn-case-work:'||p_user_id::text,0));
   stamp:=clock_timestamp();
   SELECT id INTO dataset FROM user_data_tables WHERE user_id=p_user_id AND name='axtn_cases';
-  IF dataset IS NULL THEN RAISE EXCEPTION 'CASE_PROCESSING_DATASET_REQUIRED'; END IF;
+  IF dataset IS NULL AND (p_operation<>'subtree' OR payload ? 'caseId')
+  THEN RAISE EXCEPTION 'CASE_PROCESSING_DATASET_REQUIRED'; END IF;
   IF p_operation='subtree' THEN
     IF jsonb_typeof(payload->'offset') IS DISTINCT FROM 'number'
       OR COALESCE(payload->>'offset','') !~ '^[0-9]{1,9}$'
@@ -237,13 +262,18 @@ BEGIN
       AND row->>'case_id'=payload->>'caseId')
     THEN RAISE EXCEPTION 'CASE_VIEW_AUTHORIZED_ROOT_REQUIRED'; END IF;
     WITH RECURSIVE scoped AS (
-      SELECT row,ARRAY[row->>'case_id'] path FROM user_data_rows WHERE table_id=dataset
-        AND (NOT payload ? 'caseId' OR row->>'case_id'=payload->>'caseId')
+      SELECT r.row,t.user_id custodian,ARRAY[r.row->>'case_id'] path FROM user_data_rows r
+        JOIN user_data_tables t ON t.id=r.table_id WHERE t.name='axtn_cases'
+        AND (principal->>'kind'='user_session' OR t.user_id=actor_id)
+        AND axtn_case_visible(actor_id,t.user_id,r.row)
+        AND (NOT payload ? 'caseId' OR r.table_id=dataset AND r.row->>'case_id'=payload->>'caseId')
       UNION ALL
-      SELECT r.row,s.path||(r.row->>'case_id') FROM scoped s JOIN user_data_rows r
+      SELECT r.row,s.custodian,s.path||(r.row->>'case_id') FROM scoped s JOIN user_data_rows r
         ON r.table_id=dataset AND r.row->>'parent_case_id'=s.row->>'case_id'
         WHERE payload ? 'caseId' AND NOT r.row->>'case_id'=ANY(s.path)
-    ) SELECT COALESCE(jsonb_agg(row ORDER BY row->>'case_id'),'[]'),count(*) INTO selected,total FROM scoped;
+          AND axtn_case_visible(actor_id,p_user_id,r.row)
+    ) SELECT COALESCE(jsonb_agg(axtn_case_project(actor_id,custodian,row)
+      ORDER BY row->>'case_id'),'[]'),count(*) INTO selected,total FROM scoped;
     SELECT COALESCE(jsonb_object_agg(stage,cnt),'{}') INTO states FROM (
       SELECT CASE WHEN r->>'status'='CLOSED' THEN 'DONE'
         ELSE COALESCE(r->>'processing_stage','UNKNOWN') END stage,count(*) cnt
@@ -256,14 +286,17 @@ BEGIN
             WHEN detail->>'toStatus'='CLOSED' THEN 'DONE'
             ELSE COALESCE(detail->>'processingStage','UNKNOWN') END stage,created_at,
           lead(created_at) OVER(PARTITION BY resource_id ORDER BY created_at,id) next_at
-        FROM audit_events WHERE user_id=p_user_id
+        FROM audit_events a WHERE EXISTS(SELECT 1 FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+          WHERE t.name='axtn_cases' AND t.user_id=a.user_id AND r.row->>'case_id'=a.resource_id::text
+            AND axtn_case_visible(actor_id,t.user_id,r.row))
           AND action IN ('axtn_case_processing.PROCESSING_CHANGED',
             'axtn_case_processing.MANUAL_CREATE','axtn_case_processing.MANUAL_UPDATE')
           AND resource_id::text IN (SELECT value->>'case_id' FROM jsonb_array_elements(selected))
       ) intervals GROUP BY stage
     ) grouped;
-    RETURN jsonb_build_object('scope','OWNED_LOCAL_CASES','root',payload->'caseId','total',total,
-      'rootCase',(SELECT row FROM user_data_rows WHERE table_id=dataset
+    RETURN jsonb_build_object('scope',CASE WHEN actor_id=p_user_id AND payload ? 'caseId'
+        THEN 'OWNED_LOCAL_CASES' ELSE 'AUTHORIZED_CASES' END,'root',payload->'caseId','total',total,
+      'rootCase',(SELECT axtn_case_project(actor_id,p_user_id,row) FROM user_data_rows WHERE table_id=dataset
         AND row->>'case_id'=payload->>'caseId'),
       'offset',page_offset,'limit',page_limit,'complete',page_offset=0 AND total<=page_limit,
       'cases',(SELECT COALESCE(jsonb_agg(row ORDER BY row->>'case_id'),'[]')
@@ -331,7 +364,7 @@ BEGIN
     THEN RAISE EXCEPTION 'CASE_PROCESSING_REPLAY_CONFLICT'; END IF;
     IF revision IS DISTINCT FROM (prior->>'resultVersion')::bigint
     THEN RAISE EXCEPTION 'CASE_PROCESSING_STALE_REPLAY'; END IF;
-    RETURN current_case;
+    RETURN axtn_case_project(actor_id,p_user_id,current_case);
   END IF;
   IF revision IS DISTINCT FROM (payload->>'expectedVersion')::bigint
   THEN RAISE EXCEPTION 'CASE_PROCESSING_VERSION_CONFLICT'; END IF;
@@ -356,7 +389,7 @@ BEGIN
         'waitingReason',result->'waiting_reason','reasonCode',payload->'reasonCode',
         'capability',result->'required_capability_ref','provider',result->'capability_provider_ref',
         'occurredAt',COALESCE((payload->>'occurredAt')::timestamptz,stamp),'recordedAt',stamp));
-  RETURN result;
+  RETURN axtn_case_project(actor_id,p_user_id,result);
 END;
 $$;
 REVOKE ALL ON FUNCTION public.axtn_case_processing(uuid,text,jsonb) FROM PUBLIC,anon,authenticated;

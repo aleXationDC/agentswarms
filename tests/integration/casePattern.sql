@@ -124,7 +124,7 @@ BEGIN
       'offset',0,'limit',50,'_principal',jsonb_build_object('kind','user_session','id',other)));
     RAISE EXCEPTION 'Foreign Pattern scope exposed';
   EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM<>'CASE_PATTERN_DATASET_REQUIRED' THEN RAISE; END IF;
+    IF SQLERRM<>'CASE_ACCESS_DENIED' THEN RAISE; END IF;
   END;
   INSERT INTO pattern_fixture VALUES(owner,(root->>'case_id')::uuid,dataset,usage_id);
   RAISE NOTICE 'PASS: exact-version Pattern Usage, two synthetic reuses/negative result, evidence classes/assurance history, paging/full totals, native idempotent Improvement Work without promotion/Acceptance';

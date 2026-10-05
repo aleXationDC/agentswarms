@@ -15,6 +15,7 @@ import { CaseEnvironmentPanel } from "@/axtn/workbenches/cases/CaseEnvironmentPa
 import { CaseProcessingPanel } from "@/axtn/workbenches/cases/CaseProcessingPanel";
 import { CaseCapacityPanel } from "@/axtn/workbenches/cases/CaseCapacityPanel";
 import { CasePatternPanel } from "@/axtn/workbenches/cases/CasePatternPanel";
+import { CaseAssignmentPanel } from "@/axtn/workbenches/cases/CaseAssignmentPanel";
 import { DocumentWorkPanel } from "@/axtn/workbenches/documents/DocumentWorkPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -264,6 +265,7 @@ function CaseDetailPage() {
             </p>
           </div>
           <CaseEnvironmentPanel key={caseId} caseId={caseId} onChanged={load} />
+          <CaseAssignmentPanel key={`assignment-${caseId}`} caseId={caseId} onChanged={load} />
           <CaseProcessingPanel key={`processing-${caseId}`} caseId={caseId} onChanged={load} />
           <CaseCapacityPanel key={`capacity-${caseId}`} caseId={caseId} />
           <CasePatternPanel key={`patterns-${caseId}`} caseId={caseId} />

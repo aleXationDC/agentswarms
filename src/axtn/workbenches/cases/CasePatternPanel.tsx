@@ -26,7 +26,7 @@ const Usage = z.object({
   improvementCaseId: z.string().uuid().optional(),
 });
 const PatternView = z.object({
-  scope: z.literal("OWNED_LOCAL_CASES"),
+  scope: z.enum(["OWNED_LOCAL_CASES", "AUTHORIZED_CASES"]),
   total: z.number().int().nonnegative(),
   usages: z.array(Usage),
   artifacts: z.array(

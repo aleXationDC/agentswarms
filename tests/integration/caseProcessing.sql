@@ -115,7 +115,7 @@ BEGIN
       'caseId',foreign_parent->>'case_id','offset',0,'limit',50,'_principal',human));
     RAISE EXCEPTION 'Foreign root leaked';
   EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM<>'CASE_VIEW_AUTHORIZED_ROOT_REQUIRED' THEN RAISE; END IF;
+    IF SQLERRM<>'CASE_ACCESS_DENIED' THEN RAISE; END IF;
   END;
   child:=axtn_case_manual(owner,'update',jsonb_build_object(
     'row',child||'{"parent_case_id":null,"status":"CLOSED"}','expectedVersion',1,

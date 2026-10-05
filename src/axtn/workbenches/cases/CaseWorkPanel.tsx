@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { confirmAsk } from "@/components/ui/confirm-dialog";
 import { WorkRequest, WorkState, type WorkDependency } from "./workContract";
 import { workMetrics } from "./workMetrics";
+import { callCaseWork } from "./caseApi";
 
 export function CaseWorkPanel({
   caseId,
@@ -35,25 +36,7 @@ export function CaseWorkPanel({
   const [manualPull, setManualPull] = useState("");
 
   const call = useCallback(async (value: unknown) => {
-    const body = WorkRequest.parse(value);
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw new Error("Not signed in.");
-    const response = await fetch("/api/cases/work", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${data.session.access_token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const result: unknown = await response.json();
-    if (!response.ok) {
-      throw new Error(`Native Case contract rejected the operation (HTTP ${response.status}).`);
-    }
-    if (!result || typeof result !== "object" || !("result" in result)) {
-      throw new Error("Invalid native Case response.");
-    }
-    return result.result;
+    return callCaseWork(WorkRequest.parse(value));
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -201,15 +184,20 @@ export function CaseWorkPanel({
   }
   async function createChild() {
     const { data } = await supabase.auth.getUser();
-    if (!data.user || !record?.work_identity) {
-      setError("Owned Work contract required.");
+    const contract = record?.work_identity?.workContractRef ?? record?.work_contract_ref;
+    const scenarioClass = record?.work_identity?.scenarioClass ?? record?.scenario_class;
+    if (!data.user || !record || !contract || !scenarioClass) {
+      setError("Visible exact Work contract required.");
       return;
     }
     await mutate({
       operation: "ensure",
       work: {
         ...record.work_identity,
-        sourceId: `${record.work_identity.sourceId}:manual:${childKey}`,
+        sourceId: `${record.work_identity?.sourceId ?? `shared-child:${caseId}`}:manual:${childKey}`,
+        workContractRef: contract,
+        scenarioClass,
+        scenarioId: record.work_identity?.scenarioId ?? `shared-child:${caseId}:${childKey}`,
         subject: childSubject,
         caseType: childType,
         parentCaseId: caseId,
@@ -262,14 +250,17 @@ export function CaseWorkPanel({
             <p>
               Contract:{" "}
               <code>
-                {record.work_identity?.workContractRef.repository}:
-                {record.work_identity?.workContractRef.id}
+                {(record.work_identity?.workContractRef ?? record.work_contract_ref)?.repository}:
+                {(record.work_identity?.workContractRef ?? record.work_contract_ref)?.id}
               </code>
             </p>
             <p>
               Work completion is not independent Acceptance. Deterministic hard failures cannot be
               overridden here.
             </p>
+            {record.view_root_reason && (
+              <p>This is a Work-view root. Its authorized parent remains in the Case workbench.</p>
+            )}
             <WorkDetails
               key={`${record.case_id}:${record.updated_at}`}
               record={record}

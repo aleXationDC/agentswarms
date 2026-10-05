@@ -51,6 +51,16 @@ const state = () =>
   });
 
 describe("shared Case KPIs without producer or scenario exclusions", () => {
+  it("treats an explicitly scoped non-Work parent as a view boundary, not global corruption", () => {
+    const fixture = state();
+    fixture.cases = [fixture.cases[1]];
+    fixture.cases[0].view_root_reason = "PARENT_OUTSIDE_WORK_VIEW";
+    delete fixture.cases[0].work_identity;
+    fixture.cases[0].scenario_class = "synthetic_acceptance";
+    fixture.cases[0].initial_processing_mode = "DETERMINISTIC";
+    expect(workMetrics(fixture)).toMatchObject({ totalCases: 1, rootCount: 1, maxDepth: 0 });
+    expect(workMetrics(fixture).segments[0].scenarioClass).toBe("synthetic_acceptance");
+  });
   it("derives root hierarchy and measures every scenario/channel", () => {
     const metrics = workMetrics(state());
     expect(metrics.totalCases).toBe(2);

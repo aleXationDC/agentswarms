@@ -11,7 +11,10 @@ export function workMetrics(state: WorkState) {
       if (visited.has(current.parent_case_id)) throw new Error("Case hierarchy cycle");
       visited.add(current.parent_case_id);
       const parent = byId.get(current.parent_case_id);
-      if (!parent) throw new Error("Case hierarchy has a missing owned parent");
+      if (!parent) {
+        if (current.view_root_reason === "PARENT_OUTSIDE_WORK_VIEW") break;
+        throw new Error("Case hierarchy has a missing owned parent");
+      }
       current = parent;
       depth++;
     }
@@ -83,7 +86,11 @@ export function workMetrics(state: WorkState) {
   const primaryModes = new Map<string, string>();
   for (const row of state.cases) {
     const trail = events.filter((event) => event.caseId === row.case_id);
-    let mode = row.work_identity?.processingMode ?? row.processing_mode ?? "UNSPECIFIED";
+    let mode =
+      row.work_identity?.processingMode ??
+      row.initial_processing_mode ??
+      row.processing_mode ??
+      "UNSPECIFIED";
     let activeSince: number | null = null;
     const durations = new Map<string, number>();
     for (const event of trail) {

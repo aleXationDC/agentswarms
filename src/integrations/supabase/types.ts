@@ -8351,6 +8351,10 @@ export type Database = {
         Args: { p_user_id: string; p_operation: string; p_payload: Json };
         Returns: Json;
       };
+      axtn_case_assignment: {
+        Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
       axtn_case_capacity: {
         Args: { p_user_id: string; p_operation: string; p_payload: Json };
         Returns: Json;

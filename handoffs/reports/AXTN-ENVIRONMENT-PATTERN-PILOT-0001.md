@@ -446,3 +446,77 @@ restart. P01-P38 individual definitions remain unresolved, not invented.
 No real documents, remote colleague accounts, external semantic send, provider
 adapter, credential or local MCP configuration were changed.
 Independent integration Case stays open; builder does not self-accept.
+
+## Native responsibility and selective collaboration increment
+
+Candidate is the immutable commit containing this section, following
+`1805781076c2096b3f215d0bf5f0689d11ca88c8`; the same DraftPR14 and native
+Parent/Children bind its exact SHA after publication. This increment is
+**IMPLEMENTED / ISOLATED_TESTED / BUILD_PASSED / NOT_DEPLOYED**. It does not
+claim complete SC/E coverage, new execution binding or independent Acceptance.
+
+Concrete source gap: locked Issue10 supplied responsibility/route fields, but
+existing Case storage and IAM did not provide Case-specific assigned-user/
+group access, inheritance or selective shared projections. Additive migration
+`20261005200000_case_responsibility.sql` reuses native Case rows, IAM users/
+group memberships, advisory locks, protected Work delegates and `audit_events`.
+No new Case store, history table, Approval engine, provider adapter or dispatcher.
+Existing pilot migrations1700/1800/1900 are amended before their first PROD
+application; none of these four migrations has been applied to PROD.
+
+Custody and immutable Work identity remain stable. User/Group/System assignment
+uses server-authenticated actual actors, optimistic versions and same-key
+reconciliation. Open inherited descendants cascade atomically; closed/override
+nodes are barriers. Reparent cascades assignment without rebinding an existing
+Attempt. Native users, active status and current group membership are checked
+and locked, so revocation serializes against already-authorized mutations.
+Assignment does not grant credential access, original DMS-document access or
+independent Approval authority.
+
+The visible Case responsibility panel and existing list/detail, processing,
+Work, Capacity and Pattern panels use the same server/native access contract.
+Authorized shared readers receive bounded projections, not private ancestors,
+source identities, arbitrary private fields or personal calendars. A shared
+manual partial update preserves omitted private/current fields and records the
+actual actor. Shared Work exposes exact contract/scenario/initial-mode fields,
+not full immutable identity; a visible manual parent outside the Development
+Work view is explicitly marked `PARENT_OUTSIDE_WORK_VIEW`. Other missing parents
+remain errors. Shared Child creation and takeover use existing native Work.
+Custodian alone can allocate/commit capacity; an authorized Human can book
+against an explicitly visible commitment. Shared Pattern Improvement creates
+the same native inherited Work, without promotion or Acceptance.
+
+Fresh exact migration proof uses isolated database
+`dms_native_contract_environment_responsibility_v8_20261005`, cloned from the
+pre-pilot compatibility template. The actual additive backfill transaction
+preserves Case/row IDs, custody, lineage, Work identity and evidence and checks
+final inherited assignment audit/schema metadata. All13 SQL fixtures pass:
+assignment, processing, environment, capacity, pattern and the eight existing
+DMS/Approval/privacy/registry fixtures. All256 independent sessions pass:
+assignment48, pattern48, capacity64, environment/processing96. A real native
+group-member removal blocks behind the authorized membership lock, then fences
+later mutation without audit changes. The active assigned browser role still
+cannot read generic Case rows/table metadata/private calendar or call trusted
+RPC directly. The additional exact shared Work-view fixture confirms public
+contract/scenario/initial-mode projections and private identity exclusion.
+
+Current complete source gates pass: typecheck, lint, documentation/command/
+infra checks and593 unit files with9912 passing/40 skipped tests (9952 total).
+Unmodified canonical `npm run build` passes for client and SSR. The actual
+protected-credential scan passes for source/evidence, task artifacts, browser
+assets and existing runtime logs. Detailed local execution logs:
+`pilot-responsibility-native-full-v8.log`,
+`pilot-responsibility-work-view-v8.log`,
+`pilot-responsibility-canonical-build.log` and
+`pilot-responsibility-final-gates.log` in the existing session evidence folder.
+Repository SQL/concurrency/backfill tests are reproducible authoritative
+evidence; local logs are not independent Acceptance.
+
+Still open: actual sticky native execution binding and deterministic Group
+claim, shared Verify/Completion paths whose existing private-receipt prechecks
+remain owner-bound, controlled measured intervention/verification/remeasurement,
+full SC/E UI/headless coverage, fresh Host pins/rollback/canary, permitted
+PROD convergence and restart persistence, the real-document use-case gates and
+genuine independent reviewer. Route fields are metadata, not execution or
+PERSONAL_CONNECTION billing evidence. Existing Development/DMS, provider
+integrations and working local MCP configuration remain unchanged.

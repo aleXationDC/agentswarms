@@ -8,6 +8,7 @@ import { CaseEnvironmentRequest } from "../cases/caseEnvironmentContract";
 import { CaseProcessingRequest } from "../cases/caseProcessingContract";
 import { CaseCapacityRequest } from "../cases/caseCapacityContract";
 import { CasePatternRequest } from "../cases/casePatternContract";
+import { CaseAssignmentRequest } from "../cases/caseAssignmentContract";
 
 const opaque = z
   .string()
@@ -243,6 +244,7 @@ export const DocumentWorkRequest = z.discriminatedUnion("operation", [
 ]);
 export type DocumentWorkRequest = z.infer<typeof DocumentWorkRequest>;
 export const CaseRequest = z.union([
+  CaseAssignmentRequest,
   CasePatternRequest,
   CaseCapacityRequest,
   WorkRequest,

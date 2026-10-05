@@ -181,6 +181,12 @@ export const WorkCase = z
     attempt_id: z.string().optional(),
     source_kind: z.string().optional(),
     work_identity: WorkIdentity.optional(),
+    work_contract_ref: WorkReference.refine(
+      (reference) => reference.kind === "contract",
+    ).optional(),
+    scenario_class: z.enum(["real_work", "synthetic_acceptance", "regression"]).optional(),
+    initial_processing_mode: z.enum(["SEMANTIC", "DETERMINISTIC", "HUMAN"]).optional(),
+    view_root_reason: z.literal("PARENT_OUTSIDE_WORK_VIEW").optional(),
     candidate_sha: z
       .string()
       .regex(/^[a-f0-9]{40}$/)
