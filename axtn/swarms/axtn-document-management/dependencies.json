@@ -47,6 +47,19 @@
       "runtimeVerified": false
     },
     {
+      "name": "mail-materialization-ingress",
+      "kind": "n8n-ingress",
+      "sourceRepository": "aXtn/aXtn-n8n",
+      "sourceRevision": "a8de04ca4acb4418a4f18bf3e5f73d2d93db312c",
+      "source": "workflows/aXtn-Mail-Ingress-IMAP.json",
+      "dependencies": ["intake", "case-profile", "parent-registration-ack"],
+      "implemented": "existing native paired IMAP mail input, parsed messageId materialization and actual materialized-body normalization; UID-bound original attachment metadata and explicit missing/ambiguous binding rejection",
+      "tested": "144 native source tests with actual exported bodies, reordered UID binding, NO_AI and exact unchanged topology/provider/credential/settings/inactive state; byte-idempotent regeneration",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Raw RFC822 acquisition/hash, exact Mail SourceRevision/Request/Delivery emission, real materialization/provider readback and execution authority remain incomplete."
+    },
+    {
       "name": "drive-case-ingress",
       "kind": "n8n-ingress",
       "sourceRepository": "aXtn/aXtn-n8n",

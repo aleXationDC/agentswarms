@@ -1347,6 +1347,44 @@ Protected credential scan **2550 source/evidence files**, task artifacts,
 browser assets and runtime logs PASS. Production/Development/localMCP
 unchanged; no new DMS Acceptance.
 
+### Native IMAP materialization boundary increment
+
+The header candidate `5115d929` is canonical-pushed/mirrored11:57:14+02,
+bound to draftPR11/same3OPEN Cases. Continuing source revision/emitter
+inspection found three actual IMAP producer defects: mailbox-status JSON
+was passed to Mail Materialization, the manifest ignored native `messageId`,
+and normalization read trigger items instead of the materialized output.
+Actual regression fixtures reproduced all three before repair.
+
+Own n8n candidate `a8de04ca4acb4418a4f18bf3e5f73d2d93db312c` repairs only
+these existing native boundaries. Deployed pinned IMAP2.17.1 source confirms
+per-output `pairedItem.item`; the existing native workflow input uses that
+link, not a first-item guess. Normalization joins attachment metadata by
+exact discovered UID, handles reordering and rejects missing materialization,
+foreign/missing UID and ambiguous discovery. No attachment bytes are read.
+Manifest `messageId` support retains Gmail's prior identity precedence.
+
+Full native n8n suite **144/144 PASS**, no skips. Exact all-eight-export JSON
+comparison verifies only three intended parameter/code surfaces change;
+topology, provider operations, credentials, inactive/settings remain.
+Regeneration is byte-idempotent. Canonical n8n branch was pushed and immediately
+mirrored12:15:47+02; draftPR2 exact source/body/basis readback verified.
+Protected credential scan **2550 source/evidence files**, task artifacts,
+browser assets/runtime logs PASS. Fresh live readback retains healthy
+10df3a86/1f3e476e, ledger278 and the same suspended Development run; unchanged
+Development App/Host/MCP worktrees are clean. No PROD mutation.
+
+This is not complete Mail original-byte/hash/revision/request/delivery
+emission, Drive materialization/readback or semantic authorization.
+Source advancement still needs an explicit same-Case, atomically fenced
+revision adapter: current stored work identity includes its immutable input.
+No implicit overwrite or new-Case workaround was implemented. Shared native
+headless chat serves all seven semantic node kinds, but lacks the current
+protected source/privacy/provider-safe context loader. Registration readback
+requires an already suspended Parent and cannot authorize pre-model execution.
+No new eligibility, model defaults, rights, workflow sequencing or authority
+was invented. Full DMS remains IN_PROGRESS/NOT_DEPLOYED/ACCEPTANCE_PENDING.
+
 ### Native cache storage and persisted replay increment
 
 Terminal transport candidate `e89eddba` is canonical-pushed/mirrored
