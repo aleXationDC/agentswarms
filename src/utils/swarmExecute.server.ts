@@ -1202,20 +1202,72 @@ export async function resumeSwarmRun(args: {
   /** The approver's answer, when resuming a run parked at an approval node. */
   decision?: { approved: boolean; note?: string; approvalId?: string };
 }): Promise<ExecuteResult | null> {
-  const { data: run } = await supabaseAdmin
+  const { data: run, error: runError } = await supabaseAdmin
     .from("swarm_runs")
     .select("id, user_id, swarm_id, swarm_name, swarm_snapshot, input_prompt, status")
     .eq("id", args.runId)
     .eq("user_id", args.userId)
     .maybeSingle();
+  if (runError) throw new Error("SWARM_RESUME_OWNED_RUN_READ_FAILED");
   if (!run) return null;
   if (run.status === "success" || run.status === "error") return null;
 
-  const checkpoint = await loadCheckpoint(args.runId, args.userId);
-  if (!checkpoint) return null;
+  const documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
+  if (documentParent && run.status !== "suspended")
+    throw new Error("DOCUMENT_RESUME_SUSPENDED_PARENT_REQUIRED");
+  const checkpoint = await loadCheckpoint(
+    args.runId,
+    args.userId,
+    documentParent ? "document" : false,
+  );
+  if (!checkpoint) {
+    if (documentParent) throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+    return null;
+  }
 
   const snapshot = (run.swarm_snapshot ?? {}) as { nodes?: unknown; edges?: unknown };
-  if (!Array.isArray(snapshot.nodes) || snapshot.nodes.length === 0) return null;
+  if (!Array.isArray(snapshot.nodes) || snapshot.nodes.length === 0) {
+    if (documentParent) throw new Error("DOCUMENT_RESUME_GRAPH_REQUIRED");
+    return null;
+  }
+  if (documentParent) {
+    const nodes = snapshot.nodes as Node<SwarmNodeData>[];
+    const edges = Array.isArray(snapshot.edges) ? (snapshot.edges as Edge[]) : [];
+    const nodeIds = new Set(nodes.map((node) => node?.id));
+    const edgeIds = new Set(edges.map((edge) => edge?.id));
+    const completed = new Set(checkpoint.completedNodeIds);
+    const skipped = new Set(checkpoint.skippedNodeIds);
+    if (
+      !Array.isArray(snapshot.edges) ||
+      nodeIds.size !== nodes.length ||
+      nodes.some((node) => !node?.id || !node.data || typeof node.data.kind !== "string") ||
+      edgeIds.size !== edges.length ||
+      edges.some((edge) => !edge?.id || !nodeIds.has(edge.source) || !nodeIds.has(edge.target)) ||
+      !checkpoint.suspendedNodeId ||
+      !nodes.some(
+        (node) => node.id === checkpoint.suspendedNodeId && node.data.kind === "approval",
+      ) ||
+      completed.has(checkpoint.suspendedNodeId) ||
+      skipped.has(checkpoint.suspendedNodeId) ||
+      checkpoint.completedNodeIds.some((id) => !nodeIds.has(id) || skipped.has(id)) ||
+      checkpoint.skippedNodeIds.some((id) => !nodeIds.has(id)) ||
+      checkpoint.deadEdgeIds.some((id) => !edgeIds.has(id)) ||
+      completed.size !== checkpoint.completedNodeIds.length ||
+      skipped.size !== checkpoint.skippedNodeIds.length ||
+      new Set(checkpoint.deadEdgeIds).size !== checkpoint.deadEdgeIds.length ||
+      checkpoint.levelIndex < 1 ||
+      checkpoint.levelIndex > topoLevels(nodes, edges).length
+    )
+      throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
+    const levels = topoLevels(nodes, edges);
+    if (
+      !levels[checkpoint.levelIndex - 1].some((node) => node.id === checkpoint.suspendedNodeId) ||
+      levels
+        .slice(0, checkpoint.levelIndex - 1)
+        .some((level) => level.some((node) => !completed.has(node.id) && !skipped.has(node.id)))
+    )
+      throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
+  }
 
   return executeSwarmServer({
     swarm: {

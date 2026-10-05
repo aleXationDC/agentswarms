@@ -24,6 +24,7 @@
         "document-parent-trace-storage",
         "document-parent-model-trace-storage",
         "document-nested-parent-provenance",
+        "document-checkpoint-read",
         "filing",
         "cleanup"
       ],
@@ -317,7 +318,7 @@
       "name": "parent-registration-ack",
       "kind": "native-public-registration-readback",
       "source": "src/axtn/workbenches/documents/documentRegistrationAck.server.ts",
-      "sourceSHA256": "5d23bf6a650557b31d8aa5f9cb7df77c1c742d2602caf353a7a8f08ee07d2170",
+      "sourceSHA256": "8a15e2202f6ca54a25e930e0448b3cd26c27c2e53b33531366431749e400171f",
       "dependencies": [
         "intake",
         "case-profile",
@@ -370,13 +371,25 @@
       "name": "document-nested-parent-provenance",
       "kind": "existing-native-executor-correlation",
       "source": "src/utils/swarmExecute.server.ts",
-      "sourceSHA256": "f0302ebddfc6fd31181c59fba6bc107bb0fe7ad56300dfe1baf6aac6b5f0dac0",
+      "sourceSHA256": "bdd677c2b61a2b254e012a5506e184a56affa4584da53839e03f0469202f0588",
       "dependencies": ["document-parent-model-trace-storage"],
       "implemented": "carry original persisted owned DMS Parent run through existing nested execution to chat/data decision correlation, revalidate per nested call, retain generic behavior without child run/checkpoint/orchestration changes",
       "tested": "six actual two-level headless executor fixtures: model and scoped tool/retrieve correlation, one native root trace/decision, generic compatibility, missing/error owned Parent denial;49 focused regression tests",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Model/tool responses mocked; no live provider/privacy, all-model-writer, checkpoint/callback/cache or full original-free runtime proof."
+    },
+    {
+      "name": "document-checkpoint-read",
+      "kind": "existing-native-checkpoint-validation",
+      "source": "src/utils/swarmCheckpoint.server.ts",
+      "sourceSHA256": "ccc221179b3be250fe69fe2379472c04bd91f2c2756661b55067428eb026c4ff",
+      "dependencies": ["document-nested-parent-provenance", "parent-registration-ack"],
+      "implemented": "strict DMS owned checkpoint read without legacy empty/restart coercion; existing resume validates same suspended Parent snapshot/routing/completed/skipped/dead-edge/level binding before effects; generic/native Development behavior retained",
+      "tested": "16 actual checkpoint loader and18 additional actual resume fixtures, including actual executor suspend-checkpoint-resume roundtrip with prior tool called once;98 focused regressions",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Context remains unchanged and may contain originals; not minimized checkpoint hydration, live database/restart/no-repeat or independent Approval proof."
     },
     {
       "name": "privacy-preflight",

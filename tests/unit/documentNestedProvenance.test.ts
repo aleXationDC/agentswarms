@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { executeSwarmServer } from "@/utils/swarmExecute.server";
+import { executeSwarmServer, resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
 
 const state = vi.hoisted(() => ({
@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   begin: vi.fn(),
   tracer: vi.fn(),
   checkpoint: vi.fn(),
+  load: vi.fn(),
+  resumedRun: null as Record<string, unknown> | null,
 }));
 const owner = "11111111-1111-4111-8111-111111111111";
 const runId = "33333333-3333-4333-8333-333333333333";
@@ -23,6 +25,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
       state.queries.push({ table, filters });
       const chain = {
         select: () => chain,
+        update: () => chain,
         eq(key: string, value: unknown) {
           filters[key] = value;
           return chain;
@@ -30,12 +33,15 @@ vi.mock("@/integrations/supabase/client.server", () => ({
         async maybeSingle() {
           if (table === "swarm_runs")
             return {
-              data: state.parentFound ? { id: runId } : null,
+              data: state.resumedRun ?? (state.parentFound ? { id: runId } : null),
               error: state.parentError ? { message: "ORIGINAL_DATABASE_MARKER" } : null,
             };
           if (table === "swarms")
             return { data: state.graphs.get(String(filters.id)) ?? null, error: null };
           throw new Error(`Unexpected native query: ${table}`);
+        },
+        then(resolve: (value: { error: null }) => unknown) {
+          return Promise.resolve({ error: null }).then(resolve);
         },
       };
       return chain;
@@ -46,7 +52,7 @@ vi.mock("@/utils/provenance/decision.server", () => ({ beginDecision: state.begi
 vi.mock("@/utils/swarmCheckpoint.server", () => ({
   saveCheckpoint: state.checkpoint,
   clearCheckpoint: vi.fn(),
-  loadCheckpoint: vi.fn(),
+  loadCheckpoint: state.load,
 }));
 vi.mock("@/utils/observability/serverTracer.server", () => ({
   createServerSwarmTracer: state.tracer,
@@ -102,6 +108,8 @@ beforeEach(() => {
   state.parentFound = true;
   state.parentError = false;
   state.queries = [];
+  state.resumedRun = null;
+  state.load.mockReset();
   state.graphs.clear();
   state.graphs.set(
     childId,
@@ -124,6 +132,137 @@ beforeEach(() => {
     finish: vi.fn(),
   });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("fixture-stream")));
+});
+
+const parked = () => ({
+  id: runId,
+  user_id: owner,
+  swarm_id: DOCUMENT_MANAGEMENT_SWARM_ID,
+  swarm_name: "fixture-parent",
+  status: "suspended",
+  input_prompt: "unchanged",
+  swarm_snapshot: {
+    nodes: [
+      node("intake", { kind: "tool", toolId: "sql_query" }),
+      node("approval", { kind: "approval" }),
+    ],
+    edges: [{ id: "route", source: "intake", target: "approval" }],
+  },
+});
+const checkpoint = () => ({
+  ctx: { input: "unchanged", registration_ack: "fixture" },
+  lastOutput: "unchanged",
+  completedNodeIds: ["intake"],
+  skippedNodeIds: [] as string[],
+  deadEdgeIds: [] as string[],
+  levelIndex: 2,
+  suspendedNodeId: "approval",
+});
+describe("actual native DMS resume fails before effectful execution on routing loss", () => {
+  beforeEach(() => {
+    state.resumedRun = parked();
+    state.load.mockResolvedValue(checkpoint());
+  });
+  it.each([
+    { completedNodeIds: ["unknown"] },
+    { completedNodeIds: ["intake", "intake"] },
+    { completedNodeIds: ["approval"] },
+    { skippedNodeIds: ["approval"] },
+    { skippedNodeIds: ["intake"] },
+    { deadEdgeIds: ["unknown"] },
+    { levelIndex: 9 },
+    { levelIndex: 0 },
+    { levelIndex: 1 },
+    { completedNodeIds: [] },
+    { suspendedNodeId: "intake" },
+    { suspendedNodeId: null },
+  ])("refuses stale/inconsistent routing %#", async (patch) => {
+    state.load.mockResolvedValue({ ...checkpoint(), ...patch });
+    await expect(
+      resumeSwarmRun({ runId, userId: owner, origin: "http://localhost" }),
+    ).rejects.toThrow("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
+    expect(state.load).toHaveBeenCalledWith(runId, owner, "document");
+    expect(state.tracer).not.toHaveBeenCalled();
+    expect(state.tool).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("refuses an absent DMS checkpoint without a new run", async () => {
+    state.load.mockResolvedValue(null);
+    await expect(
+      resumeSwarmRun({ runId, userId: owner, origin: "http://localhost" }),
+    ).rejects.toThrow("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+    expect(state.tracer).not.toHaveBeenCalled();
+  });
+  it("refuses a DMS run that is no longer suspended", async () => {
+    state.resumedRun = { ...parked(), status: "running" };
+    await expect(
+      resumeSwarmRun({ runId, userId: owner, origin: "http://localhost" }),
+    ).rejects.toThrow("DOCUMENT_RESUME_SUSPENDED_PARENT_REQUIRED");
+    expect(state.load).not.toHaveBeenCalled();
+  });
+  it("refuses a missing DMS graph without executing", async () => {
+    state.resumedRun = { ...parked(), swarm_snapshot: { nodes: [], edges: [] } };
+    await expect(
+      resumeSwarmRun({ runId, userId: owner, origin: "http://localhost" }),
+    ).rejects.toThrow("DOCUMENT_RESUME_GRAPH_REQUIRED");
+    expect(state.tracer).not.toHaveBeenCalled();
+  });
+  it("preserves generic missing-checkpoint behavior", async () => {
+    state.resumedRun = { ...parked(), swarm_id: owner };
+    state.load.mockResolvedValue(null);
+    expect(await resumeSwarmRun({ runId, userId: owner, origin: "http://localhost" })).toBeNull();
+    expect(state.load).toHaveBeenCalledWith(runId, owner, false);
+  });
+  it("resumes the same valid parked run without repeating completed Intake effects", async () => {
+    const result = await resumeSwarmRun({
+      runId,
+      userId: owner,
+      origin: "http://localhost",
+      decision: { approved: true },
+    });
+    expect(result).toMatchObject({ status: "success", runId, output: "unchanged" });
+    expect(state.tool).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(state.begin).not.toHaveBeenCalled();
+    expect(state.tracer).toHaveBeenCalledOnce();
+    expect(state.tracer.mock.calls[0][0].resumeRunId).toBe(runId);
+    expect(state.checkpoint.mock.calls.at(-1)?.[0].checkpoint).toMatchObject({
+      ctx: { input: "unchanged", registration_ack: "fixture" },
+      completedNodeIds: ["intake", "approval"],
+      skippedNodeIds: [],
+      deadEdgeIds: [],
+      levelIndex: 2,
+    });
+  });
+  it("round-trips an actual executor suspension checkpoint and does not repeat the preceding tool", async () => {
+    const snapshot = parked().swarm_snapshot;
+    snapshot.nodes[1].data.approvalWork = { fixture: true };
+    const initial = await executeSwarmServer({
+      ...args(),
+      swarm: { id: DOCUMENT_MANAGEMENT_SWARM_ID, name: "fixture", ...snapshot },
+    });
+    expect(initial).toMatchObject({ status: "suspended", runId });
+    expect(state.tool).toHaveBeenCalledOnce();
+    const stored = state.checkpoint.mock.calls.at(-1)?.[0].checkpoint;
+    expect(stored).toMatchObject({
+      completedNodeIds: ["intake"],
+      levelIndex: 2,
+      suspendedNodeId: "approval",
+    });
+    state.resumedRun = { ...parked(), swarm_snapshot: snapshot };
+    state.load.mockResolvedValue(stored);
+    const resumed = await resumeSwarmRun({
+      runId,
+      userId: owner,
+      origin: "http://localhost",
+      decision: { approved: true },
+    });
+    expect(resumed).toMatchObject({ status: "success", runId });
+    expect(state.tool).toHaveBeenCalledOnce();
+    expect(state.begin).toHaveBeenCalledOnce();
+    expect(state.tracer).toHaveBeenCalledTimes(2);
+    expect(state.tracer.mock.calls[1][0].resumeRunId).toBe(runId);
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("actual nested native headless DMS provenance", () => {

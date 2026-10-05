@@ -2,6 +2,17 @@
 // live in src/lib/swarmCheckpoint.ts; this is only the database half.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fromRow, toRow, type CheckpointRow, type SwarmCheckpoint } from "@/lib/swarmCheckpoint";
+import { z } from "zod";
+
+const documentCheckpointRow = z.object({
+  ctx: z.record(z.string(), z.string()),
+  last_output: z.string(),
+  completed_node_ids: z.array(z.string().min(1)),
+  skipped_node_ids: z.array(z.string().min(1)),
+  dead_edge_ids: z.array(z.string().min(1)),
+  level_index: z.number().int().nonnegative(),
+  suspended_node_id: z.string().min(1).nullable(),
+});
 
 /**
  * Write the run's position. Overwrites in place — the checkpoint is where the
@@ -45,7 +56,7 @@ export async function saveCheckpoint(args: {
 export async function loadCheckpoint(
   runId: string,
   userId: string,
-  required = false,
+  required: boolean | "document" = false,
 ): Promise<SwarmCheckpoint | null> {
   try {
     const { data, error } = await supabaseAdmin
@@ -56,6 +67,12 @@ export async function loadCheckpoint(
       .eq("run_id", runId)
       .eq("user_id", userId)
       .maybeSingle();
+    if (required === "document") {
+      if (error) throw new Error("DOCUMENT_CHECKPOINT_READ_FAILED");
+      const parsed = documentCheckpointRow.safeParse(data);
+      if (!parsed.success) throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
+      return fromRow(parsed.data);
+    }
     if (error && required)
       throw new Error(`Native Approval checkpoint read failed: ${error.message}`);
     return fromRow((data ?? null) as CheckpointRow | null);

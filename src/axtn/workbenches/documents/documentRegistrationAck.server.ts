@@ -71,7 +71,7 @@ export async function readDocumentParentRegistrationAck(args: {
   if (runError) throw new Error(`DOCUMENT_PARENT_REGISTRATION_RUN_READ: ${runError.message}`);
   if (!run) throw new Error("DOCUMENT_PARENT_REGISTRATION_OWNED_RUN_REQUIRED");
   if (run.status !== "suspended") return null;
-  const checkpoint = await loadCheckpoint(args.runId, args.userId, true);
+  const checkpoint = await loadCheckpoint(args.runId, args.userId, "document");
   if (!checkpoint) throw new Error("DOCUMENT_PARENT_REGISTRATION_CHECKPOINT_REQUIRED");
   const snapshot = Snapshot.parse(run.swarm_snapshot);
   const writers = snapshot.nodes.filter((node) => node.data.outputVar === "registration_ack");

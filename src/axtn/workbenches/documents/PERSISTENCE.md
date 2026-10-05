@@ -130,3 +130,17 @@ Actual two-level executor tests capture the internal chat request and data-tool
 context, retained provider/model/owner scope, one top-level trace/decision and
 explicit missing/failed Parent denial. Mocked model/tool responses are not
 live provider, privacy or full original-free runtime proof.
+
+DMS Parent registration/resume now requests a strict owned checkpoint read
+instead of generic legacy coercion. Missing state, non-string context, omitted
+routing arrays, invalid level or a database failure produces content-free
+errors. Generic and protected Development readers keep their prior contracts.
+Resume requires the same suspended Parent, exact snapshot IDs, valid Approval
+parked node, disjoint completed/skipped sets, real dead edges, and the native
+level cursor (the executor increments it **before** persisting suspension).
+Prior levels must retain completed/skipped identities. Valid context/routing
+is preserved unchanged; no node is restarted to repair missing metadata.
+Actual executor suspension-to-resume tests use the produced checkpoint and
+prove the preceding tool runs once. These tests mock storage/approval/provider
+services, not genuine human Acceptance. **Raw checkpoint context remains**:
+strict validation is not minimized hydration or a full L19 proof.

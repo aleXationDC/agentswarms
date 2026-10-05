@@ -1058,6 +1058,36 @@ old variable name; it now checks both `provenanceRunId` tool contexts, paired
 with actual model/tool/retrieve/generic executor tests. No behavioral test was
 disabled. These are exact measured candidate results, not live DMS acceptance.
 
+### Strict same-run DMS checkpoint recovery increment
+
+Nested Parent provenance is committed at `164d4b90`, pushed/mirrored and bound
+to the same draft PR11 and OPEN SupaCases. DMS checkpoint read now validates
+complete string context/output, routing arrays and integer level instead of
+silently coercing invalid state to a legacy restart shape. Generic/protected
+Development readers retain existing behavior. Database failures and missing
+DMS state are explicit content-free errors. The existing Parent ACK reader
+uses this same strict native checkpoint path.
+
+Resume requires the owned Parent still suspended and validates its persisted
+snapshot, Approval park, completed/skipped/dead-edge/level identity before
+any tracing/effect. Valid state remains unchanged. The existing native executor
+increments the cursor before storing suspension; an actual produced-checkpoint
+roundtrip fixture fixed an initial validation assumption and verifies that
+same cursor, one run/decision and preceding tool called exactly once.
+Sixteen actual loader tests and eighteen additional actual resume fixtures
+pass; five focused suites total **98 tests PASS**. A test group initially placed
+inside fixture setup was corrected to module scope after measured discovery
+counts exposed it; all 24 executor tests are now actually collected.
+Final ordered typecheck/lint/docs/command/infra/full-unit gates and unchanged
+resource-bounded client/SSR build pass: **587 files / 9,752 tests PASS /
+40 skipped**. Exact-byte dependency checks pass 3/3. These are measured source
+results, not live checkpoint/privacy/independent Acceptance.
+
+This is no-repeat metadata validation, not privacy redaction. Raw checkpoint
+context is still retained; protected hydration, all-surface L19, live restart,
+provider/effect/receipt and independent Acceptance remain incomplete.
+Production/Development/local MCP/provider settings are unchanged.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

@@ -232,7 +232,7 @@ describe("native Parent parked registration readback", () => {
     expect(await read()).toEqual(ack);
     expect({ run: state.run, work: state.work, registry: state.registry }).toEqual(before);
     expect(JSON.stringify(await read())).not.toContain("LEAKAGE_MARKER");
-    expect(load).toHaveBeenCalledWith(runId, owner, true);
+    expect(load).toHaveBeenCalledWith(runId, owner, "document");
     expect(state.queries[0].filters).toEqual({
       id: runId,
       user_id: owner,
