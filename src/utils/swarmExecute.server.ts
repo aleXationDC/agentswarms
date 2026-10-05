@@ -494,11 +494,14 @@ export async function executeSwarmServer(opts: {
         userId: opts.userId,
         source: opts.source,
         depth,
-        required: Boolean(
-          suspendedNodeId &&
-          (nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork ||
-            nodes.find((n) => n.id === suspendedNodeId)?.data.approvalDocument),
-        ),
+        required:
+          opts.swarm.id === DOCUMENT_MANAGEMENT_SWARM_ID
+            ? "document"
+            : Boolean(
+                suspendedNodeId &&
+                (nodes.find((n) => n.id === suspendedNodeId)?.data.approvalWork ||
+                  nodes.find((n) => n.id === suspendedNodeId)?.data.approvalDocument),
+              ),
         checkpoint: captureCheckpoint({
           ctx,
           lastOutput,

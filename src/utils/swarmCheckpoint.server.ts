@@ -27,26 +27,36 @@ export async function saveCheckpoint(args: {
   checkpoint: SwarmCheckpoint;
   source: string;
   depth: number;
-  required?: boolean;
+  required?: boolean | "document";
 }): Promise<void> {
   try {
+    const row = toRow(args.checkpoint);
+    if (args.required === "document" && !documentCheckpointRow.safeParse(row).success)
+      throw new Error("DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED");
     const { error } = await supabaseAdmin.from("swarm_run_checkpoints").upsert(
       {
         run_id: args.runId,
         user_id: args.userId,
         source: args.source,
         depth: args.depth,
-        ...toRow(args.checkpoint),
+        ...row,
         suspended_at: args.checkpoint.suspendedNodeId ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       } as never,
       { onConflict: "run_id" },
     );
     if (error) {
+      if (args.required === "document") throw new Error("DOCUMENT_CHECKPOINT_WRITE_FAILED");
       if (args.required) throw new Error(`Native Approval checkpoint failed: ${error.message}`);
       console.warn("[swarmCheckpoint] save failed:", error.message);
     }
   } catch (e) {
+    if (args.required === "document")
+      throw new Error(
+        e instanceof Error && e.message === "DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED"
+          ? e.message
+          : "DOCUMENT_CHECKPOINT_WRITE_FAILED",
+      );
     if (args.required) throw e;
     console.warn("[swarmCheckpoint] save threw:", (e as Error).message);
   }
@@ -77,6 +87,12 @@ export async function loadCheckpoint(
       throw new Error(`Native Approval checkpoint read failed: ${error.message}`);
     return fromRow((data ?? null) as CheckpointRow | null);
   } catch (e) {
+    if (required === "document")
+      throw new Error(
+        e instanceof Error && e.message === "DOCUMENT_CHECKPOINT_COMPLETE_STATE_REQUIRED"
+          ? e.message
+          : "DOCUMENT_CHECKPOINT_READ_FAILED",
+      );
     if (required) throw e;
     console.warn("[swarmCheckpoint] load threw:", (e as Error).message);
     return null;

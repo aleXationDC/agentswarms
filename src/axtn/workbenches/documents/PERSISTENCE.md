@@ -147,3 +147,13 @@ Actual executor suspension-to-resume tests use the produced checkpoint and
 prove the preceding tool runs once. These tests mock storage/approval/provider
 services, not genuine human Acceptance. **Raw checkpoint context remains**:
 strict validation is not minimized hydration or a full L19 proof.
+
+Every existing headless DMS Parent level now requires its checkpoint write, not
+only protected Approval suspension. Invalid native state is rejected before
+writing; returned or thrown database failures surface bounded content-free
+codes without raw database text/logging. Actual executor failure fixtures show
+later-level tools do not execute when the intervening checkpoint fails.
+Generic best-effort notifications and Development required-write failures are
+unchanged. This does not provide an atomic provider-effect receipt/claim:
+an effect followed by a failed checkpoint still needs existing Case/effect
+readback recovery, not blind replay.

@@ -301,6 +301,7 @@ describe("actual nested native headless DMS provenance", () => {
     ]);
     expect(state.tracer).toHaveBeenCalledTimes(1);
     expect(state.begin).toHaveBeenCalledTimes(1);
+    expect(state.checkpoint.mock.calls.every(([args]) => args.required === "document")).toBe(true);
     expect(state.begin).toHaveBeenCalledWith({
       userId: owner,
       kind: "swarm_run",
@@ -316,6 +317,30 @@ describe("actual nested native headless DMS provenance", () => {
     expect(request).not.toHaveProperty("decisionId");
     expect(state.queries.filter((query) => query.table === "swarm_runs")).toEqual([]);
     expect(state.tracer).toHaveBeenCalledTimes(1);
+    expect(state.checkpoint.mock.calls.every(([args]) => args.required === false)).toBe(true);
+  });
+  it("fails the Parent before later-level effects when an intermediate required checkpoint fails", async () => {
+    state.checkpoint.mockRejectedValueOnce(new Error("DOCUMENT_CHECKPOINT_WRITE_FAILED"));
+    const result = await executeSwarmServer({
+      ...args(),
+      swarm: {
+        id: DOCUMENT_MANAGEMENT_SWARM_ID,
+        name: "fixture-parent",
+        nodes: [
+          node("first", { kind: "tool", toolId: "sql_query" }),
+          node("later", { kind: "tool", toolId: "sql_query" }),
+        ],
+        edges: [{ id: "route", source: "first", target: "later" }],
+      },
+    });
+    expect(result).toMatchObject({
+      status: "error",
+      runId,
+      error: "DOCUMENT_CHECKPOINT_WRITE_FAILED",
+    });
+    expect(state.tool).toHaveBeenCalledOnce();
+    expect(state.checkpoint.mock.calls[0][0].required).toBe("document");
+    expect(fetch).not.toHaveBeenCalled();
   });
   it.each(["tool", "retrieve"])(
     "retains Parent provenance and existing owner-scoped %s authority in a nested call",

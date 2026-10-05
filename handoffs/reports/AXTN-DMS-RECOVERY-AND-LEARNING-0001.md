@@ -1108,6 +1108,35 @@ resource-bounded client/SSR build pass: **587 files / 9,752 tests PASS /
 The earlier `2ffffe0e` gate remains its own measured result, not evidence that
 the correction is deployed or full L19/Acceptance has passed.
 
+### Required native Parent checkpoint persistence increment
+
+Canvas/headless cursor compatibility is committed at `7125916e`, pushed/
+mirrored and bound to the same draft PR11/Cases. Every existing headless DMS
+Parent level now requires native checkpoint persistence rather than allowing
+best-effort gaps between Approval nodes. The strict write contract validates
+complete state before storage; returned/thrown failures use content-free
+errors, no raw database logging. Thrown read failures are similarly bounded.
+Generic notifications and protected Development required failures remain.
+
+Executed actual loader/writer tests cover native exact payload, intermediate
+no-Approval checkpoint, invalid state before write, returned/thrown failures
+and preserved generic/Development behavior. The actual executor stops before
+later-level tool effects on an intermediate checkpoint failure. Five suites
+pass **107 tests**, including 24 loader/writer and25 executor fixtures.
+An initial rejecting thenable fixture omitted its reject callback and timed
+out; fixed fixture now exercises the real throw path without unhandled errors.
+Targeted lint passes. Final full ordered type/lint/docs/commands/infra/unit
+gates PASS: **587 files /9,761 tests /40 skipped**, followed by unchanged
+resource-bounded client/SSR build PASS. A first full gate was deliberately
+stopped before a serialization-catch compatibility refinement, not reused as
+final proof. Current protected-secret scan:2,437 source/evidence files PASS.
+
+This is durable-error visibility, not atomic provider-effect recovery or
+minimized context. Provider effect plus checkpoint failure still needs
+revision-bound receipt/readback, not blind rerun. Full L19, privacy/rights,
+effects/receipts/graph/runtime and independent Acceptance remain incomplete.
+Production, Development and local MCP remain unchanged.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder
