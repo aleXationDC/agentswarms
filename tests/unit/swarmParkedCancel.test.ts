@@ -74,7 +74,7 @@ describe("a decision after the cancel", () => {
     expect(refuse).toBeGreaterThan(0);
     expect(RESUME.slice(refuse, refuse + 200)).toMatch(/ok: false,/);
     // Before the checkpoint is consulted, and before the resume.
-    expect(RESUME.indexOf("loadCheckpoint(run.id")).toBeGreaterThan(refuse);
+    expect(RESUME.search(/loadCheckpoint\(\s*run\.id/)).toBeGreaterThan(refuse);
     expect(RESUME.indexOf("await resumeSwarmRun(")).toBeGreaterThan(refuse);
   });
 });

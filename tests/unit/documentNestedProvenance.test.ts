@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeSwarmServer, resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import { resumeApprovedSwarmRun } from "@/utils/swarmResume.functions";
 
 const state = vi.hoisted(() => ({
   parentFound: true,
@@ -13,24 +14,64 @@ const state = vi.hoisted(() => ({
   checkpoint: vi.fn(),
   load: vi.fn(),
   resumedRun: null as Record<string, unknown> | null,
+  claimFound: true,
+  claimError: false,
+  claims: [] as Record<string, unknown>[],
+  approval: null as Record<string, unknown> | null,
 }));
 const owner = "11111111-1111-4111-8111-111111111111";
 const runId = "33333333-3333-4333-8333-333333333333";
 const childId = "44444444-4444-4444-8444-444444444444";
 const grandchildId = "55555555-5555-4555-8555-555555555555";
+const approvalId = "66666666-6666-4666-8666-666666666666";
+vi.mock("@tanstack/react-start", () => ({
+  createServerFn: () => {
+    const chain = { inputValidator: () => chain, handler: (handler: unknown) => handler };
+    return chain;
+  },
+}));
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
+    auth: { getUser: async () => ({ data: { user: { id: grandchildId } } }) },
+    from: () => {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        maybeSingle: async () => ({ data: state.approval }),
+      };
+      return chain;
+    },
+  }),
+}));
+vi.mock("@/axtn/workbenches/cases/caseManagement.server", () => ({
+  ensureCaseForAcceptance: vi.fn(),
+}));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from(table: string) {
       const filters: Record<string, unknown> = {};
       state.queries.push({ table, filters });
+      let update: Record<string, unknown> | undefined;
       const chain = {
         select: () => chain,
-        update: () => chain,
+        update(value: Record<string, unknown>) {
+          update = value;
+          return chain;
+        },
         eq(key: string, value: unknown) {
           filters[key] = value;
           return chain;
         },
         async maybeSingle() {
+          if (table === "swarm_runs" && update?.status === "running") {
+            state.claims.push({ ...filters });
+            if (state.claimFound && !state.claimError && state.resumedRun)
+              state.resumedRun.status = "running";
+            return {
+              data: state.claimFound ? { id: runId } : null,
+              error: state.claimError ? { message: "ORIGINAL_DATABASE_MARKER" } : null,
+            };
+          }
           if (table === "swarm_runs")
             return {
               data: state.resumedRun ?? (state.parentFound ? { id: runId } : null),
@@ -61,7 +102,10 @@ vi.mock("@/utils/swarmNodes.server", () => ({
   runHttpNodeCore: vi.fn(),
   runToolNodeCore: state.tool,
 }));
-vi.mock("@/utils/internalOrigin.server", () => ({ internalRunSecret: () => "fixture-secret" }));
+vi.mock("@/utils/internalOrigin.server", () => ({
+  internalRunSecret: () => "fixture-secret",
+  resolveInternalOrigin: () => "http://localhost",
+}));
 vi.mock("@/utils/jsSandbox.server", () => ({
   jsSandboxConfigured: async () => false,
   runSandboxedServer: vi.fn(),
@@ -70,7 +114,12 @@ vi.mock("@/utils/jsSandbox.server", () => ({
 vi.mock("@/utils/rateLimit.server", () => ({
   envInt: (_key: string, fallback: number) => fallback,
 }));
-vi.mock("@/utils/swarmWorkApproval.server", () => ({ createNativeWorkApproval: vi.fn() }));
+vi.mock("@/utils/swarmWorkApproval.server", () => ({
+  createNativeWorkApproval: vi
+    .fn()
+    .mockResolvedValue({ id: "66666666-6666-4666-8666-666666666666" }),
+  assertNativeApprovalResume: vi.fn(),
+}));
 vi.mock("@/lib/chatStream", () => ({
   readChatStream: async () => "fixture-model-output",
   toolNodeEvents: () => [],
@@ -109,6 +158,19 @@ beforeEach(() => {
   state.parentError = false;
   state.queries = [];
   state.resumedRun = null;
+  state.claimFound = true;
+  state.claimError = false;
+  state.claims = [];
+  state.approval = {
+    id: approvalId,
+    status: "approved",
+    swarm_run_id: runId,
+    user_id: owner,
+    payload: { axtnDocument: {} },
+    decided_by: grandchildId,
+  };
+  vi.stubEnv("SUPABASE_URL", "http://localhost");
+  vi.stubEnv("SUPABASE_PUBLISHABLE_KEY", "nonfunctional-fixture");
   state.load.mockReset();
   state.graphs.clear();
   state.graphs.set(
@@ -182,6 +244,7 @@ describe("actual native DMS resume fails before effectful execution on routing l
     ).rejects.toThrow("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
     expect(state.load).toHaveBeenCalledWith(runId, owner, "document");
     expect(state.tracer).not.toHaveBeenCalled();
+    expect(state.claims).toEqual([]);
     expect(state.tool).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -277,7 +340,107 @@ describe("actual native DMS resume fails before effectful execution on routing l
     expect(state.tracer.mock.calls[1][0].resumeRunId).toBe(runId);
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+describe("actual native Approval handler and DMS executor resume claim ordering", () => {
+  beforeEach(() => {
+    state.resumedRun = parked();
+    state.load.mockResolvedValue(checkpoint());
+  });
+  const resumeApproval = () =>
+    resumeApprovedSwarmRun({
+      data: { access_token: "nonfunctional-fixture", approval_id: approvalId },
+    });
+  it("validates suspended routing before the existing atomic claim and resumes the same run", async () => {
+    expect(await resumeApproval()).toEqual({
+      ok: true,
+      status: "success",
+      runId,
+      output: "unchanged",
+    });
+    expect(state.load.mock.calls).toEqual([
+      [runId, owner, "document"],
+      [runId, owner, "document"],
+    ]);
+    expect(state.claims).toEqual([
+      {
+        id: runId,
+        user_id: owner,
+        status: "suspended",
+        cancel_requested: false,
+      },
+    ]);
+    expect(state.tool).not.toHaveBeenCalled();
+    expect(state.tracer).toHaveBeenCalledOnce();
+  });
+  it("does not claim or change suspended state when routing is invalid", async () => {
+    state.load.mockResolvedValue({ ...checkpoint(), completedNodeIds: [] });
+    expect(await resumeApproval()).toEqual({
+      ok: false,
+      error: "DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED",
+    });
+    expect(state.resumedRun?.status).toBe("suspended");
+    expect(state.claims).toEqual([]);
+    expect(state.tracer).not.toHaveBeenCalled();
+  });
+  it.each(["missing", "error"])(
+    "denies a %s claim without execution or raw database text",
+    async (failure) => {
+      state.claimFound = failure !== "missing";
+      state.claimError = failure === "error";
+      expect(await resumeApproval()).toEqual({
+        ok: false,
+        error:
+          failure === "error"
+            ? "DOCUMENT_RESUME_CLAIM_FAILED"
+            : "DOCUMENT_RESUME_CLAIM_UNAVAILABLE",
+      });
+      expect(state.tracer).not.toHaveBeenCalled();
+      expect(state.tool).not.toHaveBeenCalled();
+      expect(state.resumedRun?.status).toBe("suspended");
+    },
+  );
+  it("does not reclaim a running Parent on a repeated Approval resume", async () => {
+    state.resumedRun = { ...parked(), status: "running" };
+    expect(await resumeApproval()).toEqual({
+      ok: false,
+      error: "DOCUMENT_RESUME_SUSPENDED_PARENT_REQUIRED",
+    });
+    expect(state.claims).toEqual([]);
+    expect(state.tracer).not.toHaveBeenCalled();
+  });
+  it("preserves the existing Development handler claim and checkpoint modes", async () => {
+    state.resumedRun = { ...parked(), swarm_id: owner };
+    state.approval = { ...state.approval, payload: { axtnDevelopment: {} } };
+    expect(await resumeApproval()).toEqual({
+      ok: true,
+      status: "success",
+      runId,
+      output: "unchanged",
+    });
+    expect(state.load.mock.calls).toEqual([
+      [runId, owner, true],
+      [runId, owner, false],
+    ]);
+    expect(state.claims).toEqual([
+      { id: runId, user_id: owner, status: "suspended", cancel_requested: false },
+    ]);
+    expect(state.tool).not.toHaveBeenCalled();
+    expect(state.tracer).toHaveBeenCalledOnce();
+  });
+  it("refuses a cancelled Parent before reading its checkpoint or claiming continuation", async () => {
+    state.resumedRun = { ...parked(), status: "cancelled" };
+    expect(await resumeApproval()).toEqual({
+      ok: false,
+      error: "This run was cancelled. The decision is recorded; the run does not resume.",
+    });
+    expect(state.load).not.toHaveBeenCalled();
+    expect(state.claims).toEqual([]);
+    expect(state.tracer).not.toHaveBeenCalled();
+  });
+});
 describe("actual nested native headless DMS provenance", () => {
   it("retains the owned Parent run through two nested Swarms into the actual chat request", async () => {
     const result = await executeSwarmServer(args());

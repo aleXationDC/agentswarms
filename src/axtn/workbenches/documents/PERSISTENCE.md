@@ -157,3 +157,14 @@ Generic best-effort notifications and Development required-write failures are
 unchanged. This does not provide an atomic provider-effect receipt/claim:
 an effect followed by a failed checkpoint still needs existing Case/effect
 readback recovery, not blind replay.
+
+The native Approval handler selects strict DMS reads from the persisted owned
+Parent Swarm ID. For DMS only, its existing atomic suspended-to-running claim
+is performed by the existing resume executor **after** exact suspended
+checkpoint/snapshot validation. Previously the handler claimed first, so the
+strict executor rejected that valid run as no longer suspended. No extra
+claim, Approval engine or continuation path is added. Missing/failed claims
+produce explicit content-free errors before execution. Development retains
+its prior handler claim and read modes. Actual handler-to-executor tests cover
+this ordering using synthetic database/Approval authority; they do not prove
+live role/concurrency or human review.

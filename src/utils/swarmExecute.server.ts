@@ -1273,6 +1273,18 @@ export async function resumeSwarmRun(args: {
         .some((level) => level.some((node) => !completed.has(node.id) && !skipped.has(node.id)))
     )
       throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
+    if (!args.decision) throw new Error("DOCUMENT_RESUME_APPROVAL_DECISION_REQUIRED");
+    const { data: claimed, error: claimError } = await supabaseAdmin
+      .from("swarm_runs")
+      .update({ status: "running" })
+      .eq("id", args.runId)
+      .eq("user_id", args.userId)
+      .eq("status", "suspended")
+      .eq("cancel_requested", false)
+      .select("id")
+      .maybeSingle();
+    if (claimError) throw new Error("DOCUMENT_RESUME_CLAIM_FAILED");
+    if (!claimed) throw new Error("DOCUMENT_RESUME_CLAIM_UNAVAILABLE");
   }
 
   return executeSwarmServer({

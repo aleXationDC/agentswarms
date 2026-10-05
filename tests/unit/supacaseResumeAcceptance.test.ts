@@ -10,9 +10,9 @@ const section = source.slice(
 describe("SupaCase filing after D09 resume", () => {
   it("keeps checkpoint resume/cancel behavior and retries filing on a completed run", () => {
     expect(section).toContain(
-      '.select("id, user_id, status, input_prompt, final_output, swarm_snapshot")',
+      '.select("id, user_id, swarm_id, status, input_prompt, final_output, swarm_snapshot")',
     );
-    expect(section).toContain("await loadCheckpoint(run.id, run.user_id, protectedWork)");
+    expect(section).toContain('documentParent ? "document" : protectedWork');
     expect(section).toContain('if (run.status === "cancelled")');
     expect(section).toContain("run.final_output");
     expect(source).toContain("ensureCaseForAcceptance");

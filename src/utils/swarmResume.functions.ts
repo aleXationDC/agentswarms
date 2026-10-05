@@ -13,6 +13,7 @@ import { resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
 import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
 import { NativeDocumentApprovalBinding } from "@/axtn/workbenches/documents/documentApproval.server";
+import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
 import {
   assertNativeApprovalResume,
   createNativeWorkApproval,
@@ -137,7 +138,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         // approver's.
         const { data: run } = await supabaseAdmin
           .from("swarm_runs")
-          .select("id, user_id, status, input_prompt, final_output, swarm_snapshot")
+          .select("id, user_id, swarm_id, status, input_prompt, final_output, swarm_snapshot")
           .eq("id", approval.swarm_run_id)
           .maybeSingle();
         if (!run) return { ok: false, error: "Run not found" };
@@ -176,7 +177,12 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           !Array.isArray(approval.payload) &&
           ("axtnDevelopment" in approval.payload || "axtnDocument" in approval.payload),
         );
-        const checkpoint = await loadCheckpoint(run.id, run.user_id, protectedWork);
+        const documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
+        const checkpoint = await loadCheckpoint(
+          run.id,
+          run.user_id,
+          documentParent ? "document" : protectedWork,
+        );
         if (!checkpoint) {
           if (protectedWork && run.status === "suspended") {
             return { ok: false, error: "Protected native Approval checkpoint unavailable" };
@@ -205,6 +211,8 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
           });
           if (prior.id !== approval.id)
             throw new Error("NATIVE_APPROVAL_RESUME_OPERATION_MISMATCH");
+        }
+        if (protectedWork && !documentParent) {
           const { data: claimed, error: claimError } = await supabaseAdmin
             .from("swarm_runs")
             .update({ status: "running" })

@@ -49,9 +49,7 @@ describe("approving a parked run", () => {
     expect(resume).toContain(
       'const { loadCheckpoint } = await import("@/utils/swarmCheckpoint.server");',
     );
-    expect(resume).toContain(
-      "const checkpoint = await loadCheckpoint(run.id, run.user_id, protectedWork);",
-    );
+    expect(resume).toContain('documentParent ? "document" : protectedWork');
     expect(resume).toContain("if (!checkpoint) {");
   });
 

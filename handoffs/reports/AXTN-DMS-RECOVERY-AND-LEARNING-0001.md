@@ -1137,6 +1137,44 @@ revision-bound receipt/readback, not blind rerun. Full L19, privacy/rights,
 effects/receipts/graph/runtime and independent Acceptance remain incomplete.
 Production, Development and local MCP remain unchanged.
 
+### Existing native DMS Approval resume claim ordering correction
+
+Required intermediate Parent checkpoint persistence is committed/pushed/
+mirrored at `0eaaa999`; same draft PR11/three OPEN Cases updated.
+Source inspection found the earlier strict resume guard was incompatible
+with the real Approval handler: it first claimed `suspended → running`, then
+the executor required `suspended`. Existing synthetic executor-only resume
+tests did not exercise this caller chain.
+
+For DMS only, the same native atomic claim now occurs inside the existing
+resume function after suspended checkpoint/snapshot/routing validation.
+The handler retains persisted Approval authority and operation binding,
+selects strict preliminary DMS reads by persisted Parent ID, and does not
+claim twice. Invalid routing leaves the suspended run unchanged; missing/
+failed claims return bounded errors before tracer/tool/model execution.
+Development's existing handler claim/read modes remain unchanged.
+
+Actual handler-through-executor tests cover valid same-run continuation,
+invalid routing before claim, missing/failed claim, already-running denial
+and unchanged Development behavior. These use synthetic database/Approval
+authority, not real independent Acceptance or PostgreSQL concurrency.
+Actual cancellation fixture additionally proves no checkpoint read/claim
+after cancellation. Eight focused suites PASS: **85 tests**. The first full
+gate found an old source-string cancellation assertion sensitive to the new
+multiline load call; replaced with a whitespace-independent ordering check
+and paired the actual cancellation fixture, without weakening cancellation.
+Final full ordered type/lint/docs/commands/infra/unit gate PASS:
+**587 files /9,768 tests /40 skipped**, followed by unchanged resource-bounded
+client/SSR build PASS. Protected-secret scan:2,437 files PASS.
+
+Fresh live readback still source`10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`,
+image`sha256:1f3e476e524674df9f5cd1333eab35da1e0d6f370b1435caf4bfdff49449769a`,
+ledger278/latest`20261004060000_native_work_approval_binding.sql`;
+3cancelled/9error/1suspended/no running Swarm. Development App/Host/MCP
+heads6bf776/85dbb7/6e18b4 remain clean/preserved.
+Production, Development and local MCP unchanged; remaining
+L19/effect/rights/graph/runtime work not complete.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder
