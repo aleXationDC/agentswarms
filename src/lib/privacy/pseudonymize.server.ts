@@ -25,14 +25,7 @@ const labels: Readonly<Record<string, string>> = {
   DE_PASSPORT: "ID_DOCUMENT",
 };
 
-export function pseudonymizeDocumentText(
-  text: string,
-  input: unknown,
-): {
-  pseudonymizedText: string;
-  pseudonymCount: number;
-  pseudonymTypes: string[];
-} {
+export function privacyTextCodePoints(text: string): string[] {
   if (typeof text !== "string" || text.length > 2_000_000)
     throw new Error("DOCUMENT_PRIVACY_TEXT_LIMIT");
   const points = Array.from(text);
@@ -42,11 +35,31 @@ export function pseudonymizeDocumentText(
     if (code !== undefined && code >= 0xd800 && code <= 0xdfff)
       throw new Error("DOCUMENT_PRIVACY_INVALID_UNICODE");
   }
+  return points;
+}
+
+export function validatePiiFindings(input: unknown, codePointLength: number): PiiFinding[] {
+  if (!Number.isInteger(codePointLength) || codePointLength < 0 || codePointLength > 1_000_000)
+    throw new Error("DOCUMENT_PRIVACY_TEXT_LIMIT");
   const findings = z.array(PiiFinding).max(10_000).parse(input);
+  for (const finding of findings)
+    if (finding.start >= finding.end || finding.end > codePointLength)
+      throw new Error("DOCUMENT_PRIVACY_INVALID_SPAN");
+  return findings;
+}
+
+export function pseudonymizeDocumentText(
+  text: string,
+  input: unknown,
+): {
+  pseudonymizedText: string;
+  pseudonymCount: number;
+  pseudonymTypes: string[];
+} {
+  const points = privacyTextCodePoints(text);
+  const findings = validatePiiFindings(input, points.length);
   const regions: Region[] = [];
   for (const finding of findings.sort((a, b) => a.start - b.start || a.end - b.end)) {
-    if (finding.start >= finding.end || finding.end > points.length)
-      throw new Error("DOCUMENT_PRIVACY_INVALID_SPAN");
     const previous = regions.at(-1);
     if (previous && finding.start < previous.end) {
       previous.end = Math.max(previous.end, finding.end);

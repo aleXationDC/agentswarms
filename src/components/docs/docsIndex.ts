@@ -3533,6 +3533,7 @@ export const DOCS_INDEX: DocsIndexPage[] = [
       "PARQUET_MIN_ROWS",
       "PARQUET_MIRROR",
       "PERSIST_PROMPT_BODIES",
+      "PRESIDIO_ANALYZER_URL",
       "PROVIDER_CREDS_SECRET",
       "PROVIDER_CREDS_SECRET_OLD",
       "PUBLIC_APP_URL",
@@ -3620,6 +3621,11 @@ export const DOCS_INDEX: DocsIndexPage[] = [
       {
         "id": "env-network",
         "text": "Network egress",
+        "level": 3
+      },
+      {
+        "id": "env-document-privacy",
+        "text": "Local document privacy recovery",
         "level": 3
       },
       {

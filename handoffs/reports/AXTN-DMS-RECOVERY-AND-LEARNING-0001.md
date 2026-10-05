@@ -474,6 +474,85 @@ operation/credentials/topology/settings/inactive state remain unchanged;
 regeneration is byte-idempotent. Mail equivalent source provenance, genuine
 provider authority, protected privacy/receipts and live graph remain pending.
 
+### Bounded standard local analyzer recovery
+
+The accepted historical Privacy/Presidio recovery scope is adapted at
+`src/lib/privacy/piiDetection.server.ts`; native sequencing and Case authority
+remain outside this one standard external capability. The historical source
+tried fallback endpoints, omitted an explicit zero score threshold and silently
+discarded malformed findings. The recovered boundary requires one explicitly
+configured internal `presidio-analyzer:3000`, explicit `en`/`de`, actual
+language-specific supported-entity readback before transmitting original text,
+and fixed per-request German recognizers. The standard upstream REST routes
+were verified against `microsoft/presidio`, `presidio-analyzer/app.py`, source
+blob `567a796cd016da2b7e4dd961483087906515c5ec`.
+
+All findings are validated together with the shared Unicode-code-point/span
+validator; no bad/low-score/unknown finding is filtered away. Unknown labels
+become generic PII, and unrequested metadata/explanations are not returned.
+The passport pattern explicitly repairs the historical eight-digit suffix
+restriction to the documented full alphanumeric shape; these coarse patterns
+still do not prove complete detection. The analysis request sets zero score
+threshold, no exemptions and no decision explanation.
+
+Transport has one total eight-second deadline, including validation, a strict
+actual-byte response cap, UTF-8/JSON validation and rejected-body cancellation.
+There is no redirect, retry, fallback, logging, persistence or raw-error cause.
+This is not a new detector service, native tool registration, privacy setter,
+source/rights receipt, ELIGIBLE decision or full R7 PASS. Actual immutable
+analyzer image/model/private-network/logging evidence and protected Case
+binding remain mandatory before live use. Production and provider settings
+remain untouched.
+Fifty-five actual-body/transport tests pass, including actual HTTP redirect
+rejection, both deadline-validation stages, rejected-body cancellation,
+multibyte streaming and an actual stalled response aborted at 8.006 seconds.
+Shared pseudonymization and byte-exact inventory tests give 81/81 PASS;
+changed-file lint and docs/commands pass. These are isolated API fixtures, not
+a genuine Presidio/model/private-network runtime acceptance.
+The first full gate correctly rejected the new endpoint variable missing from
+operator documentation. Its strict documentation-discovery test was not
+weakened; the existing self-hosting configuration page now documents the
+explicit endpoint and unfulfilled live-use gates. The failed run is not a
+deployment gate PASS.
+That documentation change also required the existing generated search index:
+`npm run docs:index` regenerated it, and strict docs/commands plus actual
+freshness/inventory tests pass. Neither rejected run is counted as a full
+source gate. Fresh read-only production fences still show one auth principal,
+one suspended Development run and no running Swarm writer, 278 migrations,
+and unchanged Development App/Host/MCP source heads.
+The subsequent full run exposed an unbounded await in native response-body
+cancellation under the stalled-stream test. The eight-second assertion and
+15-second test budget were not relaxed. Fetch, stream reads and cancellation
+now explicitly settle against the same deadline, including transports that
+ignore abort signals; 57 actual-body/HTTP tests and all 23 transform tests pass.
+
+Actual standard-image evidence was then executed with pinned
+`mcr.microsoft.com/presidio-analyzer@sha256:d459416c39345b60b72050a98aeef6be4f6b3d9da20e5ba9561e8b920f9abedb`.
+The owned ephemeral fixture is non-root user 1001, network none, read-only root,
+no published ports, 1 CPU/1536 MiB/no additional swap, bounded PID/log/tmpfs.
+The exact adapter and transform run through real Docker-exec HTTP transport,
+not a fabricated analyzer response. All ten requested labels fire on positive
+English fixtures, and repeated proof after isolated restart passes with zero
+generated original marker in logs.
+
+The initial real-image assertion also exposed genuine negative evidence:
+stock analysis misses the structural `example.invalid` email, and German
+language is unsupported. The versioned probe
+`tests/integration/documentPiiAnalyzer.mjs` retains that uncovered-marker
+counterexample and verifies German rejection before text transmission.
+Six reported entities are not a complete coverage receipt. This image is
+isolated evidence only, not an accepted real privacy profile or live pin.
+No ELIGIBLE, full R7, production deployment or independent acceptance is claimed.
+The final unweakened Component gate passes typecheck, lint, docs/commands,
+infrastructure checks, 576 test files / 9,399 tests (40 skipped), and the
+production build. The focused corrected docs/inventory/analyzer/transform
+gate passes 91/91. Actual three-repository credential scan passes across
+2,506 source/evidence files, browser assets and runtime logs.
+Only the owned temporary analyzer container was stopped/removed after
+isolated restart proof; its immutable image and minimized evidence remain.
+No production service/network/config, DMS migration, native key or workflow
+was activated. Full DMS remains IN_PROGRESS/NOT_DEPLOYED/ACCEPTANCE_PENDING.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

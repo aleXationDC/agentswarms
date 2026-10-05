@@ -405,6 +405,23 @@ SITE_URL="https://your-domain.com"`}</Code>
         must enable it, do so on an instance with no public embeds.
       </Callout>
 
+      <H3 id="env-document-privacy">Local document privacy recovery</H3>
+      <Table
+        headers={["Variable", "Purpose"]}
+        rows={[
+          [
+            <C key="presidio">PRESIDIO_ANALYZER_URL</C>,
+            "Explicit internal endpoint for the bounded DMS analyzer client: only http://presidio-analyzer:3000 is accepted. No default, redirects or fallback endpoints.",
+          ],
+        ]}
+      />
+      <Callout kind="warn">
+        This recovery client is not an activated service or a privacy authorization. Setting the
+        variable does not deploy Presidio, register a tool or grant ELIGIBLE. Immutable image/model,
+        private-network/logging and protected Case/source/rights evidence must be verified before
+        live use. Missing language/entity coverage fails closed.
+      </Callout>
+
       <H3 id="env-observability">Observability and audit</H3>
       <Table
         headers={["Variable", "Purpose"]}
