@@ -1175,6 +1175,26 @@ heads6bf776/85dbb7/6e18b4 remain clean/preserved.
 Production, Development and local MCP unchanged; remaining
 L19/effect/rights/graph/runtime work not complete.
 
+### Existing native Canvas strict checkpoint binding
+
+Resume-claim ordering is committed/pushed/mirrored at `ad0be116`;
+same PR11 and OPEN Cases retain that exact candidate.
+The existing Canvas Approval function now determines strict DMS checkpoint
+mode from the persisted authenticated owned Parent. No client flag or prompt
+can select the profile. The native context/cursor remain unchanged; failed
+checkpoint persistence prevents the suspension status write. DMS suspension
+storage errors are content-free, Development's prior required boolean/errors
+remain unchanged.
+
+Nine actual Canvas handler fixtures plus writer/resume regressions pass
+**65 tests**; targeted lint passes. Final full ordered type/lint/docs/
+commands/infra/unit gate PASS: **588 files /9,777 tests /40 skipped**;
+unchanged resource-bounded client/SSR build PASS. Protected-secret
+scan:2,437 source/evidence files PASS.
+Mocks prove wiring/order, not live roles, reviewer authority or atomic
+Approval/checkpoint/effect persistence. Original-free hydration and the
+remaining complete assignment remain pending; no runtime mutation.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

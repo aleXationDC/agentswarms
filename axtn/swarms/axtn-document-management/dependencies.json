@@ -404,6 +404,18 @@
       "gap": "Synthetic authority/storage is not native database concurrency, live independent reviewer or provider effect proof."
     },
     {
+      "id": "document-canvas-checkpoint",
+      "kind": "existing-native-approval-checkpoint",
+      "source": "src/utils/swarmApprovals.functions.ts",
+      "sourceSHA256": "5d7f4817c4137283eeec3c4d3705e8317849df61c97e10d2820a64c19309b93b",
+      "dependencies": ["document-checkpoint-read"],
+      "implemented": "authenticated owned persisted Parent determines strict Canvas Approval checkpoint write; exact native cursor/context retained; content-free DMS suspension storage error; Development required boolean behavior retained",
+      "tested": "nine actual Canvas handler fixtures plus strict writer and actual resume regressions,65 tests; no live database/reviewer proof",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Raw context remains. Approval creation and checkpoint/status writes are not atomic; broader hydration/effect/readback recovery remains pending."
+    },
+    {
       "name": "privacy-preflight",
       "kind": "service",
       "recovered": "historical local Presidio contracts",

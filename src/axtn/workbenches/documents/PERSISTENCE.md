@@ -168,3 +168,12 @@ produce explicit content-free errors before execution. Development retains
 its prior handler claim and read modes. Actual handler-to-executor tests cover
 this ordering using synthetic database/Approval authority; they do not prove
 live role/concurrency or human review.
+
+The existing Canvas Approval handler also selects strict checkpoint writes
+from its authenticated owned persisted Parent, never caller flags. It retains
+the native parked-level cursor and exact context; checkpoint failure cannot
+be followed by a successful suspension stamp. DMS suspension database errors
+are bounded; Development retains boolean required writes and existing errors.
+Nine actual handler fixtures exercise these contracts with mocked native
+Approval/database services. Approval creation, checkpoint and status updates
+remain separate native writes, not an atomic effect or recovery guarantee.

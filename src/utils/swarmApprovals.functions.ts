@@ -18,6 +18,7 @@ import { sendMail } from "@/lib/email/mailer.server";
 import { createNativeWorkApproval } from "@/utils/swarmWorkApproval.server";
 import { saveCheckpoint } from "@/utils/swarmCheckpoint.server";
 import type { SwarmCheckpoint } from "@/lib/swarmCheckpoint";
+import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
 
 export const createWorkSwarmApproval = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
@@ -49,6 +50,14 @@ export const createWorkSwarmApproval = createServerFn({ method: "POST" })
     ) {
       throw new Error("NATIVE_APPROVAL_CHECKPOINT_NODE_MISMATCH");
     }
+    const { data: run, error: runError } = await supabaseAdmin
+      .from("swarm_runs")
+      .select("swarm_id")
+      .eq("id", data.run_id)
+      .eq("user_id", auth.userId)
+      .maybeSingle();
+    if (runError || !run) throw new Error("NATIVE_APPROVAL_RUN_DENIED");
+    const documentParent = run.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
     const created = await createNativeWorkApproval({
       userId: auth.userId,
       runId: data.run_id,
@@ -63,14 +72,17 @@ export const createWorkSwarmApproval = createServerFn({ method: "POST" })
       source: "canvas",
       depth: 0,
       checkpoint: data.checkpoint satisfies SwarmCheckpoint,
-      required: true,
+      required: documentParent ? "document" : true,
     });
     const { error } = await supabaseAdmin
       .from("swarm_runs")
       .update({ status: "suspended" })
       .eq("id", data.run_id)
       .eq("user_id", auth.userId);
-    if (error) throw new Error(`Native Approval suspension failed: ${error.message}`);
+    if (error) {
+      if (documentParent) throw new Error("DOCUMENT_APPROVAL_SUSPENSION_FAILED");
+      throw new Error(`Native Approval suspension failed: ${error.message}`);
+    }
     return created;
   });
 
