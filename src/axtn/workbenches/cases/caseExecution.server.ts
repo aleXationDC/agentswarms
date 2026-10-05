@@ -2,6 +2,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import type { WorkPrincipal } from "./work.server";
+import { CaseAccessView, CaseExecutionView } from "./caseAssignmentContract";
 
 const Principal = z
   .object({
@@ -171,6 +172,67 @@ export async function blockCaseRun(userId: string, runId: string, reasonCode: st
     console.warn(
       "[caseExecution] Failure recorded; human takeover forbids automatic processing changes",
     );
+}
+
+export async function readCaseExecutionView(
+  userId: string,
+  caseId: string,
+  principal: WorkPrincipal,
+) {
+  const authorized = await supabaseAdmin.rpc("axtn_case_assignment", {
+    p_user_id: userId,
+    p_operation: "case_access",
+    p_payload: { caseId, offset: 0, limit: 1, _principal: principal },
+  });
+  if (authorized.error) throw new Error(authorized.error.message);
+  const view = CaseAccessView.parse(authorized.data);
+  if (view.total !== 1 || view.cases[0]?.case_id !== caseId) throw new Error("CASE_ACCESS_DENIED");
+  const {
+    data: runs,
+    error,
+    count,
+  } = await supabaseAdmin
+    .from("swarm_runs")
+    .select("id, case_attempt_id, status, case_execution_binding", { count: "exact" })
+    .eq("case_id", caseId)
+    .order("started_at", { ascending: false })
+    .limit(20);
+  if (error || !runs || count === null) throw new Error("CASE_EXECUTION_RUN_READ_FAILED");
+  const ids = runs.map((run) => run.id);
+  const failures = ids.length
+    ? await supabaseAdmin
+        .from("audit_events")
+        .select("resource_id, detail, created_at")
+        .in("resource_id", ids)
+        .eq("action", "axtn_case_execution.BLOCKED")
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+  if (failures.error || !failures.data) throw new Error("CASE_EXECUTION_EVIDENCE_READ_FAILED");
+  return CaseExecutionView.parse({
+    total: count,
+    limit: 20,
+    runs: runs.map((run) => {
+      const binding =
+        run.case_execution_binding === null
+          ? null
+          : CaseExecutionBinding.parse(run.case_execution_binding);
+      const failure = failures.data.find((row) => row.resource_id === run.id);
+      const detail = failure?.detail;
+      const code = CaseExecutionFailureCode.safeParse(
+        detail && typeof detail === "object" && !Array.isArray(detail) ? detail.reasonCode : null,
+      );
+      return {
+        runId: run.id,
+        attemptId: run.case_attempt_id,
+        status: run.status,
+        executionClass: binding?.execution_class ?? null,
+        executionPrincipalUserId: binding?.execution_principal_user_id ?? null,
+        providerId: binding?.provider_id ?? null,
+        modelId: binding?.model_id ?? null,
+        failureCode: code.success ? code.data : null,
+      };
+    }),
+  });
 }
 
 async function call(userId: string, operation: string, payload: Json) {

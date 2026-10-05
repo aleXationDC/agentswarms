@@ -75,7 +75,7 @@ export const Route = createFileRoute("/api/swarm/run")({
         const { data: key } = await supabaseAdmin
           .from("swarm_api_keys")
           .select(
-            "id, user_id, swarm_id, is_active, reject_approvals, expires_at, scopes, webhook_secret, callback_url",
+            "id, user_id, swarm_id, is_active, reject_approvals, expires_at, revoked_at, scopes, webhook_secret, callback_url",
           )
           .eq("key_hash", keyHash)
           .maybeSingle();
@@ -99,7 +99,8 @@ export const Route = createFileRoute("/api/swarm/run")({
           return json({ error: message }, status);
         };
 
-        if (!key.is_active) return denyKey("key_disabled", "Invalid or disabled API key");
+        if (!key.is_active || key.revoked_at)
+          return denyKey("key_disabled", "Invalid or disabled API key");
         if (key.expires_at && Date.parse(key.expires_at) <= Date.now()) {
           return denyKey("key_expired", "This API key has expired.", 403);
         }
@@ -151,6 +152,8 @@ export const Route = createFileRoute("/api/swarm/run")({
           } catch {
             /* empty body ok */
           }
+          if (!payload || typeof payload !== "object" || Array.isArray(payload))
+            return json({ error: "Invalid swarm run body" }, 400);
           let caseExecution: CaseRunContext | undefined;
           let caseClosed = false;
           if (payload.case_id !== undefined) {
@@ -166,20 +169,6 @@ export const Route = createFileRoute("/api/swarm/run")({
             const parsedCase = z.string().uuid().safeParse(payload.case_id);
             if (!parsedCase.success) return json({ error: "CASE_ACCESS_DENIED" }, 400);
             if (!scopes.includes("cases")) return json({ error: "Case scope required" }, 403);
-            if (
-              Object.keys(payload).some((field) =>
-                [
-                  "user_id",
-                  "execution_principal_user_id",
-                  "credential_owner_id",
-                  "credential_id",
-                  "integration_id",
-                  "internalUserId",
-                  "case_attempt_id",
-                ].includes(field),
-              )
-            )
-              return json({ error: "CASE_EXECUTION_CLIENT_IDENTITY_FORBIDDEN" }, 400);
             const principal = { kind: "swarm_api_key" as const, id: key.id };
             const view = CaseAccessView.parse(
               await executeCaseWork(

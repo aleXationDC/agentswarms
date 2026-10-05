@@ -33,6 +33,7 @@ function checkAssignment(assignment: z.infer<typeof AssignmentFields>, ctx: z.Re
 export const CaseAssignment = AssignmentFields.superRefine(checkAssignment);
 
 export const CaseAssignmentRequest = z.union([
+  z.object({ operation: z.literal("case_execution_view"), caseId: z.string().uuid() }).strict(),
   z
     .object({
       operation: z.literal("case_assignment"),
@@ -53,6 +54,22 @@ export const CaseAssignmentRequest = z.union([
     })
     .strict(),
 ]);
+export const CaseExecutionView = z.object({
+  total: z.number().int().nonnegative(),
+  limit: z.literal(20),
+  runs: z.array(
+    z.object({
+      runId: z.string().uuid(),
+      attemptId: z.string(),
+      status: z.string(),
+      executionClass: z.enum(["PERSONAL_CONNECTION", "SYSTEM_INTEGRATION"]).nullable(),
+      executionPrincipalUserId: z.string().uuid().nullable(),
+      providerId: z.string().nullable(),
+      modelId: z.string().nullable(),
+      failureCode: z.string().nullable(),
+    }),
+  ),
+});
 export type CaseAssignmentRequest = z.infer<typeof CaseAssignmentRequest>;
 
 export const CaseAccessView = z.object({

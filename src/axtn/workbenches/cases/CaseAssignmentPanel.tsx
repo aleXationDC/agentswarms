@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { callCaseWork } from "./caseApi";
-import { CaseAccessView, CaseAssignment } from "./caseAssignmentContract";
+import { CaseAccessView, CaseAssignment, CaseExecutionView } from "./caseAssignmentContract";
 
 export function CaseAssignmentPanel({
   caseId,
@@ -15,6 +15,9 @@ export function CaseAssignmentPanel({
   const [current, setCurrent] = useState<ScopedCase | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [execution, setExecution] = useState<ReturnType<typeof CaseExecutionView.parse> | null>(
+    null,
+  );
   const [pending, setPending] = useState<
     | ({
         operation: "case_assignment";
@@ -37,6 +40,10 @@ export function CaseAssignmentPanel({
     );
     const row = view.cases[0];
     if (!row) throw new Error("CASE_ACCESS_DENIED");
+    const runs = CaseExecutionView.parse(
+      await callCaseWork({ operation: "case_execution_view", caseId }),
+    );
+    setExecution(runs);
     return row;
   }, [caseId]);
   useEffect(() => {
@@ -122,6 +129,49 @@ export function CaseAssignmentPanel({
               Responsibility does not transfer custody, credentials or Acceptance authority. Route
               metadata is not proof of an execution binding.
             </p>
+            {execution && (
+              <div className="space-y-2 text-sm" aria-label="Persisted Case execution">
+                <p>
+                  Native runs: {execution.total}. Showing latest {execution.runs.length} (limit{" "}
+                  {execution.limit}).
+                </p>
+                {execution.runs.map((run) => (
+                  <p key={run.runId}>
+                    {run.status} · {run.executionClass ?? "No semantic binding"} ·{" "}
+                    {run.providerId ?? "—"}/{run.modelId ?? "—"}
+                    {" · Attempt "}
+                    {run.attemptId}
+                    {" · Run "}
+                    {run.runId}
+                    {run.failureCode && (
+                      <>
+                        {" "}
+                        · <strong>{run.failureCode}</strong>
+                      </>
+                    )}
+                  </p>
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void load()
+                      .then(setCurrent)
+                      .catch((cause) => {
+                        setError(
+                          cause instanceof Error ? cause.message : "Case execution unavailable.",
+                        );
+                      })
+                  }
+                >
+                  Refresh native execution
+                </Button>
+                <p className="text-muted-foreground">
+                  Failures do not accept or close this Case. Use the existing human takeover,
+                  responsibility/route and native run-resume controls; no automatic provider or
+                  payer fallback.
+                </p>
+              </div>
+            )}
             {current.case_access_mode === "CUSTODIAN" && (
               <>
                 <Textarea

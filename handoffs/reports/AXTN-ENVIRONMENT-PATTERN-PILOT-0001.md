@@ -7,7 +7,42 @@ No enterprise, independent Acceptance or complete neighboring assignment PASS.
 
 ## Native Case execution candidate: isolated proof, convergence withheld
 
-The subsequent execution candidate is **IMPLEMENTED_PARTIAL / ISOLATED_TESTED /
+Continuation after the resource block: recovered host memory permits the
+canonical typecheck and client/SSR build to pass without changing tooling or
+stopping services. The historical resource failures below remain actual
+evidence, not current architectural blockers. The subsequent minimized
+execution-view addition also passes typecheck. Final exact candidate gates
+are rerun before publication/convergence.
+
+`caseExecutionConcurrency.mjs` proves two actual concurrent native group
+claims choose different eligible members;16 concurrent same-operation calls
+permit exactly one new semantic claim, and16 failure replays produce one
+atomic native blocked transition/audit. These are independent PostgreSQL
+sessions, not mocked races. The complete2100 migration installs once on a
+fresh pre-execution isolated native baseline and its rollback SQL proof
+passes; incremental canary function refresh is not substituted for this test.
+
+The existing HTTP swarm handler has11 functional Request/Response tests:
+authorized completed readback even after closure, invalid Case/principal/
+status/output denial, undeclared identity fields, failed-ledger recovery,
+required idempotency/scope and revoked-key denial. Its persistence is mocked;
+it is not represented as a deployed HTTP inference proof. Three additional
+tests use actual native AES-GCM integration/provider credential helpers and
+existing transport/adapter wiring with synthetic credentials; no real
+provider inference or foreign key fallback is claimed.
+
+The existing Case responsibility panel now displays a bounded persisted
+execution projection through the same authenticated Case Work API:
+run, Attempt, status, execution class/provider/model and typed blocked code.
+The server reauthorizes current Case access before querying runs/audit, returns
+an exact total and explicit20-run limit, and does not expose prompts, private
+outputs, credential rows or raw error evidence. Three functional projection
+tests prove denied access performs no run read, fields are minimized and
+storage failure cannot appear as empty success. Existing Human takeover,
+assignment/route and native run-resume remain the continuation mechanisms;
+there is no automatic provider/payer substitution.
+
+The initially published execution checkpoint `a0f4b36d` was **IMPLEMENTED_PARTIAL / ISOLATED_TESTED /
 TYPECHECK_RESOURCE_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**. The exact
 published candidate belongs to the same DraftPR14 and five existing Cases;
 it is not the deployed image revision. No Case was completed or accepted.
@@ -72,15 +107,24 @@ with40 existing skips (9978 total). Lint passes with zero errors and235
 warnings; documentation, Markdown, command and infrastructure checks pass
 (PowerShell parsing remains the existing unavailable-tool skip).
 
-Current source typecheck is **not verified**: conventional/2304-MiB and
+At checkpoint `a0f4b36d`, final source typecheck was **not verified**: conventional/2304-MiB and
 2048-MiB bounded attempts exit137; the 1536-MiB bounded attempt exhausts V8
 heap (exit134, measured peak1645480KiB). The 2048-MiB attempt peaks2014420KiB
 and is killed by shared-host memory pressure. No service is stopped, no
 infrastructure or local MCP configuration is changed, and no build/deploy
 gate is bypassed. Earlier intermediate typecheck success does not certify
-this later candidate. Complete build, concurrency, endpoint/encrypted
-credential-path proof, minimized execution UI, real providers, exact-source
-PROD/restart evidence and independent Acceptance remain open.
+that candidate. The continuation above resolves local typecheck/build,
+concurrency, HTTP-handler/encrypted-credential fixtures and minimized UI
+source gaps. Real providers, exact-source PROD/restart evidence and
+independent Acceptance remain open.
+
+Final continuation source gates pass: canonical typecheck, lint, docs,
+Markdown, documented commands, infrastructure, full599 unit files/9955
+passing tests/40 existing skips and unmodified canonical client/SSR build.
+All14 rollback native pilot/DMS/Approval SQL fixtures also pass against the
+complete fresh2100 schema. This verified source candidate is eligible for
+the assignment's bounded native App/additive-schema convergence, not a
+merge/release or independent Acceptance.
 
 Fresh live readback remains healthy App
 `79f0d3911a2865798ea8034597c1357b5deec06b`, image
