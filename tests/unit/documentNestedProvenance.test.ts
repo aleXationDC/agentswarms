@@ -172,7 +172,6 @@ describe("actual native DMS resume fails before effectful execution on routing l
     { deadEdgeIds: ["unknown"] },
     { levelIndex: 9 },
     { levelIndex: 0 },
-    { levelIndex: 1 },
     { completedNodeIds: [] },
     { suspendedNodeId: "intake" },
     { suspendedNodeId: null },
@@ -233,6 +232,20 @@ describe("actual native DMS resume fails before effectful execution on routing l
       deadEdgeIds: [],
       levelIndex: 2,
     });
+  });
+  it("accepts the existing canvas suspension cursor without repeating completed Intake effects", async () => {
+    state.load.mockResolvedValue({ ...checkpoint(), levelIndex: 1 });
+    expect(
+      await resumeSwarmRun({
+        runId,
+        userId: owner,
+        origin: "http://localhost",
+        decision: { approved: true },
+      }),
+    ).toMatchObject({ status: "success", runId });
+    expect(state.tool).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(state.begin).not.toHaveBeenCalled();
   });
   it("round-trips an actual executor suspension checkpoint and does not repeat the preceding tool", async () => {
     const snapshot = parked().swarm_snapshot;

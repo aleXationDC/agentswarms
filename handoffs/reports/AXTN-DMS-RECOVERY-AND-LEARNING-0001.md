@@ -1088,6 +1088,26 @@ context is still retained; protected hydration, all-surface L19, live restart,
 provider/effect/receipt and independent Acceptance remain incomplete.
 Production/Development/local MCP/provider settings are unchanged.
 
+### Native canvas suspension-cursor compatibility correction
+
+Strict checkpoint recovery is committed at `2ffffe0e`, canonical-pushed/
+mirrored and bound to the same draft PR11/Cases. Follow-up source inspection
+found the existing canvas writer stores its parked zero-based level, whereas
+headless increments before capture. The initial exact-level guard accepted
+only headless state. This tightly coupled compatibility defect is corrected:
+both existing representations must match the actual persisted Approval level,
+and all preceding levels still require completed/skipped identity.
+No checkpoint rewriting, graph/cursor mutation or new restart behavior.
+
+Actual resume tests cover the existing canvas cursor and the headless
+produced-checkpoint roundtrip with no preceding tool repeat. Both focused
+suites pass **40 tests**, with all 24 executor fixtures collected.
+Final ordered typecheck/lint/docs/command/infra/full-unit gates and unchanged
+resource-bounded client/SSR build pass: **587 files / 9,752 tests PASS /
+40 skipped**. Exact-byte dependency tests pass 3/3.
+The earlier `2ffffe0e` gate remains its own measured result, not evidence that
+the correction is deployed or full L19/Acceptance has passed.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

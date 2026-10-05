@@ -1255,15 +1255,18 @@ export async function resumeSwarmRun(args: {
       completed.size !== checkpoint.completedNodeIds.length ||
       skipped.size !== checkpoint.skippedNodeIds.length ||
       new Set(checkpoint.deadEdgeIds).size !== checkpoint.deadEdgeIds.length ||
-      checkpoint.levelIndex < 1 ||
+      checkpoint.levelIndex < 0 ||
       checkpoint.levelIndex > topoLevels(nodes, edges).length
     )
       throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");
     const levels = topoLevels(nodes, edges);
+    const parkedLevel = levels.findIndex((level) =>
+      level.some((node) => node.id === checkpoint.suspendedNodeId),
+    );
     if (
-      !levels[checkpoint.levelIndex - 1].some((node) => node.id === checkpoint.suspendedNodeId) ||
+      (checkpoint.levelIndex !== parkedLevel && checkpoint.levelIndex !== parkedLevel + 1) ||
       levels
-        .slice(0, checkpoint.levelIndex - 1)
+        .slice(0, parkedLevel)
         .some((level) => level.some((node) => !completed.has(node.id) && !skipped.has(node.id)))
     )
       throw new Error("DOCUMENT_RESUME_EXACT_ROUTING_REQUIRED");

@@ -137,7 +137,10 @@ routing arrays, invalid level or a database failure produces content-free
 errors. Generic and protected Development readers keep their prior contracts.
 Resume requires the same suspended Parent, exact snapshot IDs, valid Approval
 parked node, disjoint completed/skipped sets, real dead edges, and the native
-level cursor (the executor increments it **before** persisting suspension).
+level cursor (headless increments it **before** persisting suspension; the
+existing canvas writer stores the parked level itself). Both exact native
+representations are checked against the actual Approval level, not arbitrary
+caller cursor values.
 Prior levels must retain completed/skipped identities. Valid context/routing
 is preserved unchanged; no node is restarted to repair missing metadata.
 Actual executor suspension-to-resume tests use the produced checkpoint and
