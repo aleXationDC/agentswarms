@@ -36,7 +36,10 @@ import { clientIp, clientUserAgent } from "@/utils/requestMeta.server";
 import { budgetMessage, getBudgetDecision } from "@/utils/budgetGuard.server";
 import { deliverRunCallback, hashBody } from "@/utils/swarmWebhook.server";
 import { idempotencyVerdict, type IdempotencyRow } from "@/utils/swarmIdempotency";
-import { documentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import {
+  documentRegistrationAck,
+  DOCUMENT_MANAGEMENT_SWARM_ID,
+} from "@/axtn/workbenches/documents/documentRegistrationAck";
 import { readDocumentParentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck.server";
 import { documentSuspendedOutput } from "@/axtn/workbenches/documents/documentPersistence.server";
 
@@ -154,15 +157,21 @@ export const Route = createFileRoute("/api/swarm/run")({
           // A retried POST (client timeout, proxy retry, at-least-once queue)
           // used to re-run the whole swarm and re-bill it. With a key we
           // return the original result instead.
-          const idemKey = (request.headers.get("idempotency-key") || "").trim().slice(0, 200);
+          const documentParent = key.swarm_id === DOCUMENT_MANAGEMENT_SWARM_ID;
+          const requestedIdemKey = (request.headers.get("idempotency-key") || "").trim();
+          if (documentParent && (!requestedIdemKey || requestedIdemKey.length > 200))
+            return json({ error: "DOCUMENT_RUN_IDEMPOTENCY_KEY_REQUIRED" }, 400);
+          const idemKey = requestedIdemKey.slice(0, 200);
           const reqHash = idemKey ? await hashBody(payload) : "";
           if (idemKey) {
-            const { data: existing } = await supabaseAdmin
+            const { data: existing, error: readError } = await supabaseAdmin
               .from("swarm_run_idempotency")
               .select("status, response, request_hash, run_id")
               .eq("api_key_id", key.id)
               .eq("idempotency_key", idemKey)
               .maybeSingle();
+            if (documentParent && readError)
+              throw new Error("DOCUMENT_RUN_IDEMPOTENCY_READ_FAILED");
             const verdict = idempotencyVerdict(existing as IdempotencyRow | null, reqHash);
             if (verdict.action === "mismatch") {
               return json(
@@ -212,6 +221,15 @@ export const Route = createFileRoute("/api/swarm/run")({
                 409,
               );
             }
+            if (documentParent && existing) {
+              return json(
+                {
+                  error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED",
+                  runId: existing.run_id,
+                },
+                409,
+              );
+            }
 
             // CLAIM ATOMICALLY. This was an upsert, which SUCCEEDS FOR BOTH
             // racers: two concurrent requests carrying the same key both read
@@ -229,6 +247,10 @@ export const Route = createFileRoute("/api/swarm/run")({
               status: "in_progress",
             });
             if (claimErr) {
+              if (documentParent) {
+                if (claimErr.code !== "23505") throw new Error("DOCUMENT_RUN_CLAIM_FAILED");
+                return json({ error: "DOCUMENT_RUN_CLAIM_CONFLICT" }, 409);
+              }
               // A row exists. Either a racer just created it, or an earlier
               // attempt failed and this is a retry — and only ONE retrier may
               // proceed, so the takeover is a conditional update that matches
@@ -329,16 +351,22 @@ export const Route = createFileRoute("/api/swarm/run")({
             body: { runId?: string | null; [key: string]: unknown },
           ) => {
             if (!idemKey) return;
-            await supabaseAdmin
-              .from("swarm_run_idempotency")
-              .update({
-                status,
-                response: body as never,
-                run_id: body.runId ?? null,
-                completed_at: status === "in_progress" ? null : new Date().toISOString(),
-              })
-              .eq("api_key_id", key.id)
-              .eq("idempotency_key", idemKey);
+            try {
+              const { error } = await supabaseAdmin
+                .from("swarm_run_idempotency")
+                .update({
+                  status,
+                  response: body as never,
+                  run_id: body.runId ?? null,
+                  completed_at: status === "in_progress" ? null : new Date().toISOString(),
+                })
+                .eq("api_key_id", key.id)
+                .eq("idempotency_key", idemKey);
+              if (documentParent && error) throw new Error("DOCUMENT_RUN_OUTCOME_WRITE_FAILED");
+            } catch (error) {
+              if (documentParent) throw new Error("DOCUMENT_RUN_OUTCOME_WRITE_FAILED");
+              throw error;
+            }
           };
 
           // ── Async mode ────────────────────────────────────────────────

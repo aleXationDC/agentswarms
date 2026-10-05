@@ -193,3 +193,22 @@ tests exercise marker omission and exact ACK/no-second-run behavior.
 This covers **suspended output only**, not terminal output/errors, direct
 database cache writes, existing stored historical bodies, callbacks' broader
 retention, or original-free checkpoint hydration. No blanket L19 PASS follows.
+
+For the authenticated source-defined Parent, the public API now requires the
+existing `Idempotency-Key` header (nonempty, at most 200 characters; no silent
+Parent truncation). Existing n8n Drive/IMAP/Workspace ingress HTTP nodes
+already set this header. A failed record or completed record without a result
+returns `DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED` with the same run ID rather
+than starting the graph again. A concurrent insert conflict also cannot
+take over a failed Parent record. Request mismatch is still checked first;
+valid completed replay and suspended owned readback retain their contracts.
+Generic/Development optional headers, generic verdict and atomic failed
+takeover remain unchanged.
+
+Returned Parent idempotency read/claim errors and returned/thrown outcome
+write failures surface explicit content-free codes; no successful ACK is
+returned when its pending cache write failed. This is an intentional
+fail-closed barrier, **not recovery implementation or effect idempotency**.
+Current provider rights, durable EffectKey/receipt/claim/fencing and UNKNOWN
+readback are still required. Different keys/deliveries remain outside this
+same-key guard; never report it as full no-double-effect proof.

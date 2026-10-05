@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DOCUMENT_SUSPENDED_OUTPUT } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 type Handler = (context: { request: Request }) => Promise<Response>;
-type Result = { data: unknown; error: null };
+type Result = { data: unknown; error: { message: string; code: string } | null };
 const state = vi.hoisted(() => ({
   handler: null as Handler | null,
   swarmId: "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
@@ -17,6 +17,9 @@ const state = vi.hoisted(() => ({
   readAck: vi.fn(),
   callback: vi.fn(),
   release: vi.fn(),
+  readError: false,
+  claimError: "",
+  writeError: false,
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { server: { handlers: { POST: Handler } } }) => {
@@ -27,6 +30,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
     from(table: string) {
+      let method = "";
       const result = (): Result => {
         if (table === "swarm_api_keys")
           return {
@@ -43,7 +47,16 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             },
             error: null,
           };
-        if (table === "swarm_run_idempotency") return { data: state.idem, error: null };
+        if (table === "swarm_run_idempotency")
+          return {
+            data: state.idem,
+            error:
+              (method === "insert" && state.claimError) ||
+              (method === "update" && state.writeError) ||
+              (!method && state.readError)
+                ? { message: "ORIGINAL_DATABASE_LEAKAGE_MARKER", code: state.claimError || "XX000" }
+                : null,
+          };
         if (table === "swarms")
           return {
             data: { id: state.swarmId, name: "DMS fixture", nodes: [], edges: [] },
@@ -59,10 +72,12 @@ vi.mock("@/integrations/supabase/client.server", () => ({
           return chain;
         },
         insert(value: Record<string, unknown>) {
+          method = "insert";
           state.writes.push({ table, method: "insert", value });
           return chain;
         },
         update(value: Record<string, unknown>) {
+          method = "update";
           state.writes.push({ table, method: "update", value });
           return chain;
         },
@@ -115,7 +130,11 @@ const ack = {
   case_id: "22222222-2222-4222-8222-222222222222",
   input_hash: "a".repeat(64),
 };
-async function post(payload: Record<string, unknown> = {}, idempotent = true) {
+async function post(
+  payload: Record<string, unknown> = {},
+  idempotent = true,
+  idempotencyKey = "delivery-fixture",
+) {
   if (!state.handler) throw new Error("Route fixture handler not registered");
   return state.handler({
     request: new Request("http://localhost/api/swarm/run", {
@@ -123,7 +142,7 @@ async function post(payload: Record<string, unknown> = {}, idempotent = true) {
       headers: {
         Authorization: "Bearer synthetic-api-key",
         "Content-Type": "application/json",
-        ...(idempotent ? { "Idempotency-Key": "delivery-fixture" } : {}),
+        ...(idempotent ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify(payload),
     }),
@@ -133,6 +152,9 @@ beforeEach(() => {
   state.swarmId = "9b9ea6c2-a554-4fa7-9c40-908dad632ae7";
   state.idem = null;
   state.writes = [];
+  state.readError = false;
+  state.claimError = "";
+  state.writeError = false;
   state.execute.mockReset().mockResolvedValue({
     status: "suspended",
     output: "awaiting independent reviewer",
@@ -295,7 +317,7 @@ describe("existing public API Parent ACK transport", () => {
     expect(state.writes.at(-1)?.value.response).toMatchObject({
       output: DOCUMENT_SUSPENDED_OUTPUT,
     });
-    await post({ async: true, callback_url: "https://example.invalid/native-callback" }, false);
+    await post({ async: true, callback_url: "https://example.invalid/native-callback" });
     await vi.waitFor(() => expect(state.callback).toHaveBeenCalledOnce());
     expect(state.callback.mock.calls[0][0].payload).toMatchObject({
       output: DOCUMENT_SUSPENDED_OUTPUT,
@@ -334,5 +356,86 @@ describe("existing public API Parent ACK transport", () => {
     expect(state.writes.at(-1)?.value.response).toMatchObject({
       output: "awaiting independent reviewer",
     });
+  });
+  it.each(["failed", "completed"])(
+    "requires readback for %s DMS record without rerun or takeover",
+    async (status) => {
+      state.idem = { status, request_hash: "request-hash", run_id: runId, response: null };
+      const response = await post();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: "DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED",
+        runId,
+      });
+      expect(state.execute).not.toHaveBeenCalled();
+      expect(state.writes).toEqual([]);
+      expect(state.release).toHaveBeenCalledOnce();
+    },
+  );
+  it("retains mismatch-before-recovery for a failed DMS record", async () => {
+    state.idem = { status: "failed", request_hash: "different", run_id: runId, response: null };
+    expect((await post()).status).toBe(422);
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
+  it("does not take over a concurrently failed DMS claim after insert conflict", async () => {
+    state.claimError = "23505";
+    const response = await post();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "DOCUMENT_RUN_CLAIM_CONFLICT" });
+    expect(state.writes.map((write) => write.method)).toEqual(["insert"]);
+    expect(state.execute).not.toHaveBeenCalled();
+  });
+  it("surfaces non-conflict DMS claim failures before execution", async () => {
+    state.claimError = "XX000";
+    await expect(post()).rejects.toThrow("DOCUMENT_RUN_CLAIM_FAILED");
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes.map((write) => write.method)).toEqual(["insert"]);
+  });
+  it("surfaces DMS read failure before a new claim", async () => {
+    state.readError = true;
+    await expect(post()).rejects.toThrow("DOCUMENT_RUN_IDEMPOTENCY_READ_FAILED");
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
+  it("does not return a success-shaped pending ACK when DMS outcome persistence failed", async () => {
+    state.writeError = true;
+    await expect(post()).rejects.toThrow("DOCUMENT_RUN_OUTCOME_WRITE_FAILED");
+    expect(state.readAck).not.toHaveBeenCalled();
+    expect(state.execute).toHaveBeenCalledOnce();
+    expect(state.release).toHaveBeenCalledOnce();
+  });
+  it("preserves the existing generic failed-claim takeover", async () => {
+    state.swarmId = "development-fixture";
+    state.readAck.mockResolvedValue(null);
+    state.idem = { status: "failed", request_hash: "request-hash", run_id: runId, response: null };
+    state.claimError = "23505";
+    expect((await post()).status).toBe(200);
+    expect(state.writes[1]).toMatchObject({
+      method: "update",
+      value: { status: "in_progress", response: null },
+    });
+    expect(state.execute).toHaveBeenCalledOnce();
+  });
+  it("requires the existing delivery idempotency header for Parent execution", async () => {
+    const response = await post({}, false);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "DOCUMENT_RUN_IDEMPOTENCY_KEY_REQUIRED" });
+    expect(state.writes).toEqual([]);
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.release).toHaveBeenCalledOnce();
+  });
+  it("preserves generic execution without an idempotency header", async () => {
+    state.swarmId = "development-fixture";
+    state.readAck.mockResolvedValue(null);
+    expect((await post({}, false)).status).toBe(200);
+    expect(state.writes.filter((write) => write.table === "swarm_run_idempotency")).toEqual([]);
+    expect(state.execute).toHaveBeenCalledOnce();
+  });
+  it.each([200, 201])("enforces the exact native Parent key-length boundary %i", async (length) => {
+    const response = await post({}, true, "a".repeat(length));
+    expect(response.status).toBe(length === 200 ? 200 : 400);
+    expect(state.execute).toHaveBeenCalledTimes(length === 200 ? 1 : 0);
+    if (length === 201) expect(state.writes).toEqual([]);
   });
 });

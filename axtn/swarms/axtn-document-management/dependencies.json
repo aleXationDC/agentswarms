@@ -392,7 +392,7 @@
       "gap": "Context remains unchanged and may contain originals; not minimized checkpoint hydration, live database/restart/no-repeat or independent Approval proof."
     },
     {
-      "id": "document-native-resume-claim",
+      "name": "document-native-resume-claim",
       "kind": "existing-native-approval-resume",
       "source": "src/utils/swarmResume.functions.ts",
       "sourceSHA256": "90e6bd8f9717bf57d3a0bdf4d960942807456c2342077b41427c9a4e04c46506",
@@ -404,7 +404,7 @@
       "gap": "Synthetic authority/storage is not native database concurrency, live independent reviewer or provider effect proof."
     },
     {
-      "id": "document-canvas-checkpoint",
+      "name": "document-canvas-checkpoint",
       "kind": "existing-native-approval-checkpoint",
       "source": "src/utils/swarmApprovals.functions.ts",
       "sourceSHA256": "5d7f4817c4137283eeec3c4d3705e8317849df61c97e10d2820a64c19309b93b",
@@ -416,16 +416,28 @@
       "gap": "Raw context remains. Approval creation and checkpoint/status writes are not atomic; broader hydration/effect/readback recovery remains pending."
     },
     {
-      "id": "document-suspended-output-transport",
+      "name": "document-suspended-output-transport",
       "kind": "existing-native-api-output-profile",
       "source": "src/routes/api/swarm.run.ts",
-      "sourceSHA256": "ef6667ecc4214ae56d5b20b40f0f6dffa4308e159c706a9915818f1579f3007e",
+      "sourceSHA256": "0f1ca71de68c6794a64b25da28bd8244443efab6dfff25fc2c334fdf07506f90",
       "dependencies": ["document-minimized-ingress-codec", "parent-registration-ack"],
       "implemented": "DMS Parent suspended output is explicit omission marker in sync/async callback/pending cache/legacy pending readback and native continuation response; owned top-level ACK unchanged; generic outputs untouched; registration database exceptions bounded",
       "tested": "actual API cache/callback/lost-response leakage marker and generic compatibility, native continuation handler and registration read exceptions;133 focused tests",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Only suspended free output minimized. Terminal output/error/cache/callback, direct database writes, historical retention and raw checkpoint context remain pending."
+    },
+    {
+      "name": "document-native-api-recovery-guard",
+      "kind": "existing-native-api-idempotency",
+      "source": "src/routes/api/swarm.run.ts",
+      "sourceSHA256": "0f1ca71de68c6794a64b25da28bd8244443efab6dfff25fc2c334fdf07506f90",
+      "dependencies": ["document-suspended-output-transport"],
+      "implemented": "authenticated stable Parent requires existing nonempty idempotency header up to200chars; no automatic failed/incomplete-result takeover or post-collision retry; explicit read/claim/outcome errors; existing generic verdict/atomic failed takeover retained",
+      "tested": "23 actual API fixtures and existing generic verdict/readback tests,82PASS; exact200/201key boundary; existing three n8n ingresses retain native idempotency headers",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Fail-closed same-key API guard only; no provider EffectKey/receipt/current-rights claim or UNKNOWN reconciliation, no protection across different keys/deliveries."
     },
     {
       "name": "privacy-preflight",

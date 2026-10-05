@@ -5,6 +5,80 @@ This is retained execution evidence, not a completion or production PASS.
 Authority: request revision `dad9629ae1ae98465beefa63deccd6c76aa42031`.
 G0 and exact root cause: [fresh preflight](AXTN-DMS-PREFLIGHT-0001.md).
 
+## Full assignment gate ledger
+
+This ledger records the **full gate**, not whether one source fixture passes.
+PARTIAL means measured source/isolated evidence exists but required integration
+or live proof is absent. PENDING means the complete gate has not been executed.
+BLOCKED identifies a concrete unavailable definition/binding, not a substitute
+for implementing unrelated technical work. No independent Acceptance PASS.
+Exact evidence and limitations for each increment are recorded below and in
+the dependency manifest; historical counts are not current gate executions.
+
+| Gate | Full-gate state | Delivered evidence / missing requirement                                                                               |
+| ---- | --------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| R1   | PARTIAL         | Stable graph sources recovered; exact two semantic agents/Skills/KB absent.                                            |
+| R2   | BLOCKED         | Full dependency seed/published Parent/Children require missing agent definitions.                                      |
+| R3   | BLOCKED         | Exact later prompts/models/temperature/Skills/KB/guardrails irrecoverable in checked authority.                        |
+| R4   | BLOCKED         | Exact native Skill definitions/bindings unavailable; no sample substitution.                                           |
+| R5   | BLOCKED         | Exact DMS KB definitions/seed/bindings unavailable; platform samples are not evidence.                                 |
+| R6   | PARTIAL         | Native Registry/LocalTable seed, roles/concurrency pass isolated; product MCP not registered live.                     |
+| R7   | PARTIAL         | NO_AI fences/offline OCR/pseudonymization tested; protected current privacy/language/coverage proof absent.            |
+| R8   | BLOCKED         | Stable Stage1/2 semantic definitions unavailable; Gemini assignment not replaced.                                      |
+| R9   | PARTIAL         | Native Approval roles and actual Canvas/handler/resume fixtures; no full published DMS/live reviewer proof.            |
+| R10  | PARTIAL         | Registry/proposal/owned registration readback fixtures; full live projection absent.                                   |
+| R11  | PARTIAL         | Guarded proposal/Approval preparation; no complete current-rights/effect eligibility.                                  |
+| R12  | PARTIAL         | Bounded native n8n filing/deletion readback tests; durable effect/receipt/live provider proof absent.                  |
+| R13  | PARTIAL         | Development/domain/primary-relation isolated roles and unit regressions; live DMS relation proof pending.              |
+| R14  | PENDING         | Full DMS live restart/resume persistence not executed.                                                                 |
+| R15  | PARTIAL         | Isolated native migrations/individual reseeds; complete dependency empty-state rehearsal absent.                       |
+| R16  | PARTIAL         | Protected secret scan source/evidence/assets/runtime logs passed; full newly converged DMS scope absent.               |
+| R17  | PARTIAL         | Exact candidate ordered source/build gates; full convergence candidate/effect/runtime package absent.                  |
+| L1   | PARTIAL         | Deterministic recognition/evaluation fixtures; real known-family/current target authority absent.                      |
+| L2   | PARTIAL         | Candidate/evaluator abstention fixtures; complete current feature vocabulary absent.                                   |
+| L3   | PARTIAL         | Recognition/assignment/evaluator ambiguity denial; full published graph execution absent.                              |
+| L4   | PARTIAL         | Actual SQL NO_AI/UNRESOLVED semantic denial; live privacy/coverage loader absent.                                      |
+| L5   | PARTIAL         | Same-Case Human takeover/proposal fences; full manual provider effect path absent.                                     |
+| L6   | PARTIAL         | Append-only confirmed exception/taxonomy feedback fixtures; live complete workflow absent.                             |
+| L7   | PARTIAL         | Actual native feedback dedup/roles/concurrency; full runtime feedback chain absent.                                    |
+| L8   | PARTIAL         | Current proposal/attempt/input revision fences; same-Case current provider SourceRevision advancement absent.          |
+| L9   | PARTIAL         | Disabled immutable policy/proposal guards; active-policy revocation at live suspend absent.                            |
+| L10  | PENDING         | Protected current source/target rights loader and provider rights-loss proof absent.                                   |
+| L11  | PARTIAL         | Same-key API blind rerun denied; provider UNKNOWN receipt/readback reconciliation absent.                              |
+| L12  | PARTIAL         | Native Case/proposal concurrent fixtures and atomic resume-claim wiring; persistent provider EffectKey fencing absent. |
+| L13  | PARTIAL         | Native filing verifier rejects filed-only/wrong identity/name/parent; durable provider receipt path absent.            |
+| L14  | PENDING         | ProviderPASS/EVIDENCE_PENDING projection-only recovery not implemented end-to-end.                                     |
+| L15  | PARTIAL         | Native Intake/feedback/candidate dedup/concurrency; provider collision proof absent.                                   |
+| L16  | PARTIAL         | Deterministic family metrics/evaluation hard gates; accepted QualityProfile and independent evaluation absent.         |
+| L17  | PARTIAL         | Evaluator privacy/rights/severe-error hard fail overrides aggregate score; full live review chain absent.              |
+| L18  | PARTIAL         | Strict minimized schemas/untrusted reference and evaluation fixtures; full graph/model injection acceptance absent.    |
+| L19  | PARTIAL         | Scoped trace/model barriers and suspended output omission; raw checkpoint/terminal/cache/audit/retention paths remain. |
+| L20  | PARTIAL         | Immutable source/proposal/rule/evaluator revisions; complete live model/prompt drift enforcement absent.               |
+| L21  | PENDING         | Live restart at DMS review/UNKNOWN not executed; UNKNOWN recovery missing.                                             |
+| L22  | PARTIAL         | Individual native empty-state/reseed fixtures; complete dependency/recovery graph empty-state proof absent.            |
+| L23  | PARTIAL         | Native candidate/policy direct-write scope fences; full reviewer/PR handoff runtime proof absent.                      |
+| L24  | BLOCKED         | Disabled policies retained; accepted QualityProfile/promotion/drift-revocation decision unavailable.                   |
+| C1   | PARTIAL         | Native atomic Intake Case-before-Registry incl privacy hold; full published semantic/effect graph absent.              |
+| C2   | PARTIAL         | Native Ensure concurrency/owned lost-response/no-repeat fixtures; complete provider effect recovery absent.            |
+| C3   | PARTIAL         | Actual protected owned assignment preserves primary relation; live DMS end-to-end absent.                              |
+| C4   | PARTIAL         | Shared authenticated Human validator/UI seam; complete manual provider execution unavailable.                          |
+| C5   | PARTIAL         | Native takeover stale-attempt/proposal/Approval fences; full graph/effect continuation absent.                         |
+| C6   | PARTIAL         | Shared domain validation/Approval and actual Canvas wiring; current source rights/provider gate absent.                |
+| C7   | PARTIAL         | RESULT cannot close without authority; UNKNOWN receipt/projection recovery missing.                                    |
+| C8   | PARTIAL         | Strict native checkpoint/cursors/owned lineage fixtures; full live restart and original-free hydration absent.         |
+| C9   | PARTIAL         | Native foreign-owner/Case/primary relation and Priority0 tests; converged DMS runtime proof absent.                    |
+| C10  | PARTIAL         | Native inactive Candidate/disabled policy fixtures; full independent promotion contract absent.                        |
+| C11  | PARTIAL         | Persistent same implementation Parent/Children/references; independent eligible reviewer unavailable.                  |
+| C12  | PENDING         | Complete persistent acceptance Cases and channel-equal live KPI proof not executed.                                    |
+| C13  | PENDING         | ProviderPASS/Case-projection failure recovery without repeat effect remains unimplemented.                             |
+| S1   | PARTIAL         | Exact current full unit gates and isolated native Development guards; post-convergence live proof pending.             |
+| S2   | PARTIAL         | Protected native domain/proposal/Approval compatibility fixtures; full FilingReceipt domain integration absent.        |
+| S3   | PARTIAL         | Actual native dataset/row/LocalTable/audit bypass denial; broader effect/privacy receipt surfaces absent.              |
+| S4   | PARTIAL         | Optional external refs remain untrusted/clarification; separate #8 correlation not duplicated.                         |
+| S5   | PARTIAL         | Actual API top-level ACK and native n8n header/transport fixtures; live ingress/provider activation absent.            |
+| S6   | PARTIAL         | Existing maintenance read scope preserved; real separate execution bindings absent.                                    |
+| S7   | PARTIAL         | No provider/plan/group changes; exact later GeminiStage1 recovery blocked.                                             |
+
 ## Ownership, branches and boundaries
 
 Parent `42a577cc-51cf-48ac-b6b8-8ec855714021` is OPEN.
@@ -23,7 +97,7 @@ Own Host worktree `/home/alex/aXtn-host-dms-recovery-worktree`,
 branch `work/AXTN-HOST-DMS-RESTORE-0001`, unchanged
 compatible base `85dbb7227e04a6a1406697a8b660bb1c8804d13e`, tested source-only
 OCR overlay commit `c1a25fefd9934424d4023ad5ead12004d18007a8`.
-No merge/tag/release, default-branch write, n8n mutation or Host convergence.
+No merge/tag/release, default-branch write, n8n runtime mutation or Host convergence.
 Working local Copilot MCP, existing providers and Development worktrees preserved.
 
 ## Delivered source increment
@@ -1220,6 +1294,41 @@ type/lint/docs/commands/infra/unit gates PASS:
 **588 files /9,786 tests /40 skipped**; unchanged resource-bounded client/SSR
 build PASS. Protected-secret scan:2,437 source/evidence files PASS.
 No runtime/Development/local MCP change; complete DMS remains unfinished.
+
+### Existing native API fail-closed DMS retry barrier
+
+Suspended transport increment is committed/pushed/mirrored at `cc3c5f70`;
+PR11/same OPEN Cases updated, completion09:50:36+02.
+Inspection found generic API recovery automatically restarts failed records,
+which may follow completed provider effects. DMS Parent now requires the
+existing delivery idempotency header, checks its exact200char limit, and
+refuses automatic takeover of failed/incomplete-result records or collided
+claims. The error refers the caller to readback recovery at the same run ID;
+no success-shaped result or new Case/run is fabricated.
+Mismatch-before-recovery and generic/Development verdict/claim behavior remain.
+Returned Parent read/claim failures and returned/thrown outcome write failures
+surface explicit bounded codes; failed pending writes cannot return ACK success.
+
+Actual API23 + generic verdict11 + registration48 tests PASS: **82 tests**;
+targeted lint PASS. Fixtures cover exact200/201boundary, missing key, failed/
+incomplete result, insert conflict/non-conflict error, read/write error,
+generic failed takeover and generic no-key execution. An initial generic
+no-key test incorrectly expected no key-last-used write; narrowed assertion
+to the idempotency store while retaining actual execution check.
+Read-only n8n source check finds existing header nodes:Drive2/IMAP1/Workspace1.
+No n8n change, workflow publication or effect.
+
+This is only fail-closed same-key prevention, **not** durable EffectKey/
+FilingReceipt/current-rights/UNKNOWN provider reconciliation. Different
+keys/deliveries and direct/canvas provider effects remain unprotected by this
+API barrier. The exact inventory check initially caught a technical entry
+referenced by name but registered only as an ID; aligned these source-only
+entries with the existing named dependency convention, without disabling
+the check. Final full ordered type/lint/docs/commands/infra/unit gate PASS:
+**588 files /9,798 tests /40 skipped**; unchanged resource-bounded client/SSR
+build PASS. Full assignment gate ledger added with explicit PARTIAL/PENDING/
+BLOCKED states; documentation checks rerun PASS. Protected-secret scan:
+2,437 source/evidence files PASS. Production unchanged.
 
 ### Native Local Table draft provisioning increment
 
