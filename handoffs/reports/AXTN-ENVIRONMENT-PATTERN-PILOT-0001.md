@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / BUILD_BLOCKED / NOT_DEPLOYED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -258,6 +258,35 @@ HEAD before commit; #10 remains docs-only at
 Actual protected-credential scan passed2570 source/evidence files, browser
 assets and current native runtime logs. No credentials were printed or stored
 in the report.
+
+## Persisted native foundation checkpoint
+
+Implementation commit: `ba657a9f7cd6ca850a62402c8439c6dcaa9f679f`.
+Primary canonical draft:
+<https://git.alexation.com/aXtn/aXtn-agentswarms/pulls/14>,
+based on the compatible DMS recovery branch. Exact candidate/body readback
+confirmed; no merge, tag, release or Acceptance. The same Parent/Handover/
+Reporting Cases persist `CANDIDATE_UPDATED` and `PR_CREATED` with exact typed
+Git/PR/test evidence. Capacity/Learning and independent Acceptance are not
+misrepresented as completed.
+
+Existing canonical push-mirror sync was requested immediately. One overlapping
+mirror job rejected a ref lock because the target already held the exact new
+SHA; a second existing sync completed without `last_error`. No mirror settings
+or credentials were changed.
+
+Final migration fingerprints:
+`20261005160000_case_environment_references.sql`:
+`e7563e822429c1311aa90213539b77b005dd39a54a99f66d6a837a1a1a72ef77`.
+`20261005170000_case_processing_and_views.sql`:
+`4d4cb9fb0819e5fee0e65bd320e465f101b43acaeea95e37ed41f87e0648f750`.
+The fresh v10 evidence database and unchanged compatible template are retained.
+Ten explicitly named idle obsolete pilot test databases were removed; no
+production database/schema or unrelated test database was removed.
+Final production readback remains healthy App10df/Supabase; native
+`axtn_host.migration_ledger` remains278 entries. The session cgroup OOM-kill
+counter advanced32 to33; this corroborates pressure but is not process-specific
+kernel attribution.
 
 Remaining mandatory packages are not hidden: Issue10 responsibility/shared
 Case-specific access and sticky Attempt integration; explicit allocations/
