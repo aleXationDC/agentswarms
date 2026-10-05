@@ -54,7 +54,14 @@ export const Route = createFileRoute("/api/cases/work")({
           });
         } catch (error) {
           console.warn("[case-work] operation rejected:", (error as Error).message);
-          return Response.json({ error: "Case operation rejected" }, { status: 409 });
+          const code =
+            error instanceof Error && /^CASE_[A-Z0-9_]+$/.test(error.message)
+              ? error.message
+              : undefined;
+          return Response.json(
+            { error: "Case operation rejected", ...(code ? { code } : {}) },
+            { status: 409 },
+          );
         }
       },
     },

@@ -3,6 +3,8 @@ import type { Json } from "@/integrations/supabase/types";
 import { WorkRequest, WorkState } from "./workContract";
 import { workMetrics } from "./workMetrics";
 import { DocumentWorkRequest } from "../documents/documentWorkContract";
+import { CaseEnvironmentRequest } from "./caseEnvironmentContract";
+import { CaseProcessingRequest } from "./caseProcessingContract";
 
 export type WorkPrincipal = {
   kind: "user_session" | "swarm_api_key" | "swarm";
@@ -14,6 +16,16 @@ export async function executeCaseWork(
   input: unknown,
   principal: WorkPrincipal = { kind: "swarm", id: userId },
 ) {
+  const processingRequest = CaseProcessingRequest.safeParse(input);
+  if (processingRequest.success) {
+    const { executeCaseProcessing } = await import("./caseProcessing.server");
+    return executeCaseProcessing(userId, processingRequest.data, principal);
+  }
+  const environmentRequest = CaseEnvironmentRequest.safeParse(input);
+  if (environmentRequest.success) {
+    const { executeCaseEnvironment } = await import("./caseEnvironment.server");
+    return executeCaseEnvironment(userId, environmentRequest.data, principal);
+  }
   const documentRequest = DocumentWorkRequest.safeParse(input);
   if (documentRequest.success) {
     const { executeDocumentWork } = await import("../documents/documentWork.server");

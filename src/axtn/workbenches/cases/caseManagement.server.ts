@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
-import { auditEvent } from "@/utils/audit.server";
+import { z } from "zod";
 import {
   CASE_STATUSES,
   reopenOnRelevantActivity,
@@ -84,15 +84,21 @@ async function ensureDataset(userId: string, key: keyof typeof DATASETS): Promis
 
 async function rowsFor(userId: string, key: keyof typeof DATASETS) {
   const tableId = await ensureDataset(userId, key);
-  const { data, error } = await supabaseAdmin
-    .from("user_data_rows")
-    .select("id, row")
-    .eq("table_id", tableId);
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((entry) => {
-    if (!isJsonObject(entry.row)) throw new Error(`Invalid row in ${DATASETS[key].name}.`);
-    return entry.row;
-  });
+  const rows: JsonObject[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabaseAdmin
+      .from("user_data_rows")
+      .select("id, row")
+      .eq("table_id", tableId)
+      .order("id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(error.message);
+    for (const entry of data ?? []) {
+      if (!isJsonObject(entry.row)) throw new Error(`Invalid row in ${DATASETS[key].name}.`);
+      rows.push(entry.row);
+    }
+    if ((data ?? []).length < 1000) return rows;
+  }
 }
 async function insertRow(userId: string, key: keyof typeof DATASETS, row: Record<string, unknown>) {
   const tableId = await ensureDataset(userId, key);
@@ -139,38 +145,62 @@ export async function listCaseManagementData(userId: string) {
   return { cases, accounts, contacts, relations };
 }
 
-export async function createCaseForUser(userId: string, data: CaseDraft & { actor?: CaseActor }) {
+const ManualCaseResult = z.object({ case_id: z.string().uuid(), status: z.enum(CASE_STATUSES) });
+
+async function persistManualCase(
+  userId: string,
+  operation: "create" | "update",
+  row: Json,
+  expectedVersion: number,
+  transitionKey: string,
+) {
+  const { data, error } = await supabaseAdmin.rpc("axtn_case_manual", {
+    p_user_id: userId,
+    p_operation: operation,
+    p_payload: {
+      row,
+      expectedVersion,
+      transitionKey,
+      _principal: { kind: "user_session", id: userId },
+    },
+  });
+  if (error) throw new Error(error.message);
+  return ManualCaseResult.parse(data);
+}
+
+export async function createCaseForUser(
+  userId: string,
+  data: CaseDraft & { actor?: CaseActor; transitionKey?: string },
+) {
   validateCaseDraft(data, data.actor ?? "human");
   await validateCaseReferences(userId, data);
-  const now = new Date().toISOString();
-  const caseId = crypto.randomUUID();
-  await insertRow(userId, "cases", {
-    case_id: caseId,
-    parent_case_id: data.parent_case_id ?? null,
-    subject: data.subject.trim(),
-    case_type: data.case_type ?? "TODO",
-    status: data.status ?? "NEW",
-    status_reason: data.status_reason ?? null,
-    priority: data.priority ?? 3,
-    due_date: data.due_date ?? null,
-    follow_up: data.follow_up ?? null,
-    account_id: data.account_id ?? null,
-    primary_contact_id: data.primary_contact_id ?? null,
-    related_entity: data.related_entity ?? null,
-    created_at: now,
-    updated_at: now,
-    closed_at: data.status === "CLOSED" ? now : null,
-    source_kind: "manual",
-    source_id: userId,
-  });
-  auditEvent({
+  const created = await persistManualCase(
     userId,
-    action: "axtn_case.create",
-    resourceType: "axtn_case",
-    resourceId: caseId,
-    detail: { priority: data.priority ?? 3 },
-  });
-  return { caseId };
+    "create",
+    {
+      parent_case_id: data.parent_case_id ?? null,
+      subject: data.subject.trim(),
+      case_type: data.case_type ?? "TODO",
+      status: data.status ?? "NEW",
+      status_reason: data.status_reason ?? null,
+      priority: data.priority ?? 3,
+      due_date: data.due_date ?? null,
+      follow_up: data.follow_up ?? null,
+      account_id: data.account_id ?? null,
+      primary_contact_id: data.primary_contact_id ?? null,
+      related_entity: data.related_entity ?? null,
+      source_kind: "manual",
+      source_id: userId,
+      ...Object.fromEntries(
+        (["external_environment_id", "external_ref_id", "external_parent_ref_id"] as const)
+          .filter((field) => data[field] !== undefined)
+          .map((field) => [field, data[field]]),
+      ),
+    },
+    0,
+    data.transitionKey ?? crypto.randomUUID(),
+  );
+  return { caseId: created.case_id };
 }
 
 export async function assignDocument(userId: string, caseId: string, documentId: string) {
@@ -254,31 +284,33 @@ export async function createCaseRelationForUser(
 
 export async function updateCaseForUser(
   userId: string,
-  data: CaseDraft & { case_id: string; actor?: CaseActor; relevant_activity?: boolean },
+  data: CaseDraft & {
+    case_id: string;
+    actor?: CaseActor;
+    relevant_activity?: boolean;
+    transitionKey?: string;
+    access_token?: string;
+  },
 ) {
   const tableId = await ensureDataset(userId, "cases");
-  const { data: rows, error } = await supabaseAdmin
+  const { data: current, error } = await supabaseAdmin
     .from("user_data_rows")
     .select("id, row")
-    .eq("table_id", tableId);
+    .eq("table_id", tableId)
+    .eq("row->>case_id", data.case_id)
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  const current = (rows ?? []).find(
-    (entry) => isJsonObject(entry.row) && entry.row.case_id === data.case_id,
-  );
   if (!current || !isJsonObject(current.row)) throw new Error("Case not found.");
   const before = current.row;
   const {
     case_id,
     actor,
     relevant_activity,
+    case_version,
+    transitionKey,
     access_token: _accessToken,
     ...patch
-  } = data as CaseDraft & {
-    case_id: string;
-    actor?: CaseActor;
-    relevant_activity?: boolean;
-    access_token?: string;
-  };
+  } = data;
   const currentStatus = isCaseStatus(before.status) ? before.status : "NEW";
   const reopened =
     relevant_activity && currentStatus === "CLOSED" ? reopenOnRelevantActivity("CLOSED") : null;
@@ -299,12 +331,14 @@ export async function updateCaseForUser(
     throw new Error("Automation cannot overwrite Human Critical priority 0.");
   validateCaseDraft(next as CaseDraft, actor ?? "human");
   await validateCaseReferences(userId, next as CaseDraft);
-  const { error: updateError } = await supabaseAdmin
-    .from("user_data_rows")
-    .update({ row: next as Json })
-    .eq("id", current.id);
-  if (updateError) throw new Error(updateError.message);
-  return { caseId: data.case_id, status: nextStatus };
+  const persisted = await persistManualCase(
+    userId,
+    "update",
+    next as Json,
+    case_version ?? 0,
+    transitionKey ?? crypto.randomUUID(),
+  );
+  return { caseId: persisted.case_id, status: persisted.status };
 }
 
 export async function createAccountForUser(

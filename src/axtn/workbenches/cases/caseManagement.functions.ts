@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { Database } from "@/integrations/supabase/types";
 import { CASE_STATUSES, type CaseDraft, type CaseStatus } from "./caseContract";
+import { ExternalCaseReference } from "./caseEnvironmentContract";
 
 export type CaseRecord = CaseDraft & {
   case_id: string;
@@ -44,9 +45,14 @@ const CaseInput = AccessInput.extend({
   primary_contact_id: z.string().uuid().nullable().optional(),
   related_entity: z.string().max(500).nullable().optional(),
   actor: z.enum(["human", "automation"]).optional(),
-});
+  external_environment_id: ExternalCaseReference.nullable().optional(),
+  external_ref_id: ExternalCaseReference.nullable().optional(),
+  external_parent_ref_id: ExternalCaseReference.nullable().optional(),
+  transitionKey: z.string().min(1).max(200).optional(),
+}).strict();
 const CaseUpdateInput = CaseInput.extend({
   case_id: z.string().uuid(),
+  case_version: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   relevant_activity: z.boolean().optional(),
 });
 

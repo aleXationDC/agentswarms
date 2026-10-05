@@ -14,9 +14,21 @@ export type CaseDraft = {
   primary_contact_id?: string | null;
   related_entity?: string | null;
   parent_case_id?: string | null;
+  external_environment_id?: string | null;
+  external_ref_id?: string | null;
+  external_parent_ref_id?: string | null;
+  case_version?: number;
 };
 
 export function validateCaseDraft(draft: CaseDraft, actor: CaseActor = "human"): void {
+  for (const field of [
+    "external_environment_id",
+    "external_ref_id",
+    "external_parent_ref_id",
+  ] as const) {
+    if (draft[field] !== undefined && draft[field] !== null)
+      ExternalCaseReference.parse(draft[field]);
+  }
   if (!draft.subject.trim()) throw new Error("Case Subject is required.");
   if (draft.subject.trim().length > 500) throw new Error("Case Subject is too long.");
   const priority = draft.priority ?? 3;
@@ -53,3 +65,4 @@ export function reopenOnRelevantActivity(
     ? { status: "OPEN", status_reason: reason }
     : { status, status_reason: reason };
 }
+import { ExternalCaseReference } from "./caseEnvironmentContract";

@@ -21,6 +21,7 @@ class QueryBuilder {
   private action: "select" | "insert" | "update" = "select";
   private filters: Array<[string, unknown]> = [];
   private payload: unknown;
+  private window: [number, number] | null = null;
 
   constructor(private readonly table: string) {}
 
@@ -30,6 +31,13 @@ class QueryBuilder {
 
   eq(key: string, value: unknown) {
     this.filters.push([key, value]);
+    return this;
+  }
+  order() {
+    return this;
+  }
+  range(start: number, end: number) {
+    this.window = [start, end];
     return this;
   }
 
@@ -77,16 +85,30 @@ class QueryBuilder {
     }
     if (this.action === "update") {
       const update = this.asRecord(this.payload);
-      const matching = this.filtered(records);
+      const matching = this.window
+        ? this.filtered(records).slice(this.window[0], this.window[1] + 1)
+        : this.filtered(records);
       for (const record of matching) Object.assign(record, update);
       return { data: matching, error: null };
     }
-    const matching = this.filtered(records);
+    const matching = this.window
+      ? this.filtered(records).slice(this.window[0], this.window[1] + 1)
+      : this.filtered(records);
     return { data: single ? (matching[0] ?? null) : matching, error: null };
   }
 
   private filtered(records: Array<Record<string, unknown>>) {
-    return records.filter((record) => this.filters.every(([key, value]) => record[key] === value));
+    return records.filter((record) =>
+      this.filters.every(([key, value]) => {
+        const [column, field] = key.split("->>");
+        const nested = record[column];
+        return field
+          ? nested &&
+              typeof nested === "object" &&
+              Object.entries(nested).some(([name, item]) => name === field && item === value)
+          : record[column] === value;
+      }),
+    );
   }
 
   private asRecord(value: unknown): Record<string, unknown> {
@@ -115,7 +137,44 @@ describe("SupaCase acceptance persistence", () => {
     store.tables.length = 0;
     store.rows.length = 0;
     store.failNextRelationInsert = false;
-    rpc.mockReset().mockResolvedValue({ data: { ok: true }, error: null });
+    rpc.mockReset().mockImplementation(
+      async (
+        name: string,
+        args: {
+          p_user_id: string;
+          p_operation: string;
+          p_payload: { row: Record<string, unknown>; expectedVersion: number };
+        },
+      ) => {
+        if (name !== "axtn_case_manual") return { data: { ok: true }, error: null };
+        let table = store.tables.find(
+          (item) => item.user_id === args.p_user_id && item.name === "axtn_cases",
+        );
+        if (!table) {
+          table = { id: crypto.randomUUID(), name: "axtn_cases", user_id: args.p_user_id };
+          store.tables.push(table);
+        }
+        const input = args.p_payload.row;
+        const tableId = table.id;
+        const row = {
+          ...input,
+          case_id: input.case_id ?? crypto.randomUUID(),
+          case_version: args.p_payload.expectedVersion + 1,
+          closed_at: input.status === "CLOSED" ? new Date().toISOString() : null,
+        };
+        const existing = store.rows.find(
+          (item) =>
+            item.table_id === tableId &&
+            item.row &&
+            typeof item.row === "object" &&
+            "case_id" in item.row &&
+            item.row.case_id === row.case_id,
+        );
+        if (existing) existing.row = row;
+        else store.rows.push({ id: crypto.randomUUID(), table_id: tableId, row });
+        return { data: row, error: null };
+      },
+    );
   });
 
   it("routes protected document assignment through the shared authenticated native profile", async () => {
@@ -227,6 +286,19 @@ describe("SupaCase acceptance persistence", () => {
     expect(ownerOne.cases).toHaveLength(1);
     expect(ownerOne.cases[0].subject).toBe("Owner one");
   });
+  it("does not silently truncate Case totals at the native REST page limit", async () => {
+    await listCaseManagementData("owner-1");
+    const table = store.tables.find(
+      (item) => item.user_id === "owner-1" && item.name === "axtn_cases",
+    )!;
+    for (let i = 0; i < 1001; i++)
+      store.rows.push({
+        id: `row-${i}`,
+        table_id: table.id,
+        row: { case_id: crypto.randomUUID(), subject: `Case ${i}` },
+      });
+    expect((await listCaseManagementData("owner-1")).cases).toHaveLength(1001);
+  });
 
   it("creates explicit, owner-scoped Case relations idempotently", async () => {
     const { caseId } = await createCaseForUser("owner-1", { subject: "Primary" });
@@ -269,6 +341,7 @@ describe("SupaCase acceptance persistence", () => {
 
     await updateCaseForUser("owner-1", {
       ...common,
+      case_version: 1,
       status: "CLOSED",
       status_reason: "Resolved",
     });
@@ -278,6 +351,7 @@ describe("SupaCase acceptance persistence", () => {
 
     await updateCaseForUser("owner-1", {
       ...common,
+      case_version: 2,
       status: "OPEN",
       status_reason: "Reopened by user",
     });
@@ -286,7 +360,12 @@ describe("SupaCase acceptance persistence", () => {
     expect(reopened.cases[0].closed_at).toBeNull();
     expect(reopened.cases[0].status_reason).toBe("Reopened by user");
 
-    await updateCaseForUser("owner-1", { ...common, status: "OPEN", status_reason: null });
+    await updateCaseForUser("owner-1", {
+      ...common,
+      case_version: 3,
+      status: "OPEN",
+      status_reason: null,
+    });
     const cleared = await listCaseManagementData("owner-1");
     expect(cleared.cases[0].status_reason).toBeNull();
   });
@@ -314,6 +393,7 @@ describe("SupaCase acceptance persistence", () => {
       updateCaseForUser("owner-1", {
         case_id: caseId,
         subject: "Contact required",
+        case_version: 1,
         status: "WAITING_CONTACT",
         primary_contact_id: contactId,
         follow_up: "2026-10-02",

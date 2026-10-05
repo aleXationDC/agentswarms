@@ -147,3 +147,124 @@ verify native Host convergence and preserve all additive schema/Case evidence.
 Host85dbb722 contract/evidence plus own DMS overlayc1a25fef must not be applied
 wholesale or relabelled as a pilot executable pin. No network/DNS/access,
 credentials, provider or local MCP changes.
+
+## Native external-reference and processing increment
+
+Implementation is **PARTIAL**, not overall pilot Acceptance.
+One shared native `/api/cases/work` / `case_work` entrypoint now supports:
+
+- Exact nullable external triple on the original Case, optimistic reference
+  revision, atomic audit, same-key replay and stale/rebound denial.
+- Authenticated Human confirmation/revocation of the existing owned integration's
+  `axtn_environment_binding` namespace, preserving every unrelated config field.
+  Minimized binding/version readback does not return credentials/config.
+  Existing provider/config saves that omit the namespace preserve it. A private
+  configuration fingerprint invalidates external authority after config drift
+  without disabling or changing the provider integration. Human reconfirmation
+  restores the binding; replaying an earlier confirmation cannot reconfirm a
+  changed configuration. Explicit namespace tampering remains rejected.
+- Authorized environment-plus-reference correlation with explicit MATCHED,
+  NO_MATCH, NEEDS_CLARIFICATION or CONFLICT. No fuzzy/latest selection or global
+  uniqueness. Minimized handover returns only the triple, never a send claim.
+- Manual Case creation/update through `axtn_case_manual`, with native generated
+  identity/replay, versioned transactional row/audit writes, same-owner reference
+  checks and write-time cycle/self/foreign-parent guards. Existing protected
+  Development/DMS Cases still require their original mutation contracts.
+- Native processing/waiting annotations, canonical capability/pattern/provider
+  references, server-trusted actor, optimistic revision and one atomic audit.
+  HUMAN takeover, lifecycle and independent Approval/Acceptance remain intact.
+- Root-parametric owned-local subtree query, authoritative full totals and
+  explicit paging, authorized view roots and recorded calendar-state durations.
+  Relations/dependencies do not become descendants. Calendar time is not
+  consumption; capacity/forecast remain explicitly unknown.
+
+No alternative history, owner/team schema, scheduler, retry engine or Case store
+was added. Additive migrations are
+`20261005160000_case_environment_references.sql` and
+`20261005170000_case_processing_and_views.sql`.
+The bounded native RPCs close inspected generic-write/atomic-audit and recursive
+projection gaps. Existing `audit_events`, dataset rows, native IAM identities and
+LocalTable delegation remain the mechanisms. Private delegates are revoked and
+direct/browser/service-role broker bypasses are rejected.
+
+Visible Case detail includes exact reference/binding/correlation/handover and
+processing/scoped-view panels; Case Dashboard uses the same projection.
+Existing manual creation/update inputs validate the triple rather than silently
+stripping it; updates submit the displayed `case_version`. Ordinary Case editing
+preserves unknown stored metadata and refuses stale protected metadata rather
+than overwriting it. Management list explicitly pages beyond the REST limit.
+No external reference is inherited by a new Child.
+
+Current source paths: `src/axtn/workbenches/cases/caseEnvironment*`,
+`caseProcessing*`, `CaseEnvironmentPanel.tsx`, `CaseProcessingPanel.tsx`,
+`caseApi.client.ts`, `caseManagement.{functions,server}.ts`, existing
+`work.server.ts`, `documents/documentWorkContract.ts` and Case routes.
+
+Actual fresh isolated PostgreSQL v10 proof passed:
+`caseEnvironment.sql`, `caseProcessing.sql` (depth128, scoped root change,
+full totals/paging, reparent/cycle/foreign denials, close/reopen, native roles)
+and independent-session concurrency for references, generated manual creation/
+update and processing/history. Each has16 same-key replays and16 optimistic
+writers/one winner:96 independent sessions, durable new-session row/version/
+audit readback and monotonic native recorded timestamps.
+Actual service-role config replacement preserves namespace and ordinary config
+updates. Changed configuration denies automated reference binding and handover,
+returns explicit correlation clarification and rejects stale confirmation
+replay without Case/audit mutation. Explicit Human reconfirmation restores
+effective eligibility. Private configuration helpers remain inaccessible.
+Case protection is scoped to the native Case dataset: unrelated LocalTables
+with identically named fields remain writable through the existing delegate.
+Moving even an unversioned legacy Case out of its custody is denied. A bound
+integration cannot be deleted while enabled; explicit native Human revocation
+allows the existing deletion path, retaining its native audit.
+Valid filenames containing `foo..bar` pass; a real `..` path segment fails.
+All eight existing DMS SQL fixtures passed on that same additive schema:
+documentWork, documentCurrentProposal, documentApproval, documentRegistrySeed,
+documentFeedback, documentParentTrace, documentParentModelTrace,
+documentParentIdempotency. This is compatibility proof, not full DMS Acceptance.
+
+The legacy `caseWork.sql` fixture fails at its old completion-error expectation
+(`Verify Work completion requires exact hard checks`); the identical failure was
+reproduced on the unchanged compatible baseline. It was not modified to weaken
+the actual Development gate.
+
+Last measured source gate:85 tests in8 targeted files PASS; full typecheck,
+repository lint (235 warnings, zero errors), docs, markdown, documented commands
+and infrastructure checks PASS. Full unit suite:590 files,9869 passing tests,
+40 skipped,9909 total. The subsequent SQL-only binding/path repairs were tested
+on the fresh v10 schema, not inferred from an earlier candidate.
+Earlier failed isolated/mocked candidates were corrected, not applied to PROD.
+
+Production build is **NOT YET PASSED**. Three actual standard Vite attempts
+completed their client build but failed SSR:3584MiB old heap/arena2 exited137;
+2560MiB and3072MiB/arena1 exhausted V8 heap and exited134. Kernel attribution
+for exit137 was unavailable; it is not reported as a proven kernel OOM event.
+The host has about4.1GiB available memory and essentially full4GiB swap; existing
+services remain healthy. A process-only jitless probe failed before Vite because
+Node's native fetch requires Wasm. The separate bounded baseline-JIT attempt
+preserved native fetch/Wasm, completed the client build in6minutes, then exited137
+during SSR transformation. Only its own OOM priority was raised, not other
+processes'. The full production build remains **BUILD_BLOCKED**, not a successful
+client-only proxy. No swap, provider, local
+MCP, dependency, global configuration or production runtime changes were made.
+Production remains `10df3a869c5dcb6c377840ca7a048a87d1aa4c6f`, healthy.
+The candidate is **NOT_DEPLOYED**, not deployable evidence until the complete
+build, remaining functional packages and exact runtime/rollback gates pass.
+Current authority/writer readback: own canonical execution branch matched local
+HEAD before commit; #10 remains docs-only at
+`1e9f96a6b51b5697070df49709ab4fac30c9b3b2`, Development at
+`6bf776ef7c9abb59224f0477dc7257f94f93f4ca`, DMS at
+`9dbabbed77499e456e87b94205712d1d24d96d43`.
+Actual protected-credential scan passed2570 source/evidence files, browser
+assets and current native runtime logs. No credentials were printed or stored
+in the report.
+
+Remaining mandatory packages are not hidden: Issue10 responsibility/shared
+Case-specific access and sticky Attempt integration; explicit allocations/
+bookings/corrections; versioned Pattern Usage/assurance/reuse; controlled
+improvement/intervention/verification; portable artifact/target-binding tests;
+integration fault experiments; full SC/E coverage and exact runtime canary/
+restart. P01-P38 individual definitions remain unresolved, not invented.
+No real documents, remote colleague accounts, external semantic send, provider
+adapter, credential or local MCP configuration were changed.
+Independent integration Case stays open; builder does not self-accept.

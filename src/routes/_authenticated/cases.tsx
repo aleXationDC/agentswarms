@@ -8,6 +8,7 @@ import {
   listCaseManagement,
   type CaseRecord,
 } from "@/axtn/workbenches/cases/caseManagement.functions";
+import { CaseProcessingPanel } from "@/axtn/workbenches/cases/CaseProcessingPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,7 @@ function CasesPage() {
           </Button>
         </CardContent>
       </Card>
+      {!loading && <CaseProcessingPanel key={`scoped-${cases.length}`} />}
       <Card>
         <CardHeader>
           <CardTitle>Case list</CardTitle>

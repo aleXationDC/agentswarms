@@ -8339,6 +8339,22 @@ export type Database = {
         };
         Returns: Json;
       };
+      axtn_case_environment: {
+        Args: {
+          p_user_id: string;
+          p_operation: string;
+          p_payload: Json;
+        };
+        Returns: Json;
+      };
+      axtn_case_processing: {
+        Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
+      axtn_case_manual: {
+        Args: { p_user_id: string; p_operation: string; p_payload: Json };
+        Returns: Json;
+      };
       axtn_seed_document_registries: {
         Args: { p_user_id: string };
         Returns: Json;

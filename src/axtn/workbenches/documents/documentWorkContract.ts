@@ -4,6 +4,8 @@ import { DocumentFeedbackEvent } from "./documentFeedbackContract";
 import { DocumentLearningCandidate } from "./documentCandidateContract";
 import { DocumentEvaluationSubmission } from "./documentEvaluationContract";
 import { DisabledDocumentAutomationPolicySubmission } from "./documentAutomationPolicyContract";
+import { CaseEnvironmentRequest } from "../cases/caseEnvironmentContract";
+import { CaseProcessingRequest } from "../cases/caseProcessingContract";
 
 const opaque = z
   .string()
@@ -238,4 +240,9 @@ export const DocumentWorkRequest = z.discriminatedUnion("operation", [
     .strict(),
 ]);
 export type DocumentWorkRequest = z.infer<typeof DocumentWorkRequest>;
-export const CaseRequest = z.union([WorkRequest, DocumentWorkRequest]);
+export const CaseRequest = z.union([
+  WorkRequest,
+  DocumentWorkRequest,
+  CaseEnvironmentRequest,
+  CaseProcessingRequest,
+]);

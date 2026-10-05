@@ -11,6 +11,8 @@ import {
 } from "@/axtn/workbenches/cases/caseManagement.functions";
 import type { CaseDraft } from "@/axtn/workbenches/cases/caseContract";
 import { CaseWorkPanel } from "@/axtn/workbenches/cases/CaseWorkPanel";
+import { CaseEnvironmentPanel } from "@/axtn/workbenches/cases/CaseEnvironmentPanel";
+import { CaseProcessingPanel } from "@/axtn/workbenches/cases/CaseProcessingPanel";
 import { DocumentWorkPanel } from "@/axtn/workbenches/documents/DocumentWorkPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +58,7 @@ function caseRecord(row: RelatedRow | undefined): CaseRecord | null {
     created_at: typeof row.created_at === "string" ? row.created_at : "",
     updated_at: typeof row.updated_at === "string" ? row.updated_at : "",
     closed_at: typeof row.closed_at === "string" ? row.closed_at : null,
+    case_version: typeof row.case_version === "number" ? row.case_version : 0,
   };
 }
 
@@ -187,6 +190,7 @@ function CaseDetailPage() {
         data: {
           access_token: await token(),
           case_id: caseId,
+          case_version: record?.case_version ?? 0,
           subject: patch.subject ?? record?.subject ?? "",
           case_type: patch.case_type ?? record?.case_type ?? "TODO",
           status: patch.status ?? record?.status ?? "NEW",
@@ -257,6 +261,8 @@ function CaseDetailPage() {
               {record.status} · priority {record.priority} · {record.case_type}
             </p>
           </div>
+          <CaseEnvironmentPanel key={caseId} caseId={caseId} onChanged={load} />
+          <CaseProcessingPanel key={`processing-${caseId}`} caseId={caseId} onChanged={load} />
           {isDevelopmentWork ? (
             <CaseWorkPanel caseId={caseId} onChanged={load} />
           ) : isDocumentWork ? (
