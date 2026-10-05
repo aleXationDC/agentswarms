@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { documentInputHash } from "@/axtn/workbenches/documents/documentWork.server";
 import { readDocumentParentRegistrationAck } from "@/axtn/workbenches/documents/documentRegistrationAck.server";
+import {
+  minimizeDocumentIngress,
+  minimizeDocumentRegistrationAck,
+} from "@/axtn/workbenches/documents/documentPersistence.server";
 import type { SwarmCheckpoint } from "@/lib/swarmCheckpoint";
 
 const state = vi.hoisted(() => ({
@@ -137,6 +141,73 @@ beforeEach(() => {
 });
 
 describe("native Parent parked registration readback", () => {
+  it("recovers the exact existing ACK from original-free owner-scoped manifests", async () => {
+    state.run = { ...run, input_prompt: JSON.stringify(minimizeDocumentIngress(owner, ingress)) };
+    if (!state.checkpoint) throw new Error("Fixture checkpoint required");
+    state.checkpoint.ctx.registration_ack = JSON.stringify(
+      minimizeDocumentRegistrationAck(owner, ack),
+    );
+    expect(JSON.stringify(state.run)).not.toContain("LEAKAGE_MARKER");
+    expect(await read()).toEqual(ack);
+    expect(await read()).toEqual(ack);
+  });
+  it.each(["ingress", "ack"])(
+    "supports an in-place codec transition while preserving legacy native bindings %s",
+    async (mode) => {
+      if (mode === "ingress")
+        state.run = {
+          ...run,
+          input_prompt: JSON.stringify(minimizeDocumentIngress(owner, ingress)),
+        };
+      else {
+        if (!state.checkpoint) throw new Error("Fixture checkpoint required");
+        state.checkpoint.ctx.registration_ack = JSON.stringify(
+          minimizeDocumentRegistrationAck(owner, ack),
+        );
+      }
+      expect(await read()).toEqual(ack);
+    },
+  );
+  it.each([
+    "owner_scope_hash",
+    "business_request_hash",
+    "source_ref_hash",
+    "source_revision_hash",
+    "input_hash",
+    "content_hash",
+  ])("denies forged minimized ingress binding %s", async (field) => {
+    state.run = {
+      ...run,
+      input_prompt: JSON.stringify({
+        ...minimizeDocumentIngress(owner, ingress),
+        [field]: "0".repeat(64),
+      }),
+    };
+    await expect(read()).rejects.toThrow("DOCUMENT_PARENT_REGISTRATION_MINIMIZED_BINDING_REQUIRED");
+  });
+  it.each(["document_id_hash", "source_ref_hash"])(
+    "denies forged minimized ACK binding %s",
+    async (field) => {
+      if (!state.checkpoint) throw new Error("Fixture checkpoint required");
+      state.checkpoint.ctx.registration_ack = JSON.stringify({
+        ...minimizeDocumentRegistrationAck(owner, ack),
+        [field]: "0".repeat(64),
+      });
+      await expect(read()).rejects.toThrow(
+        "DOCUMENT_PARENT_REGISTRATION_MINIMIZED_BINDING_REQUIRED",
+      );
+    },
+  );
+  it("rejects raw extras in an explicitly minimized persisted manifest instead of downgrading", async () => {
+    state.run = {
+      ...run,
+      input_prompt: JSON.stringify({
+        ...minimizeDocumentIngress(owner, ingress),
+        original: "LEAKAGE_MARKER",
+      }),
+    };
+    await expect(read()).rejects.toThrow();
+  });
   it("binds the explicit original source independently of the delivery idempotency key", async () => {
     state.run = {
       ...run,

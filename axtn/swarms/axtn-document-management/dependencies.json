@@ -314,13 +314,30 @@
       "name": "parent-registration-ack",
       "kind": "native-public-registration-readback",
       "source": "src/axtn/workbenches/documents/documentRegistrationAck.server.ts",
-      "sourceSHA256": "b33c29732d5534cba2cf5ae87e25bf1f9ae53c32c7fb71d5fb299c97ebb859e5",
-      "dependencies": ["intake", "case-profile", "document-registry"],
-      "implemented": "existing API/callback projection from owned persisted native checkpoint/snapshot and protected Case/Registry; pending idempotency replay without workflow execution",
+      "sourceSHA256": "5d23bf6a650557b31d8aa5f9cb7df77c1c742d2602caf353a7a8f08ee07d2170",
+      "dependencies": [
+        "intake",
+        "case-profile",
+        "document-registry",
+        "document-minimized-ingress-codec"
+      ],
+      "implemented": "existing API/callback projection from owned persisted native checkpoint/snapshot and protected Case/Registry; legacy/minimized/mixed hashed input/ACK recovery and pending idempotency replay without workflow execution",
       "tested": "executable isolated adapter and API handler sync/callback/lost-response/failure/identity/destination fixtures",
       "deployed": false,
       "runtimeVerified": false,
       "gap": "Not published full Parent, provider effect, Case closure or live S5/R9 proof. Native checkpoint redaction remains pending."
+    },
+    {
+      "name": "document-minimized-ingress-codec",
+      "kind": "native-dms-input-persistence-profile",
+      "source": "src/axtn/workbenches/documents/documentPersistence.server.ts",
+      "sourceSHA256": "798dce22d529c45a5a16a2ae023baae1de2af4dd9e13254f35bf1fa198eda719",
+      "dependencies": ["case-profile", "intake"],
+      "implemented": "strict owner-scoped original-free hashed ingress and registration ACK codecs; headless Parent input writer and same-run identity/required persistence; native Filing preparation uses existing protected Approval Intake binding rather than prompt identity",
+      "tested": "33 codec, 12 additional minimized parked registration, 11 actual headless constructor and six actual native resume lineage fixtures; existing Parent API/legacy/generic resume/tracer regressions retained",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Only headless Parent run input/readback/lineage surface is minimized; full checkpoint hydration, all step/model/tool/browser/direct-write/API/callback/cache/retention barriers and live original-free/restart proof remain incomplete."
     },
     {
       "name": "privacy-preflight",

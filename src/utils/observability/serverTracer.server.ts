@@ -5,10 +5,12 @@
 // explicit owner id (no browser session), and stamps user_id on every row so
 // RLS scopes the run to its owner on read.
 //
-// Everything is best-effort and awaited sequentially (the server executor runs
-// nodes sequentially): a tracing failure never breaks a run.
+// Generic tracing is best-effort. Native DMS Parent registration requires its
+// owned run and minimized ingress so ACK recovery cannot silently lose binding.
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { bodyJson, bodyText } from "@/utils/observability/redaction.server";
+import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
+import { documentStoredIngress } from "@/axtn/workbenches/documents/documentPersistence.server";
 
 type FinishStepArgs = {
   status: "success" | "error" | "skipped";
@@ -71,6 +73,10 @@ export async function createServerSwarmTracer(opts: {
    */
   resumeRunId?: string | null;
 }): Promise<ServerSwarmTracer | null> {
+  const documentParent = opts.swarmId === DOCUMENT_MANAGEMENT_SWARM_ID;
+  const documentInput = documentParent
+    ? documentStoredIngress(opts.userId, opts.inputPrompt ?? "")
+    : null;
   try {
     const stepIdByNode = new Map<string, string>();
     // Node ids whose step rows come from the earlier attempt and are already
@@ -82,13 +88,17 @@ export async function createServerSwarmTracer(opts: {
 
     let resolved: string | null = null;
     if (opts.resumeRunId) {
-      const { data: reopened, error: reopenErr } = await supabaseAdmin
+      let reopen = supabaseAdmin
         .from("swarm_runs")
-        .update({ status: "running", finished_at: null } as never)
+        .update({
+          status: "running",
+          finished_at: null,
+          ...(documentParent ? { input_prompt: documentInput } : {}),
+        } as never)
         .eq("id", opts.resumeRunId)
-        .eq("user_id", opts.userId)
-        .select("id")
-        .maybeSingle();
+        .eq("user_id", opts.userId);
+      if (documentParent) reopen = reopen.eq("swarm_id", DOCUMENT_MANAGEMENT_SWARM_ID);
+      const { data: reopened, error: reopenErr } = await reopen.select("id").maybeSingle();
       if (reopened?.id) {
         resolved = (reopened as { id: string }).id;
         const { data: prior, error: priorErr } = await supabaseAdmin
@@ -122,6 +132,7 @@ export async function createServerSwarmTracer(opts: {
           edgesSeen.add(`${e.source_node_id}->${e.target_node_id}`);
         }
       } else {
+        if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_RESUME_REQUIRED");
         console.warn(
           `[swarm-trace] run ${opts.resumeRunId} could not be reopened${reopenErr ? `: ${reopenErr.message}` : ""}; this resume is recorded as a new run and the parked one stays open`,
         );
@@ -135,13 +146,16 @@ export async function createServerSwarmTracer(opts: {
           user_id: opts.userId,
           swarm_id: opts.swarmId ?? null,
           swarm_name: opts.swarmName ?? null,
-          input_prompt: bodyText(opts.inputPrompt ?? null),
+          input_prompt: documentParent ? documentInput : bodyText(opts.inputPrompt ?? null),
           swarm_snapshot: (opts.swarmSnapshot ?? {}) as never,
           status: "running",
         } as never)
         .select("id")
         .single();
-      if (error || !runRow?.id) return null;
+      if (error || !runRow?.id) {
+        if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_REQUIRED");
+        return null;
+      }
       resolved = (runRow as { id: string }).id;
     }
     const runId: string = resolved;
@@ -287,6 +301,7 @@ export async function createServerSwarmTracer(opts: {
       },
     };
   } catch {
+    if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_PERSISTENCE_FAILED");
     return null;
   }
 }

@@ -12,6 +12,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resumeSwarmRun } from "@/utils/swarmExecute.server";
 import { resolveInternalOrigin } from "@/utils/internalOrigin.server";
 import { ensureCaseForAcceptance } from "@/axtn/workbenches/cases/caseManagement.server";
+import { NativeDocumentApprovalBinding } from "@/axtn/workbenches/documents/documentApproval.server";
 import {
   assertNativeApprovalResume,
   createNativeWorkApproval,
@@ -51,9 +52,22 @@ async function ensureFilingCase(
   userId: string,
   input: string | null,
   output: string | null,
+  approvalPayload?: unknown,
 ): Promise<Fail | null> {
   if (!output?.includes("READY_FOR_FILING")) return null;
-  const acceptance = acceptanceContext(input ?? "");
+  let acceptance: ReturnType<typeof acceptanceContext>;
+  if (approvalPayload && typeof approvalPayload === "object" && "axtnDocument" in approvalPayload) {
+    const binding = NativeDocumentApprovalBinding.safeParse(approvalPayload.axtnDocument);
+    if (!binding.success)
+      return { ok: false, error: "Filing acceptance had no valid native Document binding." };
+    acceptance = {
+      documentId: binding.data.documentId,
+      canonical: {
+        document_id: binding.data.documentId,
+        intake_case_id: binding.data.caseId,
+      },
+    };
+  } else acceptance = acceptanceContext(input ?? "");
   if (!acceptance) return { ok: false, error: "Filing acceptance had no document identity." };
   try {
     await ensureCaseForAcceptance({
@@ -133,6 +147,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
               run.user_id,
               run.input_prompt,
               run.final_output,
+              approval.payload,
             );
             if (filingError) return filingError;
           }
@@ -240,7 +255,7 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         }
         const filingError =
           result.status === "success"
-            ? await ensureFilingCase(run.user_id, run.input_prompt, result.output)
+            ? await ensureFilingCase(run.user_id, run.input_prompt, result.output, approval.payload)
             : null;
         if (filingError) return filingError;
         return { ok: true, status: result.status, runId: result.runId, output: result.output };

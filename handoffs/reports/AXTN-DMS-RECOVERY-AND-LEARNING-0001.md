@@ -883,6 +883,52 @@ activation/revocation and SCOPED_AUTO proof, FilingReceipt/effects, minimized
 native checkpoints, full recovery/production convergence and independent
 Acceptance remain unfinished.
 
+### Minimized Parent input and compatible native registration increment
+
+Disabled native Policies are committed at
+`0a4913efd4097255101dbcb62be5f38c4213681a`, canonical-pushed/mirrored and bound
+to draft PR11 and the same three OPEN SupaCases. An existing mirror concurrency
+race already had the exact target ref; retry through the same configured mirror
+completed with cleared error, without changing mirror settings or forcing refs.
+
+The following source increment minimizes headless Parent run input to strict
+owner-scoped business/delivery/source/revision hashes, source/content/privacy
+metadata and the same InputHash. Original text/attachments/filenames/provider
+secrets and raw identifiers are omitted. Existing protected Case/Registry
+readback supports legacy/minimized/mixed registration ACKs and rehydrates the
+same public ACK only after exact owned current bindings are checked.
+Same-run DMS resume is owner/Parent-bound and failed trace persistence is
+explicit, not a silent success. Generic/Development tracing and global
+opt-out behavior are preserved; safe DMS technical metadata remains available.
+
+Minimized run input exposed the tightly coupled Filing preparation identity
+dependency. The actual resume handler now uses the existing immutable native
+Approval's Document/Intake Case binding and the same existing Case validator,
+not guesses from prompt fields. It neither invents another Case nor treats
+READY_FOR_FILING as source effects or independent Acceptance.
+
+Thirty-three executed codec tests, twelve additional minimized parked
+registration tests, eleven actual constructor tests and six actual native
+resume-handler tests pass. Eight focused suites total 115 tests PASS, including
+existing Parent API and generic tracing/resume regressions. One preexisting
+source-string assertion on update formatting was adjusted and paired with a
+real generic-resume exact-payload test; no behavioral test was disabled.
+The final ordered source gate passed: typecheck, lint (existing warnings only),
+documentation/command/infra checks, **585 files / 9,703 tests PASS / 40 skipped**
+and unchanged client/SSR build with the previously documented process-only
+3584 MiB/8 MiB-semispace/arena limits. The separately executed actual isolated
+PostgreSQL hash-parity integration also passed for canonical UUID casing,
+NUL framing, quotes, escaped references, UTF8 and foreign-owner separation.
+This proves algorithm parity, not protected source/privacy authority.
+
+This is not a full original-free runtime claim: remaining step/model/tool and
+browser/direct-write surfaces, all checkpoints, API/callback/cache responses,
+historical retention and original-free resume hydration still require work.
+Actual isolated full native runtime persistence proof is pending.
+Production/Development/local MCP and existing providers
+remain unchanged; full DMS restore, effects/receipts, protected rights/privacy/
+evaluator and independent Acceptance remain incomplete.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

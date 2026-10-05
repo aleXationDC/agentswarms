@@ -28,7 +28,7 @@ const recordEdge = between(tr, "async recordEdge(args) {", "async finish(args) {
 describe("resuming a parked run", () => {
   it("reopens the run it was given instead of inserting another", () => {
     expect(head).toContain("resumeRunId?: string | null;");
-    expect(flat(head)).toContain('.update({ status: "running", finished_at: null } as never)');
+    expect(flat(head)).toContain('.update({ status: "running", finished_at: null,');
     expect(flat(head)).toContain('.eq("id", opts.resumeRunId)');
     expect(flat(head)).toContain('.eq("user_id", opts.userId)');
   });
