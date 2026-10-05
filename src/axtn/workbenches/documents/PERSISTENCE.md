@@ -105,7 +105,7 @@ and native cost-scope columns remain. Rebinding an already protected trace or
 moving a generic historical trace into this identity fails. Protected trace
 markers also prevent body injection after the referenced run has been deleted.
 This is not source/privacy authority and does not cover initial writes missing
-the correlation, nested calls currently lacking the Parent run ID, separate
+the correlation, separate
 gateway calls, audit/log bodies, callbacks/cache or checkpoint context.
 
 The isolated native model role fixture uses actual auth rows and checks
@@ -119,3 +119,14 @@ flags, allowlisted price-source categories and numeric whole-turn token/cost/
 image counts. This preserves measured-zero versus unknown-price semantics and
 native repricing discovery without retaining arbitrary request bodies. Wrong
 types and free-text masquerading as usage metadata are excluded.
+
+The existing native headless executor now carries the original DMS Parent run
+ID through nested Execute-Swarm calls into their existing model/data-tool
+decision correlation. Each nested call validates that ID against the persisted
+owned Parent before executing. This is correlation only: no child run,
+checkpoint, Case, scheduler, workflow sequencing or Approval authority is
+created. Generic nested execution retains its existing uncorrelated behavior.
+Actual two-level executor tests capture the internal chat request and data-tool
+context, retained provider/model/owner scope, one top-level trace/decision and
+explicit missing/failed Parent denial. Mocked model/tool responses are not
+live provider, privacy or full original-free runtime proof.

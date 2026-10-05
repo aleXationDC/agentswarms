@@ -1035,6 +1035,29 @@ missing-correlated initial writes, separate gateway traces, logs/audit,
 checkpoint context, callbacks/cache and historical retention still need work.
 No production migration, provider/model/MCP setting or Development state changed.
 
+### Existing native nested Parent provenance increment
+
+The Parent-correlated native model storage increment is committed at
+`88669444`, canonical-pushed/mirrored and bound to the same draft PR11/Cases.
+The next bounded source fix carries that original DMS Parent run identity
+through existing nested Execute-Swarm calls into the existing chat request
+and scoped data-tool decision ID. Every nested call verifies persisted owned
+Parent identity before effects; missing/read-failed identity is a content-free
+error. No child run, decision, checkpoint, Case or orchestration is created.
+Generic/Development nested behavior and provider/model settings are unchanged.
+
+Actual two-level headless executor fixtures verify one top-level run/decision,
+the captured real internal chat request, scoped tool/retrieve contexts and
+explicit missing/error Parent denial. Model/tool replies are mocked; this is
+source execution proof, not live privacy/provider or complete L19 acceptance.
+Six executor fixtures and five focused suites pass **49 tests**.
+Final ordered typecheck/lint/docs/command/infra/full-unit and unchanged
+resource-bounded client/SSR build pass: **586 files / 9,718 tests PASS /
+40 skipped**. One existing source-string provenance assertion expected the
+old variable name; it now checks both `provenanceRunId` tool contexts, paired
+with actual model/tool/retrieve/generic executor tests. No behavioral test was
+disabled. These are exact measured candidate results, not live DMS acceptance.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

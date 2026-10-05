@@ -23,6 +23,7 @@
         "parent-registration-ack",
         "document-parent-trace-storage",
         "document-parent-model-trace-storage",
+        "document-nested-parent-provenance",
         "filing",
         "cleanup"
       ],
@@ -363,7 +364,19 @@
       "tested": "actual isolated eleven-migration auth/service role insert/update/owner/rebinding/deleted-run fixtures; independent-session upsert and detach fixtures",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Uncorrelated/nested/separate gateway/model writes, audit/log, checkpoint/cache/callback and original-free full runtime proof remain incomplete."
+      "gap": "Uncorrelated/separate gateway/model writes, audit/log, checkpoint/cache/callback and original-free full runtime proof remain incomplete."
+    },
+    {
+      "name": "document-nested-parent-provenance",
+      "kind": "existing-native-executor-correlation",
+      "source": "src/utils/swarmExecute.server.ts",
+      "sourceSHA256": "f0302ebddfc6fd31181c59fba6bc107bb0fe7ad56300dfe1baf6aac6b5f0dac0",
+      "dependencies": ["document-parent-model-trace-storage"],
+      "implemented": "carry original persisted owned DMS Parent run through existing nested execution to chat/data decision correlation, revalidate per nested call, retain generic behavior without child run/checkpoint/orchestration changes",
+      "tested": "six actual two-level headless executor fixtures: model and scoped tool/retrieve correlation, one native root trace/decision, generic compatibility, missing/error owned Parent denial;49 focused regression tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Model/tool responses mocked; no live provider/privacy, all-model-writer, checkpoint/callback/cache or full original-free runtime proof."
     },
     {
       "name": "privacy-preflight",

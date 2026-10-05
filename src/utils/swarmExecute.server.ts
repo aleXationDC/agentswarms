@@ -65,6 +65,7 @@ import { resolveDeployedGraph } from "@/lib/swarmPublish";
 import { safeStringify } from "@/lib/sandbox/jsSandbox";
 import { envInt } from "@/utils/rateLimit.server";
 import { createNativeWorkApproval } from "@/utils/swarmWorkApproval.server";
+import { DOCUMENT_MANAGEMENT_SWARM_ID } from "@/axtn/workbenches/documents/documentRegistrationAck";
 
 // Tool context for headless data tools: service-role client with scopeUserId
 // set, which forces the loaders to restrict data to what the owner may read
@@ -273,6 +274,8 @@ export async function executeSwarmServer(opts: {
   rejectApprovals: boolean;
   source: "api" | "schedule";
   depth?: number;
+  /** Internal native DMS provenance only; verified against the persisted owned Parent. */
+  documentParentRunId?: string;
   /**
    * Absolute wall-clock deadline for the whole run. Nested Execute-Swarm nodes
    * inherit the parent's deadline so nesting can't multiply the budget.
@@ -290,6 +293,16 @@ export async function executeSwarmServer(opts: {
     decision?: { approved: boolean; note?: string; approvalId?: string };
   };
 }): Promise<ExecuteResult> {
+  if (opts.documentParentRunId) {
+    const { data: parent, error } = await supabaseAdmin
+      .from("swarm_runs")
+      .select("id")
+      .eq("id", opts.documentParentRunId)
+      .eq("user_id", opts.userId)
+      .eq("swarm_id", DOCUMENT_MANAGEMENT_SWARM_ID)
+      .maybeSingle();
+    if (error || !parent) throw new Error("DOCUMENT_PROVENANCE_OWNED_PARENT_REQUIRED");
+  }
   const nodes = (Array.isArray(opts.swarm.nodes) ? opts.swarm.nodes : []) as Node<SwarmNodeData>[];
   const edges = (Array.isArray(opts.swarm.edges) ? opts.swarm.edges : []) as Edge[];
   const depth = opts.depth ?? 0;
@@ -355,7 +368,7 @@ export async function executeSwarmServer(opts: {
         ...a,
         // The run is the decision; `runId` is assigned once the tracer exists,
         // before any node executes, so the closure sees it.
-        runId,
+        runId: provenanceRunId,
         history: opts.history,
         signal: ac.signal,
         onUsage: (u) => {
@@ -391,6 +404,11 @@ export async function executeSwarmServer(opts: {
         })
       : null;
   const runId: string | null = tracer?.runId ?? null;
+  const documentParentRunId =
+    opts.swarm.id === DOCUMENT_MANAGEMENT_SWARM_ID && runId
+      ? runId
+      : (opts.documentParentRunId ?? null);
+  const provenanceRunId = documentParentRunId ?? runId;
   // The run is the decision. Every node turn (via serverChat) and every data
   // tool call (via dataToolCtx) carries this id, so the whole run's provenance
   // -- model calls, data read, cost -- keys off one value.
@@ -646,7 +664,7 @@ export async function executeSwarmServer(opts: {
               ml_model_names: d.toolConfigs?.ml_model_names,
             };
             const res = await withNodeRetry(d, async () => {
-              const r = await runToolNodeCore(dataToolCtx(opts.userId, runId), params);
+              const r = await runToolNodeCore(dataToolCtx(opts.userId, provenanceRunId), params);
               recordToolEvents(
                 node.id,
                 toolNodeEvents({
@@ -668,7 +686,7 @@ export async function executeSwarmServer(opts: {
             const query = interpolate(d.retrieveQuery || "{{input}}", ctx);
             const res = await withNodeRetry(d, async () => {
               const args = { query, top_k: String(d.retrieveTopK ?? 5) };
-              const r = await runToolNodeCore(dataToolCtx(opts.userId, runId), {
+              const r = await runToolNodeCore(dataToolCtx(opts.userId, provenanceRunId), {
                 tool_id: "kb_search",
                 args,
                 knowledge_base_id: kbId,
@@ -975,6 +993,7 @@ export async function executeSwarmServer(opts: {
               rejectApprovals: opts.rejectApprovals,
               source: opts.source,
               depth: depth + 1,
+              documentParentRunId: documentParentRunId ?? undefined,
               // Inherit the parent's budget — nesting must not multiply it.
               deadlineAt,
             });

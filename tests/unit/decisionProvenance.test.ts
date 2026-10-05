@@ -115,7 +115,7 @@ describe("minting", () => {
     );
     expect(s).toContain("decisionId: args.runId ?? undefined");
     // Both data-tool contexts, not one.
-    expect((s.match(/dataToolCtx\(opts\.userId, runId\)/g) ?? []).length).toBe(2);
+    expect((s.match(/dataToolCtx\(opts\.userId, provenanceRunId\)/g) ?? []).length).toBe(2);
   });
 
   it("a dashboard refresh is a decision too", () => {
