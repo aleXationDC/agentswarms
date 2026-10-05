@@ -3,6 +3,7 @@ import { WorkReference, WorkRequest } from "../cases/workContract";
 import { DocumentFeedbackEvent } from "./documentFeedbackContract";
 import { DocumentLearningCandidate } from "./documentCandidateContract";
 import { DocumentEvaluationSubmission } from "./documentEvaluationContract";
+import { DisabledDocumentAutomationPolicySubmission } from "./documentAutomationPolicyContract";
 
 const opaque = z
   .string()
@@ -220,6 +221,18 @@ export const DocumentWorkRequest = z.discriminatedUnion("operation", [
   z
     .object({
       operation: z.literal("document_evaluations"),
+      caseId: z.string().uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("document_policy"),
+      submission: DisabledDocumentAutomationPolicySubmission,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("document_policies"),
       caseId: z.string().uuid(),
     })
     .strict(),

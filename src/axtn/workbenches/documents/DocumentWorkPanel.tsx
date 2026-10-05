@@ -19,6 +19,18 @@ import {
   DocumentLearningCandidateRecord,
 } from "./documentCandidateContract";
 import { DocumentEvaluationEvidence, DocumentEvaluationRecord } from "./documentEvaluationContract";
+import {
+  DisabledDocumentAutomationPolicy,
+  DisabledDocumentAutomationPolicyRecord,
+} from "./documentAutomationPolicyContract";
+
+const PolicyDraft = z
+  .object({
+    validFrom: DisabledDocumentAutomationPolicy.shape.validFrom,
+    validUntil: DisabledDocumentAutomationPolicy.shape.validUntil,
+    qualityProfile: DisabledDocumentAutomationPolicy.shape.qualityProfile,
+  })
+  .strict();
 
 const CandidateDraft = DocumentLearningCandidate.omit({
   candidateId: true,
@@ -65,6 +77,11 @@ export function DocumentWorkPanel({
   const [evaluationId, setEvaluationId] = useState(() => crypto.randomUUID());
   const [evaluationDraft, setEvaluationDraft] = useState("");
   const [evaluations, setEvaluations] = useState<z.infer<typeof DocumentEvaluationRecord>[]>([]);
+  const [policyId, setPolicyId] = useState(() => crypto.randomUUID());
+  const [policyDraft, setPolicyDraft] = useState("");
+  const [policies, setPolicies] = useState<
+    z.infer<typeof DisabledDocumentAutomationPolicyRecord>[]
+  >([]);
   const [proposalId, setProposalId] = useState(() => crypto.randomUUID());
   const [feedbackId, setFeedbackId] = useState(() => crypto.randomUUID());
   const [feedbackEvents, setFeedbackEvents] = useState<z.infer<typeof DocumentFeedbackRecord>[]>(
@@ -103,8 +120,9 @@ export function DocumentWorkPanel({
       call({ operation: "document_feedback_events", caseId }),
       call({ operation: "document_candidates", caseId }),
       call({ operation: "document_evaluations", caseId }),
+      call({ operation: "document_policies", caseId }),
     ])
-      .then(([value, decisions, feedback, candidateRecords, evaluationRecords]) => {
+      .then(([value, decisions, feedback, candidateRecords, evaluationRecords, policyRecords]) => {
         if (cancelled) return;
         const next = WorkState.parse(value);
         setState(next);
@@ -112,6 +130,7 @@ export function DocumentWorkPanel({
         setFeedbackEvents(z.array(DocumentFeedbackRecord).parse(feedback));
         setCandidates(z.array(DocumentLearningCandidateRecord).parse(candidateRecords));
         setEvaluations(z.array(DocumentEvaluationRecord).parse(evaluationRecords));
+        setPolicies(z.array(DisabledDocumentAutomationPolicyRecord).parse(policyRecords));
         const record = next.cases.find((row) => row.case_id === caseId);
         if (record) {
           setSubject(record.subject);
@@ -128,6 +147,71 @@ export function DocumentWorkPanel({
   }, [call, caseId]);
   const record = state?.cases.find((row) => row.case_id === caseId);
   const human = record?.processing_mode === "HUMAN";
+  async function recordDisabledPolicy(evaluation: z.infer<typeof DocumentEvaluationRecord>) {
+    if (!record) throw new Error("Current Document Case required.");
+    setSaving(true);
+    setError(null);
+    try {
+      const candidate = candidates.find(
+        (value) =>
+          value.candidate_id === evaluation.candidate_id &&
+          value.revision === evaluation.candidate_revision,
+      );
+      if (!candidate) throw new Error("Exact persisted Candidate required for this report.");
+      const scope = candidate.document_learning_candidate.changeManifest;
+      const policy = DisabledDocumentAutomationPolicy.parse({
+        ...PolicyDraft.parse(JSON.parse(policyDraft)),
+        schemaVersion: "document-automation-policy-v1",
+        policyId,
+        caseId,
+        candidateId: candidate.candidate_id,
+        candidateRevision: candidate.revision,
+        evaluationId: evaluation.evaluation_id,
+        evaluationRevision: evaluation.revision,
+        family: scope.family,
+        sourceKind: scope.sourceKind,
+        targetId: scope.targetId,
+        operation: "CLASSIFY",
+        ruleRevision: evaluation.document_evaluation.candidateRuleRevision,
+        reviewTriggers: [
+          "UNKNOWN_FAMILY",
+          "AMBIGUOUS_TARGET",
+          "SOURCE_RIGHTS_DRIFT",
+          "PRIVACY_DRIFT",
+          "RULE_DRIFT",
+          "QUALITY_DRIFT",
+          "HUMAN_OVERRIDE",
+        ],
+        promotionCaseId: null,
+        authority: "UNAPPROVED_DISABLED_DRAFT",
+        enabled: false,
+        evidence: evaluation.document_evaluation.evidence,
+      });
+      DisabledDocumentAutomationPolicyRecord.parse(
+        await call({
+          operation: "document_policy",
+          submission: {
+            policy,
+            attemptId: record.attempt_id,
+            inputHash: record.input_hash,
+          },
+        }),
+      );
+      setPolicies(
+        z
+          .array(DisabledDocumentAutomationPolicyRecord)
+          .parse(await call({ operation: "document_policies", caseId })),
+      );
+      setPolicyId(crypto.randomUUID());
+      await onChanged();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Disabled Document Policy recording failed.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
   async function recordEvaluation(candidate: z.infer<typeof DocumentLearningCandidateRecord>) {
     if (!record) throw new Error("Current Document Case required.");
     setSaving(true);
@@ -599,10 +683,37 @@ export function DocumentWorkPanel({
               onChange={(event) => setEvaluationDraft(event.target.value)}
             />
             {evaluations.map((evaluation) => (
-              <p key={evaluation.evaluation_id}>
-                {evaluation.created_at} · {evaluation.evaluation_id} ·
-                {evaluation.document_evaluation.verdict} · unattested, promotion denied ·
-                <code>{evaluation.revision}</code>
+              <div key={evaluation.evaluation_id}>
+                <p>
+                  {evaluation.created_at} · {evaluation.evaluation_id} ·
+                  {evaluation.document_evaluation.verdict} · unattested, promotion denied ·
+                  <code>{evaluation.revision}</code>
+                </p>
+                <Button
+                  disabled={saving || !human || !policyDraft}
+                  onClick={() => void recordDisabledPolicy(evaluation)}
+                >
+                  Record disabled draft for this report (no activation)
+                </Button>
+              </div>
+            ))}
+            <strong>Immutable disabled Automation Policy draft</strong>
+            <p>
+              Strict JSON: validFrom, validUntil and qualityProfile (null without an approved
+              profile, or an exact contract reference). Scope is bound to the persisted Candidate
+              and report. Neither report nor profile reference grants approval. No activation,
+              promotion, provider operation or automatic re-filing is possible here.
+            </p>
+            <Textarea
+              aria-label="Minimized disabled automation policy draft"
+              maxLength={4000}
+              value={policyDraft}
+              onChange={(event) => setPolicyDraft(event.target.value)}
+            />
+            {policies.map((policy) => (
+              <p key={policy.policy_id}>
+                {policy.created_at} · {policy.policy_id} · disabled, unapproved ·
+                <code>{policy.revision}</code>
               </p>
             ))}
             <strong>Durable transitions</strong>

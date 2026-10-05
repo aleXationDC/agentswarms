@@ -286,6 +286,19 @@
       "gap": "No protected feature loader, independent evaluator/quality/promotion authority or live UI/restart proof; persisted metrics and provenance remain explicitly unattested."
     },
     {
+      "name": "document-disabled-automation-policy",
+      "kind": "native-case-disabled-policy-draft",
+      "logicalName": "axtn_document_automation_policies",
+      "source": "supabase/migrations/20261004170000_document_disabled_automation_policy.sql",
+      "sourceSHA256": "4a734ba189c37de390944ed00f3018f0065ead1b413e2600cca6239d048f77d0",
+      "dependencies": ["document-learning-candidate", "document-evaluation-persistence"],
+      "implemented": "same protected Case API/RPC/Human panel; immutable minimized disabled drafts, exact Candidate/Evaluation/Child/current source/worker binding, complete fail-closed triggers/validity and nullable exact QualityProfile reference, canonical recovery and lossless native metadata reconciliation",
+      "tested": "30 contract/service/readback and seven actual shared API handler fixtures; isolated atomic migration9, actual comparator/native report then 16-session policy dedup/one initial audit, immutable/privacy-drift recovery, scoped-key/role/broker/current revision denial and append-only new revision/metadata proof",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "No activation pointer, protected quality/evaluator/promotion authority, runtime execution consumer or synthetic SCOPED_AUTO/live UI/restart proof. All drafts permanently disabled/unapproved; FAIL reports cannot grant authority."
+    },
+    {
       "name": "registry-seed",
       "kind": "native-dataset-seed",
       "source": "supabase/migrations/20261004120000_document_registry_seed.sql",

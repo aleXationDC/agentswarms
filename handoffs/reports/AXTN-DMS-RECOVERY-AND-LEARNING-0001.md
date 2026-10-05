@@ -840,6 +840,49 @@ Full live semantic recovery, protected feature/privacy/source
 loading, policy/effects/receipts, minimized checkpoints, production convergence
 and independent Acceptance remain unfinished.
 
+### Native immutable disabled Automation Policy increment
+
+Native Evaluation persistence is committed as
+`fa7cd4ad557ca2d0658e8afbaf9f019b6b3ce459`, pushed, immediately mirrored and
+bound to the same draft PR11 and three OPEN SupaCases. The following additive
+source increment preserves the same Case API/RPC/Human panel/native Dataset/
+audit and creates only permanently disabled, unapproved CLASSIFY drafts.
+It adds no activation pointer, new state machine, independent PASS, source
+effect or authority to run/promote an Improvement Child.
+
+Exact Candidate/Evaluation revisions, existing Child, source/Input, current
+worker/Attempt and unchanged family/source/target/rule scope are bound server-
+side and checked independently in SQL. All current native Candidate gates are
+revalidated. A null QualityProfile is allowed for a disabled draft without
+inventing a threshold; an exact profile reference does not grant approval.
+All seven fail-closed triggers and explicit ordered validity are mandatory.
+
+Thirty executed schema/service/readback tests and seven actual shared API
+handler tests cover authenticated identity/hash, normalization, strict draft/
+scope/authority/leakage boundaries and explicit native errors. Actual bounded
+recognizer output is persisted as an unattested report and then sixteen native
+sessions deduplicate one immutable disabled policy and initial audit. Real
+scoped-key scope-loss/expiry/revocation, privacy/worker/revision drift and generic
+role/broker overwrites fail. Exact authorized readback recovers after privacy
+drift without allowing a new alias. A changed validity appends a new disabled
+revision; missing Dataset metadata is reconciled without deleting an unknown
+operator column. Own fixtures return to zero. Initial fixture UUID quotation
+failure was corrected; final expanded native integration passes.
+
+Migration9 is applied only to owned isolated policy DBs, never production.
+A fresh final nine-migration install passes the expanded Policy fixture, actual
+recognizer/report persistence, Evaluation/Work/Registry/Feedback concurrency
+and all existing native Work/Approval/current proposal/Registry/Feedback SQL
+role suites. Complete ordered canonical typecheck/lint/docs/commands/infra and
+full-unit gates pass: 582 files, 9,641 tests PASS, 40 skipped. Unchanged
+production client/SSR build passes with the documented process-only memory
+bounds; no build script or live runtime was changed. These are exact measured
+Policy-increment results, not inherited test counts or full DMS acceptance.
+Protected feature/privacy/rights/evaluator authority, promotion/
+activation/revocation and SCOPED_AUTO proof, FilingReceipt/effects, minimized
+native checkpoints, full recovery/production convergence and independent
+Acceptance remain unfinished.
+
 ### Native Local Table draft provisioning increment
 
 The exact recovered Python definition now has an explicit native MCP Builder

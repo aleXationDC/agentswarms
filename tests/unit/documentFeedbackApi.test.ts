@@ -128,6 +128,102 @@ describe("actual same Case API inactive Candidate boundary", () => {
     );
   });
 
+  describe("actual same Case API disabled Policy boundary", () => {
+    const policy = {
+      schemaVersion: "document-automation-policy-v1",
+      policyId: event.eventId,
+      caseId: event.caseId,
+      candidateId: candidate.candidateId,
+      candidateRevision: "a".repeat(64),
+      evaluationId: event.decisionId,
+      evaluationRevision: "b".repeat(64),
+      family: "fixture",
+      sourceKind: "fixture",
+      targetId: null,
+      operation: "CLASSIFY",
+      ruleRevision: "c".repeat(64),
+      qualityProfile: null,
+      reviewTriggers: [
+        "UNKNOWN_FAMILY",
+        "AMBIGUOUS_TARGET",
+        "SOURCE_RIGHTS_DRIFT",
+        "PRIVACY_DRIFT",
+        "RULE_DRIFT",
+        "QUALITY_DRIFT",
+        "HUMAN_OVERRIDE",
+      ],
+      validFrom: "2026-10-05T00:00:00Z",
+      validUntil: "2026-10-06T00:00:00Z",
+      promotionCaseId: null,
+      authority: "UNAPPROVED_DISABLED_DRAFT",
+      enabled: false,
+      evidence: event.evidence,
+    };
+    const submission = { policy, attemptId: event.attemptId, inputHash: event.inputHash };
+    it("binds actual authenticated owner and native revision without a new endpoint", async () => {
+      expect((await requestBody({ operation: "document_policy", submission })).status).toBe(200);
+      expect(state.rpc).toHaveBeenCalledExactlyOnceWith(
+        "axtn_case_document",
+        expect.objectContaining({
+          p_user_id: owner,
+          p_operation: "document_policy",
+          p_payload: expect.objectContaining({
+            policyRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+            _principal: { kind: "user_session", id: owner },
+            policy: expect.objectContaining({ enabled: false, promotionCaseId: null }),
+          }),
+        }),
+      );
+    });
+    it.each([{ enabled: true }, { authority: "APPROVED" }, { original: "leak-marker" }])(
+      "rejects activation/authority/raw-body claims before native storage %j",
+      async (change) => {
+        expect(
+          (
+            await requestBody({
+              operation: "document_policy",
+              submission: { ...submission, policy: { ...policy, ...change } },
+            })
+          ).status,
+        ).toBe(400);
+        expect(state.rpc).not.toHaveBeenCalled();
+      },
+    );
+    it("reads same-Case policy records using the authenticated identity", async () => {
+      state.rpc.mockResolvedValueOnce({ data: [], error: null });
+      const response = await requestBody({ operation: "document_policies", caseId: event.caseId });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, result: [] });
+      expect(state.rpc.mock.calls[0][1].p_payload._principal).toEqual({
+        kind: "user_session",
+        id: owner,
+      });
+    });
+    it("binds existing Case-scoped machine key without expanding its scopes", async () => {
+      expect(
+        (await requestBody({ operation: "document_policy", submission }, "sk_swarm_fixture"))
+          .status,
+      ).toBe(200);
+      expect(state.rpc.mock.calls[0][1].p_payload._principal).toEqual({
+        kind: "swarm_api_key",
+        id: keyId,
+      });
+    });
+    it("returns explicit native rejection and logs the guard failure", async () => {
+      state.rpc.mockResolvedValueOnce({
+        data: null,
+        error: { message: "DOCUMENT_POLICY_IMMUTABLE" },
+      });
+      const response = await requestBody({ operation: "document_policy", submission });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({ error: "Case operation rejected" });
+      expect(console.warn).toHaveBeenCalledWith(
+        "[case-work] operation rejected:",
+        "DOCUMENT_POLICY_IMMUTABLE",
+      );
+    });
+  });
+
   describe("actual same Case API minimized Evaluation readback boundary", () => {
     it("binds authenticated identity and reuses the native owner-bound service", async () => {
       expect(

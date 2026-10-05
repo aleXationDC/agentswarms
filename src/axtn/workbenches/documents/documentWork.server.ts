@@ -66,7 +66,26 @@ export async function executeDocumentWork(
                   }
                 : request.operation === "document_evaluation"
                   ? { ...request.submission, caseId: request.submission.evaluation.caseId }
-                  : { caseId: request.caseId };
+                  : request.operation === "document_policy"
+                    ? {
+                        ...request.submission,
+                        caseId: request.submission.policy.caseId,
+                        policy: {
+                          ...request.submission.policy,
+                          reviewTriggers: [...request.submission.policy.reviewTriggers].sort(),
+                          evidence: [
+                            ...new Map(
+                              request.submission.policy.evidence.map((reference) => [
+                                JSON.stringify(canonical(reference)),
+                                reference,
+                              ]),
+                            ).entries(),
+                          ]
+                            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+                            .map(([, reference]) => reference),
+                        },
+                      }
+                    : { caseId: request.caseId };
   if (
     !human &&
     (request.operation === "document_assign" ||
@@ -89,7 +108,9 @@ export async function executeDocumentWork(
             ? { candidateRevision: documentInputHash(payload) }
             : request.operation === "document_evaluation"
               ? { evaluationRevision: documentInputHash(request.submission) }
-              : {}),
+              : request.operation === "document_policy"
+                ? { policyRevision: documentInputHash(payload) }
+                : {}),
     actorRef: principal.id,
     _principal: principal,
   };

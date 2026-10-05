@@ -69,7 +69,8 @@ is retained as FAIL rather than converted into acceptance. Both use the owned
 Candidate fixture and wait for all sessions before targeted cleanup.
 
 Remaining: protected approved feature/vocabulary/source/rights/privacy loader,
-independent evaluator/review/PR receipts, QualityProfile and immutable disabled
-AutomationPolicy; FilingReceipt/effects, minimized native checkpoints and full
+independent evaluator/review/PR receipts, approved QualityProfile and controlled
+policy promotion/activation ([disabled native drafts](POLICIES.md) do not provide
+that authority); FilingReceipt/effects, minimized native checkpoints and full
 live graph/restart/Acceptance. This migration does not silently upgrade
 unattested report inputs into any of those authorities.
