@@ -1330,6 +1330,23 @@ build PASS. Full assignment gate ledger added with explicit PARTIAL/PENDING/
 BLOCKED states; documentation checks rerun PASS. Protected-secret scan:
 2,437 source/evidence files PASS. Production unchanged.
 
+### Native required-header preflight consistency
+
+Cache storage/replay candidate `373ade44` is canonical-pushed/mirrored
+11:21:58+02 and bound to draftPR11/same3OPEN Cases. The newly required native
+DMS delivery header already worked for server-side n8n clients, but the
+existing public OPTIONS response only allowed Authorization/Content-Type.
+It now also permits the existing `Idempotency-Key`. The native API comment
+documents the Parent requirement rather than calling it universally optional.
+No origin/method/access topology/key scope/actor rule changed.
+Actual OPTIONS204/header/no-execution/no-storage proof plus all **46 actual
+API handler tests PASS**, targeted lint PASS. Full exact source/build gate
+PASS: ordered Type/Lint/Docs/doc-command/Infra/fullUnit, **588 files/9841 tests/
+40 skipped**, followed by the unchanged bounded client/SSR build.
+Protected credential scan **2550 source/evidence files**, task artifacts,
+browser assets and runtime logs PASS. Production/Development/localMCP
+unchanged; no new DMS Acceptance.
+
 ### Native cache storage and persisted replay increment
 
 Terminal transport candidate `e89eddba` is canonical-pushed/mirrored

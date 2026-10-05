@@ -256,7 +256,12 @@ of document content. These remain explicit L19 boundaries.
 For the authenticated source-defined Parent, the public API now requires the
 existing `Idempotency-Key` header (nonempty, at most 200 characters; no silent
 Parent truncation). Existing n8n Drive/IMAP/Workspace ingress HTTP nodes
-already set this header. A failed record or completed record without a result
+already set this header. The existing public OPTIONS response now permits
+that header alongside Authorization/Content-Type; otherwise cross-origin
+browser clients could not send the mandatory delivery identity. No origin,
+method, key scope or identity policy is widened. An actual OPTIONS fixture
+verifies204/allowed headers and zero execution/storage writes.
+A failed record or completed record without a result
 returns `DOCUMENT_RUN_READBACK_RECOVERY_REQUIRED` with the same run ID rather
 than starting the graph again. A concurrent insert conflict also cannot
 take over a failed Parent record. Request mismatch is still checked first;

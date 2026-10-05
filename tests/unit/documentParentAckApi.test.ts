@@ -9,6 +9,7 @@ type Handler = (context: { request: Request }) => Promise<Response>;
 type Result = { data: unknown; error: { message: string; code: string } | null };
 const state = vi.hoisted(() => ({
   handler: null as Handler | null,
+  options: null as (() => Response) | null,
   swarmId: "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
   idem: null as {
     status: string;
@@ -30,10 +31,12 @@ const state = vi.hoisted(() => ({
   reads: [] as { table: string; filters: Record<string, unknown> }[],
 }));
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { server: { handlers: { POST: Handler } } }) => {
-    state.handler = config.server.handlers.POST;
-    return config;
-  },
+  createFileRoute:
+    () => (config: { server: { handlers: { POST: Handler; OPTIONS: () => Response } } }) => {
+      state.handler = config.server.handlers.POST;
+      state.options = config.server.handlers.OPTIONS;
+      return config;
+    },
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
@@ -197,6 +200,16 @@ beforeEach(() => {
 });
 
 describe("existing public API Parent ACK transport", () => {
+  it("permits the required native idempotency header through actual public preflight without execution", () => {
+    if (!state.options) throw new Error("Route OPTIONS fixture not registered");
+    const response = state.options();
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Headers")?.toLowerCase()).toBe(
+      "authorization, content-type, idempotency-key",
+    );
+    expect(state.execute).not.toHaveBeenCalled();
+    expect(state.writes).toEqual([]);
+  });
   it("retains the returned terminal run identity when async outcome persistence fails", async () => {
     state.execute.mockResolvedValue({
       status: "success",

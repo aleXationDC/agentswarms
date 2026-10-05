@@ -2,7 +2,7 @@
 //
 //   POST /api/swarm/run
 //   Authorization: Bearer sk_swarm_…
-//   Idempotency-Key: <optional, client-chosen>
+//   Idempotency-Key: <client-chosen; required for the native DMS Parent>
 //   { "input": "…", "inputs": { "field": "value" },
 //     "history": [{ "role": "user"|"assistant", "content": "…" }],
 //     "async": false, "callback_url": "https://…" }
@@ -50,7 +50,7 @@ import {
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Idempotency-Key",
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
