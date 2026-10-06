@@ -11,7 +11,7 @@ import type { BiTurn, ChartSpec } from "@/lib/biAgent";
 import { isAggregatableChart } from "@/lib/biAggregate";
 import { restateWidgetNarrative } from "@/lib/biNumericClaims";
 import { restateWidgetNote } from "@/lib/biTitleClaims";
-import type { ComparePeriod, SemanticFilter, TimeGrain } from "@/lib/semanticLayer";
+import type { ComparePeriod, SemanticFilter, SemanticQuery, TimeGrain } from "@/lib/semanticLayer";
 
 export const GRID_COLS = 12;
 
@@ -78,6 +78,22 @@ export type BiWidgetSource =
        */
       params?: Record<string, string | number>;
     };
+
+export function semanticQueryFromSource(
+  source: Extract<BiWidgetSource, { kind: "semantic" }>,
+  limit?: number,
+): SemanticQuery {
+  return {
+    model: source.model,
+    metrics: source.metrics,
+    dimensions: source.dimensions ?? [],
+    filters: source.filters,
+    grains: source.grains,
+    compare: source.compare,
+    params: source.params,
+    ...(limit === undefined ? {} : { limit }),
+  };
+}
 
 /** Content of an image widget: an uploaded data-URI OR an external URL. */
 export type BiImage = {

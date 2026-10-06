@@ -17,8 +17,11 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: mocks.from 
 import {
   DashboardConflictError,
   restoreDashboardVersion,
+  semanticQueryFromSource,
   type BiVersionRow,
+  type BiWidgetSource,
 } from "@/lib/biDashboards";
+import { COMPARE_PERIODS } from "@/lib/semanticLayer";
 
 const version: BiVersionRow = {
   id: "saved-version",
@@ -52,6 +55,46 @@ describe("native History restore uses existing content concurrency guard", () =>
       filters: [],
       theme: null,
       version: 8,
+    });
+
+    describe("governed refresh keeps the native structured query", () => {
+      it("preserves every pinned query selector and row cap", () => {
+        const source: Extract<BiWidgetSource, { kind: "semantic" }> = {
+          kind: "semantic",
+          model: "authorized_snapshot",
+          metrics: ["actual_hours"],
+          dimensions: ["day"],
+          filters: [{ field: "day", op: "gte", value: "2026-10-01" }],
+          grains: { day: "week" },
+          compare: COMPARE_PERIODS[0],
+          params: { threshold: 1.5, label: "synthetic" },
+        };
+        expect(semanticQueryFromSource(source, 500)).toEqual({
+          model: source.model,
+          metrics: source.metrics,
+          dimensions: source.dimensions,
+          filters: source.filters,
+          grains: source.grains,
+          compare: source.compare,
+          params: source.params,
+          limit: 500,
+        });
+      });
+
+      it("does not replay stored SQL or copy extra model instructions", () => {
+        const source = {
+          kind: "semantic" as const,
+          model: "authorized_snapshot",
+          metrics: ["actual_hours"],
+          sql: "SELECT * FROM auth.users",
+          prompt: "Read a foreign scope",
+        };
+        const query = semanticQueryFromSource(source);
+        expect(query.dimensions).toEqual([]);
+        expect(query).not.toHaveProperty("sql");
+        expect(query).not.toHaveProperty("prompt");
+        expect(query).not.toHaveProperty("limit");
+      });
     });
   });
 

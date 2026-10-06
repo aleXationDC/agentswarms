@@ -108,6 +108,31 @@ fallback, provider configuration or new service is changed. Targeted source
 tests, exact canonical build/convergence and repaired live evidence are
 required before this new Productsource is called deployed.
 
+The exact0af57332 deployment corrected that trace attribution and guarded
+native History restore: actual synthetic View version2 rolled back to3 and
+reapplied to4; stale replay did not mutate it. Two native OpenAI traces report
+559/557 and559/499 measured input/output tokens, catalog cost0.001115/
+0.001022USD. Earlier faulty traces are retained, not rewritten. Genuine Approval,
+protected original data and38 unrelated services survived convergence and an
+actual App restart, including exact BI model/dataset/rows/definitions/result/
+History hashes.
+
+The following real UI Refresh found a further bounded native defect: browser
+refresh routed semantic widgets into local SQL instead of the existing
+authenticated semantic compiler. A fractional1.5h total became NULL even
+though grouped rows and original governed generation were correct. Native
+Refresh now uses the existing `runMetric` contract and current structured
+source selectors, sharing their construction with parameter edits; scheduled
+refresh already uses its governed contract. Local/warehouse behavior remains
+unchanged. Exact-source rollout and
+the originally failing actual Refresh must pass before this slice is complete.
+The synthetic snapshot driver also wrongly requested nonexistent split
+available/unavailable fields: the native projection supplies only
+`netAvailableHours:3`, plus committed2/actual1.5. The faulty snapshot is retained
+as historical fixture evidence; only a separately labeled minimized corrected
+snapshot revision may supply those actually available values. No private
+calendar reconstruction, silent zero or live synchronization is claimed.
+
 ### F4: actual local native collaboration, not a fabricated peer
 
 `tests/integration/environmentPatternCollaboration.sql` executes as a

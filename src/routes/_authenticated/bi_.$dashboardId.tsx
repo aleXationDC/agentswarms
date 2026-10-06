@@ -88,6 +88,7 @@ import {
 } from "@/lib/biAgent";
 import {
   AUTO_SNAPSHOT_MS,
+  semanticQueryFromSource,
   WIDGET_ACCENTS,
   addWidgetToLayout,
   applyRowFilters,
@@ -665,6 +666,7 @@ function BiProjectPage() {
         sql: string;
         rollup?: string;
         access_note?: string;
+        truncated?: boolean;
       };
     },
     [token, runMetricFn],
@@ -952,19 +954,7 @@ function BiProjectPage() {
       const res = (await runSemanticFn({
         data: {
           accessToken: token,
-          query: {
-            model: orig.source.model,
-            metrics: orig.source.metrics ?? [],
-            dimensions: orig.source.dimensions ?? [],
-            grains: orig.source.grains,
-            filters: orig.source.filters,
-            compare: orig.source.compare,
-            params,
-            // The widget's own cap, not 100: the scheduled refresh keeps up to
-            // widgetRowCap() rows, and a parameter change must not quietly
-            // shrink the widget to a tenth of that.
-            limit: widgetRowCap(),
-          },
+          query: semanticQueryFromSource({ ...orig.source, params }, widgetRowCap()),
         },
       })) as {
         columns: string[];
@@ -994,24 +984,38 @@ function BiProjectPage() {
   };
 
   async function refreshAll() {
-    const chartWidgets = widgets.filter((w) => w.kind === "chart" && w.sql);
+    const chartWidgets = widgets.filter(
+      (w) => w.kind === "chart" && (w.sql || w.source?.kind === "semantic"),
+    );
     if (chartWidgets.length === 0) return toast.info("No chart widgets to refresh");
     setRefreshing(true);
     let failures = 0;
     const next = [...widgets];
     for (const w of chartWidgets) {
       try {
-        const res = await runSql(w.source ?? { kind: "local" }, w.sql!);
+        let res: { columns: string[]; rows: Record<string, unknown>[] };
+        let sql = w.sql;
+        let truncated: boolean;
+        if (w.source?.kind === "semantic") {
+          const governed = await runMetric(semanticQueryFromSource(w.source, widgetRowCap()));
+          res = governed;
+          sql = governed.sql;
+          truncated = governed.truncated ?? false;
+        } else {
+          const local = await runSql(w.source ?? { kind: "local" }, w.sql!);
+          res = local;
+          truncated = local.capped;
+        }
         const idx = next.findIndex((x) => x.id === w.id);
         const rows = snapshotRows(res.rows);
-        const capped = res.capped || res.rows.length > widgetRowCap();
+        const capped = truncated || res.rows.length > widgetRowCap();
         // Same restatement the scheduled refresh does. Both paths replace the
         // rows, so both have to re-check whatever sentence was counting them —
         // one of the two doing it would just make the widget's caveat depend
         // on which button the owner pressed.
         const restated = restateWidgetNote({
           title: next[idx].title,
-          sql: w.sql,
+          sql,
           chart: next[idx].chart,
           reconcile_note: next[idx].reconcile_note,
           rows,
@@ -1028,6 +1032,7 @@ function BiProjectPage() {
         });
         next[idx] = {
           ...next[idx],
+          sql,
           ...(restated ? { title: restated.title, reconcile_note: restated.reconcile_note } : {}),
           ...(staleProse ? { narrative: undefined } : {}),
           columns: res.columns,

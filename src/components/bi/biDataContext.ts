@@ -49,6 +49,7 @@ export type BiDataContext = {
     columns: string[];
     rows: Record<string, unknown>[];
     sql: string;
+    truncated?: boolean;
     rollup?: string;
     /** Present when a share policy scoped the rows — disclosed on the preview. */
     access_note?: string;

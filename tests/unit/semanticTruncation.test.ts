@@ -103,7 +103,9 @@ describe("every consumer says when the list is partial", () => {
       dash.indexOf("const res = (await runSemanticFn({"),
       dash.indexOf("setParamsWidget(null);"),
     );
-    expect(block).toContain("limit: widgetRowCap(),");
+    expect(block).toContain(
+      "query: semanticQueryFromSource({ ...orig.source, params }, widgetRowCap())",
+    );
     expect(block).not.toContain("limit: 100,");
     expect(block).toContain("truncated: res.truncated ?? false,");
   });

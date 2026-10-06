@@ -123,8 +123,15 @@ describe("creation and refresh both record truncation", () => {
     // in the same block needs the same verdict and computing it twice is how
     // the two drift. So the pin moved with it: the whole expression on the
     // const, and `truncated` taking that const rather than recomputing.
-    expect(DASHBOARD, "the manual refresh no longer derives capped from the engine").toContain(
-      "const capped = res.capped || res.rows.length > widgetRowCap();",
+    const refresh = DASHBOARD.slice(
+      DASHBOARD.indexOf("async function refreshAll()"),
+      DASHBOARD.indexOf("function editWidget("),
+    );
+    expect(refresh).toContain("runMetric(semanticQueryFromSource(w.source, widgetRowCap()))");
+    expect(refresh).toContain("truncated = governed.truncated ?? false;");
+    expect(refresh).toContain("truncated = local.capped;");
+    expect(refresh, "the manual refresh no longer derives capped from the engine").toContain(
+      "const capped = truncated || res.rows.length > widgetRowCap();",
     );
     // `truncated: capped,` appears TWICE in that block — once as an argument to
     // restateWidgetNote and once on the widget — so pin the one that lands on
