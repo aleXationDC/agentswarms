@@ -179,14 +179,153 @@ test-command latency and calendar state duration are not Human/Agent hours.
 | E8 | Actual rollback-only PROD native Approval denial/reviewer/group/audit proof | Independent real human decision unavailable; original pending Approval unchanged |
 | E9 | Native responsibility/shared/scope/takeover/privacy SQL; populated existing Case/UI views | Synthetic collaboration, not three actual colleague accounts or empirical load |
 
-P01-P38 individual definitions remain absent from the supplied authoritative
-request and repository V6 artifact. No per-ID meaning is invented. Grouped
-P01-P18 reuse DMS privacy/Case/Approval/Work/native execution fixtures with
-their retained DMS/Development boundaries. P19-P22 have the executed portable
-skill/ticket transfer evidence, P23-P35 the executed Processing/capacity/
-Pattern/learning/UI evidence, and P36-P38 typed failure/replay/restart evidence.
-The complete original per-ID inventory remains below as an unresolved
-definition gate, not38 claimed PASS or permission to stop other functional work.
+### Resolved definition prerequisite and individual P01-P38 evidence
+
+Definition source: canonical Gitea assignment branch
+`work/AXTN-ENVIRONMENT-PATTERN-PILOT-0001`, exact commit
+`29824ddb339739120f69efdf65ee766c88024edd`,
+`handoffs/requests/AXTN-ENVIRONMENT-PATTERN-DEFINITIONS-V6.md`.
+The full artifact was fetched/read and imported alone, without its historical
+product code. Its authority names Issue12 and implementation PR14.
+The missing-definition blocker is **RESOLVED**. Historical initial absence
+below is retained as history, not current state. No new Case, deployment,
+runtime test, reviewer decision or38-fold PASS is created by this mapping.
+
+Revision/evidence legend (all repository paths below are in
+`aXtn/aXtn-agentswarms` unless explicitly marked Host):
+Existing executed evidence is reused; no test was rerun against PROD for this
+documentation-only mapping. Effort remains unmeasured unless identified
+elsewhere as actual bytes/tokens/latency, never inferred labor.
+
+- **A** = deployed executable source
+  `a33a9c142bf4e0401713c214be14599593696f5c`; **T** = published strengthened
+  tests `3d28c070c4732808295c00c52eba1138ef92c833`; **H** = Host evidence
+  `5a4ff6f1c4aec40bdc4888b324d34b925cf0aa8d`.
+- **CASE** = A `src/axtn/workbenches/cases/workContract.ts`, `work.server.ts`
+  in that same directory, plus `tests/integration/documentWork.sql` and
+  `tests/unit/documentWork.test.ts`. Actual rollback-only PROD SQL proves
+  admission/replay/fencing/custody/forgery guards; it is not full DMS restoration.
+- **ENV** = A `src/axtn/workbenches/cases/caseEnvironmentContract.ts` and
+  `caseEnvironment.server.ts`; `tests/integration/caseEnvironment.sql`.
+  Executed native SQL/concurrency/PROD rollback evidence: exact triple,
+  bound environment, ambiguity, private/shared access, spoof/stale denial.
+- **VIEW** = A `src/axtn/workbenches/cases/caseProcessingContract.ts`,
+  `caseProcessing.server.ts`, `CaseProcessingPanel.tsx`;
+  `tests/integration/caseProcessing.sql`. Executed128-depth/129-Case SQL,
+  paging/reparent/cycle/foreign-denial and actual five-Case API/UI/restart.
+- **IAM** = A `src/axtn/workbenches/cases/caseAssignmentContract.ts`,
+  `caseAssignment.server.ts`, `CaseAssignmentPanel.tsx`;
+  `tests/integration/caseAssignment.sql`. Executed native shared User/Group,
+  custody/actor, takeover, private hierarchy/calendar, revoked/forged denials;
+  actual PROD rollback fixture, not genuine colleague collaboration.
+- **EXEC** = A `src/axtn/workbenches/cases/caseExecution.server.ts`,
+  `src/utils/swarmExecute.server.ts`, `src/utils/swarmCheckpoint.server.ts`;
+  `tests/integration/caseExecution.sql`, `caseExecutionConcurrency.mjs`
+  in that directory and `tests/unit/caseExecutionNested.test.ts`.
+  Executed native binding/principal/funding/nested recovery/error/replay
+  proofs, actual HTTP/synthetic provider run/usage/UI/restart.
+- **GATE** = A
+  `supabase/migrations/20261004060000_native_work_approval_binding.sql`,
+  `20261004100000_document_native_approval_binding.sql` in that directory,
+  `tests/integration/documentApproval.sql`. Actual rollback-only PROD
+  reviewer/group/revocation/self-approval denial and atomic audit proof;
+  genuine pending Approval unchanged.
+- **CAP** = A `src/axtn/workbenches/cases/caseCapacityContract.ts`,
+  `caseCapacity.server.ts`, `CaseCapacityPanel.tsx`;
+  `tests/integration/caseCapacity.sql`, `caseCapacityConcurrency.mjs`.
+  Executed explicit units/net/overlap/commitment/correction/multiple-provider/
+  reparent SQL and live synthetic pool/1.5h projection/UI/restart.
+- **PAT** = A `src/axtn/workbenches/cases/casePatternContract.ts`,
+  `casePattern.server.ts`, `CasePatternPanel.tsx`;
+  `tests/integration/casePattern.sql`, `casePatternConcurrency.mjs`.
+  Executed versioned outcomes/R/E/I/reclassification/idempotent Improvement
+  SQL/concurrency and three persisted synthetic usages/UI/restart.
+- **TRANSFER** = T `tests/integration/environmentPatternTransfer.mjs`,
+  `tests/fixtures/environment-pattern/portable-skill.json`.
+  Executed exact unchanged native `agent_skills` imports into two isolated
+  scopes, dependency/schema/binding negatives and actual native row-to-triple
+  export; source hash `648efd6d0a77b376f64a7999a19c4103f9c3fda771a91cbea516e8344743f006`.
+- **LEARN** = T `tests/integration/environmentPatternLearning.mjs`.
+  Exact T run measures native fault baseline/intervention/two reuses and
+  explicit synthetic promotion/verification; measurement hash
+  `c651195f24816337c7dfefe581a73099a6ff51802da157fa57dbf478054d87de`.
+  One sample per cohort; no Human hours, business ROI or genuine Acceptance.
+- **FAULT** = T `tests/integration/environmentPatternFaults.mjs`.
+  Executed isolated native commit/lost-response/duplicate/out-of-order/drift/
+  partial/stale guards plus foreign Ticket timeout/lost-ACK mock; no live send.
+- **CONTEXT** = A
+  `src/axtn/workbenches/documents/documentPersistence.server.ts`,
+  `documentWorkContract.ts` in that directory; T
+  `tests/unit/environmentPatternMinimalContext.test.ts` and TRANSFER.
+  Executed65-tests DMS/E5 suite, NO_AI/UNRESOLVED/owner/hash/marker checks,
+  actual persisted row export and separate actual synthetic OpenAI
+  683/26-token comparison. No real-document privacy approval inferred.
+- **RUNTIME** = H `aXtn/aXtn-host`
+  `evidence/environment-pattern/20261005T-pilot-preflight.md`; local protected
+  `pilot-execution-live-http.json`, `pilot-execution-browser.json`,
+  `pilot-execution-restart.json`, `pilot-native-token-comparison.json`.
+  Actual A App/image/ledger296, five-Case audit/view/trace/usage persistence
+  across controlled restart and retained38 unrelated services.
+- **CHANGE** = canonical DraftPR14/Host DraftPR9 and this report, A executable
+  versus newer documentation/test revisions. Controlled convergence,
+  original readback defect/one App rollback/repair and encrypted checkpoints
+  are executed evidence; no merge/release or end-user autonomous change.
+
+Status vocabulary: **FUNCTIONAL SLICE** means the stated bounded native
+mechanism has executed evidence, not full pattern/enterprise Acceptance;
+**PARTIAL** means a definition contains additional behavior not demonstrated;
+**GUARDED / DECISION OPEN** means actual native enforcement but no independent
+decision; **UNKNOWN / EXPERIMENTAL** intentionally declines an unsupported
+forecast/economic claim. Definition availability is RESOLVED for every row;
+independent Acceptance is NOT_GRANTED for every row.
+
+| ID / authoritative meaning | Native contract/path/revision | Actually executed evidence | Current status, evidence limit and remaining gap |
+| --- | --- | --- | --- |
+| P01 Secure Object Intake: deterministic envelope/identity/privacy/provenance registration before semantics | CASE + CONTEXT (A), document intake domain | `documentWork.sql` admission/negative/replay; DMS codecs and trace65-test slice, actual PROD rollback | PARTIAL: DMS bounded intake/admission evidenced; generic arbitrary-object admission and full authorized real-source DMS not demonstrated |
+| P02 Identity Separation: source/external/internal/business/execution/physical identities distinct | ENV + CASE + EXEC (A) | Exact opaque refs/local Case identity, delivery/InputManifest, Run/Attempt and native credential/funding fences; SQL/HTTP | FUNCTIONAL SLICE: no Shipment domain required; irreversible physical/provider-effect readback remains DMS/external gate, not proved by run replay |
+| P03 Persistent Business Object: stable Case across technical runs/continuations | CASE + EXEC + RUNTIME | Same five Cases, multiple actual synthetic runs, exact HTTP replay and actual native restart | FUNCTIONAL SLICE: durable Case/run distinction proven; real-document end-to-end continuation not asserted |
+| P04 Relationship/Hierarchical Outcome Graph: arbitrary Case root, descendants separate from other relations | VIEW + CASE (A) | 129-Case tree, multiple roots, reparent/cycle/foreign guard, full totals/paging; actual authorized views | FUNCTIONAL SLICE: finite depth proof, no infinity/enterprise-scale or relation-expanded scope claim |
+| P05 Agentic-over-Deterministic: AI proposals cannot bypass deterministic effects | EXEC + GATE + IAM (A) | Typed semantic failure/HUMAN fences, forged/unauthorized native writes denied; actual provider probe tools disabled | PARTIAL: control boundaries evidenced; actual mutating LLM tool proposal followed by approved external effect not exercised |
+| P06 Persistent Milestone/Asynchronous Continuation: persist, suspend, event/Human resume without active waiting | EXEC + GATE (A) | Native nested checkpoint/recovery tests, protected Approval suspend/resume fixtures; genuine suspended run retained and restart readback | FUNCTIONAL SLICE: fixture continuation and parked run persistence, not a new independent decision on the genuine suspended run |
+| P07 Human Gate: risk/authority-bound native Approval effect boundary | GATE + CASE (A) | Actual PROD rollback self/builder/unrouted denial, authorized synthetic reviewer/group, revocation and audit | GUARDED / DECISION OPEN: genuine independent reviewer unavailable; original pending Approval not decided |
+| P08 Fractional Assurance: early minimized specialist slice, finding-driven deeper gap work | CONTEXT + PAT + LEARN + GATE | Minimized context tests, signal/native Improvement Work, synthetic promotion/assurance; no invented labor | PARTIAL: mechanics and synthetic finding cycle only; genuine specialist review and separate measured initial/deep drawdown absent |
+| P09 Portable Workbench: experience over shared business contract, not data owner | VIEW + CAP + PAT + IAM panels/API (A) | Same Case APIs reused by detail/top-level/headless; five-Case UI/reload/restart; native scope tests | FUNCTIONAL SLICE: no second store; independent alternative full Workbench replacement not exercised |
+| P10 Deterministic Automation: native AgentSwarms orchestration and workflow transport | EXEC (A); preserved n8n DMS executor source `a8de04ca4acb4418a4f18bf3e5f73d2d93db312c` | Native set_var/agent execution and nested tests; inherited n8n144-test/byte-idempotent export evidence, bounded to DMS repair | PARTIAL: existing topology/source reused, no custom orchestrator; complete live DMS automation/transport not claimed |
+| P11 Capability Boundary: owner-held data/secrets, scoped MCP/API/tools | IAM + EXEC + ENV (A) | Case API scope/revoked/forged denies, no private trace exposure, credential ownership and minimized handover tests | FUNCTIONAL SLICE: pilot API/credential boundary; no claim that every MCP tool/external side effect was exercised |
+| P12 Minimum Necessary Context: preflight/privacy/minimization to purpose-bound envelope and action | CONTEXT + ENV + EXEC; T strengthened E5 | Persisted native marker excluded, 1405-to155-byte transfer, NO_AI/UNRESOLVED guards; actual synthetic683/26 tokens/same outcome/no second inference | FUNCTIONAL SLICE: authorized synthetic comparison only; real originals/semantic privacy preflight and downstream real effect not authorized |
+| P13 IAM/RLS/Authority: authenticated User/Group/scope/row/capability enforcement | IAM + GATE + EXEC (A) | Actual service/browser row/dataset/RPC/audit bypass denial, private/shared projection, revocation/foreign/forged tests | FUNCTIONAL SLICE: native pilot authority; no ÖPost/Entra/org provisioning or enterprise IAM Acceptance |
+| P14 Evidence/Audit: join Case/revision/run/Approval/outcome/test references | CASE + EXEC + PAT + RUNTIME | Existing Cases/PR/Run refs, atomic audit, durable native trace/usage and complete restart fingerprints | FUNCTIONAL SLICE: revision-bound evidence persisted; unified genuine fachliche Acceptance separately open under P15 |
+| P15 Decision/Evidence/Acceptance: alternatives/rationale/criteria/exact object and authorized outcome | GATE + CASE + PAT (A) | Protected exact-revision native gates, forged accepted/Verify denial, retained negative outcomes and no self-approval | GUARDED / DECISION OPEN: actual independent/customer decision and avoided-work alternative Acceptance absent; no RFP coverage credit |
+| P16 Reporting/Semantic: intent to authorized report/view, NL and persistence separately evidenced | VIEW + CAP + PAT (A) | Deterministic authorized subtree/top-level/capacity/Pattern reports and UI/API/restart | PARTIAL: no executed free natural-language report-generation or saved arbitrary semantic-view proof; deterministic report not mislabeled NL |
+| P17 Agentic Development: intent/source investigation/implementation/tests/review/versioned artifact | CHANGE + CASE + GATE | Canonical implementation/test commits, DraftPR14/9, native Work refs and executed source/runtime gates | PARTIAL: actual AI-assisted development evidenced; independent bound review still pending, no autonomous enterprise self-modification |
+| P18 Agentic Change: reached maturity and scope/version/gates/deploy/rollback/audit | CHANGE + RUNTIME (A/H) | Controlled exact-source canary, one actual App rollback, repair/redeploy and encrypted checkpoint/audit | PARTIAL: AI-assisted development/controlled operator change demonstrated; end-user Preview/change flow and autonomous enterprise change not claimed |
+| P19 Capability Transfer: versioned definitions/tests transferable, secrets/runtime state not | TRANSFER (T) | Two real native isolated skill imports, manifest/hash/dependency/missing-binding/schema/runtime-field checks | FUNCTIONAL SLICE: one portable skill/contract-test package, not transfer of all Swarm/Workbench/schema types or real partner import |
+| P20 Federated Case Reference: local hierarchy local, opaque foreign object/parent reference | ENV (A) + TRANSFER/FAULT (T) | Exact triple, separate synthetic environments/same ticket ref, foreign parent absent locally, minimized correlation/Ticket mock | FUNCTIONAL SLICE: no external tree replication; two genuine autonomous systems remain separate live gate |
+| P21 Federated Work/Capability: selective refs/commitments/outcome/evidence, no shared internal truth | ENV + IAM + CAP (A) | Minimized native export, scoped private/shared Case/commitment projections and no calendar/hierarchy leaks | PARTIAL: local scope/contract proof, not actual cross-environment committed-capability/status/evidence exchange |
+| P22 Capability Composition: autonomous personal scopes share versioned artifact with collaboration scope | TRANSFER + IAM + PAT | Two distinct synthetic imports/bindings, shared Case tests and exact artifact usages | PARTIAL: synthetic local/scoped reuse demonstrated; no genuine colleague/project-environment composition or personal-environment merger |
+| P23 Processing State Telemetry: timestamps/mode/waiting/capability, calendar time separate | VIEW + EXEC (A) | Atomic/replay/concurrency events, taxonomy/UNKNOWN, 20h synthetic clock versus1.5h explicit booking, live views/restart | FUNCTIONAL SLICE: compatible lifecycle/mode projection, overlapping calendar durations not Human utilization or second DONE truth |
+| P24 Human Processing Capacity: net availability/commitment/explicit booking, no monitoring | CAP (A) | Overlap/net-once/limit/correction SQL and live artificial4/1/2 pool with1.5h corrected consumption | FUNCTIONAL SLICE: mechanism proven with synthetic hours; actual cognitive capacity/calendar/labor not measured |
+| P25 Capability Creation versus Delivery: purpose booking plus reusable artifact | CAP + PAT + TRANSFER + LEARN | DELIVERY/UPLIFT/ASSURANCE SQL, imported versioned skill, native usage/evidence and synthetic intervention | FUNCTIONAL SLICE: creation/delivery classification evidenced; actual future marginal-cost reduction unknown |
+| P26 Pattern Amortisation: investment/reuse/demand/quality/rework/break-even | PAT + CAP + LEARN | Two positive/one negative reuse mechanics, explicit synthetic consumption and single-sample before/after outcomes | UNKNOWN / EXPERIMENTAL: no comparable actual investment/consumption/business baseline or empirical break-even; tokens not economic ROI |
+| P27 Capability Demand Telemetry: capability/waiting/provider/outcome/rework/acceptance/usage aggregation | VIEW + CAP + PAT + EXEC | Authorized scoped counts/durations/actuals/usages/run projection and negative samples, live readback | PARTIAL: bounded telemetry available; forecast/demand coverage explicitly unknown and genuine Acceptance/specialist drawdown incomplete |
+| P28 Capability Demand/Learning Loop: signal to authorized intervention, version, verification/re-measure | PAT + CASE + LEARN (T) | Native candidate, pre-promotion denial, explicit synthetic promotion/intervention/two reuses/assurance/hash | FUNCTIONAL SLICE: controlled fixture loop, not auto-promotion, production policy optimization or proven human/business improvement |
+| P29 Bottleneck-to-Improvement: root-cause hypothesis/idempotent Work/intervention, keep negative/positive | PAT + LEARN | Concurrent same-candidate SQL, fault-injected PATTERN_DRIFT hypothesis, negative retained and measured exact-reference intervention | FUNCTIONAL SLICE: one injected cause, not automatic diagnosis of all waiting/human bottlenecks |
+| P30 Capacity/Economics Control Loop: once-only scope/actual/remaining/waiting/EAC/decisions | CAP + VIEW + PAT + GATE | Root/Child1.5 once, corrected/historical scope, UNKNOWN forecast/ROI, native decision guards | PARTIAL / UNKNOWN: reliable actual/control primitives; real plan/remaining/revenue/economic decision and independently accepted outcome absent |
+| P31 Recursive Case Reporting: same query any root, new parent/reparent preserve identity/history | VIEW + CAP + IAM | Deep tree/multiple roots/reparent/foreign/cycle/hidden/full-count SQL; recorded booking scope and live existing roots | FUNCTIONAL SLICE: current versus historical scope separated; no unauthorized rewriting of historical Acceptance |
+| P32 Personal/Project/Portfolio Transparency: different authorized projections, private details not copied | IAM + CAP + VIEW + ENV | Hidden ancestor/count/private calendar/direct table denial; shared selective projections and minimized triple | FUNCTIONAL SLICE: synthetic personal/shared scopes, not genuine customer/portfolio external access or colleague Acceptance |
+| P33 Specialist Drawdown/Capability Investment: delivery/assurance/uplift purposes, net benefit evidence | CAP + PAT + LEARN | Purpose/multi-provider/correction SQL; synthetic assurance booking and reusable versioned artifacts | PARTIAL / UNKNOWN: purposes not double-summed persons; real specialist labor/investment return and sustained demand reduction unmeasured |
+| P34 Predictive Capacity Management: calendar/period/allocation/net/commitment, dependency risk evidence | CAP + VIEW | Period/net-once/aggregate unavailable/overlap/commitment fixtures, live synthetic pool | PARTIAL: explicit availability planning primitives; real calendar/day-capacity/absence integration, predictive risk or observed learning forecast not demonstrated |
+| P35 Learning-adjusted EAC: actual plus justified remaining with data/uncertainty, no early ROI | CAP + PAT + LEARN | Actual projection, sample-size/outcome evidence and explicit UNKNOWN/EXPERIMENTAL_DISABLED forecast/ROI | UNKNOWN / EXPERIMENTAL: no empirically justified Remaining Estimate/learning-adjusted EAC; unknown is deliberate, not fabricated completion |
+| P36 Reuse Maturity × Enterprise Complexity: versioned R0-R4/E0-E3 plus assurance | PAT + CAP (A) | R/E/I validated usages, optimistic assurance/concurrency/history and purpose evidence | FUNCTIONAL SLICE: classes not multiplied, no blanket25% hardening; empirical effort per class not measured |
+| P37 Integration Complexity: I0-I3 and actual failure/readback/repair semantics | PAT + ENV + EXEC + FAULT | Native lost-response/duplicate/drift/order/partial/replay/UNKNOWN fixtures, Ticket lost-ACK mock and actual API429 observed/respected | FUNCTIONAL SLICE: relevant bounded semantics only; not full legacy integration/DLQ/platform or arbitrary external effect proof |
+| P38 24/7 Agentic Runtime + Human Core Cell: async ongoing processing/parked gates, no24/7-Human SLA | EXEC + GATE + RUNTIME | Genuine parked Approval/run retained, fixture nested resume, actual native restart and protected trace/usage readback | FUNCTIONAL SLICE: durable/asynchronous mechanics; no long-duration operational/SLA/HA/DR Acceptance or continuous human availability claim |
+
+Definitions remove only the catalog prerequisite. Actual independent reviewer,
+authorized real-document sources/privacy/rights and genuine partner bindings
+are not supplied by the definitions and remain open. Enterprise-scale/SLA
+gaps are evidence limits, not newly imposed functional-pilot prerequisites.
+The matrix records additional partial/unknown behavior explicitly rather than
+converting prior grouped evidence into complete per-pattern acceptance.
 
 ### Strengthened minimal-context evidence
 
@@ -521,12 +660,12 @@ precede pilot changes, and do not prove the new pilot. Current native Case
 bootstrap/replay/list succeeded; Source/image/ledger readback above executed.
 Initial inventory includes no new product test or runtime PASS.
 
-## P01-P38 coverage inventory
+## Historical initial P01-P38 coverage inventory
 
-The authoritative request supplies P identifiers and grouped scope, but no
+At the initial checkpoint the authoritative request supplied P identifiers and grouped scope, but no
 individual P01-P38 definitions/criteria or original V6 artifact path.
 Do not invent individual pattern names, acceptance or meaning. Every ID is
-retained below; individual-definition status is **UNRESOLVED**. This does not
+retained below; individual-definition status was **UNRESOLVED**. This did not
 block the independently specified SC/D/E contracts.
 Native source/reuse/gaps for each grouped scope are covered by the35 rows.
 
@@ -859,7 +998,8 @@ Case-specific access and sticky Attempt integration; explicit allocations/
 bookings/corrections; versioned Pattern Usage/assurance/reuse; controlled
 improvement/intervention/verification; portable artifact/target-binding tests;
 integration fault experiments; full SC/E coverage and exact runtime canary/
-restart. P01-P38 individual definitions remain unresolved, not invented.
+restart. At that historical checkpoint P01-P38 individual definitions remained
+unresolved; the current exact definitions and per-ID mapping above resolve this.
 No real documents, remote colleague accounts, external semantic send, provider
 adapter, credential or local MCP configuration were changed.
 Independent integration Case stays open; builder does not self-accept.
@@ -1128,6 +1268,7 @@ Case/run/Attempt execution binding and deterministic Group claim were a
 concrete gap. The subsequent native2100 execution increment and repaired
 deployment above resolve that implementation gap; route metadata alone
 still does not constitute a PERSONAL_CONNECTION budget/credential binding. Real three-document use-case gates, actual independent reviewer,
-remote autonomous environments and unresolved P01-P38 definitions remain
-truthfully open. Continue the same assignment/Cases; do not merge, self-accept
+remote autonomous environments remained truthfully open at that checkpoint.
+The former P01-P38 definitions gap is resolved by the current supplement and
+per-ID matrix above. Continue the same assignment/Cases; do not merge, self-accept
 or close the Parent.
