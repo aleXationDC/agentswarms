@@ -209,7 +209,9 @@ export function CaseSwarmPanel({
                   Open Swarm Canvas
                 </Link>
               )}
-              {run.error_message && <p role="alert">{run.error_message}</p>}
+              {run.error_message && (
+                <p className="text-destructive">Recorded failure: {run.error_message}</p>
+              )}
               {run.final_output && (
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">
                   {run.final_output}

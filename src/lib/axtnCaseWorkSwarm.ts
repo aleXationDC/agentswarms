@@ -32,6 +32,12 @@ export function createNativeCaseWorkSwarms(agent: ImportableAgentRow) {
   if (imported.dropped.length) throw new Error("Case Work snapshot has unsupported settings");
   const nodes: Node<SwarmNodeData>[] = [
     {
+      id: "intent",
+      type: "input",
+      position: { x: -300, y: 0 },
+      data: { kind: "input", label: "Explicit minimized Case work intent", outputVar: "intent" },
+    },
+    {
       id: "scope",
       type: "tool",
       position: { x: 0, y: 0 },
@@ -53,6 +59,7 @@ export function createNativeCaseWorkSwarms(agent: ImportableAgentRow) {
         kind: "function",
         label: "Minimized intent / persisted version / machine eligibility",
         outputVar: "task",
+        inputs: ["intent"],
         functionCode: `
 const scope=JSON.parse(ctx.vars.scope);
 const row=scope.rootCase;

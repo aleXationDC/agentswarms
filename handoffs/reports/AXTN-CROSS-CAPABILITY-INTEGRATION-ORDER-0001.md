@@ -121,6 +121,25 @@ The pending genuine Approval fingerprint remains
 
 ## Meaningful checks and remaining runtime proof
 
+Candidate `e526a22c0c8388c9a0ecff0f072ca60faae2a764` was built and deployed
+through the canonical Host process as image
+`sha256:a08b90c6182d35512ec3aabc6377bc82f42fc71b7a2bf98c50ac8f86a278f725`.
+The ledger remained 296; 38 neighboring services and genuine suspended
+Development/Approval state were unchanged. Four Development roles, one Case
+Worker and the two native Case Swarms were provisioned; second apply was an
+exact no-op. This supersedes the initial inventory source, not its history.
+
+The first actual-user Case start FAILED with
+`CASE_WORK_BOUNDED_INTENT_REQUIRED`. Native Function input gathering supplied
+the preceding scope Tool projection, not the original minimized intent.
+The repair adds a visible native Input node and an explicit named preflight
+input, with a regression exercising the real `gatherInputs` helper against
+a 20,000-character preceding scope output. No dispatcher or hidden client
+context is added. The failed Run/snapshot remains immutable evidence.
+Historical failed Runs are labeled recorded failures rather than current
+operation alerts. Repair deployment and usable start remain pending until
+actual-user proof succeeds; this is a local defect, not an external gate.
+
 Eleven targeted unit files currently pass 162 tests, including executable native
 Function-body fixtures, authenticated start/revision/injection denial, persisted
 replay, atomic run-ID claim race, exact saved Development role import parity and

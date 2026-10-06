@@ -4,6 +4,7 @@ import {
   createNativeCaseWorkSwarms,
   CASE_WORK_PROPOSAL_SWARM_ID,
 } from "@/lib/axtnCaseWorkSwarm";
+import { gatherInputs } from "@/lib/swarmRuntime";
 
 const execute = (code: string, input: string, vars: Record<string, string>) =>
   new Function("ctx", code)({ input, vars });
@@ -19,6 +20,19 @@ describe("native visible Case Work parent/sub-Swarm composition", () => {
     scope: JSON.stringify({ rootCase: { case_id: caseId, status: "OPEN", processing_version: 7 } }),
   };
   it("uses a saved Agent snapshot through a visible native sub-Swarm, not a dispatcher", () => {
+    const preflightNode = graphs.parent.nodes.find((node) => node.id === "preflight")!;
+    expect(
+      gatherInputs(
+        preflightNode,
+        {
+          input: "root input",
+          intent: "bounded real intent",
+          scope: "x".repeat(20000),
+        },
+        "x".repeat(20000),
+      ),
+    ).toBe("bounded real intent");
+    expect(graphs.parent.nodes[0].data.kind).toBe("input");
     expect(graphs.parent.nodes.find((node) => node.id === "proposal")?.data.subSwarmId).toBe(
       CASE_WORK_PROPOSAL_SWARM_ID,
     );

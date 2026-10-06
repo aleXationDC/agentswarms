@@ -11,6 +11,10 @@ through existing native scope/version/takeover enforcement and records the
 native result and linked parent/child Runs. It cannot close or accept a Case,
 call providers for physical effects, invent privacy proof or grant Acceptance.
 
+The visible Input node captures the original minimized intent as `intent`.
+Preflight explicitly reads that named input; its preceding scope Tool output
+is never treated as the user's intent.
+
 The Case workbench shows explicitly published choices/revisions, Canvas,
 actual server start, native Run/Attempt, readback and existing Approval resume
 links. Allowing machine processing and recording Work as started remain
