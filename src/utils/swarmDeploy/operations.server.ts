@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { auditEvent } from "@/utils/audit.server";
 import { generateWebhookSecret } from "@/utils/swarmWebhook.server";
+import { graphFingerprint } from "@/lib/swarmPublish";
 
 type CreateSwarmApiKeyInput = {
   access_token: string;
@@ -124,11 +125,35 @@ export async function publishSwarmForOwner(
 ): Promise<{ ok: false; error: string } | { ok: true; published_at: string }> {
   const { data: swarm, error: readError } = await supabaseAdmin
     .from("swarms")
-    .select("id, user_id, nodes, edges")
+    .select(
+      "id, user_id, nodes, edges, updated_at, published_nodes, published_edges, published_at, published_version_id",
+    )
     .eq("id", swarmId)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
   if (!swarm || swarm.user_id !== userId) return { ok: false, error: "Swarm not found" };
+  if (
+    swarm.published_at &&
+    swarm.published_version_id &&
+    graphFingerprint(swarm.nodes, swarm.edges) ===
+      graphFingerprint(swarm.published_nodes, swarm.published_edges)
+  )
+    return { ok: true, published_at: swarm.published_at };
+  const { data: version, error: versionError } = await supabaseAdmin
+    .from("swarm_versions")
+    .insert({
+      swarm_id: swarm.id,
+      user_id: userId,
+      kind: "manual",
+      label: "Published native snapshot",
+      nodes: swarm.nodes,
+      edges: swarm.edges,
+      node_count: Array.isArray(swarm.nodes) ? swarm.nodes.length : 0,
+    })
+    .select("id")
+    .single();
+  if (versionError || !version)
+    return { ok: false, error: "Native publish version persistence failed" };
   const published_at = new Date().toISOString();
   const { data: published, error: updateError } = await supabaseAdmin
     .from("swarms")
@@ -137,19 +162,25 @@ export async function publishSwarmForOwner(
       published_edges: swarm.edges,
       published_at,
       published_by: userId,
+      published_version_id: version.id,
     })
     .eq("id", swarm.id)
     .eq("user_id", userId)
+    .eq("updated_at", swarm.updated_at)
     .select("id")
     .maybeSingle();
   if (updateError) return { ok: false, error: updateError.message };
-  if (!published) return { ok: false, error: "Swarm disappeared before it could be published" };
+  if (!published)
+    return {
+      ok: false,
+      error: "Swarm changed before publication; draft and prior publication retained",
+    };
   await auditEvent({
     userId,
     action: "swarm.publish",
     resourceType: "swarm",
     resourceId: swarm.id,
-    detail: { nodes: Array.isArray(swarm.nodes) ? swarm.nodes.length : 0 },
+    detail: { nodes: Array.isArray(swarm.nodes) ? swarm.nodes.length : 0, versionId: version.id },
   });
   return { ok: true, published_at };
 }
@@ -182,6 +213,7 @@ export async function unpublishSwarm(
       published_edges: null,
       published_at: null,
       published_by: null,
+      published_version_id: null,
     })
     .eq("id", swarm.id);
   if (error) return { ok: false, error: error.message };

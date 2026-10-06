@@ -12,6 +12,23 @@ with the protected native owner environment: `SUPABASE_URL`,
 (comma-separated UUIDs). The seed uses owner-authenticated native RLS, publishes
 the stable Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02`, verifies readback and is
 idempotent. It never edits provider integrations or credentials.
+Existing draft/published graph drift now fails explicitly rather than replacing
+operator edits or the graph behind a parked execution. Reconcile intentional
+changes through the existing native Canvas/publication lifecycle.
+
+`npx tsx axtn/swarms/axtn-development/seed-agents.mts` uses the same protected
+owner environment plus explicit `AXTN_DEVELOPMENT_PROVIDER`,
+`AXTN_DEVELOPMENT_MODEL` and exact `AXTN_SOURCE_REVISION`. It provisions the
+four current Builder/Security/Contract/Maintainability roles as native Agent
+Builder objects with native version/memory rows. It neither provisions a fake
+Verify Agent nor changes any published Development graph or parked Run.
+Existing configuration/memory drift is an explicit error; unchanged reseeds
+create no duplicate Agents or versions.
+
+The saved roles retain the **bounded Python fixture** contract. Their presence,
+a generic work-contract reference or Candidate Approval does not authorize
+general Development. General use still requires a valid exactly versioned
+locally accepted Solution Contract and its permitted effects.
 
 Provider/model remain configurable through `AXTN_DEVELOPMENT_PROVIDER` and
 `AXTN_DEVELOPMENT_MODEL`, defaulting to the requested existing OpenAI integration

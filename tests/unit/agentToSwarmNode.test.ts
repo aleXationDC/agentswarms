@@ -58,6 +58,34 @@ const agent: ImportableAgentRow = {
 };
 
 describe("the settings whose job is to restrict come across", () => {
+  it("copies persisted native memory settings without linking Agent identity", () => {
+    const source = {
+      ...agent,
+      memory: { stm_enabled: false, stm_window_messages: 6, ltm_enabled: false },
+    };
+    const imported = agentToNodePatch(source);
+    expect(imported.patch.memory).toEqual({
+      stm_enabled: false,
+      stm_window_messages: 6,
+      ltm_enabled: false,
+      ltm_scope: "none",
+    });
+    expect(imported.patch.agentId).toBeNull();
+    source.memory.stm_enabled = true;
+    expect(imported.patch.memory?.stm_enabled).toBe(false);
+    const linked = agentToNodePatch({
+      ...agent,
+      memory: {
+        stm_enabled: true,
+        stm_window_messages: 6,
+        ltm_enabled: true,
+      },
+    });
+    expect(linked.patch.memory?.ltm_scope).toBe("swarm");
+    expect(linked.dropped.some((setting) => setting.what === "Shared Agent long-term memory")).toBe(
+      true,
+    );
+  });
   it("CARRIES THE GUARDRAILS", () => {
     // The central regression. A node built from a guarded agent ran with no
     // PII policy, no blocked patterns and no rate limit.

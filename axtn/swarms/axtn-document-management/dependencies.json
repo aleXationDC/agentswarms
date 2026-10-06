@@ -384,7 +384,7 @@
       "name": "document-nested-parent-provenance",
       "kind": "existing-native-executor-correlation",
       "source": "src/utils/swarmExecute.server.ts",
-      "sourceSHA256": "c8ad1b74fa8753df7b11b12742759c0bf0c9efb981cc75c779280e1149cb2ef3",
+      "sourceSHA256": "d766f1900c8219565b9e332ddf5c41244bc3336e5c114ddf83b60aed34dbdb43",
       "dependencies": ["document-parent-model-trace-storage"],
       "implemented": "carry original persisted owned DMS Parent run through existing nested execution to chat/data decision correlation, revalidate per nested call, retain generic behavior without child run/checkpoint/orchestration changes",
       "tested": "six actual two-level headless executor fixtures: model and scoped tool/retrieve correlation, one native root trace/decision, generic compatibility, missing/error owned Parent denial;49 focused regression tests",

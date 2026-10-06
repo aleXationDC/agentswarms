@@ -8,6 +8,7 @@ import { confirmAsk } from "@/components/ui/confirm-dialog";
 import { WorkRequest, WorkState, type WorkDependency } from "./workContract";
 import { workMetrics } from "./workMetrics";
 import { callCaseWork } from "./caseApi";
+import { workReferences } from "./workReferences";
 
 export function CaseWorkPanel({
   caseId,
@@ -224,6 +225,7 @@ export function CaseWorkPanel({
     }
   }
   const metrics = state ? workMetrics(state) : null;
+  const evidence = record && state ? workReferences(record, state.events) : null;
   return (
     <Card>
       <CardHeader>
@@ -448,10 +450,10 @@ export function CaseWorkPanel({
                 disabled={saving || record.processing_mode !== "HUMAN"}
                 onClick={() => void transition("TAKEOVER", true)}
               >
-                Release to Swarm
+                Allow Swarm processing (does not start a Run)
               </Button>
               <Button disabled={saving} onClick={() => void transition("STARTED")}>
-                Start Work
+                Record Work as started (does not start a Run)
               </Button>
               <Button disabled={saving || !evidencePath} onClick={() => void transition("RESULT")}>
                 Reference result
@@ -515,7 +517,12 @@ export function CaseWorkPanel({
               </div>
             )}
             <strong>Authoritative references</strong>
-            {(record.references ?? []).map((ref) => (
+            {evidence?.errors.map((message) => (
+              <p key={message} role="alert">
+                {message}
+              </p>
+            ))}
+            {(evidence?.references ?? []).map((ref) => (
               <p key={JSON.stringify(ref)}>
                 {ref.kind}:{" "}
                 <code>
@@ -528,7 +535,9 @@ export function CaseWorkPanel({
             {state?.events
               .filter((event) => event.caseId === caseId)
               .map((event) => (
-                <p key={String(event.detail.transitionKey)}>
+                <p
+                  key={JSON.stringify([event.caseId, event.timestamp, event.action, event.detail])}
+                >
                   {event.timestamp} · {event.action}
                 </p>
               ))}

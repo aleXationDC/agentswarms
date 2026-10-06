@@ -178,6 +178,8 @@ export type SwarmNodeData = {
   /** Optional retrieval re-ranker for this node's KB grounding. */
   reranker?: { provider: string; model: string } | null;
   agentId?: string | null;
+  /** Provenance only. Executable configuration remains an independent snapshot. */
+  agentSnapshot?: { agentId: string; versionId: string | null; configHash: string };
   // tools — when present, only these tool ids are exposed to this node's LLM call
   enabledTools?: SwarmToolId[];
   // Skill library attachments — sample skill ids (string keys) and/or

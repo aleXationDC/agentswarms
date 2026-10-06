@@ -72,6 +72,9 @@ export async function createServerSwarmTracer(opts: {
    * cleared either, because the new run cleared its own.
    */
   resumeRunId?: string | null;
+  /** Unique native run ID claims an idempotent authenticated Case start. */
+  startRunId?: string;
+  required?: boolean;
 }): Promise<ServerSwarmTracer | null> {
   const documentParent = opts.swarmId === DOCUMENT_MANAGEMENT_SWARM_ID;
   const documentInput = documentParent
@@ -106,6 +109,7 @@ export async function createServerSwarmTracer(opts: {
           .select("id, node_id, status, latency_ms, tokens_in, tokens_out, cost_usd")
           .eq("run_id", resolved);
         if (priorErr) {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_PRIOR_STEPS_REQUIRED");
           console.warn(
             `[swarm-trace] run ${resolved} resumed, but the steps it already has could not be read: ${priorErr.message}; its totals restart from this half and a step it re-enters may be recorded twice`,
@@ -129,12 +133,14 @@ export async function createServerSwarmTracer(opts: {
           .from("swarm_run_edges")
           .select("source_node_id, target_node_id")
           .eq("run_id", resolved);
+        if (opts.required && priorEdgesErr) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
         if (documentParent && priorEdgesErr)
           throw new Error("DOCUMENT_NATIVE_TRACE_PRIOR_EDGES_REQUIRED");
         for (const e of priorEdges ?? []) {
           edgesSeen.add(`${e.source_node_id}->${e.target_node_id}`);
         }
       } else {
+        if (opts.required) throw new Error("CASE_EXECUTION_PERSISTED_RUN_REQUIRED");
         if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_RESUME_REQUIRED");
         console.warn(
           `[swarm-trace] run ${opts.resumeRunId} could not be reopened${reopenErr ? `: ${reopenErr.message}` : ""}; this resume is recorded as a new run and the parked one stays open`,
@@ -146,6 +152,7 @@ export async function createServerSwarmTracer(opts: {
       const { data: runRow, error } = await supabaseAdmin
         .from("swarm_runs")
         .insert({
+          ...(opts.startRunId ? { id: opts.startRunId } : {}),
           user_id: opts.userId,
           swarm_id: opts.swarmId ?? null,
           swarm_name: opts.swarmName ?? null,
@@ -156,6 +163,12 @@ export async function createServerSwarmTracer(opts: {
         .select("id")
         .single();
       if (error || !runRow?.id) {
+        if (opts.required && !opts.startRunId)
+          throw new Error("CASE_EXECUTION_PERSISTED_RUN_REQUIRED");
+        if (opts.startRunId) {
+          if (error?.code === "23505") throw new Error("CASE_EXECUTION_START_ALREADY_CLAIMED");
+          throw new Error("CASE_EXECUTION_PERSISTED_RUN_REQUIRED");
+        }
         if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_REQUIRED");
         return null;
       }
@@ -188,6 +201,7 @@ export async function createServerSwarmTracer(opts: {
             .select("id")
             .single();
           if (data?.id) stepIdByNode.set(args.nodeId, (data as { id: string }).id);
+          else if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           else if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_REQUIRED");
           else if (stepErr) {
             // FOUND FROM THE SURVEY (R86). A supabase call answers with its
@@ -200,6 +214,7 @@ export async function createServerSwarmTracer(opts: {
             );
           }
         } catch {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_PERSISTENCE_FAILED");
           /* best-effort */
         }
@@ -215,6 +230,7 @@ export async function createServerSwarmTracer(opts: {
         if (args.status === "error") totals.errors += 1;
         const stepId = stepIdByNode.get(nodeId);
         if (!stepId) {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_ID_REQUIRED");
           return;
         }
@@ -240,6 +256,7 @@ export async function createServerSwarmTracer(opts: {
             } as never)
             .eq("id", stepId);
           if (finishErr) {
+            if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
             if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_FINISH_REQUIRED");
             // The step is over; its row still says running, and the run's
             // timeline will show it so for ever (R86).
@@ -248,6 +265,7 @@ export async function createServerSwarmTracer(opts: {
             );
           }
         } catch {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_STEP_PERSISTENCE_FAILED");
           /* best-effort */
         }
@@ -270,12 +288,14 @@ export async function createServerSwarmTracer(opts: {
             bytes: args.bytes ?? 0,
           } as never);
           if (edgeErr) {
+            if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
             if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_EDGE_REQUIRED");
             console.warn(
               `[swarm-trace] run ${runId}: the edge ${args.sourceNodeId} → ${args.targetNodeId} could not be recorded: ${edgeErr.message}; the graph will show the steps without it`,
             );
           }
         } catch {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_EDGE_PERSISTENCE_FAILED");
           /* best-effort */
         }
@@ -313,18 +333,22 @@ export async function createServerSwarmTracer(opts: {
             ({ error: closeErr } = await close());
           }
           if (closeErr) {
+            if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
             if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_CLOSE_REQUIRED");
             console.warn(
               `[swarm-trace] run ${runId} finished ${args.status} but its record could not be closed after two attempts: ${closeErr.message}. It will show as running until it is closed.`,
             );
           }
         } catch {
+          if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
           if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_CLOSE_PERSISTENCE_FAILED");
           /* best-effort */
         }
       },
     };
-  } catch {
+  } catch (error) {
+    if (opts.startRunId) throw error;
+    if (opts.required) throw new Error("CASE_EXECUTION_EVIDENCE_WRITE_FAILED");
     if (documentParent) throw new Error("DOCUMENT_NATIVE_TRACE_PERSISTENCE_FAILED");
     return null;
   }

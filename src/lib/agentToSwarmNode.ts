@@ -57,6 +57,11 @@ export type ImportableAgentRow = {
   temperature: number;
   knowledge_base_id?: string | null;
   tools?: unknown;
+  memory?: {
+    stm_enabled: boolean;
+    stm_window_messages: number;
+    ltm_enabled: boolean;
+  } | null;
 };
 
 /** Something the source agent had that the node cannot carry. */
@@ -179,6 +184,12 @@ export function agentToNodePatch(agent: ImportableAgentRow): AgentImport {
   const guardrails = obj(t.guardrails) as SwarmGuardrails;
   const toolConfigs = importableToolConfigs(t);
   const skillIds = strings(t.skillIds);
+  if (agent.memory?.ltm_enabled) {
+    dropped.push({
+      what: "Shared Agent long-term memory",
+      why: "independent snapshot uses run-scoped memory; existing Agent memory is not linked",
+    });
+  }
 
   if (t.routeThroughGateway === true) {
     dropped.push({
@@ -210,6 +221,16 @@ export function agentToNodePatch(agent: ImportableAgentRow): AgentImport {
     guardrails: Object.keys(guardrails).length ? guardrails : undefined,
     toolConfigs: Object.keys(toolConfigs).length ? toolConfigs : undefined,
     skillIds: skillIds.length ? skillIds : undefined,
+    ...(agent.memory
+      ? {
+          memory: {
+            stm_enabled: agent.memory.stm_enabled,
+            stm_window_messages: agent.memory.stm_window_messages,
+            ltm_enabled: agent.memory.ltm_enabled,
+            ltm_scope: agent.memory.ltm_enabled ? ("swarm" as const) : ("none" as const),
+          },
+        }
+      : {}),
     // Snapshot, not a link: later edits to the agent must not reach a swarm
     // that has already been reviewed and deployed.
     agentId: null,

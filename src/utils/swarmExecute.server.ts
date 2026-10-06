@@ -302,7 +302,13 @@ async function createApprovalRequest(args: {
 
 // ── main executor ────────────────────────────────────────────────────────────
 export async function executeSwarmServer(opts: {
-  swarm: { id: string; name: string; nodes: unknown; edges: unknown };
+  swarm: {
+    id: string;
+    name: string;
+    nodes: unknown;
+    edges: unknown;
+    publishedVersionId?: string | null;
+  };
   userId: string;
   origin: string;
   input: string;
@@ -313,6 +319,8 @@ export async function executeSwarmServer(opts: {
   source: "api" | "schedule";
   depth?: number;
   caseExecution?: CaseRunContext;
+  /** Server-derived start identity; native run snapshot retains provenance. */
+  caseStart?: { runId: string; requestHash: string; publishedVersionId: string };
   /** Internal native DMS provenance only; verified against the persisted owned Parent. */
   documentParentRunId?: string;
   /**
@@ -445,12 +453,29 @@ export async function executeSwarmServer(opts: {
           swarmId: opts.swarm.id,
           swarmName: `${opts.swarm.name} (${opts.source})`,
           inputPrompt: opts.input,
-          swarmSnapshot: { nodes, edges },
+          swarmSnapshot: {
+            nodes,
+            edges,
+            ...(opts.swarm.publishedVersionId
+              ? { publishedVersionId: opts.swarm.publishedVersionId }
+              : {}),
+            ...(opts.caseStart
+              ? {
+                  startRequestHash: opts.caseStart.requestHash,
+                  publishedVersionId: opts.caseStart.publishedVersionId,
+                }
+              : {}),
+          },
+          startRunId: opts.caseStart?.runId,
+          required: Boolean(caseExecution),
           // FOUND FROM THE SURVEY (R92). The `resume` option above already
           // promises that the timeline continues rather than forking; this is
           // the line that keeps that promise. Without it the parked run was
           // never closed and the resumed half was recorded under a new id.
           resumeRunId: opts.resume?.runId ?? null,
+        }).catch((error: unknown) => {
+          clearTimeout(timer);
+          throw error;
         })
       : null;
   const runId: string | null = tracer?.runId ?? null;
@@ -1090,7 +1115,7 @@ export async function executeSwarmServer(opts: {
             const { data: sub } = await supabaseAdmin
               .from("swarms")
               .select(
-                "id, name, nodes, edges, user_id, published_nodes, published_edges, published_at",
+                "id, name, nodes, edges, user_id, published_nodes, published_edges, published_at, published_version_id",
               )
               .eq("id", subId)
               .maybeSingle();
@@ -1101,7 +1126,13 @@ export async function executeSwarmServer(opts: {
             // run must not pick up someone's in-progress edit of the child.
             const subGraph = resolveDeployedGraph(sub);
             const subResult = await executeSwarmServer({
-              swarm: { id: sub.id, name: sub.name, nodes: subGraph.nodes, edges: subGraph.edges },
+              swarm: {
+                id: sub.id,
+                name: sub.name,
+                nodes: subGraph.nodes,
+                edges: subGraph.edges,
+                publishedVersionId: sub.published_version_id,
+              },
               userId: opts.userId,
               origin: opts.origin,
               input: gatherInputs(node, ctx, lastOutput),

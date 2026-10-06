@@ -34,6 +34,17 @@ if (prior && prior.user_id !== auth.user.id) throw new Error("Native seed owner 
 const equal = (a: unknown, b: unknown) => canonicalJson(a) === canonicalJson(b);
 if (
   prior &&
+  (!equal(prior.nodes, graph.nodes) ||
+    !equal(prior.edges, graph.edges) ||
+    (prior.published_at &&
+      (!equal(prior.published_nodes, graph.nodes) || !equal(prior.published_edges, graph.edges))))
+) {
+  throw new Error(
+    "Native Development graph drift; existing draft, publication and suspended runs retained. Reconcile explicitly through the native Canvas.",
+  );
+}
+if (
+  prior &&
   equal(prior.nodes, graph.nodes) &&
   equal(prior.edges, graph.edges) &&
   equal(prior.published_nodes, graph.nodes) &&

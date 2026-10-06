@@ -1,9 +1,16 @@
 # Environment Pattern Pilot execution
 
-Status: **FUNCTIONAL_SLICES_COMPLETE_WITH_EXTERNAL_GATES / ACCEPTANCE_PENDING**.
+Status: **NATIVE_COMPOSITION_CONTINUATION_IN_PROGRESS / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
+
+The prior bounded functional-slice checkpoint remains
+`FUNCTIONAL_SLICES_COMPLETE_WITH_EXTERNAL_GATES`; it is not completion of the
+new native usability/composition continuation. Exact current inventory, source
+changes and the five separate implementation/test/deployment/usability/
+independent-Acceptance grades are tracked in
+`handoffs/reports/AXTN-CROSS-CAPABILITY-INTEGRATION-ORDER-0001.md`.
 
 ## Functional continuation: exact228c18b authority
 

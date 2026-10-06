@@ -454,12 +454,58 @@ export function NodeInspector({
   // It used to be inline and handled three tool ids out of eleven, and copied
   // none of the settings whose purpose is to restrict — see that module's
   // header for what that cost.
-  function importFromLibrary(agentId: string) {
+  async function importFromLibrary(agentId: string) {
     const a = agentLibrary.find((x) => x.id === agentId);
     if (!a) return;
-    const { patch, dropped } = agentToNodePatch(a);
-    onChange(patch);
-    setImportDropped(dropped);
+    try {
+      const [
+        { data: memory, error: memoryError },
+        { data: version, error: versionError },
+        { data: current, error: agentError },
+      ] = await Promise.all([
+        supabase
+          .from("agent_memory_config")
+          .select("stm_enabled,stm_window_messages,ltm_enabled")
+          .eq("agent_id", agentId)
+          .maybeSingle(),
+        supabase
+          .from("agent_versions")
+          .select("id,config")
+          .eq("agent_id", agentId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from("agents").select("*").eq("id", agentId).single(),
+      ]);
+      if (memoryError) throw memoryError;
+      if (versionError) throw versionError;
+      if (agentError || !current) throw new Error("Native Agent snapshot unavailable.");
+      const { canonicalJson } = await import("@/utils/provenance/canonical");
+      const { toSnapshot } = await import("@/lib/agentVersions");
+      const configuration = toSnapshot(current);
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(canonicalJson({ configuration, memory })),
+      );
+      const configHash = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      const { patch, dropped } = agentToNodePatch({ ...current, memory });
+      onChange({
+        ...patch,
+        agentSnapshot: {
+          agentId,
+          versionId:
+            version && canonicalJson(version.config) === canonicalJson(configuration)
+              ? version.id
+              : null,
+          configHash,
+        },
+      });
+      setImportDropped(dropped);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Could not import Agent snapshot.");
+    }
   }
 
   const enabled = new Set<SwarmToolId>(data.enabledTools ?? []);
