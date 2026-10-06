@@ -81,6 +81,14 @@ Real three-document/provider, colleague, remote-autonomous-system and genuine
 independent-review gates are not replaced by these synthetic proofs.
 Parent and Acceptance Child remain open; no self-Acceptance, merge/tag/release.
 
+The reporting commits are published on the same canonical Gitea branches and
+DraftPR14/Host DraftPR9; existing configured push mirrors are triggered
+immediately via the native API (HTTP200). Native Host mirror reports no
+current error. Native App mirror reports an authentication/authorization
+failure, not a transient network failure; therefore successful App mirroring
+or external exact-SHA readback is not claimed. No remote, permission,
+credential or working local MCP configuration is changed to bypass this gate.
+
 ### Historical productive readback defect and repair
 
 Exact source `a5f53aba13479c196763a68d721396f3bba6ce81` passed all source
