@@ -89,6 +89,132 @@ failure, not a transient network failure; therefore successful App mirroring
 or external exact-SHA readback is not claimed. No remote, permission,
 credential or working local MCP configuration is changed to bypass this gate.
 
+### Current complete functional coverage, not independent Acceptance
+
+The initial inventories further below are historical discovery checkpoints.
+The following current matrix supersedes their initially absent capabilities.
+IMPLEMENTED means the existing native source/contract exists; TESTED means
+functional native unit/isolated SQL/concurrency evidence, not string checks.
+DEPLOYED refers only to active Appa33a9c14 and exact ledger296.
+RUNTIME_VERIFIED identifies actual API/UI/restart or rollback-only PROD SQL.
+No row is INDEPENDENTLY_ACCEPTED.
+
+| SC | Current functional slice | Source and executed evidence | Remaining boundary |
+| --- | --- | --- | --- |
+| SC01 | Exact external triple, confirmed integration binding, scoped matching | Native environment RPC; caseEnvironment.sql/concurrency; transfer/fault/learning fixtures; deployed | Two genuine autonomous remote systems not connected |
+| SC02 | Atomic Processing/Waiting and trusted append-only audit | caseProcessing.sql/concurrency; five-Case API/UI/restart; deployed | No activity-derived consumption |
+| SC03 | Versioned required capability on Processing | caseProcessing.sql; existing Case panel; deployed | Real specialist capability proof not fabricated |
+| SC04 | Exact-version Pattern Usage and outcomes | casePattern.sql/concurrency; three persisted synthetic usages/API/UI/restart | Outcomes are explicitly synthetic |
+| SC05 | Authorized root/subtree/top-level report and complete paging | 129-Case depth fixture, cycle/foreign/hidden/reparent guards; live five-Case views | No infinite-scale/156-user claim |
+| SC06 | Explicit allocation/net availability/commitment | caseCapacity.sql/concurrency; live synthetic4/1/2 pool | Real personal calendar is not accessed |
+| SC07 | Deduplicated consumption and append-only correction | caseCapacity.sql/concurrency; live1 ->1.5 correction/root-Child/restart | Synthetic hours are not actual Human/Agent hours |
+| SC08 | Improvement Work/hypothesis/relations/signal | casePattern.sql, environmentPatternLearning.mjs; native Work/audit | No automatic promotion |
+| SC09 | Existing protected Approval and exact candidate Acceptance | Actual PROD rollback Approval SQL, builder/unauthorized/revoked denial | Genuine reviewer decision remains pending |
+| SC10 | Synthetic artifact/uplift/intervention and purpose booking | Portable native skill import, measured Learning, capacity UPLIFT fixture | No empirical human capability gain claim |
+| SC11 | Existing Git/agent_skills artifacts, versions and reuse counts | environmentPatternTransfer.mjs; three live exact contract usages | No new registry |
+| SC12 | Versioned R/E/I and audited reclassification | casePattern.sql/concurrency and measured Learning | Ordinal classes are not multipliers |
+| SC13 | Explicit actuals, scope/coverage and unknown remaining forecast | Native capacity/Processing views; live corrected1.5 once | No invented remaining estimate/EAC |
+| SC14 | Waiting taxonomy and explicit UNKNOWN | caseProcessing.sql; typed execution blocking/HUMAN fence | Provider failure does not imply success |
+| SC15 | Provider/pool/commitment independent of credentials | caseCapacity.sql and live synthetic allocation | No colleague connection/authority inferred |
+| SC16 | Experimental forecast explicitly disabled with sample counts | Native Pattern view and live API; measured single-sample fixtures | Not an empirical forecast |
+| SC17 | Capability/classification evidence only, no autonomous composition | Existing references/classification views; deployed | No unauthorized policy or people ranking |
+| SC18 | ROI explicitly unknown without business baseline | Live Pattern API ROI null; measured Learning labels hours/ROI unknown | No synthetic latency-to-ROI conversion |
+
+All35 inventory questions retain their original numbering and current
+mechanism/evidence below. Effort is UNKNOWN unless actually measured;
+test-command latency and calendar state duration are not Human/Agent hours.
+
+| Question | Current mechanism/evidence | Status/boundary |
+| --- | --- | --- |
+| 1 | Existing parent_case_id; native manual write guards | Implemented/tested/deployed; fixture depth128, no practical infinity claim |
+| 2 | Native Processing subtree; full total and paging | Tested/live readback/restart |
+| 3 | Three exact nullable external fields | Tested/deployed; no aliases |
+| 4 | Confirmed existing integration binding versus untrusted reference payload | Tested; real remote origin unavailable |
+| 5 | Native parent/relation/dependency contracts | Tested; dependencies are not descendants |
+| 6 | Native responsibility/custody separate from Processing | Tested/deployed/live view |
+| 7 | Atomic native audit and protected write paths | SQL/concurrency/live audit/restart |
+| 8 | Existing lifecycle/mode plus bounded Processing projection | Tested/deployed/UI |
+| 9 | Native event-clock duration and coverage | Tested; calendar time is not consumption |
+| 10 | Waiting taxonomy, UNKNOWN and typed failure codes | Tested/deployed |
+| 11 | Required capability exact reference | Tested/deployed/UI |
+| 12 | Provider references and explicit capacity pool | Tested; no credential authority |
+| 13 | Exact artifact Pattern Usage | Tested/deployed/populated live API |
+| 14 | Native protected Approval/Work transitions | Tested; genuine independent Acceptance pending |
+| 15 | Native private dataset allocation/commitment | Tested/live synthetic pool |
+| 16 | Explicit aggregate unavailability, net once, overlap denial | Tested; private calendars untouched |
+| 17 | Human-session-only explicit consumption/correction | Tested/live synthetic booking, no actual-hours claim |
+| 18 | Current/recorded Case subtree totals | Tested; reparented historical scope preserved |
+| 19 | Multiple providers in one pool; exact sums | caseCapacity.sql; synthetic providers |
+| 20 | Same native component/query for every authorized root | Live five Cases/top-level |
+| 21 | Authorized top-level/view roots, no hidden counts | Native assignment/Processing SQL and UI |
+| 22 | Scoped capacity/waiting/capability/Pattern views | Tested/live API; unknown demand forecast explicit |
+| 23 | Native reparent/guard plus recorded consumption scope | SQL tested; no historical Acceptance rebinding |
+| 24 | Existing Git/agent_skills, unchanged portable artifact | Actual isolated imports; no registry added |
+| 25 | Same artifact across multiple existing Cases | Three persisted usages, exact version |
+| 26 | Positive/negative counts and measured synthetic cohorts | Tested; no business ROI or causal saving |
+| 27 | Idempotent native Improvement Candidate | Concurrency/learning proof; explicit promotion gate |
+| 28 | Existing evidence-based candidate/assurance path | Tested; no self-granted specialist review |
+| 29 | Ticket fixture without shared Case model; minimized triple | Native export/correlation/fault fixtures, no external send |
+| 30 | Exact opaque field roundtrip and partial/null/stale guards | SQL/concurrency/transfer proof |
+| 31 | Secret-free versioned skill manifest and local bindings | Two actual isolated imports and negative tests |
+| 32 | Explicit dependency manifest/native RPC/schema checks | Portable fixture; implicit bindings not guessed |
+| 33 | Versioned R/E/I on exact Work/usage | Tested/deployed/populated usage |
+| 34 | Authenticated native reclassification with before/after audit | SQL/concurrency/learning proof; not Acceptance |
+| 35 | Per-booking DELIVERY/UPLIFT/ASSURANCE purpose | SQL and live synthetic assurance; no invented actual effort |
+
+| Experiment | Actual evidence | Scope and still-open gate |
+| --- | --- | --- |
+| E1 | Native exact export/correlation, binding/spoof/duplicate/partial/reopen tests; foreign Ticket mock | Authorized fixture demonstrated; genuine independent remote systems unavailable |
+| E2 | 129-Case tree, multiple roots/reparent/cycle/foreign/hidden/paging SQL and live existing roots | Functional proof, not enterprise scale |
+| E3 | Native pool/multiple-provider SQL, explicit20h clock versus1.5h booking; populated live correction/restart | Synthetic hours only |
+| E4 | Actual isolated negative signal -> native Work -> explicit synthetic promotion -> measured intervention -> two reuses -> assurance | Four single samples, no business baseline or auto-promotion |
+| E5 | Actual persisted native Case subject marker excluded from authorized export; owner-bound DMS codec/privacy guards | Native deterministic NO_AI/UNRESOLVED proof; measured bytes, no model-token/cost comparison |
+| E6 | Native committed/lost-response replay/concurrency/out-of-order/drift/partial guards; Ticket timeout/lost-ACK/readback mock | UNKNOWN not success; no actual external write or retry engine |
+| E7 | Two actual native skill imports with different local bindings, exact manifest/dependency/hash and negative tests | Synthetic isolated scopes, no secrets/runtime IDs in package |
+| E8 | Actual rollback-only PROD native Approval denial/reviewer/group/audit proof | Independent real human decision unavailable; original pending Approval unchanged |
+| E9 | Native responsibility/shared/scope/takeover/privacy SQL; populated existing Case/UI views | Synthetic collaboration, not three actual colleague accounts or empirical load |
+
+P01-P38 individual definitions remain absent from the supplied authoritative
+request and repository V6 artifact. No per-ID meaning is invented. Grouped
+P01-P18 reuse DMS privacy/Case/Approval/Work/native execution fixtures with
+their retained DMS/Development boundaries. P19-P22 have the executed portable
+skill/ticket transfer evidence, P23-P35 the executed Processing/capacity/
+Pattern/learning/UI evidence, and P36-P38 typed failure/replay/restart evidence.
+The complete original per-ID inventory remains below as an unresolved
+definition gate, not38 claimed PASS or permission to stop other functional work.
+
+### Strengthened minimal-context evidence
+
+`environmentPatternTransfer.mjs` now reads actual persisted native Case rows
+whose subject contains a synthetic sensitive marker. Authorized handover
+returns only the three exact references, excluding that stored marker,
+local Case identity and owner identity. Native rows1403/1405 UTF-8 bytes become
+155-byte exported triples; both correlate MATCHED in their separate bindings.
+This closes the prior fixture limitation where the large comparison body
+was constructed only in memory. The original large-body byte-reduction check
+is retained as a separate synthetic comparison, not the native-row measure.
+
+`environmentPatternMinimalContext.test.ts` reuses real DMS minimized codecs
+and existing Work validators for both NO_AI and UNRESOLVED: raw sensitive
+body/source/secret markers excluded, privacy and exact input hash preserved,
+same-owner replay identical, foreign-owner replay denied, eligible input
+without privacy evidence denied and semantic intake forbidden. Synthetic
+payload reduction must exceed90%. These are source-functional/isolated native
+proofs, not a fabricated authorized semantic preflight. Semantic provider
+calls are zero and measured model tokens remain null; bytes are never relabeled
+as tokens or cost savings. Real document authorization/model-token comparison
+remains an explicit external gate.
+
+Strengthened increment gates: canonical typecheck PASS;65 functional tests
+across the new E5 fixture and existing DMS persistence/native trace suites
+PASS; targeted ESLint/formatting and repository documentation checks PASS.
+Transfer, fault and measured Learning scripts all execute on the complete
+isolated2100 database `dms_native_contract_execution_fresh_20261005`.
+Synthetic owners/skills/integrations/Case/audit rows are removed by their
+bounded finally cleanup. The increment changes only tests/reporting:
+no product source, applied migration, provider/configuration or active image
+is changed, and no documentation/test revision is relabeled as deployed.
+
 ### Historical productive readback defect and repair
 
 Exact source `a5f53aba13479c196763a68d721396f3bba6ce81` passed all source

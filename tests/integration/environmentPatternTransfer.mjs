@@ -53,6 +53,7 @@ const owners = [randomUUID(), randomUUID()];
 const sql = (value) => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
 try {
   const imported = [];
+  const contextMeasurements = [];
   for (const [index, owner] of owners.entries()) {
     const human = { kind: "user_session", id: owner };
     const integration = randomUUID();
@@ -67,7 +68,7 @@ try {
       await query(
         `SELECT axtn_case_manual('${owner}','create',${sql({
           row: {
-            subject: "Synthetic portable skill scope",
+            subject: "SYNTHETIC_PRIVATE_MARKER ".repeat(16),
             status: "OPEN",
             priority: 3,
             source_kind: "manual",
@@ -118,6 +119,26 @@ try {
       ${sql({ ...payload, expectedVersion: 1 })});`),
     );
     assert.deepEqual(output, triple);
+    const persisted = JSON.parse(
+      await query(`SELECT r.row FROM user_data_rows r JOIN user_data_tables t
+        ON t.id=r.table_id WHERE t.user_id='${owner}' AND t.name='axtn_cases'
+        AND r.row->>'case_id'='${root.case_id}';`),
+    );
+    assert.ok(persisted.subject.includes("SYNTHETIC_PRIVATE_MARKER"));
+    assert.ok(!JSON.stringify(output).includes("SYNTHETIC_PRIVATE_MARKER"));
+    assert.ok(!JSON.stringify(output).includes(root.case_id));
+    assert.ok(!JSON.stringify(output).includes(owner));
+    const persistedBytes = Buffer.byteLength(JSON.stringify(persisted));
+    const exportedBytes = Buffer.byteLength(JSON.stringify(output));
+    assert.ok(exportedBytes < persistedBytes / 2);
+    contextMeasurements.push({
+      scope: "ACTUAL_NATIVE_CASE_ROW_TO_AUTHORIZED_TRIPLE",
+      persistedBytes,
+      exportedBytes,
+      exactOutcome: "MATCHED",
+      semanticProviderCalls: 0,
+      measuredModelTokens: null,
+    });
     const original = {
       source: "synthetic-document",
       privacyStatus: "NO_AI",
@@ -162,6 +183,9 @@ try {
   assert.equal(createHash("sha256").update(exported).digest("hex"), exportedHash);
   console.log(
     `PASS: portable native skill manifest ${exportedHash}; two synthetic owned imports with distinct local bindings and identical exact opaque ticket ref; native missing-binding denial, schema/runtime-field negatives, minimized roundtrip; no external send or real independent systems`,
+  );
+  console.log(
+    JSON.stringify({ contextMeasurements, tokenComparison: "NOT_MEASURED_NO_MODEL_CALL" }),
   );
 } finally {
   for (const owner of owners) {
