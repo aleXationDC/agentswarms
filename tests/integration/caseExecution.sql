@@ -17,6 +17,8 @@ DECLARE a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); c uuid:=gen_random
   duplicate_child uuid:=gen_random_uuid(); child_swarm uuid:=gen_random_uuid();
   blocked_version bigint; blocked_events bigint; human_before jsonb;
   duplicate_integration uuid:=gen_random_uuid();
+  native_one uuid:=gen_random_uuid(); native_two uuid:=gen_random_uuid();
+  native_invalid uuid:=gen_random_uuid();
 BEGIN
   INSERT INTO auth.users(id,email,invited_at) VALUES(a,a||'@execution.invalid',now()),
     (b,b||'@execution.invalid',now()),(c,c||'@execution.invalid',now());
@@ -326,6 +328,34 @@ BEGIN
     IF SQLERRM<>'CASE_EXECUTION_NATIVE_CONTRACT_REQUIRED' THEN RAISE; END IF;
   END;
   RESET ROLE;
+  INSERT INTO swarm_runs(id,user_id,swarm_id,status,swarm_snapshot) VALUES
+    (native_one,a,swarm,'running',jsonb_build_object(
+      'startRequestHash',repeat('a',64),'publishedVersionId',gen_random_uuid(),'nodes','[]'::jsonb)),
+    (native_two,a,swarm,'running',jsonb_build_object(
+      'startRequestHash',repeat('b',64),'publishedVersionId',gen_random_uuid(),'nodes','[]'::jsonb)),
+    (native_invalid,a,swarm,'running','{}');
+  FOR request IN SELECT jsonb_build_object('runId',id,'caseId',company_case->>'case_id',
+      'nativeStart',true,'_principal',jsonb_build_object('kind','user_session','id',a))
+      FROM swarm_runs WHERE id IN(native_one,native_two)
+  LOOP
+    result:=axtn_case_execution(a,'bind_run',request);
+    SELECT count(*) INTO before_count FROM audit_events;
+    again:=axtn_case_execution(a,'bind_run',request);
+    IF result->>'attemptId'<>request->>'runId' OR result IS DISTINCT FROM again
+      OR (SELECT count(*) FROM audit_events)<>before_count
+    THEN RAISE EXCEPTION 'Explicit native execution attempt/replay failed'; END IF;
+  END LOOP;
+  IF (SELECT r.row->>'attempt_id' FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+      WHERE t.user_id=a AND t.name='axtn_cases' AND r.row->>'case_id'=company_case->>'case_id')<>company_run::text
+  THEN RAISE EXCEPTION 'Native start replaced retained Work/Candidate attempt'; END IF;
+  BEGIN
+    PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+      'runId',native_invalid,'caseId',company_case->>'case_id','nativeStart',true,
+      '_principal',jsonb_build_object('kind','user_session','id',a)));
+    RAISE EXCEPTION 'Native start accepted absent server provenance';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'CASE_EXECUTION_BINDING_REQUIRED' THEN RAISE; END IF;
+  END;
   RAISE NOTICE 'PASS: native binding, balancing, sticky principal/payer, exact cost scopes, private prompt RLS, nested uniqueness/forgery denial, failure processing/replay/HUMAN fence and revocation; no provider call/Acceptance';
 END;
 $$;

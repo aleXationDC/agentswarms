@@ -116,7 +116,7 @@ export async function startCaseSwarm(input: CaseSwarmStart) {
       input: request.input,
       source: "api",
       rejectApprovals: false,
-      caseExecution: { caseId: request.caseId, principal },
+      caseExecution: { caseId: request.caseId, principal, nativeStart: true },
       caseStart: { runId, requestHash, publishedVersionId: request.publishedVersionId },
       initialState: {
         case_id: request.caseId,

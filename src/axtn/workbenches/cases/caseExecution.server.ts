@@ -40,6 +40,7 @@ export type CaseExecutionBinding = z.infer<typeof CaseExecutionBinding>;
 export type CaseRunContext = {
   caseId: string;
   principal: WorkPrincipal;
+  nativeStart?: boolean;
   parentRunId?: string;
   parentNodeId?: string;
 };
@@ -250,6 +251,7 @@ export async function registerCaseRun(userId: string, runId: string, context: Ca
     runId,
     caseId: context.caseId,
     _principal: { kind: context.principal.kind, id: context.principal.id },
+    ...(context.nativeStart && !context.parentRunId ? { nativeStart: true } : {}),
     ...(context.parentRunId
       ? { parentRunId: context.parentRunId, parentNodeId: context.parentNodeId ?? null }
       : {}),

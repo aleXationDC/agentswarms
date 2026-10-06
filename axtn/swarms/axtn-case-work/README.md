@@ -21,6 +21,9 @@ links. Allowing machine processing and recording Work as started remain
 separate from actual execution. Repeating an exact start reconciles the same
 native run-ID claim; a changed request under that identity fails. A deliberate
 new attempt uses a new operation key. Native checkpoints/Approval own resume.
+For this authenticated entry, the native execution Attempt is the claimed Run
+ID, independently of the Case's retained Work/Candidate attempt. Child Runs
+inherit it. Existing API-key/Work execution attempt and replay rules are unchanged.
 
 Run `npx tsx axtn/swarms/axtn-case-work/seed.mts` in the existing protected owner
 environment with `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `ADMIN_EMAIL`,

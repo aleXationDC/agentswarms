@@ -91,6 +91,7 @@ describe("authenticated published native Case start", () => {
     expect(options.caseExecution).toEqual({
       caseId: request.caseId,
       principal: { kind: "user_session", id: owner },
+      nativeStart: true,
     });
     expect(options.swarm).toEqual({
       id: swarm.id,

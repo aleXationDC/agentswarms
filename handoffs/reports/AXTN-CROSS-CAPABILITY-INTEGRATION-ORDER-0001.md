@@ -140,6 +140,16 @@ Historical failed Runs are labeled recorded failures rather than current
 operation alerts. Repair deployment and usable start remain pending until
 actual-user proof succeeds; this is a local defect, not an external gate.
 
+The repair's first follow-up start exposed a separate integration mismatch:
+the generic native binder correctly refused a second root execution under
+the retained Work/Candidate attempt. The explicit Case entry now marks a
+server-derived native start; the existing atomic binder uses that claimed
+Run ID as its execution Attempt, preserving the Work/Candidate attempt,
+generic API-key rules, old Runs and nested inheritance. A guarded additive
+function migration plus transactional tests cover two deliberate starts,
+exact replay, preserved Work attempt and missing-provenance denial. This
+does not authorize repeat effects or bypass processing-version/takeover fences.
+
 Eleven targeted unit files currently pass 162 tests, including executable native
 Function-body fixtures, authenticated start/revision/injection denial, persisted
 replay, atomic run-ID claim race, exact saved Development role import parity and
