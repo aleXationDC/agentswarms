@@ -396,3 +396,32 @@ below identify the retained actual definition rows without exporting secrets.
 The owned temporary `environment-pilot-build.swap` was disabled and removed
 after verifying sufficient available memory. Original
 `development-graph-build.swap`, fstab and all other runtime facilities remain.
+
+## Post-publication durability recheck
+
+The same four Pilot executor Cases record CHECKS_PASSED, DEPLOYED_VERIFIED
+and bounded RESULT for Productsource339; the retained DMS Parent/Inventory/
+Case Children record foundation RESULT. Their exact result reference is this
+report at `92a9921c20ff4a8d407d908d1577454b82e0946b`. Replaying all fifteen
+events created no new audit entries. Candidate, attempt, processing mode and
+lifecycle status remained unchanged; both independent Acceptance Cases and
+the dependent DMS Filing/Learning Cases were unchanged.
+
+A further true restart after publication preserved those five Case projections,
+results/audit references, all native definition/version/checkpoint/Run hashes,
+BI, protected env and39 neighboring service identities/start times. The
+actual authenticated user then saw the full typed canonical92a9921c reference
+under **Authoritative references** on the same reporting Case.
+
+The first post-publication restart harness flagged a raw integration-row hash
+change. In-memory comparison against the encrypted339 PostgreSQL checkpoint
+proved that only OpenAI `config.health_checked_at` and its automatic row
+`updated_at` changed; encrypted API keys, provider/owner identity, active state,
+health status/detail and all other configuration were identical. The corrected
+restart fingerprint excludes only those two legitimate health timestamps,
+still hashes all credentials and other fields, and passed. No integration
+configuration repair, credential replacement or timestamp rollback occurred.
+Initial UI/readback assertions also wrongly assumed an inline reference array
+and hyperlink: the existing native contract stores `result_ref`/audit request
+references and renders a full typed reference. Corrected actual contract/UI
+checks passed without product changes.
