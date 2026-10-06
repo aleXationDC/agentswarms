@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / PARTIAL_FUNCTIONAL / ACCEPTANCE_PENDING**.
+Status: **FUNCTIONAL_SLICES_COMPLETE_WITH_EXTERNAL_GATES / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -29,10 +29,10 @@ reviewer, Parent closure, Acceptance, merge, tag or release.
 
 | Class | Work package | Evidence goal / dependency |
 | --- | --- | --- |
-| A | F1/P05 bounded native agentic mutation | Actual native LLM proposal, deterministic Case Tool enforcement/effect/readback, denied graphs, one-effect replay; executed below, no external writer needed. |
-| A | F2/P16 governed persisted snapshot View | Actual native NL planner/compiler, exact authenticated subtree/capacity counts, owner-only model/dashboard/result persistence/reload; executed native slice, telemetry repair/current-source/restart gates still being completed. |
-| A | F3/P18 narrow local View change | Existing native review checklist/cancel/owner Generate/version history/conflict/rollback; operator-assisted synthetic path, not independent Approval. Complete only this legitimate low-risk path. |
-| A | F4/P20-P22 local collaboration composition | Actual isolated native User/Group scoped capability request, private availability, authorized time/provider commitment, status/outcome/released evidence, opaque ticket and duplicate/lost-ACK/unknown/conflict/stale/privacy proof; no external transport. |
+| A | F1/P05 bounded native agentic mutation | COMPLETE bounded slice: actual native LLM proposal, deterministic Case Tool enforcement/effect/readback, denied graphs, one-effect replay; no external writer needed. |
+| A | F2/P16 governed persisted snapshot View | COMPLETE bounded native slice: actual planner/compiler, corrected minimized immutable snapshot5Cases/net3h/committed2h/actual1.5h, saved owner View/results, true native Refresh/reload/restart and actual invalid-query denials. No live Case backend claimed. |
+| A | F3/P18 narrow local View change | COMPLETE legitimate low-risk slice: actual review/cancel/owner Generate, versioned Work/history, native rollback/reapply/stale replay and isolated concurrent edits. Operator-assisted, not independent Approval or end-user-autonomous change. |
+| A | F4/P20-P22 local collaboration composition | COMPLETE local fixture: actual isolated native User/Group scoped capability request, private availability, authorized time/provider commitment, status/outcome/released evidence, opaque ticket and duplicate/lost-ACK/unknown/conflict/stale/privacy proof; no external transport. |
 | B | Live semantic Case source versus immutable snapshot | Existing `semantic_models` sources are data_table/warehouse, not authorized Case RPC/subtree/capacity. Native minimized snapshot is shown; a live backend/automatic synchronization needs a separate precise bounded-extension decision, not a secretly built reporting service. |
 | B | P01/P06/P10/P12 three real documents | Identify each authorized source/integration binding, purpose and rights/privacy decision; no invented three sources or original document sent for readiness. |
 | B | P08/P15/P17 genuine reviewer/Acceptance | Existing native persisted reviewer binding plus an eligible distinct authenticated decider. One actual user/pending Development Approval remains; no builder self-Approval. Preparation and local effects continue independently. |
@@ -133,6 +133,90 @@ as historical fixture evidence; only a separately labeled minimized corrected
 snapshot revision may supply those actually available values. No private
 calendar reconstruction, silent zero or live synchronization is claimed.
 
+### Final verified continuation checkpoint
+
+The preceding observations are chronological, not remaining deployment gates.
+Exact active Productsource is
+`730439b9794be410870d7133fc58f81d1d849ff4`, healthy immutable image
+`sha256:c9e759c1dd0c79d8f5e189645fbb723822c8f4683470e2bba54635da076f8671`.
+Canonical native client/SSR/DuckDB build and App-only serial convergence passed;
+no new migration, ledger296 and every existing migration hash retained. Executing
+Host source was `5a4ff6f1c4aec40bdc4888b324d34b925cf0aa8d`.
+Later evidence-only App/Host commits are not relabeled deployed source.
+Before and after App startup the original Case/user/integration/Approval/run/
+trace-identity fingerprints matched;38 unrelated services retained identity,
+image and start time. New temporary build swap was disabled/removed; original
+Development swap/fstab and local MCP/provider/credential/billing policy untouched.
+
+Corrected immutable dataset revision2
+`0bb3d3e0-3b0f-4fc8-abc3-9de25bc52df4` contains exactly5Cases, synthetic net3h,
+committed2h and actual1.5h. Historical faulty snapshot
+`b0dbde58-3f68-4629-b02d-dbc629733585` is retained; unknown split private calendar
+hours are not exposed or silently made zero. Same model/View and same Cases.
+Actual authorized UI produces10widgets/nine active governed charts; every row
+matches the corrected native snapshot, with no NULL-as-zero acceptance.
+Visible preview leaves stored version6 unchanged, cancellation unchanged;
+authorized owner Generate advances7, guarded native History rollback8 and
+reapply9. Old-version duplicate/lost-ACK writes return zero rows and no effect.
+Native History preserves definitions and undo snapshots; result sidecars from
+earlier versions are intentionally retained, not miscounted as active charts.
+
+Final actual planner traces:
+`0f7df452-bf72-4f82-a682-9ea396f0b866` and
+`9ab49d24-5c33-40e9-b431-4abded7d714b`. Both actual
+OpenAI/gpt-4.1-mini; measured input/output568/560 and568/561, native catalog-priced
+cost0.001123/0.001125USD, not a provider invoice or business ROI. Earlier
+misattributed historical traces remain unmodified. Endpoint `/api/bi` returns
+actual JSON result, not chat SSE. Fixed vocabulary and owner-scoped snapshot
+only: no originals, private hierarchy/calendar or independent identity.
+
+The originally failing actual UI Refresh now passes through nine authenticated
+native Semantic ServerFn queries, not browser replay of cached SQL. Totals
+remain5/3/2/1.5 and grouped rows match exactly. Stored intent stays unchanged;
+diagnostic SQL is legitimately recompiled with configured500-row cap plus
+overflow row. Actual injected metric and inaccessible model yield native
+serialized errors (ServerFn HTTP200 error envelope), no rows/counts, mutation
+or inference. Separate actual isolated authenticated foreign-owner RLS hides
+dataset/model/View metadata/counts and writes; two simultaneous same-version
+updates produce exactly one winner, stale duplicate none.
+
+Same reporting/handover/capacity Cases persist revision-bound RESULT and exact
+RESULT replay, F1 Run, native View/trace refs and F4 fixtures. Genuine one
+pending Approval remains. Actual final App restart then preserves all five
+Work/access/subtree/capacity/Pattern/execution views, full audit/run/trace/usage,
+users/integrations/Approval, model/dataset/rows/View/results/History and protected
+configuration, plus all38 unrelated services. Subsequent authenticated UI
+reopens and refreshes the same View with exact metrics and no new inference.
+Source tests:104 targeted initial tests;38 targeted History-repair tests;
+97 final refresh/selector/truncation/source tests across8files, canonical
+typecheck and targeted lint PASS. These overlapping runs are not added together.
+Actual isolated collaboration, BI RLS/concurrency and portable transfer PASS.
+
+Current encrypted DB/config checkpoint:
+`~/.local/share/axtn/native/pilot-checkpoints/execution-730439b9794b/`,
+authenticated full decryption verified. Immediate App rollback retains
+exact0af57332/image7259d3a5 and its protected configuration, without destructive
+DB restore or schema rollback. No App rollback was required for this final
+convergence. Protected local evidence:
+`pilot-continuation-f1.json`, `pilot-continuation-f2-f3.json`,
+`pilot-continuation-bi-snapshot-v2.json`,
+`pilot-continuation-semantic-negatives.json`,
+`pilot-continuation-results.json`, `pilot-execution-deployed.json`,
+`pilot-continuation-restart.json`, `pilot-continuation-bi-after-restart.json`.
+Authentication payloads/screenshots are not committed.
+
+Manual native path: authenticated HTTPS8446 -> BI -> Synthetic Pilot Functional
+View -> Generate Entire Dashboard -> Governed metrics -> authorized snapshot
+model -> Analyze -> visible checklist -> Escape/cancel or legitimate owner
+Generate. History saves/restores owner definitions; Refresh recompiles governed
+metrics. Native `/cases/<existing-id>` exposes bound Work/execution/result refs.
+This is operator-assisted low-risk ownership, not builder Approval, independent
+review, end-user-independent Acceptance or autonomous Enterprise modification.
+All four locally executable continuation packages are complete within these
+explicit slices. Only listed B prerequisites/architectural decision and C
+empirical/Enterprise proofs remain; no Parent or Acceptance closure, merge,
+tag, release or blanket38PASS.
+
 ### F4: actual local native collaboration, not a fabricated peer
 
 `tests/integration/environmentPatternCollaboration.sql` executes as a
@@ -161,7 +245,7 @@ provisioned or fake authenticated real partner invented.
 
 ## Native Case execution: repaired deployment and restart verified
 
-### Current productive checkpoint
+### Historical productive checkpoint before continuation
 
 Exact active App source is `a33a9c142bf4e0401713c214be14599593696f5c`,
 healthy immutable image
@@ -433,13 +517,14 @@ elsewhere as actual bytes/tokens/latency, never inferred labor.
   `3b3d7ad2-d166-4f95-a245-b1958087d574`, saved synthetic native BI dashboard
   `cac2a470-213c-449e-9053-240b859ad947`; isolated RLS/concurrent same-version
   edits and native composition execute,104 targeted unit tests pass.
-  Current source's telemetry repair still requires exact build/deployment.
+  Final exact730439b9 deployment/runtime/replay/restart is verified above;
+  the following initial observations are historical repair findings.
   Initial actual owner History rollback restored the empty definition and saved
   `"Before restore"` without deleting sidecars, but exposed another native gap:
   restore did not pass the existing content `expectedVersion` guard. The bounded
   repair now binds the loaded row version through that existing write contract;
   stale restore conflicts and successful restore increments version. Exact
-  repaired-source rollout and rollback/reapply proof remain required.
+  repaired-source rollout and actual rollback/reapply proof subsequently passed.
 
 Status vocabulary: **FUNCTIONAL SLICE** means the stated bounded native
 mechanism has executed evidence, not full pattern/enterprise Acceptance;
@@ -466,9 +551,9 @@ independent Acceptance is NOT_GRANTED for every row.
 | P13 IAM/RLS/Authority: authenticated User/Group/scope/row/capability enforcement | IAM + GATE + EXEC (A) | Actual service/browser row/dataset/RPC/audit bypass denial, private/shared projection, revocation/foreign/forged tests | FUNCTIONAL SLICE: native pilot authority; no ÖPost/Entra/org provisioning or enterprise IAM Acceptance |
 | P14 Evidence/Audit: join Case/revision/run/Approval/outcome/test references | CASE + EXEC + PAT + RUNTIME | Existing Cases/PR/Run refs, atomic audit, durable native trace/usage and complete restart fingerprints | FUNCTIONAL SLICE: revision-bound evidence persisted; unified genuine fachliche Acceptance separately open under P15 |
 | P15 Decision/Evidence/Acceptance: alternatives/rationale/criteria/exact object and authorized outcome | GATE + CASE + PAT (A) | Protected exact-revision native gates, forged accepted/Verify denial, retained negative outcomes and no self-approval | GUARDED / DECISION OPEN: actual independent/customer decision and avoided-work alternative Acceptance absent; no RFP coverage credit |
-| P16 Reporting/Semantic: intent to authorized report/view, NL and persistence separately evidenced | VIEW + CAP + PAT (A) + CONTINUATION | Actual native governed NL planner/compiler/saved owner View and result sidecars, exact native5-Case/synthetic-hours snapshot comparison, preview/cancel/reload and isolated foreign-scope/concurrency denials | PARTIAL: bounded semantic snapshot slice executed; not arbitrary privileged SQL or live auto-refresh from native Case RPC. Telemetry repair/build/restart gates tracked separately |
+| P16 Reporting/Semantic: intent to authorized report/view, NL and persistence separately evidenced | VIEW + CAP + PAT (A) + CONTINUATION730439b9 | Actual NL planner/compiler, corrected5-Case/net3h/committed2h/actual1.5h immutable snapshot, nine exact charts, owner View/results, native Refresh/reload/restart; actual injected metric/inaccessible model and isolated foreign-owner/count/write/concurrency denials | PARTIAL: complete stated bounded snapshot slice; no arbitrary privileged SQL or automatic live Case RPC synchronization. That exact native source-backend extension requires a separate decision |
 | P17 Agentic Development: intent/source investigation/implementation/tests/review/versioned artifact | CHANGE + CASE + GATE | Canonical implementation/test commits, DraftPR14/9, native Work refs and executed source/runtime gates | PARTIAL: actual AI-assisted development evidenced; independent bound review still pending, no autonomous enterprise self-modification |
-| P18 Agentic Change: reached maturity and scope/version/gates/deploy/rollback/audit | CHANGE + RUNTIME (A/H) + CONTINUATION | Native low-risk local View intent/visible proposal/cancel/authorized owner Generate/history, stale-version no effect and actual isolated two-writer conflict; existing exact-source canary/rollback | PARTIAL: operator-assisted authenticated owner flow, not independently initiated end user, builder self-Approval or Enterprise self-modification. Native View rollback/reapply/current-source proof still tracked |
+| P18 Agentic Change: reached maturity and scope/version/gates/deploy/rollback/audit | CHANGE + RUNTIME (A/H) + CONTINUATION730439b9 | Actual visible preview/cancel, owner Generate6->7, guarded native History rollback8/reapply9/undo/stale no effect, isolated concurrent edits, exact canary/deploy/UI/restart and retained encrypted rollback | PARTIAL: complete legitimate low-risk operator-assisted change; not independently initiated end user, builder self-Approval, independent whole-pilot Acceptance or Enterprise self-modification |
 | P19 Capability Transfer: versioned definitions/tests transferable, secrets/runtime state not | TRANSFER (T) | Two real native isolated skill imports, manifest/hash/dependency/missing-binding/schema/runtime-field checks | FUNCTIONAL SLICE: one portable skill/contract-test package, not transfer of all Swarm/Workbench/schema types or real partner import |
 | P20 Federated Case Reference: local hierarchy local, opaque foreign object/parent reference | ENV (A) + TRANSFER/FAULT (T) + CONTINUATION | Actual composed different private local hierarchies/exact opaque ticket parent, authorized lost-ACK correlation, unknown/disallowed/conflict/stale/privacy fixture | FUNCTIONAL SLICE: no external tree replication; two genuine autonomous systems remain separate live gate |
 | P21 Federated Work/Capability: selective refs/commitments/outcome/evidence, no shared internal truth | ENV + IAM + CAP (A) + CONTINUATION | Actual isolated User/Group capability request, separate private availability, custodian-authorized2h commitment/provider/date/scope, status/outcome/released versioned Evidence; responsibility/machine/stranger denied | PARTIAL: complete stated local composition fixture, not actual cross-environment transmission/independent peer or credential authority. Only genuine Live transport/binding is parked |
