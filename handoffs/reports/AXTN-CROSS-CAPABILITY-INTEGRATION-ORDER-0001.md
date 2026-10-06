@@ -1,6 +1,7 @@
 # Cross-capability native composition continuation
 
-Status: SOURCE_IMPLEMENTATION_IN_PROGRESS — not runtime-complete or independently accepted.
+Status: COMMON_NATIVE_SLICE_FUNCTIONAL / DMS_FOUNDATIONS_DEPLOYED / ACCEPTANCE_PENDING.
+Full semantic DMS and general Development are not complete or accepted.
 
 Authority: reconciliation/order at
 `aa7c37c555b95c45fbafe5a5627318e6a549ef65`; composition correction at
@@ -24,20 +25,20 @@ Before product work, the parent and three implementation Children received
 idempotent STARTED events bound to both exact continuation contracts through
 the actual authenticated native owner interface. No new Case was created.
 
-Actual healthy App source is
+Initial healthy App source before this continuation was
 `730439b9794be410870d7133fc58f81d1d849ff4`,
 image `sha256:c9e759c1dd0c79d8f5e189645fbb723822c8f4683470e2bba54635da076f8671`,
 ledger 296. Existing Host branch HEAD is
 `a401b498b46b15304b8a4cd89ccdedbba7f98641`; previous executing Host source is
 `5a4ff6f1c4aec40bdc4888b324d34b925cf0aa8d`.
-The Host architecture pin still describes historical `10df3a8`, not the
-actual running image. It is not evidence of that old image being active.
-Source/image/rollback reconciliation must be updated after candidate convergence.
+At initial inventory, the Host architecture pin described historical `10df3a8`,
+not the actual running image. The final reconciliation below supersedes that
+pin; the initial discrepancy is retained as history.
 
-The authenticated inventory finds 19 owned Swarms and five Agent Builder
+The initial authenticated inventory found 19 owned Swarms and five Agent Builder
 objects, all five Demo/Sample Agents. Native Skills: zero. Native KBs: 17,
 which does **not** establish historical DMS KB identity or content. The three
-canonical DMS Registry datasets do not yet exist in this production DB.
+canonical DMS Registry datasets did not yet exist in this production DB.
 Current configured providers/credentials, users, genuine Approval and ledger
 fingerprints are unchanged. No active running Run or active schedule was present.
 
@@ -137,8 +138,10 @@ input, with a regression exercising the real `gatherInputs` helper against
 a 20,000-character preceding scope output. No dispatcher or hidden client
 context is added. The failed Run/snapshot remains immutable evidence.
 Historical failed Runs are labeled recorded failures rather than current
-operation alerts. Repair deployment and usable start remain pending until
-actual-user proof succeeds; this is a local defect, not an external gate.
+operation alerts. The repair was deployed as
+`5727e073a8171c1999b74760578ba85dd17b5a7b`; the subsequent native binding
+repair and successful actual-user proofs are recorded below. Neither failure
+was relabeled an external gate.
 
 The repair's first follow-up start exposed a separate integration mismatch:
 the generic native binder correctly refused a second root execution under
@@ -176,11 +179,12 @@ The repair and exact immutable build are verified before deployment.
 
 | Capability | Implemented/source | Tested | Deployed | Visible/operable | Independently accepted |
 |---|---|---|---|---|---|
-| Inventory/current contract reconciliation | Actual bounded inventory | Actual owner/protection readback | Existing runtime observed | Existing inventory/UI only | No |
-| Manual Case fixes/clear mode vs Run wording | Candidate source | Source checks; actual UI pending | No | Pending candidate | No |
-| Saved Development Agents/snapshot/drift | Candidate source/seed | Exact role parity/snapshot tests | No | Pending authenticated provision/UI | No |
-| Native Case parent/sub-Swarm/start | Candidate source/seed/UI | Bounded Functions/auth/replay/race tests | No | Pending real start/takeover/result/restart | No |
-| Full DMS | Shared native primitives retained | Previous bounded tests retained | No full composition | Historical semantic definitions/effects unresolved | No |
+| Inventory/current contract reconciliation | Actual bounded inventory/pin reconciliation | Actual owner/protection readback and Host contracts | Exact339/imagecaa/ledger297 | Actual user inventory | No |
+| Manual Case fixes/clear mode vs Run wording | Implemented | Actual Human takeover/result/reload; unavailable Case denial | Exact339 | Same reporting Case; mode-only return starts no Run | No |
+| Saved Development Agents/snapshot/drift | Implemented native seed/import/versioning | Role parity/snapshot tests; final second seed exact no-op | Exact339; five roles provisioned | Actual user cards and editable Case Worker dialog, without configuration mutation | No |
+| Native Case parent/sub-Swarm/start | Implemented native graph/entry/UI | Actual start/result/replay/restart; concurrent claim/takeover proof atb92 | Exact339; exact publications below | Actual user Canvas, explicit start, Run/Attempt/result/readback | No |
+| DMS Registry/Local Table foundations | Existing native seeds plus explicit internal tool-scope wiring | Seed exact no-op; native UI registration; two actual no-write denials; restart | Exact339; three datasets/private MCP | Actual user MCP Builder and native connected server | No |
+| Full DMS | Shared native primitives retained, not complete semantic composition | Foundations only; no real-document/provider-write proof | No full composition | Historical semantic definitions/effects unresolved | No |
 | General Development | Explicitly not enabled | Existing fixture tests retained | Existing fixture only | Exact locally accepted Solution Contract unproven | No |
 
 ## Sibling dependencies and concrete gaps
@@ -191,10 +195,10 @@ Builder. Exact later Gemini model/prompt/temperature/Skills/KB/tools/guardrails
 remain unrecovered in the previously checked canonical source/runtime/backups.
 The user's Stage 1/Stage 2 reuse recollection is not evidence permitting
 collapse of those distinct historic IDs or invented replacement settings.
-Parent/Privacy/Cleanup recovery stays separately gated. Native registry/Local
-Table prerequisites remain independently actionable after the usable common
-slice; real source/privacy/provider-effect authority and reviewer gates are
-not manufactured.
+Parent/Privacy/Cleanup recovery stays separately gated. Native Registry/Local
+Table prerequisites have now been independently executed as documented below;
+real source/privacy/provider-effect authority and reviewer gates are not
+manufactured.
 
 General Development requires a valid exact locally accepted Solution Contract
 with allowed repository/path/runtime/effects. A generic contract reference,
@@ -208,3 +212,149 @@ configuration, CLI MCP change, second control plane, self-Approval, merge,
 tag or release occurred. The existing P01–P38/SC01–SC18/35-question evidence
 matrix remains individually qualified in the Pilot report; no 38-fold PASS
 or economic/HA/peer conclusion is inferred from this candidate.
+
+## Final exact runtime and functional evidence
+
+Active Productsource:
+`339a35b940bdffbec3839bbb8dd149482cd43d41`.
+Immutable image:
+`sha256:caa71819ccac64038d0ab511dcf728427668ec46c9df4b854407d0ab50e3cf76`.
+Ledger: **297**, including additive
+`20261006140000_native_case_start_attempt.sql`.
+The intermediate binding repair was
+`b92b1ca3d2298f7c031920398f40185afc825c49`; the final339 change wires the
+existing native MCP registration UI to its existing reviewed tool hash and
+explicit tool allowlist. Documentation commits after339 are not represented
+as deployed Productsource.
+
+| Persisted native evidence | Exact identity/result |
+|---|---|
+| Parent publication | `3fee099d-2b5a-4454-8104-0bc2a13c7c01` |
+| Proposal sub-Swarm publication | `3371e58e-6910-455e-a101-e4e7858956fc` |
+| Final339 parent Run | `37663eb9-2055-56ce-ab5e-54902783550e` — success |
+| Final339 child Run | `eae415b1-e386-49a8-8ebb-e71d0d217d2a` — success |
+| Same Case | `7ca8ce19-1ef5-42c2-80c1-d4d41e3e64c6` — persisted `VALIDATION_REVIEW`, Work remains open |
+| Concurrent same claim atb92 | `4674bf6d-6a23-526e-ae03-00def69dcabd` — one root Run, one effect |
+| First failed parent retained | `5fb98406-a684-52e4-a7b0-c5b73b8a71a2` — bounded-intent error |
+| Failed unbound claim retained | `41b45624-79c6-5c40-a35d-4605e195b534` — explicit readback-recovery error |
+
+Actual authenticated user proof at339 covers the five saved role cards, the
+Case Worker **Edit Agent** dialog with editable fields (closed without save),
+the parent Canvas's saved-Agent/sub-Swarm node, explicit native start and
+persisted same-Case result/publication identity. Exact replay added neither
+inference, effect, Run nor trace. A nonexistent Case presents an explicit
+authorized-scope error rather than indefinite loading. Theb92 control proof
+performed actual UI Human takeover, denied stale machine output with
+`CASE_PROCESSING_HUMAN_TAKEOVER_FENCED` and unchanged Case state, recorded a
+referenced result visible after reload, and returned processing mode without
+starting a Run. No positive genuine reviewer decision/resume is claimed.
+
+Final exact339 full unit gate: **608 files passed, 9,993 tests passed,
+40 skipped**. This is distinct from the earlierfc607/9,991 gate. The existing
+complete transactional native execution SQL suite also passed for theb92
+additive binder: two explicit starts, exact replay, unchanged Work attempt,
+missing-provenance denial and existing generic/nested behavior, then rollback
+of test fixtures. Targeted typecheck/docs/infra checks and canonical immutable
+build/convergence passed. Tests are not independent Acceptance.
+
+The true339 App restart preserved all five owner Case projections, native
+Runs/traces/checkpoints, Agent/memory/version and Swarm/publication definitions,
+genuine Approval, users/providers/integrations, stable MCP definitions and BI.
+There were zero running Runs and one genuine pending Approval. All **38 original**
+neighboring services were retained; the final restart checked **39 current**
+neighbors, including the single newly deployed owned Local Table MCP service.
+No Supabase/n8n/Host reset, local Copilot MCP change or destructive restore
+occurred.
+
+Host architecture/default-source pins now agree with the actual339 image and
+ledger297. Inactive base `compose.env` was compared in memory against its
+encrypted pre-reconciliation copy: **only** `AXTN_AGENTSWARMS_COMMIT` and
+`AXTN_AGENTSWARMS_SOURCE_DIR` changed, and both match the active development
+compose. All other protected values remained identical. The runtime stayed
+healthy; no bootstrap rerun was used to reconcile the pin.
+
+Rollback retains predecessorb92/image
+`sha256:060115be84693cec94a03ccc525ce74cc3965c8f2a9d7cb10ed5ab6c998e4aea`,
+compatible additive ledger297 and encrypted verified checkpoint
+`~/.local/share/axtn/native/pilot-checkpoints/execution-339a35b940bd/`.
+The database ciphertext SHA256 is
+`0fa3085a38cb8c85902b474f5f42999b4245a3b1618ff6a349d5527bb69d8b38`.
+The separate pre-admission App env and pre-reconciliation base compose copies
+support bounded configuration rollback without replacing unrelated credentials.
+No rollback was performed or declared necessary.
+
+## Independently executable DMS foundations
+
+The retained DMS Parent `42a577cc-51cf-48ac-b6b8-8ec855714021`, Inventory Child
+`e1685b29-9a29-45cf-a470-25d3503335c7` and Case Child
+`b09920d3-8c66-40db-ad2c-e34bc017cb5a` received referenced STARTED tracking.
+No duplicate Parent/Child was created; Filing/Learning/Acceptance were not
+closed by foundation work.
+
+| Native foundation | Exact identity/scope |
+|---|---|
+| Document Registry | `8d42d201-b02b-4056-a489-0d176ae51b95` |
+| Recognition Patterns | `1a6d03a2-9377-41ef-b8ae-aa466ce899c4` — no active recognition rule |
+| Classification Patterns | `fddf0cbf-b55c-4161-a83f-6ef328e42154` — six historical operational values |
+| Local Table MCP app | `088f4a4d-915f-48d9-b458-4b50b96f23b8` — private |
+| Native connected server | `bd45279e-bcb9-4123-b789-d8342da600e0` |
+| Exact Python source SHA256 | `925c5324f7fd4c1a5e66e9972fd18b0a58212dc350a83722fb6cf98ed21a5c68` |
+| Reviewed tool snapshot | `v2:3ae09ac179b3a58f2a0368ead3adf9fa` — only `local_table_upsert` |
+
+The authenticated native document-intake seeds produced an exact second-apply
+no-op across datasets/rows/MCP draft/audit. Deployment and registration used
+the existing actual-user MCP Builder, native runtime and connected-server
+mechanisms. Existing platform behavior automatically timestamps the initial
+discovered tool approval on first successful deployment; no reviewer
+**Approve** action or independent semantic acceptance was performed.
+
+The existing registration backend already accepted a reviewed hash/allowlist;
+the final UI now supplies both and explicitly rejects an empty or unavailable
+list. The internal key is hashed, connected-server token encrypted, and no
+plaintext credential is exported. Exactly the owned opaque app ID was added
+to existing `LOCAL_TABLE_INTEGRATION_MCP_APP_IDS` after encrypted backup;
+all pre-existing env values were verified identical.
+
+Actual native calls rejected an undeclared `axtn_cases` table and an undeclared
+Registry `key_column`, with no document/Registry data changes. The second
+probe reached the existing platform broker through the legitimate app-ID/owner
+binding. This proves functioning bounded admission/denial, **not** positive
+real-document writes, semantic classification, privacy completeness or
+physical provider filing. No document, source authority or historical rule
+was invented. Initial deployment-driver timing/predicate failures were
+diagnostic harness failures; persisted ready status and the successful binding
+proof, rather than blindly repeated deployment, establish the product result.
+
+## Concrete decision proposals and retained gaps
+
+1. **Historical semantic settings:** absent Stage1/Stage2 IDs and exact Gemini,
+   prompts, temperatures, Skills/KB/tool/guardrail bindings remain the precise
+   recovery gap. If no authoritative source is supplied, the proposed
+   replacement is an explicitly identified new native configuration revision
+   for each distinct role, with exact reviewer-approved settings and Git/native
+   version evidence, then a newly published immutable parent/sub-Swarm
+   snapshot. Do not claim historical recovery, collapse the two roles, copy
+   Development models or auto-adopt later Agent edits. This proposal has not
+   been implemented or accepted.
+2. **General Development:** supply/identify the exact locally accepted Solution
+   Contract, authority and allowed repository/path/runtime/effects. Existing
+   fixture and role provisioning remain usable; arbitrary repository work and
+   Evaluate/Learn are not enabled by a generic reference or Candidate approval.
+3. **Genuine resume/effects:** the actual authorized reviewer alone may decide
+   the retained Approval. Positive protected resume, real source/privacy
+   processing and provider effects remain separately unproven, not substituted
+   by synthetic acceptance.
+4. **Disposable definitions:** sixteen individually inventoried synthetic
+   definitions remain retained because actual native delete cascades remove
+   versions/keys and unpublish makes the draft executable. Their Run/evidence
+   dependencies are known; no safe disposal preserving complete snapshots
+   was established. No new hidden registry/archive/control plane was added,
+   and no library cleanup is claimed.
+5. **BI/peer/economics:** existing immutable snapshot freshness and individually
+   qualified Pattern evidence remain valid. Live semantic Case sourcing,
+   genuine independent peer transport and economic/HA/DR claims retain their
+   existing explicit decision/data boundaries.
+
+The bounded common slice and DMS foundations are implemented, tested,
+deployed and owner-visible. Full DMS/general Development and the overall
+Parent remain unfinished; independent Acceptance remains open.

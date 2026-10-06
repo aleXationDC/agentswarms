@@ -1,6 +1,6 @@
 # Environment Pattern Pilot execution
 
-Status: **NATIVE_COMPOSITION_CONTINUATION_IN_PROGRESS / ACCEPTANCE_PENDING**.
+Status: **COMMON_NATIVE_SLICE_FUNCTIONAL / DMS_FOUNDATIONS_DEPLOYED / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
@@ -11,6 +11,13 @@ new native usability/composition continuation. Exact current inventory, source
 changes and the five separate implementation/test/deployment/usability/
 independent-Acceptance grades are tracked in
 `handoffs/reports/AXTN-CROSS-CAPABILITY-INTEGRATION-ORDER-0001.md`.
+Current Productsource is `339a35b940bdffbec3839bbb8dd149482cd43d41`,
+image `sha256:caa71819ccac64038d0ab511dcf728427668ec46c9df4b854407d0ab50e3cf76`,
+ledger297. Actual native Case parent/sub-Swarm start/result/replay and true
+restart passed; Registry/private Local Table foundations are deployed.
+This supersedes only the runtime pin below, not the individually attributed
+older Pattern evidence. Full semantic DMS, general Development, library
+disposal and independent Acceptance remain incomplete. No blanket Pattern PASS.
 
 ## Functional continuation: exact228c18b authority
 
