@@ -84,10 +84,15 @@ Parent and Acceptance Child remain open; no self-Acceptance, merge/tag/release.
 The reporting commits are published on the same canonical Gitea branches and
 DraftPR14/Host DraftPR9; existing configured push mirrors are triggered
 immediately via the native API (HTTP200). Native Host mirror reports no
-current error. Native App mirror reports an authentication/authorization
-failure, not a transient network failure; therefore successful App mirroring
-or external exact-SHA readback is not claimed. No remote, permission,
-credential or working local MCP configuration is changed to bypass this gate.
+current error. The native App mirror initially reported an authentication/authorization
+failure, not a transient network failure. After subsequent existing configured
+sync requests, native readback at2026-10-06T02:59:15+02:00 reports no current
+error for either App or Host. No remote, permission, credential or working
+local MCP configuration was changed. Independent external exact-SHA readback
+is still unavailable: this host's existing noninteractive GitHub read path
+cannot obtain a password. Native no-error status is not mislabeled as external
+branch-SHA verification; the earlier App authentication error is historical,
+not a current runtime/implementation blocker.
 
 ### Current complete functional coverage, not independent Acceptance
 
