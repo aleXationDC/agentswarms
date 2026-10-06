@@ -344,12 +344,14 @@ proof, rather than blindly repeated deployment, establish the product result.
    the retained Approval. Positive protected resume, real source/privacy
    processing and provider effects remain separately unproven, not substituted
    by synthetic acceptance.
-4. **Disposable definitions:** sixteen individually inventoried synthetic
-   definitions remain retained because actual native delete cascades remove
-   versions/keys and unpublish makes the draft executable. Their Run/evidence
-   dependencies are known; no safe disposal preserving complete snapshots
-   was established. No new hidden registry/archive/control plane was added,
-   and no library cleanup is claimed.
+4. **Disposable definitions:** the final per-identity check below establishes
+   the actual retention dependency, not merely a theoretical version cascade.
+   Each of sixteen synthetic definitions has one retained Run, one inactive
+   key and one idempotency receipt. Deleting its Swarm cascades through the
+   key into that receipt, destroying existing replay evidence. No definition
+   currently meets the requested evidence-preserving deletion condition.
+   Unpublish makes the draft executable and is not a safe disable substitute.
+   No new hidden registry/archive/control plane or library cleanup is claimed.
 5. **BI/peer/economics:** existing immutable snapshot freshness and individually
    qualified Pattern evidence remain valid. Live semantic Case sourcing,
    genuine independent peer transport and economic/HA/DR claims retain their
@@ -358,3 +360,39 @@ proof, rather than blindly repeated deployment, establish the product result.
 The bounded common slice and DMS foundations are implemented, tested,
 deployed and owner-visible. Full DMS/general Development and the overall
 Parent remain unfinished; independent Acceptance remains open.
+
+## Exact synthetic disposition list
+
+All sixteen are **DISPOSABLE_TEST definitions / RETAIN_DEPENDENT_REPLAY_EVIDENCE**,
+not product Swarms or native Case Work compositions. Final actual counts:
+one Run/one inactive key per definition, sixteen retained idempotency receipts,
+zero active synthetic keys, zero native versions/schedules/chats/evaluations.
+`swarm_runs.swarm_id` has no deletion FK and its nodes/edges snapshots are
+retained; the concrete obstacle is instead
+`swarms → swarm_api_keys → swarm_run_idempotency` with cascading deletion.
+Retaining Run rows alone would not preserve those original replay receipts.
+Full definitions remain in protected inventory/checkpoint evidence; hashes
+below identify the retained actual definition rows without exporting secrets.
+
+| Swarm identity | Verified synthetic use | Definition-row MD5 |
+|---|---|---|
+| `09196515-d089-4eeb-948d-fe37f79b45ad` | F1 agent proposal | `0f9293f15c94e06364eb47122148af49` |
+| `2c915ed0-75f3-44c0-b4f4-dd9fcfdee8ee` | F1 agent proposal | `691577bac6408139a291f8ef66bd6c62` |
+| `b3cc4123-1d7a-482a-8330-312815308f7b` | F1 agent proposal | `0c2585eb97e77665f184aecf675db576` |
+| `d0c76de6-4229-4539-8ece-1b69af3801ad` | F1 agent proposal | `8b8aece7d5bcab3b15341755fbb64d5c` |
+| `8e17c0f1-1d60-422d-9429-9b6380cd707e` | F1 foreign-target denial | `5f06a491386bb62f3350a67830b940e2` |
+| `38dae7fd-b753-4f24-a157-b1a8e9fc5283` | F1 forged-principal denial | `7c5c4151b4f8c81720f3dfea49b1001a` |
+| `89e176dc-7a75-4795-97dc-ad51220d3830` | F1 malformed-input denial | `13461931dbd24824d0f78fc4e011ac70` |
+| `e383c8bc-92d7-4b6e-a70c-abc7b3d133dd` | F1 stale-revision denial | `e287ba47bf06075177b5c882a0b3e71b` |
+| `869a1e7e-3a31-455c-a707-9d4763617041` | F1 undeclared-effect denial | `86d42fb87b614bf083754191a5aa8d0b` |
+| `b78fc82f-124d-4e1d-ad49-5faacf99680a` | F1 undeclared-effect denial | `71bf6fa57ca11fea1e4796c86ad1d093` |
+| `feed3d4e-ac0c-4602-8c31-aca764cd2b50` | F1 undeclared-effect denial | `f317b5d9a5ea2b654f281b0f12d14304` |
+| `6a28ca44-969e-4a3e-9c4d-1bc7a2e2b246` | Existing-provider probe | `a835e502f30eae5a222095a7db42ce71` |
+| `ad4ad99a-5c1f-41a3-ad20-0ea101d045e2` | Existing-provider probe | `d4a298862de073eb2457b8efc7126011` |
+| `ec2cec39-5de7-4c45-8f57-9ea07e5f2fbe` | Existing-provider probe | `3f77ceb78019c2eae8ac6e7a30445bb4` |
+| `4e7b1f52-451b-48a6-9205-7fbbd9edd919` | Native execution a33a9c142bf4 | `4b7c468ddd0bf8e93355c6e3dee74d6e` |
+| `b238e370-9457-4287-addc-9efc3a8f36fb` | Native execution a5f53aba1347 | `f6aa14780200954fdb4119b7084f1c5c` |
+
+The owned temporary `environment-pilot-build.swap` was disabled and removed
+after verifying sufficient available memory. Original
+`development-graph-build.swap`, fstab and all other runtime facilities remain.
