@@ -1484,15 +1484,22 @@ export async function saveDashboardVersion(
 }
 
 /** Restore a version onto the dashboard (does not delete newer versions). */
-export async function restoreDashboardVersion(v: BiVersionRow): Promise<void> {
-  await updateDashboard(v.dashboard_id, {
-    name: v.name,
-    widgets: v.widgets,
-    layout: v.layout,
-    pages: v.pages,
-    filters: v.filters,
-    theme: v.theme,
-  });
+export async function restoreDashboardVersion(
+  v: BiVersionRow,
+  expectedVersion: number,
+): Promise<void> {
+  await updateDashboard(
+    v.dashboard_id,
+    {
+      name: v.name,
+      widgets: v.widgets,
+      layout: v.layout,
+      pages: v.pages,
+      filters: v.filters,
+      theme: v.theme,
+    },
+    { expectedVersion },
+  );
 }
 
 /**

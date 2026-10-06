@@ -85,7 +85,7 @@ export function BiHistoryDialog({
     try {
       // Snapshot the current state first so the restore itself is undoable.
       await saveDashboardVersion(row, "Before restore");
-      await restoreDashboardVersion(v);
+      await restoreDashboardVersion(v, row.version);
       toast.success(`Restored version from ${relTime(v.created_at)}`);
       onOpenChange(false);
       onRestored();

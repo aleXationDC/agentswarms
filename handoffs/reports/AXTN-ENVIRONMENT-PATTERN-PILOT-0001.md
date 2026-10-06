@@ -409,6 +409,12 @@ elsewhere as actual bytes/tokens/latency, never inferred labor.
   `cac2a470-213c-449e-9053-240b859ad947`; isolated RLS/concurrent same-version
   edits and native composition execute,104 targeted unit tests pass.
   Current source's telemetry repair still requires exact build/deployment.
+  Initial actual owner History rollback restored the empty definition and saved
+  `"Before restore"` without deleting sidecars, but exposed another native gap:
+  restore did not pass the existing content `expectedVersion` guard. The bounded
+  repair now binds the loaded row version through that existing write contract;
+  stale restore conflicts and successful restore increments version. Exact
+  repaired-source rollout and rollback/reapply proof remain required.
 
 Status vocabulary: **FUNCTIONAL SLICE** means the stated bounded native
 mechanism has executed evidence, not full pattern/enterprise Acceptance;
