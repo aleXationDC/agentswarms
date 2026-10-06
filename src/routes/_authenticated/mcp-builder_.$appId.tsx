@@ -426,12 +426,24 @@ function McpAppEditor() {
                   void reload();
                 }}
                 onRegister={async () => {
-                  const res = await registerFn({ data: { id: appId } });
+                  if (!app.tools_hash || !app.tools.length) {
+                    toast.error("Deploy and review a nonempty tool list before registration.");
+                    return;
+                  }
+                  const res = await registerFn({
+                    data: {
+                      id: appId,
+                      tools_hash: app.tools_hash,
+                      tool_allowlist: app.tools.map((tool) => tool.name),
+                    },
+                  });
                   if (!res.ok) {
                     toast.error(res.error);
                     return;
                   }
-                  toast.success("Registered — your agents can call it now.");
+                  toast.success(
+                    "Registered current reviewed tools — later tools require new registration.",
+                  );
                   void reload();
                 }}
                 onUnregister={async () => {

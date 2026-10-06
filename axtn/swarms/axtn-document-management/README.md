@@ -139,6 +139,8 @@ For native internal registration, the existing `mcpAppRegisterInternal` accepts
 `tool_allowlist: ["local_table_upsert"]` plus the actual reviewed `tools_hash`.
 Only currently deployed approved names can be registered; the native key is
 hashed, its connected-server token encrypted, and advertisements narrowed.
+The native Builder's internal registration passes the displayed fingerprint
+and explicit current tool names. Later tools do not silently expand that key.
 This extension does not deploy the draft, approve a tool list or change app-ID
 admission. No credentials are returned by internal registration.
 
