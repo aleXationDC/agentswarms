@@ -12,25 +12,8 @@
 // (which hashes results mid-request) and the provenance layer can use it
 // without dragging Supabase into the module graph.
 import { createHash } from "node:crypto";
-
-/**
- * JSON with object keys sorted at every level and no incidental whitespace.
- *
- * JSON.stringify preserves INSERTION order, which means two runs that built the
- * same object differently produce different bytes. A signature that depends on
- * property order is one that fails for reasons unrelated to tampering.
- *
- * Arrays keep their order: in a result set, and in a list of data reads, the
- * order is part of what happened.
- */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-}
+import { canonicalJson } from "./canonicalJson";
+export { canonicalJson } from "./canonicalJson";
 
 /**
  * The fingerprint format. Bumped whenever the bytes below change shape.

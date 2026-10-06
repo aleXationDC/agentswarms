@@ -134,6 +134,17 @@ recovered DMS definition or inventing configuration; the affected recovery
 and native-execution gates are rerun before source publication.
 This is source/contract evidence, **not PROD/UI/restart proof**.
 
+Exact candidate `fc912dad2f8dfff8f9d80c1fdc39c800092105fa` subsequently passed
+the full unit gate: 607 files/9,991 tests, 40 explicitly skipped. Its canonical
+Docker build correctly caught a browser/server boundary defect in the new
+Inspector provenance import: the existing canonical serializer module also
+imports Node crypto for server digests. Canonical JSON serialization is now
+extracted byte-for-byte to a pure shared module; browser snapshot hashing uses
+Web Crypto, while existing server digest consumers retain the same API/bytes.
+No failed image was activated; source730439b9 remained healthy and the active
+compose environment was restored by the existing canonical build helper.
+The repair and exact immutable build are verified before deployment.
+
 | Capability | Implemented/source | Tested | Deployed | Visible/operable | Independently accepted |
 |---|---|---|---|---|---|
 | Inventory/current contract reconciliation | Actual bounded inventory | Actual owner/protection readback | Existing runtime observed | Existing inventory/UI only | No |

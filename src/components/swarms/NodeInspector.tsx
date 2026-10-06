@@ -480,7 +480,7 @@ export function NodeInspector({
       if (memoryError) throw memoryError;
       if (versionError) throw versionError;
       if (agentError || !current) throw new Error("Native Agent snapshot unavailable.");
-      const { canonicalJson } = await import("@/utils/provenance/canonical");
+      const { canonicalJson } = await import("@/utils/provenance/canonicalJson");
       const { toSnapshot } = await import("@/lib/agentVersions");
       const configuration = toSnapshot(current);
       const digest = await crypto.subtle.digest(
