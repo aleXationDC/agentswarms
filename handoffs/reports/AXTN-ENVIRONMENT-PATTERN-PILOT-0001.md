@@ -1,9 +1,138 @@
 # Environment Pattern Pilot execution
 
-Status: **IN_PROGRESS / SOURCE_TESTED / DEPLOYED_PARTIAL / RESTART_VERIFIED / ACCEPTANCE_PENDING**.
+Status: **IN_PROGRESS / PARTIAL_FUNCTIONAL / ACCEPTANCE_PENDING**.
 Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
+
+## Functional continuation: exact228c18b authority
+
+Only `handoffs/requests/AXTN-ENVIRONMENT-PATTERN-PILOT-CONTINUATION-0001.md`
+was imported from `228c18b241cbaa84453f3cd781f5517834f94304`. Older Productsource
+on that documentation branch was not imported. Start source/origin was exact
+`ddbfc77bca27f0c7bc92203cbbfdf6f21e230c32`; own Host source
+`5a4ff6f1c4aec40bdc4888b324d34b925cf0aa8d` was clean. Fresh native runtime
+remained exacta33a9c14/image2753c370, healthy, ledger296, one real user, one
+genuine pending Approval, zero running Runs and active schedules. No competing
+bootstrap/Compose/convergence writer was observed. Development/DMS worktree
+heads remained6bf776ef/9dbabbed and85dbb72/c1a25fef; local MCP untouched.
+Historical architectural bootstrap manifests still record10df3a86: the
+separate exact pilot checkpoint and actual native runtime, not those older
+deployment entries, identify this continued pilot's executable App.
+
+The existing Parent and three executor Children record continuation STARTED
+through actual authenticated native Case access. The same five Cases,
+App DraftPR14 and Host DraftPR9 continue. No new productive Case, fake
+reviewer, Parent closure, Acceptance, merge, tag or release.
+
+### Immediate rest list A/B/C
+
+| Class | Work package | Evidence goal / dependency |
+| --- | --- | --- |
+| A | F1/P05 bounded native agentic mutation | Actual native LLM proposal, deterministic Case Tool enforcement/effect/readback, denied graphs, one-effect replay; executed below, no external writer needed. |
+| A | F2/P16 governed persisted snapshot View | Actual native NL planner/compiler, exact authenticated subtree/capacity counts, owner-only model/dashboard/result persistence/reload; executed native slice, telemetry repair/current-source/restart gates still being completed. |
+| A | F3/P18 narrow local View change | Existing native review checklist/cancel/owner Generate/version history/conflict/rollback; operator-assisted synthetic path, not independent Approval. Complete only this legitimate low-risk path. |
+| A | F4/P20-P22 local collaboration composition | Actual isolated native User/Group scoped capability request, private availability, authorized time/provider commitment, status/outcome/released evidence, opaque ticket and duplicate/lost-ACK/unknown/conflict/stale/privacy proof; no external transport. |
+| B | Live semantic Case source versus immutable snapshot | Existing `semantic_models` sources are data_table/warehouse, not authorized Case RPC/subtree/capacity. Native minimized snapshot is shown; a live backend/automatic synchronization needs a separate precise bounded-extension decision, not a secretly built reporting service. |
+| B | P01/P06/P10/P12 three real documents | Identify each authorized source/integration binding, purpose and rights/privacy decision; no invented three sources or original document sent for readiness. |
+| B | P08/P15/P17 genuine reviewer/Acceptance | Existing native persisted reviewer binding plus an eligible distinct authenticated decider. One actual user/pending Development Approval remains; no builder self-Approval. Preparation and local effects continue independently. |
+| B | P21/P22/P32 actual independent peer | Nonsecret Environment/integration binding, permitted scope and authenticated peer required. Local fixture is not a partner or second autonomous Environment; UNKNOWN transport does not select one or create credentials. |
+| C | P26/P30/P33-P35 economic/empirical evidence | Actual consumption/baseline/plan/remaining/revenue cohorts, not synthetic pool hours or invented ROI; UNKNOWN/EXPERIMENTAL remains correct. |
+| C | P38 and Enterprise operations | Long-term24/7, HA/DR/Human-SLA and156-user scale need distinct longitudinal/Enterprise evidence; durable restart mechanisms are not that proof. |
+
+### F1: actual native proposal to enforced effect
+
+Native Agent -> native Tool(`case_work`) -> native Output composition:
+`tests/fixtures/environment-pattern/agentic-case-graph.mjs`.
+The graph fixes the existing reporting Case, transition identity and read
+version; the LLM receives only a fixed synthetic instruction and proposes
+`{"processing_stage":"VALIDATION_REVIEW"}`. It does not choose identity,
+credential, revision, operation or target. Actual existing OpenAI/gpt-4.1-mini
+inference and measured usage precede the deterministic native schema,
+authenticated principal, Case visibility and processing-version checks.
+
+Actual successful bound Run `3b3d7ad2-d166-4f95-a245-b1958087d574`.
+Native tool events, persisted processing readback and exactly one
+`axtn_case_processing.PROCESSING_CHANGED` audit prove the effect. Discarded
+first response/exact native replay produces the same successful receipt and
+one Run, not another mutation. Undeclared close, foreign target, malformed
+version, stale version and forged principal each fail with unchanged Case
+state. Failed-run replay is a native error readback (first400 may replay409),
+not falsely claimed as an identical successful response. Deterministic-only
+negative graphs have no automatic semantic execution binding; their retained
+Run and unchanged Case are explicit fixture evidence, not relabeled semantic
+runs. The successful Agent graph has the actual native Case binding.
+
+Original reporting processing stage was restored through its native versioned
+contract, with append-only effect/restore history. Original genuine Approval,
+users, integrations, ledger and scheduling are preserved; all temporary
+scoped proof keys revoked. Early probe assertions misnamed the native audit
+action/failed-replay shape/tool-only binding; their successful synthetic
+effects were restored before correcting the assertions, not hidden or
+presented as product defects. F1 is bounded native LLM proposal/composition,
+not embedded function-calling, approval bypass or autonomous external writes.
+The Approval-required effect remains separately gated by a real reviewer.
+
+### F2/F3: native mechanisms and observed repair
+
+Source-verified existing paths:
+`src/components/bi/GenerateDashboardDialog.tsx`,
+`src/lib/biGenerateSemantic.ts`,
+`src/utils/semantic/query.server.ts`,
+`src/lib/biDashboards.ts` and `src/components/bi/BiHistoryDialog.tsx`.
+The governed planner selects only declared metric/dimension names; the
+existing compiler writes SQL, not the model. Authenticated native subtree
+and capacity views are the server-bound source: five Cases and explicit
+synthetic1.5h, without subjects, private hierarchy/calendars or original data.
+The owner-only snapshot is labeled immutable/not live Case refresh.
+Model and saved dashboard `cac2a470-213c-449e-9053-240b859ad947` exist through
+the existing JWT/RLS CRUD path; generated native chart results compare
+exactly with the source snapshot. Forecast/ROI stay UNKNOWN.
+
+Actual UI reviewed proposed widgets without changing the stored view, canceled
+them unchanged, then performed the existing authorized low-risk owner Generate
+path. Ten widgets/nine compiled charts were persisted at version1 with actual
+native result sidecars and reload. Named before/applied native history and
+stale-version zero-row conflict are present. These are operator-assisted
+owner edits, not an independent human reviewer decision, whole-pilot
+Acceptance or autonomous self-modification.
+
+The actual BI flow exposed a tightly related telemetry defect:
+`llmJsonServer` resolved the correct provider but omitted `provider` from all
+five existing `recordGatewayCall` paths. OpenAI usage was therefore stored as
+OpenRouter with a provider-prefixed model label, distorting native pricing and
+trace attribution. Minimal repair passes the existing resolved provider and
+native model to that existing helper on success, timeout, upstream denial,
+JSON repair and unparseable output. No routing, credential, payer, policy,
+fallback, provider configuration or new service is changed. Targeted source
+tests, exact canonical build/convergence and repaired live evidence are
+required before this new Productsource is called deployed.
+
+### F4: actual local native collaboration, not a fabricated peer
+
+`tests/integration/environmentPatternCollaboration.sql` executes as a
+rollback-only fixture against the full native2100 isolated database. Native
+User/Group assignment exposes only a leaf, with different private local
+hierarchies and an exact foreign-ticket parent. Capability request is a
+persisted processing reference. It cannot manufacture availability, a
+commitment or credential authority. Private4h available/1h unavailable and
+explicit custodian-authorized2h commitment remain distinct; the group peer's
+native projection carries provider/scope/date/hours but not allocation ID,
+calendar or private ancestor. Responsibility cannot promise private capacity,
+and a machine cannot impersonate the authorized commitment decision.
+
+Native status/outcome, explicit synthetic consumption and exact-version
+Pattern Evidence are readable in the authorized leaf. Actual duplicate/lost
+ACK processing/commitment replay does not add an effect/audit. Confirmed opaque
+ticket correlation recovers the same identity; unknown ticket is NO_MATCH,
+unknown Environment is NEEDS_CLARIFICATION, conflicting hierarchies are not
+silently selected, stale handover fails and an unrelated principal remains
+denied. Released fixture context excludes both private hierarchies, private
+availability and allocation identifiers. UNKNOWN forecast and no Acceptance
+remain explicit. Existing portable skill dependency/version/local-binding
+tests, rather than a new artifact registry, cover composition/import.
+No external message was sent, provider integration changed, second Environment
+provisioned or fake authenticated real partner invented.
 
 ## Native Case execution: repaired deployment and restart verified
 
@@ -270,6 +399,16 @@ elsewhere as actual bytes/tokens/latency, never inferred labor.
   versus newer documentation/test revisions. Controlled convergence,
   original readback defect/one App rollback/repair and encrypted checkpoints
   are executed evidence; no merge/release or end-user autonomous change.
+- **CONTINUATION** = exact228c18b assignment and the F1-F4 section above;
+  native graph `tests/fixtures/environment-pattern/agentic-case-graph.mjs`,
+  `tests/unit/environmentPatternFunctionalContinuation.test.ts`,
+  `tests/integration/environmentPatternBiScope.mjs`,
+  `tests/integration/environmentPatternCollaboration.sql`,
+  `tests/unit/biProviderUsage.test.ts`. Actual successful F1 Run
+  `3b3d7ad2-d166-4f95-a245-b1958087d574`, saved synthetic native BI dashboard
+  `cac2a470-213c-449e-9053-240b859ad947`; isolated RLS/concurrent same-version
+  edits and native composition execute,104 targeted unit tests pass.
+  Current source's telemetry repair still requires exact build/deployment.
 
 Status vocabulary: **FUNCTIONAL SLICE** means the stated bounded native
 mechanism has executed evidence, not full pattern/enterprise Acceptance;
@@ -285,7 +424,7 @@ independent Acceptance is NOT_GRANTED for every row.
 | P02 Identity Separation: source/external/internal/business/execution/physical identities distinct | ENV + CASE + EXEC (A) | Exact opaque refs/local Case identity, delivery/InputManifest, Run/Attempt and native credential/funding fences; SQL/HTTP | FUNCTIONAL SLICE: no Shipment domain required; irreversible physical/provider-effect readback remains DMS/external gate, not proved by run replay |
 | P03 Persistent Business Object: stable Case across technical runs/continuations | CASE + EXEC + RUNTIME | Same five Cases, multiple actual synthetic runs, exact HTTP replay and actual native restart | FUNCTIONAL SLICE: durable Case/run distinction proven; real-document end-to-end continuation not asserted |
 | P04 Relationship/Hierarchical Outcome Graph: arbitrary Case root, descendants separate from other relations | VIEW + CASE (A) | 129-Case tree, multiple roots, reparent/cycle/foreign guard, full totals/paging; actual authorized views | FUNCTIONAL SLICE: finite depth proof, no infinity/enterprise-scale or relation-expanded scope claim |
-| P05 Agentic-over-Deterministic: AI proposals cannot bypass deterministic effects | EXEC + GATE + IAM (A) | Typed semantic failure/HUMAN fences, forged/unauthorized native writes denied; actual provider probe tools disabled | PARTIAL: control boundaries evidenced; actual mutating LLM tool proposal followed by approved external effect not exercised |
+| P05 Agentic-over-Deterministic: AI proposals cannot bypass deterministic effects | EXEC + GATE + IAM (A) + CONTINUATION | Actual native LLM patch -> Case Tool -> one persisted effect/readback, exact/lost-ACK replay; undeclared/foreign/malformed/stale/forged graphs denied, original stage restored | FUNCTIONAL SLICE: low-risk synthetic policy-authorized local effect; native composition, not embedded function-calling. Reviewer-required/external effects remain separately gated |
 | P06 Persistent Milestone/Asynchronous Continuation: persist, suspend, event/Human resume without active waiting | EXEC + GATE (A) | Native nested checkpoint/recovery tests, protected Approval suspend/resume fixtures; genuine suspended run retained and restart readback | FUNCTIONAL SLICE: fixture continuation and parked run persistence, not a new independent decision on the genuine suspended run |
 | P07 Human Gate: risk/authority-bound native Approval effect boundary | GATE + CASE (A) | Actual PROD rollback self/builder/unrouted denial, authorized synthetic reviewer/group, revocation and audit | GUARDED / DECISION OPEN: genuine independent reviewer unavailable; original pending Approval not decided |
 | P08 Fractional Assurance: early minimized specialist slice, finding-driven deeper gap work | CONTEXT + PAT + LEARN + GATE | Minimized context tests, signal/native Improvement Work, synthetic promotion/assurance; no invented labor | PARTIAL: mechanics and synthetic finding cycle only; genuine specialist review and separate measured initial/deep drawdown absent |
@@ -296,13 +435,13 @@ independent Acceptance is NOT_GRANTED for every row.
 | P13 IAM/RLS/Authority: authenticated User/Group/scope/row/capability enforcement | IAM + GATE + EXEC (A) | Actual service/browser row/dataset/RPC/audit bypass denial, private/shared projection, revocation/foreign/forged tests | FUNCTIONAL SLICE: native pilot authority; no ÖPost/Entra/org provisioning or enterprise IAM Acceptance |
 | P14 Evidence/Audit: join Case/revision/run/Approval/outcome/test references | CASE + EXEC + PAT + RUNTIME | Existing Cases/PR/Run refs, atomic audit, durable native trace/usage and complete restart fingerprints | FUNCTIONAL SLICE: revision-bound evidence persisted; unified genuine fachliche Acceptance separately open under P15 |
 | P15 Decision/Evidence/Acceptance: alternatives/rationale/criteria/exact object and authorized outcome | GATE + CASE + PAT (A) | Protected exact-revision native gates, forged accepted/Verify denial, retained negative outcomes and no self-approval | GUARDED / DECISION OPEN: actual independent/customer decision and avoided-work alternative Acceptance absent; no RFP coverage credit |
-| P16 Reporting/Semantic: intent to authorized report/view, NL and persistence separately evidenced | VIEW + CAP + PAT (A) | Deterministic authorized subtree/top-level/capacity/Pattern reports and UI/API/restart | PARTIAL: no executed free natural-language report-generation or saved arbitrary semantic-view proof; deterministic report not mislabeled NL |
+| P16 Reporting/Semantic: intent to authorized report/view, NL and persistence separately evidenced | VIEW + CAP + PAT (A) + CONTINUATION | Actual native governed NL planner/compiler/saved owner View and result sidecars, exact native5-Case/synthetic-hours snapshot comparison, preview/cancel/reload and isolated foreign-scope/concurrency denials | PARTIAL: bounded semantic snapshot slice executed; not arbitrary privileged SQL or live auto-refresh from native Case RPC. Telemetry repair/build/restart gates tracked separately |
 | P17 Agentic Development: intent/source investigation/implementation/tests/review/versioned artifact | CHANGE + CASE + GATE | Canonical implementation/test commits, DraftPR14/9, native Work refs and executed source/runtime gates | PARTIAL: actual AI-assisted development evidenced; independent bound review still pending, no autonomous enterprise self-modification |
-| P18 Agentic Change: reached maturity and scope/version/gates/deploy/rollback/audit | CHANGE + RUNTIME (A/H) | Controlled exact-source canary, one actual App rollback, repair/redeploy and encrypted checkpoint/audit | PARTIAL: AI-assisted development/controlled operator change demonstrated; end-user Preview/change flow and autonomous enterprise change not claimed |
+| P18 Agentic Change: reached maturity and scope/version/gates/deploy/rollback/audit | CHANGE + RUNTIME (A/H) + CONTINUATION | Native low-risk local View intent/visible proposal/cancel/authorized owner Generate/history, stale-version no effect and actual isolated two-writer conflict; existing exact-source canary/rollback | PARTIAL: operator-assisted authenticated owner flow, not independently initiated end user, builder self-Approval or Enterprise self-modification. Native View rollback/reapply/current-source proof still tracked |
 | P19 Capability Transfer: versioned definitions/tests transferable, secrets/runtime state not | TRANSFER (T) | Two real native isolated skill imports, manifest/hash/dependency/missing-binding/schema/runtime-field checks | FUNCTIONAL SLICE: one portable skill/contract-test package, not transfer of all Swarm/Workbench/schema types or real partner import |
-| P20 Federated Case Reference: local hierarchy local, opaque foreign object/parent reference | ENV (A) + TRANSFER/FAULT (T) | Exact triple, separate synthetic environments/same ticket ref, foreign parent absent locally, minimized correlation/Ticket mock | FUNCTIONAL SLICE: no external tree replication; two genuine autonomous systems remain separate live gate |
-| P21 Federated Work/Capability: selective refs/commitments/outcome/evidence, no shared internal truth | ENV + IAM + CAP (A) | Minimized native export, scoped private/shared Case/commitment projections and no calendar/hierarchy leaks | PARTIAL: local scope/contract proof, not actual cross-environment committed-capability/status/evidence exchange |
-| P22 Capability Composition: autonomous personal scopes share versioned artifact with collaboration scope | TRANSFER + IAM + PAT | Two distinct synthetic imports/bindings, shared Case tests and exact artifact usages | PARTIAL: synthetic local/scoped reuse demonstrated; no genuine colleague/project-environment composition or personal-environment merger |
+| P20 Federated Case Reference: local hierarchy local, opaque foreign object/parent reference | ENV (A) + TRANSFER/FAULT (T) + CONTINUATION | Actual composed different private local hierarchies/exact opaque ticket parent, authorized lost-ACK correlation, unknown/disallowed/conflict/stale/privacy fixture | FUNCTIONAL SLICE: no external tree replication; two genuine autonomous systems remain separate live gate |
+| P21 Federated Work/Capability: selective refs/commitments/outcome/evidence, no shared internal truth | ENV + IAM + CAP (A) + CONTINUATION | Actual isolated User/Group capability request, separate private availability, custodian-authorized2h commitment/provider/date/scope, status/outcome/released versioned Evidence; responsibility/machine/stranger denied | PARTIAL: complete stated local composition fixture, not actual cross-environment transmission/independent peer or credential authority. Only genuine Live transport/binding is parked |
+| P22 Capability Composition: autonomous personal scopes share versioned artifact with collaboration scope | TRANSFER + IAM + PAT + CONTINUATION | Two distinct native artifact imports/local bindings and dependency/schema/version checks; composed native User/Group shared leaf/capability/time/provider/status/evidence with hidden local roots | PARTIAL: actual synthetic local scoped composition, not genuine colleague/project Environment, merger or universal artifact export |
 | P23 Processing State Telemetry: timestamps/mode/waiting/capability, calendar time separate | VIEW + EXEC (A) | Atomic/replay/concurrency events, taxonomy/UNKNOWN, 20h synthetic clock versus1.5h explicit booking, live views/restart | FUNCTIONAL SLICE: compatible lifecycle/mode projection, overlapping calendar durations not Human utilization or second DONE truth |
 | P24 Human Processing Capacity: net availability/commitment/explicit booking, no monitoring | CAP (A) | Overlap/net-once/limit/correction SQL and live artificial4/1/2 pool with1.5h corrected consumption | FUNCTIONAL SLICE: mechanism proven with synthetic hours; actual cognitive capacity/calendar/labor not measured |
 | P25 Capability Creation versus Delivery: purpose booking plus reusable artifact | CAP + PAT + TRANSFER + LEARN | DELIVERY/UPLIFT/ASSURANCE SQL, imported versioned skill, native usage/evidence and synthetic intervention | FUNCTIONAL SLICE: creation/delivery classification evidenced; actual future marginal-cost reduction unknown |
