@@ -168,7 +168,7 @@ test-command latency and calendar state duration are not Human/Agent hours.
 | E2 | 129-Case tree, multiple roots/reparent/cycle/foreign/hidden/paging SQL and live existing roots | Functional proof, not enterprise scale |
 | E3 | Native pool/multiple-provider SQL, explicit20h clock versus1.5h booking; populated live correction/restart | Synthetic hours only |
 | E4 | Actual isolated negative signal -> native Work -> explicit synthetic promotion -> measured intervention -> two reuses -> assurance | Four single samples, no business baseline or auto-promotion |
-| E5 | Actual persisted native Case subject marker excluded from authorized export; owner-bound DMS codec/privacy guards | Native deterministic NO_AI/UNRESOLVED proof; measured bytes, no model-token/cost comparison |
+| E5 | Actual persisted native Case marker excluded from export; owner-bound privacy guards; actual configured native provider full/minimized token comparison | Only fixed authorized synthetic text; NO_AI/UNRESOLVED hold and real-document authorization remain separate |
 | E6 | Native committed/lost-response replay/concurrency/out-of-order/drift/partial guards; Ticket timeout/lost-ACK/readback mock | UNKNOWN not success; no actual external write or retry engine |
 | E7 | Two actual native skill imports with different local bindings, exact manifest/dependency/hash and negative tests | Synthetic isolated scopes, no secrets/runtime IDs in package |
 | E8 | Actual rollback-only PROD native Approval denial/reviewer/group/audit proof | Independent real human decision unavailable; original pending Approval unchanged |
@@ -200,10 +200,10 @@ body/source/secret markers excluded, privacy and exact input hash preserved,
 same-owner replay identical, foreign-owner replay denied, eligible input
 without privacy evidence denied and semantic intake forbidden. Synthetic
 payload reduction must exceed90%. These are source-functional/isolated native
-proofs, not a fabricated authorized semantic preflight. Semantic provider
-calls are zero and measured model tokens remain null; bytes are never relabeled
-as tokens or cost savings. Real document authorization/model-token comparison
-remains an explicit external gate.
+proofs, not a fabricated authorized semantic preflight. Those deterministic fixture calls use no semantic provider and their measured
+model-token field remains null; bytes are never relabeled as tokens or savings.
+The separately measured native provider experiment below supplies actual
+synthetic token counts, not authorization for real document processing.
 
 Strengthened increment gates: canonical typecheck PASS;65 functional tests
 across the new E5 fixture and existing DMS persistence/native trace suites
@@ -214,6 +214,46 @@ Synthetic owners/skills/integrations/Case/audit rows are removed by their
 bounded finally cleanup. The increment changes only tests/reporting:
 no product source, applied migration, provider/configuration or active image
 is changed, and no documentation/test revision is relabeled as deployed.
+
+### Actual existing-provider and minimal-context token experiment
+
+A fresh native inventory finds exactly one eligible existing own OpenAI
+integration for SYSTEM execution; current IAM admits the already-published
+`gpt-4.1-mini` model. One actual native Case-bound agent probe succeeds at
+Appa33a9c14: HTTP200, native success and the exact fixed
+`SYNTHETIC_NATIVE_PROVIDER_PASS` result. Run
+`ffb1f7ee-2fe1-446b-897b-8c742bc2e414` has one protected native trace,
+26 input/8 output tokens and SYSTEM_INTEGRATION binding. Provider availability
+is therefore demonstrated for this bounded current path, not generically
+blocked or inferred from older OpenAI/ChatGPT history.
+
+Two additional actual native Case-bound runs compare only fixed artificial
+text, with tools and memory disabled and no real original/private material.
+The full input contains a generated `SYNTHETIC_PRIVATE_MARKER`; the minimized
+input omits it. Same existing provider/model, system instruction and required
+exact output are used. Both succeed with one trace each; actual native usage
+is683 versus26 input tokens (more than90% reduction), not a byte/token
+estimate. Same-key HTTP replay returns the identical cached result and
+produces no second run or trace/provider inference. Each mode has one sample;
+no general savings, causal latency, business ROI or Human/Agent-hour claim.
+
+Evidence: `pilot-native-semantic-probe.json`,
+`pilot-native-semantic-context-full.json`,
+`pilot-native-semantic-context-minimized.json`,
+`pilot-native-token-comparison.json`. Temporary scoped keys are revoked in
+finally; published synthetic graph/run/audit/usage evidence is retained.
+Original users, Approval and integration fingerprints are unchanged. No
+credential, provider adapter, route policy, original Development graph,
+model permission, budget switch or working local MCP configuration is changed.
+This is not a real-document privacy preflight, PERSONAL_CONNECTION/colleague
+proof or independent Acceptance. NO_AI/UNRESOLVED inputs were not sent.
+
+Actual full/minimized run identities are respectively
+`159f1c13-16c1-4c6a-86cf-b4e72c5cf659` and
+`7e3d0494-6d6b-41d3-8c47-40f939b9a90b`. Subsequent authenticated private UI
+and actual restart preserve the five Case views and native runs, including
+the complete original-plus-new native trace/usage fingerprint. A surviving
+pending Approval and all38 unrelated services remain unchanged.
 
 ### Historical productive readback defect and repair
 
