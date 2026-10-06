@@ -19,6 +19,7 @@ describe("saved native Development role composition", () => {
         systemPrompt: original.data.systemPrompt,
         provider: original.data.provider,
         model: original.data.model,
+        maxTokens: original.data.maxTokens,
         temperature: 0,
         enabledTools: [],
         agentId: null,
@@ -35,6 +36,41 @@ describe("saved native Development role composition", () => {
     first[0].agent.system_prompt = "later operator change";
     expect(snapshot.systemPrompt).not.toBe(first[0].agent.system_prompt);
     expect(snapshot.agentId).toBeNull();
+  });
+  it("binds each native role to its exact saved Agent version as an independent node snapshot", () => {
+    const saved = createNativeDevelopmentAgents(config);
+    const agentSnapshots = Object.fromEntries(
+      saved.map(({ agent, memory, role }, index) => [
+        role,
+        {
+          agentId: agent.id,
+          versionId: `version-${role}`,
+          configHash: `${index}`.repeat(64),
+          agent: { ...agent, memory },
+        },
+      ]),
+    );
+    const bound = createNativeDevelopmentSwarm({ ...config, agentSnapshots });
+    for (const { role, agent, memory } of saved) {
+      const node = bound.nodes.find((candidate) => candidate.id === role)!;
+      expect(node.data).toMatchObject({
+        agentId: null,
+        agentSnapshot: {
+          agentId: agent.id,
+          versionId: `version-${role}`,
+        },
+        systemPrompt: agent.system_prompt,
+        memory: {
+          stm_enabled: memory.stm_enabled,
+          stm_window_messages: memory.stm_window_messages,
+          ltm_enabled: memory.ltm_enabled,
+        },
+      });
+    }
+    expect(bound.nodes.filter((node) => node.data.agentSnapshot)).toHaveLength(4);
+    expect(createNativeDevelopmentSwarm(config).nodes.some((node) => node.data.agentSnapshot)).toBe(
+      false,
+    );
   });
   it("requires explicit existing model and reviewer configuration", () => {
     expect(() => createNativeDevelopmentAgents({ provider: "", model: "" })).toThrow();

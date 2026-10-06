@@ -115,12 +115,9 @@ function CasesPage() {
           </Button>
         </CardContent>
       </Card>
-      {!loading && <CaseProcessingPanel key={`scoped-${cases.length}`} />}
-      {!loading && <CaseCapacityPanel />}
-      {!loading && <CasePatternPanel />}
       <Card>
         <CardHeader>
-          <CardTitle>Case list</CardTitle>
+          <CardTitle>Cases to work</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -129,27 +126,75 @@ function CasesPage() {
             <p className="text-sm text-muted-foreground">No Cases yet.</p>
           ) : (
             <div className="divide-y">
-              {cases.map((item) => (
-                <div className="flex items-center justify-between gap-3 py-3" key={item.case_id}>
-                  <div>
-                    <Link
-                      className="font-medium underline underline-offset-4"
-                      to="/cases/$caseId"
-                      params={{ caseId: item.case_id }}
+              {cases.map((item) => {
+                const parent = item.parent_case_id
+                  ? cases.find((candidate) => candidate.case_id === item.parent_case_id)
+                  : undefined;
+                return (
+                  <div
+                    className={`flex items-center justify-between gap-3 py-3 ${item.parent_case_id ? "border-l-2 border-primary/30 pl-4" : ""}`}
+                    key={item.case_id}
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        className="font-medium underline underline-offset-4"
+                        to="/cases/$caseId"
+                        params={{ caseId: item.case_id }}
+                      >
+                        {item.subject}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {item.status} · priority {item.priority} · {item.case_type}
+                      </p>
+                      {item.parent_case_id && (
+                        <p className="text-xs text-muted-foreground">
+                          Child of{" "}
+                          {parent ? (
+                            <Link
+                              className="underline underline-offset-2"
+                              to="/cases/$caseId"
+                              params={{ caseId: parent.case_id }}
+                            >
+                              {parent.subject}
+                            </Link>
+                          ) : (
+                            "parent Case"
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <code
+                      className="max-w-48 break-all text-[10px] text-muted-foreground"
+                      title={item.case_id}
                     >
-                      {item.subject}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {item.status} · priority {item.priority} · {item.case_type}
-                    </p>
+                      {item.case_id}
+                    </code>
                   </div>
-                  <span className="text-xs text-muted-foreground">{item.case_id.slice(0, 8)}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
+      {!loading && (
+        <section aria-label="Manual Case processing" className="space-y-2">
+          <h2 className="text-lg font-semibold">Manual work and processing</h2>
+          <p className="text-sm text-muted-foreground">
+            Update real Case stages and waiting states here. These controls remain separate from
+            telemetry and pattern reports.
+          </p>
+          <CaseProcessingPanel key={`scoped-${cases.length}`} />
+        </section>
+      )}
+      {!loading && (
+        <details className="rounded-lg border p-4">
+          <summary className="cursor-pointer font-medium">Capacity and pattern diagnostics</summary>
+          <div className="mt-4 space-y-4">
+            <CaseCapacityPanel />
+            <CasePatternPanel />
+          </div>
+        </details>
+      )}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
     </div>
   );

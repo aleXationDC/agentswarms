@@ -12,6 +12,21 @@ invented Agent, Skill, Knowledge Base, provider credential or owner settings.
 Exact later semantic definitions remain unresolved; demo/predecessor settings
 are not replacements.
 
+## Historical Agent restoration blocker
+
+The authoritative inventory currently marks the exact historical Stage Agent
+IDs `54edaad4-4726-4781-ae07-5df795434837` (triage) and
+`02482fe8-1970-447a-97d7-8898ab8abaae` (processing) as unrecovered. The
+inventory records that the exact later provider/model, prompts, temperatures,
+tools, guardrails, Skills and Knowledge Base bindings are unavailable in the
+checked sources. A search across all fetched Gitea branches/history found
+these IDs only in graph, dependency, request and report artifacts; no saved
+Agent or Agent-version payload was present. The earlier live report only
+documents partial wiring and does not supply these configurations. Do not
+create substitute Agent Builder objects or activate a parent graph with
+missing stages; restore only from an authoritative exact Agent/version source
+and read back its complete settings.
+
 The historical applier was deliberately not restored: it required existing
 Parent/Privacy/Agents and directly changed published snapshots. The recovery
 must use the existing authenticated native publish lifecycle and a complete

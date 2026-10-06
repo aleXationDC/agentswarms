@@ -19,6 +19,7 @@ import {
   importableTools,
   type ImportableAgentRow,
 } from "@/lib/agentToSwarmNode";
+import { resolveNodeMaxTokens } from "@/lib/swarmRuntime";
 
 const agent: ImportableAgentRow = {
   name: "Demo · Friendly Assistant",
@@ -58,6 +59,21 @@ const agent: ImportableAgentRow = {
 };
 
 describe("the settings whose job is to restrict come across", () => {
+  it("copies a valid Agent output-token cap and reports an unrepresentable one", () => {
+    expect(agentToNodePatch({ ...agent, max_tokens: 4096 }).patch.maxTokens).toBe(4096);
+    const invalid = agentToNodePatch({ ...agent, max_tokens: 128001 });
+    expect(invalid.patch.maxTokens).toBeUndefined();
+    expect(invalid.dropped).toContainEqual({
+      what: "Maximum output tokens",
+      why: "swarm nodes accept integer limits from 1 to 128000",
+    });
+  });
+  it("uses the native default only when no limit is configured and rejects invalid node limits", () => {
+    expect(resolveNodeMaxTokens(undefined)).toBe(8192);
+    expect(resolveNodeMaxTokens(4096)).toBe(4096);
+    expect(() => resolveNodeMaxTokens(0)).toThrow("Node maxTokens must be an integer");
+  });
+
   it("copies persisted native memory settings without linking Agent identity", () => {
     const source = {
       ...agent,

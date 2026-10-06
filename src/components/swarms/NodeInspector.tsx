@@ -580,6 +580,40 @@ export function NodeInspector({
           <Input value={data.label} onChange={(e) => onChange({ label: e.target.value })} />
         </Section>
 
+        {data.kind === "agent" && data.agentSnapshot && (
+          <div className="rounded-md border border-primary/30 bg-primary/5 p-2.5 text-[11px] leading-relaxed">
+            <p className="font-medium text-foreground">Saved Agent snapshot</p>
+            <p className="mt-1 text-muted-foreground">
+              This node was copied from an Agent Builder object. It is not a live link; later
+              library edits do not alter this canvas or a published Swarm.
+            </p>
+            <dl className="mt-2 space-y-1">
+              <div>
+                <dt className="text-muted-foreground">Agent ID</dt>
+                <dd className="break-all font-mono" title={data.agentSnapshot.agentId}>
+                  {data.agentSnapshot.agentId}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Saved version</dt>
+                <dd className="break-all font-mono">
+                  {data.agentSnapshot.versionId ?? "No exact saved version"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Configuration + memory fingerprint</dt>
+                <dd
+                  className="break-all font-mono"
+                  title={data.agentSnapshot.configHash}
+                  aria-label={`Configuration and memory fingerprint ${data.agentSnapshot.configHash}`}
+                >
+                  {data.agentSnapshot.configHash}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
+
         {TESTABLE_KINDS.has(data.kind) && <NodeTestButton node={node} />}
 
         {(data.kind === "agent" ||
@@ -757,6 +791,27 @@ export function NodeInspector({
                     : "Uses your connected provider credentials."}
               </p>
             </Section>
+
+            {(data.kind === "agent" || data.kind === "loop" || data.kind === "foreach") && (
+              <Section label="Maximum output tokens">
+                <Input
+                  aria-label="Maximum output tokens"
+                  type="number"
+                  min={1}
+                  max={128000}
+                  step={1}
+                  value={data.maxTokens ?? 8192}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isSafeInteger(value) && value >= 1 && value <= 128000)
+                      onChange({ maxTokens: value });
+                  }}
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Snapshotted from the Agent Builder or uses the native 8192-token default.
+                </p>
+              </Section>
+            )}
 
             <Section label={`Temperature: ${(data.temperature ?? 0.4).toFixed(2)}`}>
               <Slider

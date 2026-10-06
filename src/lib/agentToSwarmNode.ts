@@ -54,6 +54,7 @@ export type ImportableAgentRow = {
   system_prompt?: string | null;
   llm_provider: string;
   llm_model: string;
+  max_tokens?: number | null;
   temperature: number;
   knowledge_base_id?: string | null;
   tools?: unknown;
@@ -204,12 +205,27 @@ export function agentToNodePatch(agent: ImportableAgentRow): AgentImport {
   const reranker = obj(t.reranker);
   const rerankProvider = typeof reranker.provider === "string" ? reranker.provider : "";
   const rerankModel = typeof reranker.model === "string" ? reranker.model : "";
+  if (
+    typeof agent.max_tokens === "number" &&
+    (!Number.isSafeInteger(agent.max_tokens) || agent.max_tokens < 1 || agent.max_tokens > 128000)
+  ) {
+    dropped.push({
+      what: "Maximum output tokens",
+      why: "swarm nodes accept integer limits from 1 to 128000",
+    });
+  }
 
   const patch: Partial<SwarmNodeData> = {
     label: agent.name,
     systemPrompt: agent.system_prompt || "",
     provider: agent.llm_provider,
     model: agent.llm_model,
+    ...(typeof agent.max_tokens === "number" &&
+    Number.isSafeInteger(agent.max_tokens) &&
+    agent.max_tokens >= 1 &&
+    agent.max_tokens <= 128000
+      ? { maxTokens: agent.max_tokens }
+      : {}),
     temperature: agent.temperature,
     knowledgeBaseId: primaryKb,
     reranker:

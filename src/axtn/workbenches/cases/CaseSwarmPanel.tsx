@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,10 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { startCaseSwarm } from "./caseSwarm.functions";
+import { classifySwarmUsage, type SwarmUsageRow } from "@/lib/swarmUsage";
 
 type Swarm = Pick<
   Database["public"]["Tables"]["swarms"]["Row"],
-  "id" | "name" | "description" | "published_version_id" | "published_at"
+  | "id"
+  | "name"
+  | "description"
+  | "published_version_id"
+  | "published_at"
+  | "nodes"
+  | "edges"
+  | "published_nodes"
+  | "published_edges"
 >;
 type Run = Pick<
   Database["public"]["Tables"]["swarm_runs"]["Row"],
@@ -48,13 +57,19 @@ export function CaseSwarmPanel({
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selected = swarms.find((swarm) => swarm.id === swarmId);
+  const entrySwarms = useMemo(() => {
+    const usage = classifySwarmUsage(swarms as SwarmUsageRow[]);
+    return swarms.filter((swarm) => usage.get(swarm.id)?.category === "workflow");
+  }, [swarms]);
+  const selected = entrySwarms.find((swarm) => swarm.id === swarmId);
   const load = useCallback(async () => {
     const [{ data: available, error: swarmError }, { data: persisted, error: runError }] =
       await Promise.all([
         supabase
           .from("swarms")
-          .select("id,name,description,published_version_id,published_at")
+          .select(
+            "id,name,description,published_version_id,published_at,nodes,edges,published_nodes,published_edges",
+          )
           .not("published_version_id", "is", null)
           .order("name"),
         supabase
@@ -118,6 +133,10 @@ export function CaseSwarmPanel({
           Allowing Swarm processing does not start a Run. A result does not grant independent
           Acceptance.
         </p>
+        <p className="text-xs text-muted-foreground">
+          Only published entry workflows and orchestrators are startable here. Reusable sub-swarms,
+          standalone helpers and drafts remain in the complete Swarm Library and are not deleted.
+        </p>
         {error && (
           <p role="alert" className="text-destructive">
             {error}
@@ -130,7 +149,7 @@ export function CaseSwarmPanel({
           onChange={(event) => setSwarmId(event.target.value)}
         >
           <option value="">Choose an explicitly published Swarm</option>
-          {swarms.map((swarm) => (
+          {entrySwarms.map((swarm) => (
             <option key={swarm.id} value={swarm.id}>
               {swarm.name}
             </option>

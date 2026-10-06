@@ -1,5 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
-import { createNativeDevelopmentSwarm } from "./axtnDevelopmentSwarm";
+import { createNativeDevelopmentSwarm, DEVELOPMENT_AGENT_ROLES } from "./axtnDevelopmentSwarm";
 import { agentToNodePatch } from "./agentToSwarmNode";
 import { canonicalJson } from "@/utils/provenance/canonical";
 
@@ -17,7 +17,8 @@ export function createNativeDevelopmentAgents(
   config: Parameters<typeof createNativeDevelopmentSwarm>[0],
 ) {
   const graph = createNativeDevelopmentSwarm(config);
-  return Object.entries(DEVELOPMENT_AGENT_IDS).map(([role, id]) => {
+  return DEVELOPMENT_AGENT_ROLES.map((role) => {
+    const id = DEVELOPMENT_AGENT_IDS[role];
     const node = graph.nodes.find((value) => value.id === role);
     if (!node || node.data.kind !== "agent" || !node.data.systemPrompt)
       throw new Error(`Native Development role missing: ${role}`);
@@ -33,7 +34,7 @@ export function createNativeDevelopmentAgents(
       llm_provider: config.provider,
       llm_model: config.model,
       temperature: node.data.temperature ?? 0,
-      max_tokens: 4096,
+      max_tokens: node.data.maxTokens ?? 4096,
       knowledge_base_id: null,
       n8n_webhook_url: null,
       tools: { builtInTools: {}, skillIds: [], guardrails: {}, toolConfigs: {} },

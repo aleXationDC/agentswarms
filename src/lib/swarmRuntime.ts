@@ -173,6 +173,7 @@ export type SwarmNodeData = {
   systemPrompt?: string;
   provider?: string;
   model?: string;
+  maxTokens?: number;
   temperature?: number;
   knowledgeBaseId?: string | null;
   /** Optional retrieval re-ranker for this node's KB grounding. */
@@ -332,6 +333,13 @@ export type EvalMetricConfig = {
   weight: number; // 0–1; used to compute weighted overall score
   description: string; // short description of what this metric checks
 };
+
+export function resolveNodeMaxTokens(value: unknown): number {
+  if (value === undefined || value === null) return 8192;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 128000)
+    throw new Error("Node maxTokens must be an integer between 1 and 128000.");
+  return value;
+}
 
 // Canonical eval metrics — mirrors industry-standard RAGAS/DeepEval axes.
 export const DEFAULT_EVAL_METRICS: EvalMetricConfig[] = [
@@ -739,7 +747,7 @@ async function callAgentImpl(
         model,
         systemPrompt: node.data.systemPrompt || "",
         temperature: typeof node.data.temperature === "number" ? node.data.temperature : 0.4,
-        maxTokens: 8192,
+        maxTokens: resolveNodeMaxTokens(node.data.maxTokens),
         messages: messagesPayload,
         agentId: node.data.agentId || undefined,
         // Per-node KB id (e.g. swarm template referencing a shared sample KB

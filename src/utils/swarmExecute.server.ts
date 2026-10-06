@@ -30,6 +30,7 @@ import {
   topoLevels,
   hasDoneSignal,
   decideYesNo,
+  resolveNodeMaxTokens,
   type SwarmNodeData,
 } from "@/lib/swarmRuntime";
 // Graph semantics live in ONE place, shared with the canvas runtime, so the
@@ -184,7 +185,7 @@ async function serverChat(args: {
       model: d.model || "google/gemini-3-flash-preview",
       systemPrompt: args.systemPrompt,
       temperature: typeof d.temperature === "number" ? d.temperature : 0.4,
-      maxTokens: 8192,
+      maxTokens: resolveNodeMaxTokens(d.maxTokens),
       messages: [
         ...(args.history ?? []).map((h) => ({ role: h.role, content: h.content })),
         { role: "user", content: args.userMessage },

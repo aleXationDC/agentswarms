@@ -118,6 +118,10 @@ function CaseDetailPage() {
   }, [caseId, listFn]);
 
   const record = caseRecord(rows(result, "cases").find((row) => row.case_id === caseId));
+  const parentCase = record?.parent_case_id
+    ? rows(result, "cases").find((row) => row.case_id === record.parent_case_id)
+    : undefined;
+  const childCases = rows(result, "cases").filter((row) => row.parent_case_id === caseId);
   const isDevelopmentWork = rows(result, "cases").some(
     (row) => row.case_id === caseId && row.source_kind === "development_work",
   );
@@ -268,13 +272,44 @@ function CaseDetailPage() {
             <p className="text-sm text-muted-foreground">
               {record.status} · priority {record.priority} · {record.case_type}
             </p>
+            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+              Case ID: {record.case_id}
+            </p>
+            {record.parent_case_id && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Child Case of{" "}
+                {parentCase ? (
+                  <Link
+                    className="underline underline-offset-4"
+                    to="/cases/$caseId"
+                    params={{ caseId: record.parent_case_id }}
+                  >
+                    {String(parentCase.subject ?? record.parent_case_id)}
+                  </Link>
+                ) : (
+                  record.parent_case_id
+                )}
+              </p>
+            )}
+            {childCases.length > 0 && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {childCases.length} child Case{childCases.length === 1 ? "" : "s"}:{" "}
+                {childCases.map((child, index) => (
+                  <span key={String(child.case_id)}>
+                    {index > 0 ? ", " : ""}
+                    <Link
+                      className="underline underline-offset-4"
+                      to="/cases/$caseId"
+                      params={{ caseId: String(child.case_id) }}
+                    >
+                      {String(child.subject ?? child.case_id)}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
           </div>
-          <CaseEnvironmentPanel key={caseId} caseId={caseId} onChanged={load} />
-          <CaseAssignmentPanel key={`assignment-${caseId}`} caseId={caseId} onChanged={load} />
-          <CaseSwarmPanel key={`swarm-${caseId}`} caseId={caseId} onChanged={load} />
-          <CaseProcessingPanel key={`processing-${caseId}`} caseId={caseId} onChanged={load} />
-          <CaseCapacityPanel key={`capacity-${caseId}`} caseId={caseId} />
-          <CasePatternPanel key={`patterns-${caseId}`} caseId={caseId} />
+
           {isDevelopmentWork ? (
             <CaseWorkPanel caseId={caseId} onChanged={load} />
           ) : isDocumentWork ? (
@@ -289,6 +324,23 @@ function CaseDetailPage() {
               onSave={save}
             />
           )}
+
+          <section aria-label="Native work and human processing" className="space-y-3">
+            <h2 className="text-lg font-semibold">Work, execution and hand-off</h2>
+            <CaseSwarmPanel key={`swarm-${caseId}`} caseId={caseId} onChanged={load} />
+            <CaseProcessingPanel key={`processing-${caseId}`} caseId={caseId} onChanged={load} />
+          </section>
+          <CaseEnvironmentPanel key={caseId} caseId={caseId} onChanged={load} />
+          <CaseAssignmentPanel key={`assignment-${caseId}`} caseId={caseId} onChanged={load} />
+          <details className="rounded-lg border p-4">
+            <summary className="cursor-pointer font-medium">
+              Capacity and pattern diagnostics
+            </summary>
+            <div className="mt-4 space-y-4">
+              <CaseCapacityPanel key={`capacity-${caseId}`} caseId={caseId} />
+              <CasePatternPanel key={`patterns-${caseId}`} caseId={caseId} />
+            </div>
+          </details>
           {!isDevelopmentWork && !isDocumentWork && (
             <Card>
               <CardHeader>

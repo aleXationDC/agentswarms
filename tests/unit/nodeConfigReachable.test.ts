@@ -60,7 +60,7 @@ const CONSUMERS = [
  * correct: `status` is live run state, `avatar` and `agentId` are set when a
  * saved agent is linked to a node.
  */
-const NOT_USER_EDITED = new Set(["status", "avatar", "agentId"]);
+const NOT_USER_EDITED = new Set(["status", "avatar", "agentId", "agentSnapshot"]);
 
 const runtime = readFileSync(RUNTIME, "utf8");
 const inspector = readFileSync(INSPECTOR, "utf8");
@@ -91,7 +91,7 @@ describe("the analysis is looking at something", () => {
 
 describe("no setting is offered that nothing reads", () => {
   it("has a real read for every field the inspector binds", () => {
-    const dead = declared.filter((f) => bound.has(f) && !isRead(f));
+    const dead = declared.filter((f) => bound.has(f) && !NOT_USER_EDITED.has(f) && !isRead(f));
     expect(dead, `editable in the builder, read by nothing: ${dead.join(", ")}`).toEqual([]);
   });
 

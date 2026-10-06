@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SWARM_TEMPLATES } from "@/lib/swarmTemplates";
+import { classifySwarmUsage, type SwarmUsage } from "@/lib/swarmUsage";
 import { ExportSwarmDropdown } from "@/components/swarms/ExportSwarmDropdown";
 import { useLangChainExportAnnouncement } from "@/hooks/use-langchain-export-announcement";
 import type { Node, Edge } from "@xyflow/react";
@@ -55,6 +56,25 @@ type SwarmRow = {
   edges: unknown;
   is_deployed: boolean;
   updated_at: string;
+  published_nodes: unknown;
+  published_edges: unknown;
+  published_at: string | null;
+  published_version_id: string | null;
+};
+
+const USAGE_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "workflow", label: "Main workflows" },
+  { value: "component", label: "Referenced sub-swarms" },
+  { value: "standalone", label: "Standalone" },
+  { value: "draft", label: "Drafts" },
+] as const;
+
+const USAGE_LABELS: Record<SwarmUsage["category"], string> = {
+  workflow: "Main workflow",
+  component: "Referenced sub-swarm",
+  standalone: "Standalone",
+  draft: "Draft — not published",
 };
 
 // Same accent hues the canvas uses per node kind, so the thumbnail reads as a
@@ -156,6 +176,7 @@ export function SwarmGallery() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
+  const [usageFilter, setUsageFilter] = useState<(typeof USAGE_FILTERS)[number]["value"]>("all");
   const [tab, setTab] = useState<"library" | "runs">("library");
   useLangChainExportAnnouncement();
 
@@ -189,7 +210,9 @@ export function SwarmGallery() {
     const [{ data: swarms }, { data: keys }] = await Promise.all([
       supabase
         .from("swarms")
-        .select("id, name, description, nodes, edges, is_deployed, updated_at")
+        .select(
+          "id, name, description, nodes, edges, is_deployed, updated_at, published_nodes, published_edges, published_at, published_version_id",
+        )
         .order("updated_at", { ascending: false }),
       supabase.from("swarm_api_keys").select("swarm_id, revoked_at"),
     ]);
@@ -239,13 +262,16 @@ export function SwarmGallery() {
   }
 
   const q = search.trim().toLowerCase();
+  const swarmUsage = useMemo(() => classifySwarmUsage(mySwarms), [mySwarms]);
   const filteredMine = useMemo(
     () =>
-      mySwarms.filter(
-        (s) =>
-          !q || s.name.toLowerCase().includes(q) || (s.description ?? "").toLowerCase().includes(q),
-      ),
-    [mySwarms, q],
+      mySwarms.filter((s) => {
+        const matchesSearch =
+          !q || s.name.toLowerCase().includes(q) || (s.description ?? "").toLowerCase().includes(q);
+        const usage = swarmUsage.get(s.id);
+        return matchesSearch && usage && (usageFilter === "all" || usage.category === usageFilter);
+      }),
+    [mySwarms, q, swarmUsage, usageFilter],
   );
   const filteredTemplates = useMemo(
     () =>
@@ -319,6 +345,32 @@ export function SwarmGallery() {
                 </Badge>
               </h2>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Every saved Swarm remains available. Groups use published graph structure and
+              published parent-to-sub-swarm references; no runs, Cases, or test evidence are
+              removed.
+            </p>
+            <div className="flex flex-wrap gap-2" aria-label="Filter Swarms by usage">
+              {USAGE_FILTERS.map((filter) => {
+                const count =
+                  filter.value === "all"
+                    ? mySwarms.length
+                    : [...swarmUsage.values()].filter((usage) => usage.category === filter.value)
+                        .length;
+                return (
+                  <Button
+                    key={filter.value}
+                    type="button"
+                    size="sm"
+                    variant={usageFilter === filter.value ? "default" : "outline"}
+                    aria-pressed={usageFilter === filter.value}
+                    onClick={() => setUsageFilter(filter.value)}
+                  >
+                    {filter.label} ({count})
+                  </Button>
+                );
+              })}
+            </div>
 
             {loading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
@@ -343,8 +395,11 @@ export function SwarmGallery() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredMine.map((s) => {
-                  const nodeCount = Array.isArray(s.nodes) ? s.nodes.length : 0;
-                  const edgeCount = Array.isArray(s.edges) ? s.edges.length : 0;
+                  const usage = swarmUsage.get(s.id);
+                  const graphNodes = usage?.nodes ?? s.nodes;
+                  const graphEdges = usage?.edges ?? s.edges;
+                  const nodeCount = Array.isArray(graphNodes) ? graphNodes.length : 0;
+                  const edgeCount = Array.isArray(graphEdges) ? graphEdges.length : 0;
                   return (
                     <Card key={s.id} className="group hover:border-primary/50 transition-colors">
                       <CardHeader className="p-4 pb-2">
@@ -360,7 +415,24 @@ export function SwarmGallery() {
                         )}
                       </CardHeader>
                       <CardContent className="space-y-2.5 p-4 pt-0">
-                        <SwarmGraphThumb nodes={s.nodes} edges={s.edges} />
+                        <SwarmGraphThumb nodes={graphNodes} edges={graphEdges} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline" className="text-[10px]">
+                            {usage ? USAGE_LABELS[usage.category] : "Unclassified"}
+                          </Badge>
+                          {s.published_at && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {s.published_version_id
+                                ? `Published · ${s.published_version_id.slice(0, 8)}`
+                                : "Published · legacy snapshot"}
+                            </Badge>
+                          )}
+                        </div>
+                        {usage?.referencedBy.length ? (
+                          <p className="text-[11px] text-muted-foreground">
+                            Used by: {usage.referencedBy.join(", ")}
+                          </p>
+                        ) : null}
                         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                           <span>{nodeCount} nodes</span>
                           <span>·</span>

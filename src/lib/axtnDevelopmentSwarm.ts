@@ -1,5 +1,32 @@
 import type { Node, Edge } from "@xyflow/react";
 import type { SwarmNodeData } from "@/lib/swarmRuntime";
+import { agentToNodePatch, type ImportableAgentRow } from "@/lib/agentToSwarmNode";
+import { canonicalJson } from "@/utils/provenance/canonicalJson";
+
+export type NativeDevelopmentAgentSnapshot = {
+  agentId: string;
+  versionId: string;
+  configHash: string;
+  agent: ImportableAgentRow & {
+    memory: {
+      stm_enabled: boolean;
+      stm_window_messages: number;
+      ltm_enabled: boolean;
+    };
+  };
+};
+
+export const DEVELOPMENT_AGENT_ROLES = [
+  "builder",
+  "security",
+  "contract",
+  "maintainability",
+] as const;
+
+export const NATIVE_DEVELOPMENT_DESCRIPTION =
+  "Bounded Python normalization acceptance slice; not general Development. " +
+  "Four saved Agent roles are copied as versioned snapshots; later Agent edits do not sync. " +
+  "General use requires an exact locally accepted Solution Contract.";
 
 // Native Function snippets only validate/shape data. Execution order, fan-out,
 // joining, checkpoints and Approval remain in the existing graph runtimes.
@@ -190,6 +217,9 @@ export function createNativeDevelopmentSwarm(config: {
   model: string;
   reviewerUserIds?: string[];
   reviewerGroupIds?: string[];
+  agentSnapshots?: Partial<
+    Record<(typeof DEVELOPMENT_AGENT_ROLES)[number], NativeDevelopmentAgentSnapshot>
+  >;
 }): { nodes: Node<SwarmNodeData>[]; edges: Edge[] } {
   if (!config.provider || !config.model)
     throw new Error("Explicit existing provider/model required");
@@ -236,9 +266,17 @@ export function createNativeDevelopmentSwarm(config: {
   const agentConfig = {
     provider: config.provider,
     model: config.model,
+    maxTokens: 4096,
     temperature: 0,
     enabledTools: [],
-    memory: { stm_enabled: false, ltm_enabled: false, ltm_scope: "none" as const },
+    knowledgeBaseId: null,
+    reranker: null,
+    memory: {
+      stm_enabled: false,
+      stm_window_messages: 20,
+      ltm_enabled: false,
+      ltm_scope: "none" as const,
+    },
   };
   add("input", "input", "Development Task", {}, []);
   fn("task", "Validate immutable Task", taskCode, ["input"]);
@@ -348,6 +386,44 @@ export function createNativeDevelopmentSwarm(config: {
   for (const [index, id] of ["security", "contract", "maintainability", "verify"].entries()) {
     const node = nodes.find((n) => n.id === id);
     if (node) node.position = { x: 2400, y: index * 200 };
+  }
+  for (const role of DEVELOPMENT_AGENT_ROLES) {
+    const snapshot = config.agentSnapshots?.[role];
+    if (!snapshot) continue;
+    const node = nodes.find((value) => value.id === role);
+    if (!node || node.data.kind !== "agent")
+      throw new Error(`Native Development role missing: ${role}`);
+    const imported = agentToNodePatch(snapshot.agent);
+    if (imported.dropped.length)
+      throw new Error(`Unrepresentable saved Development Agent settings: ${role}`);
+    for (const field of [
+      "systemPrompt",
+      "provider",
+      "model",
+      "maxTokens",
+      "temperature",
+      "enabledTools",
+      "knowledgeBaseId",
+      "reranker",
+      "guardrails",
+      "toolConfigs",
+      "skillIds",
+      "memory",
+    ] as const) {
+      if (canonicalJson(imported.patch[field]) !== canonicalJson(node.data[field]))
+        throw new Error(`Saved Development Agent does not match native role: ${role}.${field}`);
+    }
+    node.data = {
+      ...node.data,
+      ...imported.patch,
+      label: node.data.label,
+      agentId: null,
+      agentSnapshot: {
+        agentId: snapshot.agentId,
+        versionId: snapshot.versionId,
+        configHash: snapshot.configHash,
+      },
+    };
   }
   return { nodes, edges };
 }

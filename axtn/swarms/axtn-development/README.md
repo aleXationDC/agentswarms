@@ -5,19 +5,32 @@ native nodes; its Function snippets only validate and shape data. Native graph
 levels provide sequencing and the parallel Break/Verify stage. There is no
 dispatcher, controller, retry engine or alternate Case/Approval store.
 
-Run `node --experimental-strip-types axtn/swarms/axtn-development/apply.mts`
-with the protected native owner environment: `SUPABASE_URL`,
+Run `npx tsx axtn/swarms/axtn-development/seed-agents.mts` first with the
+protected native owner environment and exact `AXTN_SOURCE_REVISION`. This
+provisions the four current roles and their Agent-version/memory records.
+Then run `node --experimental-strip-types axtn/swarms/axtn-development/apply.mts`
+with `SUPABASE_URL`,
 `SUPABASE_PUBLISHABLE_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` and explicit existing
 `AXTN_DEVELOPMENT_REVIEWER_USERS` and/or `AXTN_DEVELOPMENT_REVIEWER_GROUPS`
-(comma-separated UUIDs). The seed uses owner-authenticated native RLS, publishes
-the stable Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02`, verifies readback and is
-idempotent. It never edits provider integrations or credentials.
-Existing draft/published graph drift now fails explicitly rather than replacing
-operator edits or the graph behind a parked execution. Reconcile intentional
-changes through the existing native Canvas/publication lifecycle.
+(comma-separated UUIDs). The applier reads each exact saved Agent version and
+memory row, imports the representable configuration with the existing native
+snapshot helper, and rejects missing versions, dropped restrictions or role
+drift. Each graph node retains `agentId: null` and records the exact saved Agent
+ID, version ID and configuration-plus-memory fingerprint as provenance. It is
+not a live link.
+The current saved roles also carry their configured 4096-token output cap;
+browser and headless runtimes now honor the same validated node-level limit.
 
-`npx tsx axtn/swarms/axtn-development/seed-agents.mts` uses the same protected
-owner environment plus explicit `AXTN_DEVELOPMENT_PROVIDER`,
+The applier uses owner-authenticated access plus the existing versioned native
+publish lifecycle for stable Swarm
+`ad06e17d-460b-4b65-946a-9b5d78c6fd02`; it verifies the published version and
+readback and is idempotent. It never edits provider integrations or credentials.
+Unrecognized draft/published graph changes fail explicitly rather than
+replacing operator edits. Publishing the new snapshot leaves existing parked
+runs pinned to their original version.
+
+`seed-agents.mts` uses the same protected owner environment plus explicit
+`AXTN_DEVELOPMENT_PROVIDER`,
 `AXTN_DEVELOPMENT_MODEL` and exact `AXTN_SOURCE_REVISION`. It provisions the
 four current Builder/Security/Contract/Maintainability roles as native Agent
 Builder objects with native version/memory rows. It neither provisions a fake
