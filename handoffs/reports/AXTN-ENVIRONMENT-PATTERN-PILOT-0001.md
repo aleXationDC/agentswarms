@@ -5,9 +5,83 @@ Authority: request at `2bbe56be136acd35c3a8e94ba427d4974a9f897f`.
 This report distinguishes inspected source from executed tests and live proof.
 No enterprise, independent Acceptance or complete neighboring assignment PASS.
 
-## Native Case execution candidate: isolated proof, convergence withheld
+## Native Case execution: repaired deployment and restart verified
 
-### Productive readback repair
+### Current productive checkpoint
+
+Exact active App source is `a33a9c142bf4e0401713c214be14599593696f5c`,
+healthy immutable image
+`sha256:2753c3701c1eb733b4599ba706386947682da9a7ee08addba13f8af18015191c`.
+Host execution source is `7877b6f50c53cb4d82162c7ea7a7900937e86472`.
+Native ledger remains296, retaining the exact previously installed2100
+checksum; the repaired convergence does not rerun an applied migration.
+This subsequent report-only revision is not a deployed image revision.
+
+The repaired native Case-access caller was first exercised from exact source
+against the actual configured Envoy/PostgREST RPC and retained productive run.
+The complete canonical Dockerfile then passed client/SSR and all six DuckDB
+extension bakes. Kernel evidence identified global OOM with the existing
+4-GiB Development swap full. A separate temporary4-GiB pilot build swap
+provided bounded headroom and was safely disabled/removed after the build.
+Existing Development swap, fstab, providers and runtime architecture remain
+unchanged. A controller killed during the earlier attempt could not execute
+its finally block; the transient active Host configuration was restored from
+the authenticated encrypted checkpoint before the successful retry.
+
+The same Parent/executor Children record CANARY_STARTED and DEPLOYED_VERIFIED
+at the exact repaired candidate. A fresh authenticated encrypted DB/config
+checkpoint precedes the bounded native App convergence. Original Case
+content/custody, users, integrations, Approvals, runs/trace IDs and all38
+unrelated service identities/start times remain unchanged across convergence.
+Only the App is recreated; no full bootstrap or destructive database restore.
+
+Actual HTTP execution on reporting Case
+`7ca8ce19-1ef5-42c2-80c1-d4d41e3e64c6` succeeds with retained run
+`e438d7a6-eb50-41a7-8195-70929aa52cdf`. This is an explicitly synthetic,
+provider-free native graph: no semantic inference or real-document proof.
+Same-key exact replay, changed-input422, forged-control400 and the repaired
+execution-view API200 all pass. The scoped proof key is revoked in finally.
+Authenticated private HTTPS8446 browser proof loads all existing panels and
+the new execution projection on the same five Cases, reads the actual run,
+refreshes/reloads it and emits no settled alerts or JavaScript errors.
+This is host-browser proof, not public visibility or independent Acceptance.
+
+A subsequent actual App restart preserves exact five-Case Work/history,
+assignment/subtree, capacity, Pattern and execution readback, native audit,
+run/Approval/integration state and protected configuration. Ledger296,
+zero running native runs and the original one pending Approval remain;
+all38 unrelated services retain identity/image/start time.
+Evidence artifacts: `pilot-execution-deployed.json`,
+`pilot-execution-live-http.json`, `pilot-execution-browser.json`,
+`pilot-execution-restart.json`, and own Host
+`evidence/environment-pattern/20261005T-pilot-preflight.md`.
+Protected artifacts remain outside Git.
+
+Populated, not merely empty-view, runtime proof additionally exercises the
+existing authenticated user-session API on the same Cases. One explicitly
+synthetic provider/pool has4 available/1 unavailable/2 committed hours;
+append-only correction changes synthetic consumption1 ->1.5 without duplicate
+booking. Exact operation replay and typed missing-allocation denial pass.
+Parent and Child each project1.5 once, not3; no actual Human/Agent hours are
+claimed. Four capacity records and three versioned native contract usages
+persist: two positive and one negative synthetic outcomes across three Cases.
+Forecast remains UNKNOWN/EXPERIMENTAL_DISABLED, ROI null and Acceptance false.
+Authenticated UI/reload and another actual App restart preserve the now
+nonempty capacity/Pattern views. The restart probe respects the existing
+rate limit through request pacing; a preceding burst received429, without
+changing rate policy or treating it as a successful verification.
+Evidence: `pilot-capacity-pattern-runtime.json` and the updated populated
+`pilot-execution-browser.json` / `pilot-execution-restart.json`.
+
+Immediate rollback retains the healthy79f0d391 image and authenticated fresh
+checkpoint `pilot-checkpoints/execution-a33a9c142bf4/`; compatible additive
+schema is retained. The earlier a5f53aba readback defect required one actual
+App rollback; no second rollback was required after the repaired convergence.
+Real three-document/provider, colleague, remote-autonomous-system and genuine
+independent-review gates are not replaced by these synthetic proofs.
+Parent and Acceptance Child remain open; no self-Acceptance, merge/tag/release.
+
+### Historical productive readback defect and repair
 
 Exact source `a5f53aba13479c196763a68d721396f3bba6ce81` passed all source
 gates and its canonical native image build. Controlled App/additive2100
@@ -162,12 +236,11 @@ complete fresh2100 schema. This verified source candidate is eligible for
 the assignment's bounded native App/additive-schema convergence, not a
 merge/release or independent Acceptance.
 
-Fresh live readback remains healthy App
+Historical pre-execution live readback was healthy App
 `79f0d3911a2865798ea8034597c1357b5deec06b`, image
 `sha256:6537525158b812f9d0dfd394f23f291f39389d37ecaeb8df6c14e666bbff0288`,
 ledger295/latest `20261005200000_case_responsibility.sql`, zero running
-native runs and the same genuine suspended Development run. Migration2100
-is not applied to PROD. Source and canary progress do not change the overall
+native runs and the same genuine suspended Development run. Migration2100 was not yet applied to PROD at that checkpoint. Source and canary progress do not change the overall
 SC01-18/35-question/E1-9 or neighboring DMS/Development Acceptance boundary.
 
 ## Initial checkpoint and coordination
@@ -870,11 +943,12 @@ the retained original App image/configuration with additive schema preserved;
 no destructive live database restore is authorized or executed. Rollback was
 not needed.
 
-This is **partial deployed functional evidence**, not whole-pilot Acceptance.
-The actual server-derived sticky Case/run/Attempt execution binding and
-deterministic Group claim remain a concrete implementation gap; existing route
-metadata must not be interpreted as a PERSONAL_CONNECTION budget/credential
-binding. Real three-document use-case gates, actual independent reviewer,
+That first convergence was **partial deployed functional evidence**, not
+whole-pilot Acceptance. At that checkpoint server-derived sticky
+Case/run/Attempt execution binding and deterministic Group claim were a
+concrete gap. The subsequent native2100 execution increment and repaired
+deployment above resolve that implementation gap; route metadata alone
+still does not constitute a PERSONAL_CONNECTION budget/credential binding. Real three-document use-case gates, actual independent reviewer,
 remote autonomous environments and unresolved P01-P38 definitions remain
 truthfully open. Continue the same assignment/Cases; do not merge, self-accept
 or close the Parent.
