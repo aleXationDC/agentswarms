@@ -367,9 +367,9 @@ so it was preserved rather than treated as disposable task residue.
 
 | Dimension | Status |
 |---|---|
-| Implemented | Parent graph correction and exact-router runtime correction are source-controlled; runtime correction is App commit `6c13432b` on the existing branch. |
-| Tested | 19 focused tests and targeted ESLint pass. Typecheck exited 137; no production build for `6c13432b`. |
-| Deployed | App source `a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79` and its image are healthy; exact-router commit `6c13432b` is not deployed. |
+| Implemented | Parent graph correction, exact-router runtime correction and native router-mode editor are source-controlled; latest App candidate `2bada0814fca2ac719518310cea2ce5113fd0a2c`. |
+| Tested | Latest exact source passed full `npm run check`; see validation below. |
+| Deployed | App source `a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79` and its image are healthy; candidate `2bada081` is not yet image-built or deployed. |
 | Visible / editable | Authenticated DMS Agent Builder, Skill/KB bindings, saved Agent version and Parent Canvas are evidenced. The Canvas screenshot is zoomed out; the exact version/hash are also recorded above. |
 | Case Management | Native Case Swarm panel is visible on the existing generic Case. No corrected Run was started; successful result persistence/reload is not demonstrated. |
 | Development | Development Agent Builder entries are visible in the captured Library; no new Development Swarm Canvas or end-to-end UI click-path evidence was collected in this continuation. |
@@ -383,3 +383,28 @@ remaining routes stay fail-closed and no external effect can fire. Do not
 decide any Approval. Finish the Case/Development UI demonstrations and update
 the Host pins with the exact source, image and runtime evidence before
 claiming the broader readiness goal.
+
+### Exact-router native editor and complete source validation
+
+App commit `2bada0814fca2ac719518310cea2ce5113fd0a2c` adds a native Node
+Inspector control for router mode (`LLM classification` or `Exact route
+value`) with fail-closed behavior explained in the UI. This makes the route
+mode used by the reconstructed DMS graph natively inspectable and editable;
+the choice is saved in the normal graph snapshot. The DMS dependency inventory
+and regression assertions now reflect the authenticated published Parent and
+the exact source hash for the executor.
+
+**Source validation:** `npm run check` passed on the exact source tree before
+commit: typecheck; lint with zero errors and 235 existing warnings; docs,
+Markdown and command checks; infrastructure check (one missing-tool check
+skipped); 610 test files with 10,010 passed and 40 skipped; production
+client/server build passed. Focused exact-router, inventory, graph and editor
+tests passed (28/28). No skips are counted as passes.
+
+The check used the documented temporary 4-GiB build-only swap at
+`~/.local/share/axtn/native/environment-pilot-build.swap`; it was root-owned,
+0600, and separate from the existing full Development swap. During the check,
+about 1.4 GiB of the temporary reserve was used; physical available RAM
+returned to 6.4 GiB after completion. It remains temporarily active only for
+the immediate exact-source Docker image build; cleanup is pending. No service
+was stopped, and no task-owned test/build process remains.

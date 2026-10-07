@@ -116,8 +116,8 @@
       "deployedSourceRevision": "a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79",
       "image": "sha256:aa3730e2f042af63ae1533847b9d1ca3b09f859a8789c3eef852c422b8ffa1e1",
       "health": "healthy",
-      "candidateExactRouterRevision": "6c13432b",
-      "candidateExactRouterTests": "19 focused tests and targeted ESLint PASS; typecheck exit 137; build not attempted"
+      "candidateExactRouterRevision": "2bada0814fca2ac719518310cea2ce5113fd0a2c",
+      "candidateExactRouterTests": "npm run check PASS: typecheck, lint (0 errors; 235 existing warnings), 610 test files / 10010 PASS / 40 SKIP, docs and infra checks (one missing-tool skip), production build PASS"
     },
     "documentManagementParent": {
       "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
