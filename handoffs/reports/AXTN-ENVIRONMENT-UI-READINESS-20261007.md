@@ -312,6 +312,22 @@ historical evidence; it is not a post-correction success.
 - [Published Parent Canvas, 52 nodes](../../evidence/dms-reconstruction-v1/parent-published-canvas.png)
 - [Historical failed synthetic Case Run](../../evidence/dms-reconstruction-v1/case-pre-fix-run.png)
 
+### Short, safe demonstration path
+
+1. Open `/swarms`, select the Document Management main workflow, and open its
+   Canvas. Confirm the 52-node graph and published revision above; inspect the
+   connected Intake, Privacy and Cleanup sub-swarms without changing them.
+2. Open `/agents`, inspect both `Reconstruction v1` Stage Agents, their
+   saved-version history and Skill/Knowledge bindings; open `/knowledge` to
+   show the indexed non-sample contract document.
+3. Open `/cases` and the existing synthetic Case. The current evidence shows
+   its preserved pre-fix failed Run. Do not start another Run from this
+   deployed image: its router executor lacks the pushed exact-mode fix.
+4. The Agent Builder capture also shows Development Agent cards. A current
+   authenticated Development main-Swarm Canvas and execution click path were
+   not captured here; do not present this partial path as end-to-end
+   Development UI acceptance.
+
 ### Synthetic-run safety gate and executor correction
 
 The existing Case `e6119ef6-9850-4e00-a992-f619e7803f0a` is a generic
@@ -336,6 +352,13 @@ was available and 3.9/4 GiB swap was occupied. No production build was
 attempted, no further heap increase was tried, and no production service or
 container was stopped. Therefore the new executor behavior is not typecheck-,
 build- or runtime-verified and the synthetic Run remains gated.
+
+The final process check found no active task-owned build, Vitest, TypeScript
+or browser process. The three temporary DMS probe scripts were removed; the
+temporary browser storage-state file is absent. Product containers were left
+running. One unlabeled container, `interesting_johnson`, uses about 21 MiB and
+has been up for 19 days; its ownership and purpose could not be established,
+so it was preserved rather than treated as disposable task residue.
 
 ### Current handoff status
 
