@@ -27,6 +27,7 @@ import {
   interpolate,
   resolveStatePath,
   gatherInputs,
+  resolveExactRoute,
   topoLevels,
   hasDoneSignal,
   decideYesNo,
@@ -944,18 +945,23 @@ export async function executeSwarmServer(opts: {
               ),
             );
             if (choices.length === 0) throw new Error("Router node has no labeled outgoing edges.");
-            const out = await chat({
-              origin: opts.origin,
-              userId: opts.userId,
-              node,
-              systemPrompt:
-                "You are a strict routing classifier. Reply with exactly one route name from the provided list — no other text.",
-              userMessage: `${d.routerPrompt || "Pick the single best route."}\n\nINPUT:\n${routerInput}\n\nAvailable routes:\n${choices.map((c) => `- ${c}`).join("\n")}\n\nReply with ONLY one route name.`,
-            });
+            const out =
+              d.routerMode === "exact"
+                ? routerInput
+                : await chat({
+                    origin: opts.origin,
+                    userId: opts.userId,
+                    node,
+                    systemPrompt:
+                      "You are a strict routing classifier. Reply with exactly one route name from the provided list — no other text.",
+                    userMessage: `${d.routerPrompt || "Pick the single best route."}\n\nINPUT:\n${routerInput}\n\nAvailable routes:\n${choices.map((c) => `- ${c}`).join("\n")}\n\nReply with ONLY one route name.`,
+                  });
             const lower = out.trim().toLowerCase();
             const picked =
-              choices.find((c) => c.toLowerCase() === lower) ??
-              choices.find((c) => lower.includes(c.toLowerCase()));
+              d.routerMode === "exact"
+                ? resolveExactRoute(routerInput, choices)
+                : (choices.find((c) => c.toLowerCase() === lower) ??
+                  choices.find((c) => lower.includes(c.toLowerCase())));
             // Was choices[0], which silently sent the run down an arbitrary
             // branch and still reported success — potentially straight past an
             // approval gate. Throwing lets retryCount re-ask, and a genuinely

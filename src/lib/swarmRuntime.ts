@@ -219,9 +219,9 @@ export type SwarmNodeData = {
   }[];
   // condition
   conditionPrompt?: string; // a question whose YES/NO answer chooses the edge
-  // router — N-way intelligent router. The LLM picks one of the outgoing
-  // edge labels; matching branch runs, others are skipped via deadEdges.
+  // router — LLM-classified by default; exact mode routes a precomputed value.
   routerPrompt?: string;
+  routerMode?: "exact" | "llm";
   // loop
   maxIters?: number;
   // approval
@@ -568,6 +568,20 @@ export function gatherInputs(
   if (present.length === 0) return fallback;
   if (present.length === 1) return ctx[present[0]];
   return present.map((n) => `${n}: ${ctx[n]}`).join("\n\n");
+}
+
+export function resolveExactRoute(input: string, choices: readonly string[]): string {
+  const normalized = String(input ?? "")
+    .trim()
+    .toLowerCase();
+  const matches = choices.filter((choice) => choice.trim().toLowerCase() === normalized);
+  if (matches.length !== 1) {
+    throw new Error(
+      `Exact router input must match one labeled route. Expected one of ` +
+        `[${choices.join(", ")}], got: ${String(input ?? "").trim() || "(empty)"}`,
+    );
+  }
+  return matches[0];
 }
 
 // Stream a chat completion through /api/chat. Returns the final assistant text
@@ -1398,30 +1412,35 @@ export async function runSwarm(
           const prompt =
             (node.data.routerPrompt || "Pick the single best route for the user's request.") +
             `\n\nINPUT:\n${routerInput}\n\nAvailable routes:\n${routeList}\n\nReply with ONLY one route name from the list above. No prose, no punctuation.`;
-          const judgement = await callAgent(
-            {
-              ...node,
-              data: {
-                ...node.data,
-                systemPrompt:
-                  "You are a strict routing classifier. Reply with exactly one route name from the provided list — no other text.",
-              },
-            },
-            prompt,
-            (tok) => onEvent({ type: "node_token", nodeId: node.id, token: tok }),
-            signal,
-            swarmRunId,
-            captureUsage(node.id),
-            captureMeta(node.id),
-            captureThinking(node.id),
-          );
-          // Resolve the LLM reply to a known choice — exact match first, then
-          // case-insensitive, then "contains".
+          const judgement =
+            node.data.routerMode === "exact"
+              ? routerInput
+              : await callAgent(
+                  {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      systemPrompt:
+                        "You are a strict routing classifier. Reply with exactly one route name from the provided list — no other text.",
+                    },
+                  },
+                  prompt,
+                  (tok) => onEvent({ type: "node_token", nodeId: node.id, token: tok }),
+                  signal,
+                  swarmRunId,
+                  captureUsage(node.id),
+                  captureMeta(node.id),
+                  captureThinking(node.id),
+                );
+          // Resolve exact routes strictly; LLM routes keep the existing fallback matching.
           const raw = String(judgement).trim();
           const lower = raw.toLowerCase();
-          let picked = choices.find((c) => c === raw);
-          if (!picked) picked = choices.find((c) => c.toLowerCase() === lower);
-          if (!picked) picked = choices.find((c) => lower.includes(c.toLowerCase()));
+          const picked =
+            node.data.routerMode === "exact"
+              ? resolveExactRoute(routerInput, choices)
+              : (choices.find((c) => c === raw) ??
+                choices.find((c) => c.toLowerCase() === lower) ??
+                choices.find((c) => lower.includes(c.toLowerCase())));
           if (!picked) {
             // This used to default to choices[0], which sent the run down an
             // arbitrary branch while still reporting success — a misroute was

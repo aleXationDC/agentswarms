@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { resolveExactRoute } from "@/lib/swarmRuntime";
 import {
   clampIters,
   FOREACH_DEFAULT_ITEMS,
@@ -44,6 +45,27 @@ const NODE_KINDS = [
   "approval",
   "subswarm",
 ];
+
+describe("exact router nodes", () => {
+  it("matches only one complete route label, ignoring case and outer whitespace", () => {
+    expect(resolveExactRoute("  no_ai ", ["UNRESOLVED", "NO_AI"])).toBe("NO_AI");
+  });
+
+  it("fails closed for partial or ambiguous route labels", () => {
+    expect(() => resolveExactRoute("NO_AI maybe", ["NO_AI", "UNRESOLVED"])).toThrow(
+      "Exact router input must match one labeled route",
+    );
+    expect(() => resolveExactRoute("Route", ["Route", "route"])).toThrow(
+      "Exact router input must match one labeled route",
+    );
+  });
+
+  it("does not call an LLM for exact routes in either executor", () => {
+    expect(canvas).toMatch(/routerMode === "exact"\s*\?\s*routerInput\s*:\s*await callAgent/);
+    expect(server).toMatch(/routerMode === "exact"\s*\?\s*routerInput\s*:\s*await chat/);
+    expect(server).toContain("resolveExactRoute(routerInput, choices)");
+  });
+});
 
 describe("both executors handle the same node kinds", () => {
   it("has no kind only one of them knows about", () => {
@@ -136,6 +158,7 @@ describe("graph semantics come from one module", () => {
       "decideYesNo",
       "interpolate",
       "resolveStatePath",
+      "resolveExactRoute",
       "SkipTracker",
       "canContinueOnError",
       "retryPolicyOf",
