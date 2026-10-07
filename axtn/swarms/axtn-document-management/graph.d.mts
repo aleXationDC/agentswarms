@@ -14,13 +14,12 @@ export type NativeGraph = {
   edges: Array<{ id: string; source: string; target: string; label?: string }>;
 };
 export type RecoveredDocumentAgent = {
-  id: string;
-  llm_provider: string;
-  llm_model: string;
-  system_prompt: string | null;
-  temperature: number;
-  knowledge_base_id?: string | null;
-  tools?: { skillIds?: string[] };
+  nodePatch: Record<string, unknown>;
+  agentSnapshot: {
+    agentId: string;
+    versionId: string;
+    configHash: string;
+  };
 };
 export function buildPrivacyGraph(): NativeGraph;
 export function buildParentGraph(config: {

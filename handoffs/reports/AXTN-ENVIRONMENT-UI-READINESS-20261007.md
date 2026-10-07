@@ -60,49 +60,46 @@ inventory, request and report history (including `7123d0ef`, `6e507811`,
 This is bounded negative evidence, not a claim that no older external backup
 could exist.
 
-## Minimum replacement design — decision required
+## Approved Reconstruction v1
 
-This is a new-version proposal, **not** a recovered historical configuration
-and not yet authorized for provisioning:
+Decision `801b96c30b62da7c34374b8cd205af324191313a` explicitly authorizes
+provisioning two new bounded Stage Agents, required Skills and Knowledge Base,
+exact version snapshots, native publication, deployment and a synthetic
+functional/UI demonstration. This authorizes a new version; it does **not**
+recover the historical Stage Agent IDs or payloads. The historical provider,
+prompts, Skills and KB remain unrecovered.
 
-1. Keep the recovered Parent, Intake, Privacy and Cleanup graph identities and
-   deterministic routing/projection/Approval controls. Do not replace them
-   with a hidden dispatcher or parallel registry.
-2. If no authoritative Agent export is supplied, create two distinctly named
-   native Agent Builder roles with new IDs: `Document Triage (replacement
-   v1)` and `Document Processing (replacement v1)`. Preserve the two separate
-   Stage contracts in the recovered graph; no evidence authorizes treating
-   them as one reused historical Agent.
-3. Triage may propose only one of the six already seeded document classes,
-   a bounded confidence/abstention result and typed candidate fields.
-   Processing may propose only fields accepted by the existing deterministic
-   Registry projection. Both agents have no direct effect tools, cannot decide
-   privacy/rights/approval/filing, and must abstain on ambiguity. The native
-   graph/server remains the authority for validation and effects.
-4. Use only the already configured Gemini integration if its normal native
-   test succeeds; pin the selected model and exact settings in the new saved
-   Agent version. Proposed deterministic settings are temperature `0.0` and
-   max output `4096`; these are new choices, not historical facts. Do not
-   change provider credentials.
-5. Bind no Skills or KBs in this minimal version: none are present and the
-   only existing KB content is marked sample. If operational Skills/KBs are
-   required, their exact nonsecret source/content and rights must be provided
-   or explicitly authorized before provisioning.
-6. Save each Agent through Agent Builder, then import its exact saved version
-   into the native Canvas using the existing faithful snapshot helper. The
-   node must retain `agentId: null` plus saved Agent ID, exact version ID and
-   config/memory fingerprint. Updating an Agent requires an explicit new
-   snapshot and Swarm publication; existing Runs stay pinned.
-7. Exercise only a synthetic document on the existing DMS Work Case, with
-   external filing disabled until current n8n workflow/credential/provider
-   rights and effect readback have been verified. Keep the current suspended
-   Run and pending Approval untouched.
+Implementation is source-controlled under
+`axtn/swarms/axtn-document-management/reconstruction-v1.mjs` and
+`src/utils/axtnDocumentManagementSeed.server.ts`. The authenticated bootstrap
+endpoint is reused; no new credential, dispatcher or registry is introduced.
+The owner-scoped seed rejects ID/name ownership conflicts and configuration
+drift, creates a non-sample contract KB using the existing embedding pipeline,
+saves exact Agent versions, imports nodes using `agentToNodePatch`, and stores
+`agentId: null` with saved Agent ID/version/hash provenance. Publication uses
+`publishSwarmForOwner`, retaining prior versions and existing Run snapshots.
 
-Before this replacement may be provisioned, implement/test the DMS-specific
-exact-version import/publish path and obtain the explicit architecture decision
-on two new Agent roles, the proposed settings, and intentional absence of
-Skills/KBs. Exact historical exports from Gitea remain preferred and may
-replace this proposal if they are complete and authoritative.
+Provider/model/temperature `openai` / `gpt-4o-mini` / `0` and `max_tokens: 2048`
+are explicit Reconstruction v1 settings, not recovered history. Both Skills
+and the KB are sourced only from recovered Stage/route/projection constraints
+and the approved safety boundary; they contain no customer documents or
+invented operational examples. Agents have no effect tools, reject PII and
+cannot decide privacy, rights, approval or external effects.
+
+## Privacy, Approval and effect gates
+
+The recovered Privacy graph still references the unregistered
+`privacy_preflight` tool. The installed source has a bounded Presidio client
+and offline pseudonymizer but no registered resolver, protected
+source/rights/coverage receipt or active internal analyzer in the current
+runtime. No local detector or caller assertion is substituted for this
+authority. Thus `UNRESOLVED` content must fail closed; the synthetic demo must
+use an explicit NO_AI path and cannot exercise semantic processing or imply
+Stage-Agent execution. Full semantic DMS remains blocked until those already
+specified privacy boundaries can be activated through the existing service.
+Native DMS Approval binding, current rights, provider credentials/effect
+receipt and independent acceptance remain separate. No real file or deletion
+effect is authorized by this seed.
 
 ## UI evidence boundary and demonstration steps
 
@@ -111,11 +108,11 @@ Source-known native entry routes are `/swarms`, `/agents`, `/skills`,
 App entrypoint above. The active Environment currently has no DMS parent,
 Privacy or Cleanup Swarm to open, no Stage Agents/Skills, and the Intake draft
 is not published. No authenticated browser/session or browser capture tool was
-available in this execution. Therefore no click path, reload persistence,
-tablet view or screenshot is claimed.
+available in the earlier recovery execution; it did not claim a click path,
+reload persistence, tablet view or screenshot.
 
-After the decision, native installation and authorized deployment, the
-privacy-safe click path is:
+After the authorized native installation and deployment, the privacy-safe
+click path is:
 
 1. In `/swarms`, open Document Management and inspect its published revision;
    open its Intake, Privacy and Cleanup child Swarms from the actual graph.
@@ -124,10 +121,12 @@ privacy-safe click path is:
 3. Return to the Canvas; inspect each `agentSnapshot` ID/version/fingerprint,
    save a controlled draft change, publish a new version, reload and confirm
    the same new version. Keep any existing Run snapshots unchanged.
-4. On the existing DMS Work Case in `/cases`, start the authorized synthetic
-   path and inspect its Case-bound Run/result, then verify reload persistence.
-   Do not create a reporting Case or alter the pending Approval/suspended Run.
+4. On an existing DMS Work Case in `/cases`, run only the supported NO_AI
+   synthetic route, inspect the persisted Case/Run/result and verify reload
+   persistence. This route does not execute either semantic Stage Agent. Do not
+   create a reporting Case or alter the pending Approval/suspended Run.
 
-This sequence is not yet executed. DMS state is therefore **source: recovered
-and verified / installed: partial foundations only / UI checked: no /
-functional end-to-end: no / independently accepted: no**.
+This is the pre-install recovery state. The approved Reconstruction v1
+implementation and each subsequent install, deploy, UI and Run evidence update
+must be recorded below without collapsing source, installation, visibility,
+execution and independent Acceptance into one status.

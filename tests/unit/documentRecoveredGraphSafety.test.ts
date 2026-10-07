@@ -19,11 +19,23 @@ function execute(graph: Graph, id: string, vars: Record<string, unknown>) {
   );
 }
 const agent = {
-  id: "fixture",
-  llm_provider: "fixture-only",
-  llm_model: "fixture-only",
-  system_prompt: "fixture-only",
-  temperature: 0,
+  nodePatch: {
+    agentId: null,
+    provider: "fixture-only",
+    model: "fixture-only",
+    systemPrompt: "fixture-only",
+    temperature: 0,
+    maxTokens: 2048,
+    knowledgeBaseId: "kb-fixture",
+    enabledTools: ["kb_search"],
+    skillIds: ["skill-fixture"],
+    guardrails: { blockPII: true, piiMode: "block", piiApplyTo: "both" },
+  },
+  agentSnapshot: {
+    agentId: "agent-fixture",
+    versionId: "version-fixture",
+    configHash: "a".repeat(64),
+  },
 };
 const parent: Graph = buildParentGraph({ triage: agent, processing: agent });
 const cleanup: Graph = buildCleanupGraph();
@@ -48,6 +60,19 @@ const receipt = {
 };
 
 describe("recovered native graph safety before publication", () => {
+  it("imports bounded Agent settings as independent, provenance-linked snapshots", () => {
+    const triage = parent.nodes.find((node) => node.id === "stage1_triage");
+    expect(triage?.data).toMatchObject({
+      kind: "agent",
+      agentId: null,
+      agentSnapshot: agent.agentSnapshot,
+      knowledgeBaseId: "kb-fixture",
+      enabledTools: ["kb_search"],
+      skillIds: ["skill-fixture"],
+      guardrails: { blockPII: true, piiMode: "block", piiApplyTo: "both" },
+      maxTokens: 2048,
+    });
+  });
   it("uses provider identity, exact target/name and explicit instruction instead of filed=true", () => {
     expect(
       execute(parent, "filing_result_verify", {

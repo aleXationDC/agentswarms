@@ -7,14 +7,14 @@ seed, runtime activation or production-ready DMS**.
 
 `dependencies.json` inventories exact stable IDs, provenance/source hashes,
 native dependencies, observed missing values and separate implementation,
-test, deployment and runtime-verification states. It must not be consumed as
-invented Agent, Skill, Knowledge Base, provider credential or owner settings.
-Exact later semantic definitions remain unresolved; demo/predecessor settings
-are not replacements.
+test, deployment and runtime-verification states. Historical Agent, Skill and
+Knowledge Base payloads remain unrecovered. The separately approved
+`Reconstruction v1` definitions below are new versions, not historical
+recovery; demo/predecessor settings and provider credentials are not imported.
 
 ## Historical Agent restoration blocker
 
-The authoritative inventory currently marks the exact historical Stage Agent
+The inventory marks the exact historical Stage Agent
 IDs `54edaad4-4726-4781-ae07-5df795434837` (triage) and
 `02482fe8-1970-447a-97d7-8898ab8abaae` (processing) as unrecovered. The
 inventory records that the exact later provider/model, prompts, temperatures,
@@ -22,10 +22,45 @@ tools, guardrails, Skills and Knowledge Base bindings are unavailable in the
 checked sources. A search across all fetched Gitea branches/history found
 these IDs only in graph, dependency, request and report artifacts; no saved
 Agent or Agent-version payload was present. The earlier live report only
-documents partial wiring and does not supply these configurations. Do not
-create substitute Agent Builder objects or activate a parent graph with
-missing stages; restore only from an authoritative exact Agent/version source
-and read back its complete settings.
+documents partial wiring and does not supply these configurations. Decision
+`801b96c30b62da7c34374b8cd205af324191313a` explicitly authorizes the new
+`Reconstruction v1` Agents, required Skills and Knowledge Base. Their names,
+version labels, prompts and source hashes must never be represented as the
+historical payloads.
+
+## Approved Reconstruction v1
+
+`reconstruction-v1.mjs` is the owner-bound source for two bounded proposal
+Agents, their two native Agent Builder Skills and a non-sample contract
+Knowledge Base. Its contents are limited to the recovered Stage 1/2 projection
+and route contracts and the approved safety boundaries; it contains no
+customer document or invented historical setting.
+
+Run the existing authenticated bootstrap transport as the configured
+superadmin:
+
+```sh
+node axtn/swarms/axtn-document-management/seed.mjs
+```
+
+The endpoint reuses native Registry, Local Table and Case-bound Intake seed
+operations; Skills and KB are owner-bound; the KB is embedded through the
+owner's existing connected provider and stamped with the actual model-space
+provenance. Missing providers, foreign ownership, name collisions and drift
+fail rather than reset existing rows. Agent configurations are saved as
+`manual` `DMS reconstruction-v1` versions and imported through
+`agentToNodePatch`; the Parent Canvas stores `agentId: null` and immutable
+Agent/version/hash metadata. Published snapshots and existing Runs are not
+rewritten when an Agent is edited later. The Parent is published only after
+the native Children and exact Agent snapshots are persisted.
+
+This seed does not activate real filing/deletion, invent privacy authority or
+resolve historical settings. The recovered `privacy_preflight` node still has
+no current registered resolver; the local analyzer requires the separately
+configured and verified internal Presidio service plus protected
+source/rights/coverage evidence. Therefore `UNRESOLVED` input remains blocked.
+The seed's deployment or a successful non-privacy route is not a complete
+semantic DMS acceptance; current gates are tracked in the UI-readiness report.
 
 The 2026-10-07 Gitea/runtime dependency readback and explicitly non-historical
 minimal replacement proposal are recorded in

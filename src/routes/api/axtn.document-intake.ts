@@ -6,6 +6,7 @@ import {
   seedAxtnDocumentIntake,
   seedAxtnDocumentCaseIntake,
 } from "@/utils/axtnDocumentIntakeSeed.server";
+import { installAxtnDocumentManagement } from "@/utils/axtnDocumentManagementSeed.server";
 import { requireSuperadmin } from "@/utils/iam.server";
 import { seedDocumentRegistries } from "@/axtn/workbenches/documents/documentRegistries.server";
 import { seedDocumentLocalTable } from "@/axtn/workbenches/documents/documentLocalTableSeed.server";
@@ -47,6 +48,7 @@ async function handle(request: Request): Promise<Response> {
     action !== "seed" &&
     action !== "apply" &&
     action !== "seed_case" &&
+    action !== "seed_dms" &&
     action !== "seed_registries" &&
     action !== "seed_local_table"
   ) {
@@ -73,6 +75,14 @@ async function handle(request: Request): Promise<Response> {
       return json(200, {
         ...result,
         message: "Case-bound Document Intake reconciled through native publish.",
+      });
+    }
+    if (action === "seed_dms") {
+      const result = await installAxtnDocumentManagement(auth.user.id);
+      return json(200, {
+        ...result,
+        message:
+          "DMS Reconstruction v1 native dependencies and Swarm snapshots installed and published.",
       });
     }
     if (action === "seed") {

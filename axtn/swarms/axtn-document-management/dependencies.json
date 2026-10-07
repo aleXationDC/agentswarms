@@ -4,6 +4,14 @@
   "historicalRevision": "7123d0ef167e72b39ee39a944e418003a253f50f",
   "ownerBinding": "authenticated-bootstrap-owner; no sample-owner substitution",
   "deploymentState": "NOT_DEPLOYED",
+  "approvedReconstructionV1": {
+    "decisionRevision": "801b96c30b62da7c34374b8cd205af324191313a",
+    "status": "SOURCE_IMPLEMENTED_TESTED_DEPLOYMENT_PENDING",
+    "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
+    "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
+    "historicalAgentPayloadsRecovered": false,
+    "independentAcceptance": "PENDING"
+  },
   "activeEnvironmentReadback": {
     "observedAt": "2026-10-07T06:31:00Z",
     "sourceAuthority": "Gitea revisions plus scoped read-only native runtime metadata; no prompt, token, credential, endpoint or document body read",
@@ -107,12 +115,14 @@
       "kind": "swarm",
       "name": "Document Management",
       "source": "axtn/swarms/axtn-document-management/graph.mjs",
-      "sourceSHA256": "e4740e0b187e302d091ce0b4175c7b329761387a227e1f6b30226750b26b9c31",
+      "sourceSHA256": "ba4f8ce728b472a4528b9ccce82cf671e454d7d2f77289c7cbca1d826e344d8b",
       "dependencies": [
         "intake",
         "privacy",
-        "triage",
-        "processing",
+        "stage1-triage-reconstruction-v1",
+        "stage2-processing-reconstruction-v1",
+        "dms-skills-reconstruction-v1",
+        "dms-knowledge-base-reconstruction-v1",
         "local-table",
         "registry-seed",
         "case-profile",
@@ -126,8 +136,8 @@
         "cleanup"
       ],
       "recovered": true,
-      "implemented": "historical native composition plus bounded filing-readback repair; protected Approval adapter tested separately, graph wiring/effects still required",
-      "tested": "Function fixtures only; not full Parent execution",
+      "implemented": "historical graph plus explicitly approved Reconstruction v1 Stage Agents, Skill/KB snapshots and owner-bound publish seed; privacy resolver/authority and real effects remain blocked",
+      "tested": "pure source contract and exact Agent snapshot import fixtures; no deployed Parent execution",
       "deployed": false,
       "runtimeVerified": false
     },
@@ -176,7 +186,7 @@
       "source": "axtn/swarms/axtn-document-management/graph.mjs",
       "dependencies": ["privacy-preflight", "local-ocr"],
       "recovered": true,
-      "implemented": "historical native graph only; service/rights binding pending",
+      "implemented": "recovered Privacy graph; actual local analyzer service, native tool resolver and protected source/rights/coverage receipt remain unavailable",
       "tested": false,
       "deployed": false,
       "runtimeVerified": false
@@ -211,7 +221,7 @@
       "tested": false,
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Exact later Gemini model, prompt, temperature, tools, guardrails, Skill and KB bindings absent from checked authoritative Source/runtime/backups. Earlier differently identified agent is not a replacement."
+      "gap": "Historical exact Stage 1 payload remains unrecovered; authorized Reconstruction v1 is recorded separately."
     },
     {
       "id": "02482fe8-1970-447a-97d7-8898ab8abaae",
@@ -224,23 +234,86 @@
       "tested": false,
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Exact later provider/model/prompt/temperature/tools/guardrails and Skill/KB bindings not recovered. No sample or Development-provider substitution."
+      "gap": "Historical exact Stage 2 payload remains unrecovered; authorized Reconstruction v1 is recorded separately."
+    },
+    {
+      "id": "e1000000-0000-4000-8000-000000000021",
+      "name": "stage1-triage-reconstruction-v1",
+      "kind": "agent",
+      "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
+      "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
+      "dependencies": ["skills", "knowledge-bases"],
+      "recovered": false,
+      "approved": true,
+      "implemented": "new Stage 1 bounded proposal Agent, exact manual version and importer snapshot; not historical payload",
+      "tested": "pure definition, safety and native snapshot contract tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Owner install, provider call, published Parent and authenticated UI proof remain pending."
+    },
+    {
+      "id": "e1000000-0000-4000-8000-000000000022",
+      "name": "stage2-processing-reconstruction-v1",
+      "kind": "agent",
+      "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
+      "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
+      "dependencies": ["skills", "knowledge-bases"],
+      "recovered": false,
+      "approved": true,
+      "implemented": "new Stage 2 bounded proposal Agent, exact manual version and importer snapshot; not historical payload",
+      "tested": "pure definition, safety and native snapshot contract tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Owner install, provider call, published Parent and authenticated UI proof remain pending."
+    },
+    {
+      "name": "dms-skills-reconstruction-v1",
+      "kind": "agent-skills",
+      "ids": ["e1000000-0000-4000-8000-000000000011", "e1000000-0000-4000-8000-000000000012"],
+      "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
+      "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
+      "dependencies": ["stage1-triage-reconstruction-v1", "stage2-processing-reconstruction-v1"],
+      "recovered": false,
+      "approved": true,
+      "implemented": "two native Skill definitions with bounded proposal-only roles; not historical payloads",
+      "tested": "pure definition and exact Agent binding tests",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Owner install and authenticated Library UI proof remain pending."
+    },
+    {
+      "id": "e1000000-0000-4000-8000-000000000001",
+      "name": "dms-knowledge-base-reconstruction-v1",
+      "kind": "knowledge-base",
+      "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
+      "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
+      "documentId": "e1000000-0000-4000-8000-000000000002",
+      "dependencies": ["stage1-triage-reconstruction-v1", "stage2-processing-reconstruction-v1"],
+      "recovered": false,
+      "approved": true,
+      "implemented": "non-sample bounded Stage/route contract document with native chunking and provider/model provenance; no customer data",
+      "tested": "exact source, ownership, chunk content and embedding provenance checks defined",
+      "deployed": false,
+      "runtimeVerified": false,
+      "gap": "Provider embedding, native retrieval and authenticated Library UI proof remain pending."
     },
     {
       "name": "skills",
       "kind": "skill",
       "recovered": false,
+      "implemented": "two separately version-labelled native Skills are defined in approved Reconstruction v1; historical Skill IDs/payloads remain unrecovered",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "No native Skills in observed production; exact referenced later IDs/content unresolved."
+      "gap": "Installation, UI verification and runtime binding remain pending."
     },
     {
       "name": "knowledge-bases",
       "kind": "knowledge-base",
       "recovered": false,
+      "implemented": "one non-sample contract Knowledge Base with native embedding/chunking is defined in approved Reconstruction v1; historical KB payloads remain unrecovered",
       "deployed": false,
       "runtimeVerified": false,
-      "gap": "Observed KBs/documents are platform samples, not authoritative DMS definitions or bindings."
+      "gap": "Installation, retrieval verification and runtime binding remain pending."
     },
     {
       "name": "local-table",

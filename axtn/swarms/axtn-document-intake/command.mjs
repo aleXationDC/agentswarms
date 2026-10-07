@@ -36,7 +36,7 @@ export async function runDocumentIntakeCommand(action) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ action }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(action === "seed_dms" ? 120000 : 15000),
   });
   if (!response.ok) {
     throw new Error(`Document Intake ${action} failed with HTTP ${response.status}.`);

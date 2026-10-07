@@ -606,21 +606,23 @@ export function buildPrivacyGraph() {
 export function buildParentGraph(agentConfigs) {
   const triage = agentConfigs.triage;
   const processing = agentConfigs.processing;
+  if (
+    !triage?.nodePatch ||
+    !triage?.agentSnapshot ||
+    !processing?.nodePatch ||
+    !processing?.agentSnapshot
+  )
+    throw new Error("both saved stage agent snapshots are required for the restored parent graph");
   const agent = (id, label, config, outputVar, inputs, x, y) =>
     node(
       id,
       "agent",
       {
         kind: "agent",
+        ...config.nodePatch,
         label,
-        agentId: config.id,
-        provider: String(config.llm_provider),
-        model: String(config.llm_model),
-        systemPrompt: config.system_prompt == null ? "" : String(config.system_prompt),
-        temperature: Number(config.temperature),
-        knowledgeBaseId: config.knowledge_base_id ?? null,
-        skillIds: Array.isArray(config.tools?.skillIds) ? config.tools.skillIds : [],
-        enabledTools: [],
+        agentId: null,
+        agentSnapshot: config.agentSnapshot,
         inputs,
         outputVar,
       },

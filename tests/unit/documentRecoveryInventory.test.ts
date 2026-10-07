@@ -27,7 +27,12 @@ describe("honest native DMS recovery inventory", () => {
       );
     }
   });
-  it("does not provision semantic replacements from unrelated sample or predecessor definitions", () => {
+  it("keeps historical Agents unrecovered and tracks the separately approved version", () => {
+    expect(inventory.approvedReconstructionV1).toMatchObject({
+      decisionRevision: "801b96c30b62da7c34374b8cd205af324191313a",
+      historicalAgentPayloadsRecovered: false,
+      independentAcceptance: "PENDING",
+    });
     for (const name of ["triage", "processing"]) {
       expect(inventory.objects.find((object) => object.name === name)).toMatchObject({
         recovered: false,
@@ -36,6 +41,19 @@ describe("honest native DMS recovery inventory", () => {
         deployed: false,
         runtimeVerified: false,
         gap: expect.any(String),
+      });
+    }
+    for (const name of [
+      "stage1-triage-reconstruction-v1",
+      "stage2-processing-reconstruction-v1",
+      "dms-skills-reconstruction-v1",
+      "dms-knowledge-base-reconstruction-v1",
+    ]) {
+      expect(inventory.objects.find((object) => object.name === name)).toMatchObject({
+        recovered: false,
+        approved: true,
+        deployed: false,
+        runtimeVerified: false,
       });
     }
     const recoveredNames = new Set(inventory.objects.map((object) => object.name));
