@@ -27,6 +27,10 @@ create substitute Agent Builder objects or activate a parent graph with
 missing stages; restore only from an authoritative exact Agent/version source
 and read back its complete settings.
 
+The 2026-10-07 Gitea/runtime dependency readback and explicitly non-historical
+minimal replacement proposal are recorded in
+[UI readiness follow-up](../../../handoffs/reports/AXTN-ENVIRONMENT-UI-READINESS-20261007.md).
+
 The historical applier was deliberately not restored: it required existing
 Parent/Privacy/Agents and directly changed published snapshots. The recovery
 must use the existing authenticated native publish lifecycle and a complete

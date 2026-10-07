@@ -4,6 +4,103 @@
   "historicalRevision": "7123d0ef167e72b39ee39a944e418003a253f50f",
   "ownerBinding": "authenticated-bootstrap-owner; no sample-owner substitution",
   "deploymentState": "NOT_DEPLOYED",
+  "activeEnvironmentReadback": {
+    "observedAt": "2026-10-07T06:31:00Z",
+    "sourceAuthority": "Gitea revisions plus scoped read-only native runtime metadata; no prompt, token, credential, endpoint or document body read",
+    "app": {
+      "sourceRevision": "339a35b940bdffbec3839bbb8dd149482cd43d41",
+      "image": "sha256:caa71819ccac64038d0ab511dcf728427668ec46c9df4b854407d0ab50e3cf76",
+      "health": "healthy",
+      "migrationCount": 297,
+      "latestMigration": "20261006140000_native_case_start_attempt.sql"
+    },
+    "host": {
+      "repository": "aXtn/aXtn-host",
+      "branch": "work/AXTN-HOST-ENVIRONMENT-PATTERN-PILOT-0001",
+      "revision": "ae1221b693b0f6509ae745876173eb0307511622",
+      "appPinMatchesRuntime": true
+    },
+    "n8n": {
+      "hostDeclaredSourcePin": "24de6248f13b5fc250482dc8c3b3ef483c91cb55",
+      "image": "sha256:e6b1f34a3fdcc8ba7398b47e53db8c7c62508a280b00aa6171344114b4614f5c",
+      "workflowAndCredentialReadback": "not performed in this pass"
+    },
+    "nativeDmsObjects": {
+      "documentManagementParent": {
+        "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
+        "present": false
+      },
+      "documentIntake": {
+        "id": "62bbd9a0-2fb3-4241-828d-584fa76edc74",
+        "present": true,
+        "draftNodes": 5,
+        "publishedNodes": 5,
+        "publishedVersionId": null,
+        "deployed": false
+      },
+      "privacySubSwarm": {
+        "id": "6dcd7938-f9fb-4254-be9e-6f9a06793f0e",
+        "present": false
+      },
+      "cleanupSubSwarm": {
+        "id": "d0c6b64b-6a54-4db3-93ab-11be9d8d93a5",
+        "present": false
+      },
+      "stageAgents": {
+        "54edaad4-4726-4781-ae07-5df795434837": {
+          "present": false,
+          "agentVersions": 0
+        },
+        "02482fe8-1970-447a-97d7-8898ab8abaae": {
+          "present": false,
+          "agentVersions": 0
+        }
+      },
+      "nativeSkills": {
+        "count": 0
+      },
+      "knowledgeBases": {
+        "count": 17,
+        "sampleCount": 17,
+        "documents": 49,
+        "sampleDocuments": 49
+      },
+      "mcpTools": {
+        "aXtn Local Table Integration": ["local_table_upsert"],
+        "aXtn Development Gitea": [
+          "create_branch",
+          "fetch",
+          "identity",
+          "pull_request",
+          "repository_tree",
+          "upsert_file"
+        ]
+      },
+      "providerIntegrations": ["gemini", "openai"],
+      "providerUsability": "not tested; no provider credential contents read",
+      "registries": {
+        "ownerBoundToOnlyAuthUser": true,
+        "axtn_document_registry": {
+          "present": true,
+          "rows": 0
+        },
+        "axtn_document_recognition_patterns": {
+          "present": true,
+          "rows": 0
+        },
+        "axtn_document_classification_values": {
+          "present": true,
+          "rows": 6
+        }
+      }
+    },
+    "preservation": {
+      "runningSwarmRuns": 0,
+      "suspendedSwarmRuns": 1,
+      "pendingApprovals": 1,
+      "runtimeMutated": false
+    }
+  },
   "objects": [
     {
       "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
