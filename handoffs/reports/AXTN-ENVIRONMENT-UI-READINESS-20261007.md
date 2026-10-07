@@ -343,7 +343,10 @@ Stages or bypass a review route. The source fix in App commit
 `6c13432b` adds strict, case-insensitive exact-label matching in the shared
 runtime helper, applies it in both executors, rejects unmatched/ambiguous
 values, and preserves LLM routing for nodes without exact mode. It is pushed
-to the existing implementation branch; it is not deployed.
+to the existing implementation branch; it is not deployed. The Gitea
+read-only PR API returned HTTP 403 and the `tea` CLI is unavailable, so PR #14
+metadata/description could not be re-read or refreshed; no replacement PR was
+created.
 
 **Validation:** the focused graph/executor tests pass (19/19), targeted ESLint
 passes, and `git diff --check` passes. `npm run typecheck` was killed with
