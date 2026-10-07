@@ -206,29 +206,6 @@ const state = String((privacy.state ?? privacy.status ?? privacy) || "").trim().
 if (!["UNRESOLVED", "NO_AI"].includes(state)) throw new Error("PRIVACY_UNSUPPORTED_STATE: " + (state || "(empty)"));
 return state;`;
 
-const BLACKLIST_ROUTE_CODE = `
-const parse = (value) => { try { return JSON.parse(String(value || "{}")); } catch (e) { return {}; } };
-const privacy = parse(ctx.vars.privacy_state);
-const identity = privacy.identity_resolution && typeof privacy.identity_resolution === "object"
-  ? privacy.identity_resolution : {};
-return String(identity.status || "").toLowerCase() === "blacklisted" ? "BLACKLISTED" : "NORMAL";`;
-
-const BLACKLIST_INSTRUCTION_CODE = `
-const parse = (value) => { try { return JSON.parse(String(value || "{}")); } catch (e) { return {}; } };
-const privacy = parse(ctx.vars.privacy_state);
-const ack = parse(ctx.vars.registration_ack);
-const ingress = parse(ctx.vars.ingress);
-const identity = privacy.identity_resolution && typeof privacy.identity_resolution === "object"
-  ? privacy.identity_resolution : {};
-if (String(identity.status || "").toLowerCase() !== "blacklisted") throw new Error("BLACKLIST_ROUTE_MISMATCH");
-const target_folder_id = String(privacy.blacklisted_target_folder_id || ingress.blacklisted_target_folder_id || "").trim();
-if (!target_folder_id) throw new Error("BLACKLIST_TARGET_FOLDER_MISSING");
-const drive_file_id = String(ack.drive_file_id || String(ack.source_ref || "").replace(/^drive:/, "")).trim();
-const document_id = String(ack.document_id || "").trim();
-const canonical_filename = String(privacy.filename || ingress.filename || "blacklisted-file").trim();
-if (!drive_file_id || !document_id) throw new Error("BLACKLIST_INSTRUCTION_INCOMPLETE");
-return JSON.stringify({ document_id, drive_file_id, canonical_filename, target_folder_id, target_folder_path: "00_Inbox/Blacklisted", collision: false, cleanup_reason: identity.reason });`;
-
 function node(id, type, data, x, y) {
   return { id, type, position: { x, y }, data: { id, ...data } };
 }
@@ -783,82 +760,6 @@ export function buildParentGraph(agentConfigs) {
       "privacy_approval",
       2640,
       -120,
-    ),
-    node(
-      "blacklist_route_value",
-      "function",
-      {
-        kind: "function",
-        label: "Resolve deterministic blacklist route",
-        inputs: ["privacy_state"],
-        outputVar: "blacklist_route_value",
-        functionCode: BLACKLIST_ROUTE_CODE,
-        functionTimeoutMs: 3000,
-      },
-      2880,
-      -360,
-    ),
-    router(
-      "blacklist_route",
-      "Blacklist action route",
-      ["blacklist_route_value"],
-      "blacklist_route",
-      3120,
-      -360,
-    ),
-    node(
-      "blacklist_instruction",
-      "function",
-      {
-        kind: "function",
-        label: "Build approved Blacklisted move instruction",
-        inputs: ["privacy_state", "registration_ack", "ingress"],
-        outputVar: "blacklist_instruction",
-        functionCode: BLACKLIST_INSTRUCTION_CODE,
-        functionTimeoutMs: 3000,
-      },
-      3360,
-      -520,
-    ),
-    node(
-      "run_blacklist_move",
-      "tool",
-      {
-        kind: "tool",
-        label: "Move provider file to 00_Inbox/Blacklisted",
-        inputs: ["blacklist_instruction"],
-        toolId: "n8n_run_workflow",
-        toolArgs: { workflow_id: "axtnDriveFilingExecutor", input: "{{blacklist_instruction}}" },
-        toolConfigs: { n8n_workflow_ids: ["axtnDriveFilingExecutor"] },
-        outputVar: "blacklist_move_result",
-      },
-      3600,
-      -520,
-    ),
-    node(
-      "blacklist_move_verify",
-      "function",
-      {
-        kind: "function",
-        label: "Verify Blacklisted provider move",
-        inputs: ["blacklist_move_result"],
-        outputVar: "blacklist_move_verified",
-        functionCode: FILING_RESULT_VERIFY_CODE,
-        functionTimeoutMs: 3000,
-      },
-      3840,
-      -520,
-    ),
-    node(
-      "blacklist_cleanup_complete",
-      "output",
-      {
-        kind: "output",
-        label: "Blacklisted move complete; cleanup approval remains separate",
-        inputs: ["blacklist_move_verified"],
-      },
-      4080,
-      -520,
     ),
     node(
       "no_ai_defaults",

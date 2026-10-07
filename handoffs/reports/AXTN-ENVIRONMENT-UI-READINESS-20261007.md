@@ -158,3 +158,119 @@ suspended Run and one pending Approval, both preserved. The live Parent
 remains blocked on the missing registered `privacy_preflight` resolver and
 protected privacy evidence; no semantic Agent execution or real external
 effect is claimed.
+
+## Continued reconstruction — graph correction and measured build gate
+
+**Readback time:** 2026-10-07 09:01 UTC. The earlier pre-install and initial
+UI sections above are point-in-time evidence; this section supersedes them for
+the current runtime and build state.
+
+The approved Reconstruction v1 seed had already installed and published the
+Parent and its Intake, Privacy and Cleanup children. Runtime readback before
+the run below showed Parent `9b9ea6c2-…` at published version
+`341feee6-…` (58 nodes), Intake `62bbd9a0-…` at `35bc8e8a-…` (8 nodes),
+Privacy `6dcd7938-…` at `5a0db7a0-…` (3 nodes), and Cleanup
+`d0c6b64b-…` at `deb82de4-…` (12 nodes). Two `Reconstruction v1` Agent
+versions, their required Skills, and the non-sample DMS contract KB (three
+indexed chunks) were also present. The prior seed rerun was idempotent.
+
+### Failed synthetic run and correction
+
+The existing synthetic Case `e6119ef6-9850-4e00-a992-f619e7803f0a` was used;
+no duplicate Case was created. Parent Run
+`f32988fb-28f2-51da-a6d8-af62a1e0e2a2` on Parent version `341feee6-…`
+failed with `DOCUMENT_NATIVE_RUN_FAILED` before the Intake or a child Run
+started. Readback found seven graph roots: `ingress` plus six disconnected
+duplicate Cleanup nodes. The seven steps made no tool calls and used zero
+tokens; no n8n workflow or external effect ran. The existing suspended Run
+and pending Approval were not changed.
+
+The local correction removes only those six disconnected duplicate nodes and
+their now-unused constants. The connected Cleanup child path remains
+`filing_result_route` → `run_blacklist_cleanup`. The added regression test
+requires `ingress` to be the only graph root and verifies that connected
+Cleanup path. The corrected graph SHA-256 is
+`dd584ccb22570fb9372cc4a94252809c567b5ea4a0a4b5c146a1abff64577799`; the
+dependency inventory records the same hash.
+
+**Validation:** three focused unit-test files passed (24 tests).
+`npm run check` passed typecheck, lint, documentation/infrastructure checks
+and the unit suite (610 files; 10,006 passed; 40 skipped). The skips are not
+runtime evidence.
+
+### Build investigation
+
+No remote or separately provisioned BuildKit worker is configured: `docker
+buildx ls` reports only the local Docker builder (four workers). The
+canonical Host candidate helper also builds on this same host; it is not an
+independent resource pool.
+
+At measurement, the host had 15 GiB RAM, 6.4 GiB available, and 4 GiB swap
+fully occupied; the root filesystem had 19 GiB free. Parallel RSS included
+the Copilot process at about 2.8 GiB, AgentSwarms at 308 MiB and n8n at
+282 MiB, alongside the other running application, database and support
+containers. These services were left running.
+
+The current session cgroup has no configured `memory.max`; its measured
+`memory.peak` was 11,356,581,888 bytes and its cumulative `oom_kill` counter
+was 51. The containing user slice also has no configured maximum and showed
+6.6 GiB current use, a 14,603,075,584-byte peak and 114 cumulative
+`oom_kill` events. These are cumulative counters, not proof that every
+recorded kill was from this build. Kernel logs were unavailable for
+per-process attribution.
+
+A measured 2-GiB Node heap build aborted during client transformation with
+V8 `Ineffective mark-compacts near heap limit` / JavaScript heap OOM.
+Earlier 3-GiB and 4-GiB heap attempts were killed during chunk rendering;
+the session reached the 11.36-GB peak. Raising the heap again on this host
+would repeat an unbounded attempt under current memory pressure, so no such
+retry was made.
+
+**Concrete build requirement:** provide an isolated builder with 16 GiB RAM
+and at least 12 GiB available before build start, retaining at least 4 GiB
+for the running host services. This recommendation is based on the observed
+11.36-GB session peak, the 2-GiB V8 heap failure, and the default
+4-GiB-heap production build; it is not a claim that a build has passed at
+that size. No suitable independent builder was available at this check.
+
+### Reviewed authenticated UI evidence
+
+The screenshots copied below were visually inspected before inclusion. They
+show the authorized Reconstruction v1 Agent edit and its Skill/KB bindings,
+the saved Agent version history, the indexed KB document, and the failed
+synthetic Case run. They contain no credentials, browser tokens, user
+identity or customer document contents. The old Parent-canvas screenshot
+was deliberately excluded because it predates the graph correction.
+
+- [Stage 1 Agent edit](evidence/dms-reconstruction-v1/agent-edit-stage1.png)
+- [Skill binding](evidence/dms-reconstruction-v1/agent-skill-binding.png)
+- [Knowledge Base binding](evidence/dms-reconstruction-v1/agent-knowledge-binding.png)
+- [Saved Agent version history](evidence/dms-reconstruction-v1/agent-version-history.png)
+- [Indexed DMS contract document](evidence/dms-reconstruction-v1/knowledge-document.png)
+- [Failed synthetic Run on the existing Case](evidence/dms-reconstruction-v1/failed-synthetic-run.png)
+
+These captures prove the earlier authenticated UI state only. The corrected
+graph has not yet been installed, shown in the Canvas, or exercised in a new
+Run.
+
+### Current handoff status
+
+| Dimension | Status |
+|---|---|
+| Implemented | Graph correction, regression test and matching source hash exist locally on `work/AXTN-ENVIRONMENT-PATTERN-PILOT-EXECUTION-0001`; not yet committed/pushed at this checkpoint. |
+| Tested | Focused tests and `npm run check` passed; production build remains blocked by measured memory headroom. |
+| Deployed | No. Host still pins App source `fdd0013c8c2714e832646901aa5698f87fa7aede`. |
+| Native graph active | No. The deployed Parent remains the pre-correction published version `341feee6-…`. |
+| Authenticated UI | Prior Agent Builder, bindings, version history and KB state were captured; no post-correction Parent Canvas proof yet. |
+| Synthetic execution | Failed Run documented above; no post-correction retry yet. The same synthetic Case must be reused. |
+| Independent Acceptance | Not performed. |
+
+Next, commit and push the reviewed correction, tests, inventory and this
+report to the existing implementation branch/PR #14. Then a successful
+production build on the specified adequately provisioned builder is required
+before using the existing Host candidate helper. After deployment, install
+and publish the corrected Parent through the existing seed, read back its
+exact published revision and every child/Agent/Skill/KB binding, then rerun
+the same synthetic Case and capture the authenticated Canvas and persisted
+result. Preserve the suspended Run, pending Approval, credentials and all
+existing data throughout.

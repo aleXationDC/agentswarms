@@ -115,7 +115,7 @@
       "kind": "swarm",
       "name": "Document Management",
       "source": "axtn/swarms/axtn-document-management/graph.mjs",
-      "sourceSHA256": "ba4f8ce728b472a4528b9ccce82cf671e454d7d2f77289c7cbca1d826e344d8b",
+      "sourceSHA256": "dd584ccb22570fb9372cc4a94252809c567b5ea4a0a4b5c146a1abff64577799",
       "dependencies": [
         "intake",
         "privacy",

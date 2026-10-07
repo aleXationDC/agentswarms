@@ -87,4 +87,31 @@ describe("native DMS Reconstruction v1 definitions", () => {
       });
     }
   });
+
+  it("connects every parent node to the native ingress and uses the published cleanup child", () => {
+    const agent = {
+      nodePatch: { agentId: null },
+      agentSnapshot: {
+        agentId: "agent-fixture",
+        versionId: "version-fixture",
+        configHash: "a".repeat(64),
+      },
+    };
+    const graph = buildParentGraph({ triage: agent, processing: agent }) as {
+      nodes: Array<{ id: string }>;
+      edges: Array<{ source: string; target: string; label?: string }>;
+    };
+    const incoming = new Set(graph.edges.map((edge) => edge.target));
+    expect(graph.nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id)).toEqual([
+      "ingress",
+    ]);
+    expect(graph.nodes.map((node) => node.id)).not.toContain("run_blacklist_move");
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({
+        source: "filing_result_route",
+        target: "run_blacklist_cleanup",
+        label: "BLACKLISTED",
+      }),
+    );
+  });
 });
