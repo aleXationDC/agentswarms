@@ -4,9 +4,26 @@ import { describe, expect, it } from "vitest";
 import inventory from "../../axtn/swarms/axtn-document-management/dependencies.json";
 
 describe("honest native DMS recovery inventory", () => {
-  it("binds authority and stable object identities without pretending deployment", () => {
+  it("binds authority and stable object identities to the native published state", () => {
     expect(inventory.requestRevision).toBe("dad9629ae1ae98465beefa63deccd6c76aa42031");
-    expect(inventory.deploymentState).toBe("NOT_DEPLOYED");
+    expect(inventory.deploymentState).toBe("NATIVE_PARENT_PUBLISHED_EXACT_ROUTER_RUNTIME_PENDING");
+    expect(inventory.latestFollowUpReadback).toMatchObject({
+      app: {
+        deployedSourceRevision: "a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79",
+        candidateExactRouterRevision: "6c13432b",
+      },
+      documentManagementParent: {
+        publishedVersionId: "811c5e93-2d5e-4b7f-913d-3f8ad19ed243",
+        nodes: 52,
+        edges: 56,
+        onlyRoot: "ingress",
+        savedPublishedAndVersionSnapshotMatch: true,
+      },
+      syntheticCase: {
+        postCorrectionRunStarted: false,
+      },
+      independentAcceptance: "PENDING",
+    });
     expect(inventory.objects.map((object) => object.id).filter(Boolean)).toEqual(
       expect.arrayContaining([
         "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
@@ -17,7 +34,14 @@ describe("honest native DMS recovery inventory", () => {
         "02482fe8-1970-447a-97d7-8898ab8abaae",
       ]),
     );
-    expect(inventory.objects.some((object) => object.deployed === true)).toBe(false);
+    expect(inventory.objects.find((object) => object.name === "Document Management")).toMatchObject(
+      {
+        deployed: true,
+        runtimeVerified: true,
+        publishedVersionId: "811c5e93-2d5e-4b7f-913d-3f8ad19ed243",
+        liveGraphSHA256: "a329d334ff7bdcc99b50cf450fe6cfa91ff75db01679fcb7b4bde1163010a374",
+      },
+    );
   });
   it("ties recovered source and the candidate migration to their exact bytes", () => {
     for (const object of inventory.objects) {
@@ -52,8 +76,8 @@ describe("honest native DMS recovery inventory", () => {
       expect(inventory.objects.find((object) => object.name === name)).toMatchObject({
         recovered: false,
         approved: true,
-        deployed: false,
-        runtimeVerified: false,
+        deployed: true,
+        runtimeVerified: true,
       });
     }
     const recoveredNames = new Set(inventory.objects.map((object) => object.name));

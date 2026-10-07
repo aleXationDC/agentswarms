@@ -813,6 +813,29 @@ export function NodeInspector({
               </Section>
             )}
 
+            {data.kind === "router" && (
+              <Section label="Routing mode">
+                <Select
+                  value={data.routerMode ?? "llm"}
+                  onValueChange={(value) =>
+                    onChange({ routerMode: value === "exact" ? "exact" : "llm" })
+                  }
+                >
+                  <SelectTrigger aria-label="Router mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="llm">LLM classification</SelectItem>
+                    <SelectItem value="exact">Exact route value</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Exact mode matches the complete input to one edge label and fails closed when it
+                  does not match. LLM classification uses the router prompt.
+                </p>
+              </Section>
+            )}
+
             <Section label={`Temperature: ${(data.temperature ?? 0.4).toFixed(2)}`}>
               <Slider
                 value={[data.temperature ?? 0.4]}

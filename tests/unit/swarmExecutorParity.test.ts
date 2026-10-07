@@ -26,6 +26,7 @@ import {
 
 const canvas = readFileSync("src/lib/swarmRuntime.ts", "utf8");
 const server = readFileSync("src/utils/swarmExecute.server.ts", "utf8");
+const inspector = readFileSync("src/components/swarms/NodeInspector.tsx", "utf8");
 
 const NODE_KINDS = [
   "tool",
@@ -64,6 +65,12 @@ describe("exact router nodes", () => {
     expect(canvas).toMatch(/routerMode === "exact"\s*\?\s*routerInput\s*:\s*await callAgent/);
     expect(server).toMatch(/routerMode === "exact"\s*\?\s*routerInput\s*:\s*await chat/);
     expect(server).toContain("resolveExactRoute(routerInput, choices)");
+  });
+
+  it("exposes both routing modes in the native Node Inspector", () => {
+    expect(inspector).toContain('SelectItem value="llm">LLM classification</SelectItem>');
+    expect(inspector).toContain('SelectItem value="exact">Exact route value</SelectItem>');
+    expect(inspector).toContain('onChange({ routerMode: value === "exact" ? "exact" : "llm" })');
   });
 });
 
