@@ -254,7 +254,11 @@ These captures prove the earlier authenticated UI state only. The corrected
 graph has not yet been installed, shown in the Canvas, or exercised in a new
 Run.
 
-### Current handoff status
+### Status at pre-demonstration checkpoint (superseded below)
+
+The following state was recorded after deployment but before the authenticated
+post-deployment UI and synthetic Run below. The later follow-up is the current
+readback.
 
 | Dimension | Status |
 |---|---|
@@ -369,20 +373,16 @@ so it was preserved rather than treated as disposable task residue.
 |---|---|
 | Implemented | Parent graph correction, exact-router runtime correction and native router-mode editor are source-controlled; latest App candidate `2bada0814fca2ac719518310cea2ce5113fd0a2c`. |
 | Tested | Latest exact source passed full `npm run check`; see validation below. |
-| Deployed | App source `a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79` and its image are healthy; candidate `2bada081` is not yet image-built or deployed. |
-| Visible / editable | Authenticated DMS Agent Builder, Skill/KB bindings, saved Agent version and Parent Canvas are evidenced. The Canvas screenshot is zoomed out; the exact version/hash are also recorded above. |
-| Case Management | Native Case Swarm panel is visible on the existing generic Case. No corrected Run was started; successful result persistence/reload is not demonstrated. |
+| Deployed | Exact-router candidate `2bada0814fca2ac719518310cea2ce5113fd0a2c` is running as local image `sha256:bab601c8c2fb8ac1c0b9266ca2ff13009a46cd7892f2a24e488744faeb50a193`; container health is healthy and private HTTPS UI returned 200. |
+| Visible / editable | Earlier authenticated DMS Agent Builder, Skill/KB bindings, saved Agent version and Parent Canvas are evidenced. A post-deployment router-mode Inspector/reload capture is still missing. |
+| Case Management | Native Case Swarm panel is visible on the existing generic Case. No post-deployment DMS Run has been started; successful result persistence/reload is not demonstrated. |
 | Development | Development Agent Builder entries are visible in the captured Library; no new Development Swarm Canvas or end-to-end UI click-path evidence was collected in this continuation. |
 | Independent Acceptance | Not performed. |
 
-Next: build and deploy the exact-router source only on a suitably provisioned
-builder through the existing Host candidate process. Then re-read the native
-Parent and Case, prepare an explicitly synthetic, non-sensitive NO_AI input
-with deterministic identity, and execute only after confirming that all
-remaining routes stay fail-closed and no external effect can fire. Do not
-decide any Approval. Finish the Case/Development UI demonstrations and update
-the Host pins with the exact source, image and runtime evidence before
-claiming the broader readiness goal.
+Next actions recorded at that checkpoint were to capture the Inspector, run
+the same deterministic NO_AI Case and finish the Case/Development UI
+demonstrations. Those actions are now recorded below; independent Acceptance
+remains separate.
 
 ### Exact-router native editor and complete source validation
 
@@ -405,6 +405,149 @@ The check used the documented temporary 4-GiB build-only swap at
 `~/.local/share/axtn/native/environment-pilot-build.swap`; it was root-owned,
 0600, and separate from the existing full Development swap. During the check,
 about 1.4 GiB of the temporary reserve was used; physical available RAM
-returned to 6.4 GiB after completion. It remains temporarily active only for
-the immediate exact-source Docker image build; cleanup is pending. No service
-was stopped, and no task-owned test/build process remains.
+returned to 6.4 GiB after completion. It remained active for the immediate
+exact-source Docker image build and was removed after that build completed,
+as detailed below. No service was stopped, and no task-owned test/build
+process remains.
+
+## Exact-router image build and deployment
+
+After the source check, the exact clean candidate revision
+`2bada0814fca2ac719518310cea2ce5113fd0a2c` was built through the existing
+Host candidate helper. The local image
+`axtn-agentswarms-native:2bada0814fca2ac719518310cea2ce5113fd0a2c` has image
+ID `sha256:bab601c8c2fb8ac1c0b9266ca2ff13009a46cd7892f2a24e488744faeb50a193`;
+its OCI source-revision label matches the source commit. It is a local native
+image, not a registry release.
+
+The existing targeted Compose path recreated only the AgentSwarms application
+container, preserving its persistent volumes and all supporting services.
+The container is healthy, the running image and source label match the tested
+candidate, and the private HTTPS UI returned HTTP 200. At the time this
+deployment entry was written, no post-deployment synthetic DMS case Run had
+yet been performed; see the authenticated Run follow-up below.
+
+The task-owned 4-GiB `environment-pilot-build.swap` reserve was disabled and
+removed after the successful build once available physical memory exceeded its
+usage plus the safety margin. The separate pre-existing Development build
+swap, unrelated processes and temporary directories were preserved. Host-side
+build, deployment and resource-cleanup evidence is recorded in
+`aXtn-host/evidence/dms-reconstruction/20261007T-exact-router-image-deployment.md`.
+
+## 2026-10-07 follow-up — authenticated UI, synthetic Run and resource cleanup
+
+This section supersedes the immediately preceding "pending synthetic Run"
+and "missing post-deployment router capture" statements. It records a bounded
+authenticated UI check of the deployed exact candidate; it does not claim
+independent Acceptance.
+
+### Deployed UI and native composition
+
+The authenticated owner UI served by source
+`2bada0814fca2ac719518310cea2ce5113fd0a2c` was inspected without changing
+published definitions. The Swarm Library read 24 saved Swarms. It showed the
+published Document Management Parent (`811c5e93-2d5e-4b7f-913d-3f8ad19ed243`,
+52 nodes / 56 edges), its published Cleanup, Privacy and Intake children, and
+the published `aXtn Case Work · Native Processing` entry workflow with its
+proposal sub-swarm.
+
+The DMS Canvas Inspector showed `Exact route value` for `Exact canonical
+route`. The same value was present after a full page reload. No graph edit,
+save, publication or Run was triggered by this check. The native Development
+Library card and Canvas were also opened: the card is a published *legacy
+snapshot* with 31 nodes / 34 edges; the Canvas rendered 31 nodes. It has no
+current `published_version_id`, so this is evidence of visibility and
+editability, not evidence of controlled Development version publication.
+
+Eight authenticated screenshots were reviewed before being added to
+`evidence/dms-ui-readiness-followup/`. They contain no credentials, session
+tokens, operator email or original/customer document content:
+
+- [Native Swarm Library](../../evidence/dms-ui-readiness-followup/native-swarm-library-desktop.png)
+- [Development Library card](../../evidence/dms-ui-readiness-followup/development-native-v1-library-card.png)
+- [Development Canvas](../../evidence/dms-ui-readiness-followup/development-native-v1-canvas.png)
+- [DMS Canvas and exact-router Inspector](../../evidence/dms-ui-readiness-followup/dms-published-canvas-router-inspector.png)
+- [Document Work contract on the synthetic Case](../../evidence/dms-ui-readiness-followup/dms-document-work-case-panel.png)
+- [Persisted Intake success and Registry ACK](../../evidence/dms-ui-readiness-followup/dms-case-persisted-intake-ack.png)
+- [Persisted Parent Run at review](../../evidence/dms-ui-readiness-followup/dms-case-persisted-parent-run.png)
+- [Development Recent Runs approval gate](../../evidence/dms-ui-readiness-followup/development-recent-run-pending.png)
+
+### Authenticated synthetic DMS Case
+
+The existing fixture Case `d2bdd3af-2a4d-4cd5-aae2-ad9f666322d8` was opened
+through `/cases`; no second Case or Run was created. The Document Work
+Contract's initial loading state cleared, its form rendered, and the
+authenticated Case-work list returned HTTP 200 with this Case visible as
+`DOCUMENT_PROCESSING` / `document_work`. The earlier stuck-loading symptom
+was not reproduced.
+
+The Case UI shows both persisted Runs after reload:
+
+| Run | Revision | Readback |
+|---|---|---|
+| Intake `9e995eb6-d6c4-426f-9346-372ccea709b9` | `35bc8e8a-4cad-4c26-86a8-5f3b35c75f18` | `success`; synthetic ACK `accepted=true`, `processing_status=registered`, `privacy_hold=true`, `registry_outcome=inserted`, `case_id` is the same fixture Case |
+| Parent `03a1fa08-3fb5-585c-abe6-edbee228fdd4` | `811c5e93-2d5e-4b7f-913d-3f8ad19ed243` | `suspended` at the required Final Review; its Approval `f72be266-1127-4986-b35b-a73b9ad1b023` is still `pending` |
+
+The parent/Approval relationship was read back over the authenticated
+same-origin API. No Approval was decided, no semantic Stage Agent was run,
+and no Filing or other external effect occurred. The Run result is therefore
+persisted and visible, but the DMS workflow is not complete or accepted.
+Human takeover, replay and resume were not invoked: mutating this same Case
+while its native Approval is pending would cross the safety gate.
+
+### Development Run and Case boundary
+
+The authenticated Recent Runs UI displays the existing
+`aXtn Development Swarm - Native V1 (api)` Run as `Awaiting approval`. Its
+persisted Run is `00ff44a5-760c-45dc-a605-7762ba72761a`, `suspended`, with
+Approval `afe3d09b-f27b-41ce-a00a-60c82c06e8e3` still `pending`. Readback
+shows `case_id=null`; it is not a Case-bound Development execution.
+The existing Development Build Case
+`43d22cf1-8767-40ef-b682-785607e6d724` has no persisted Swarm Runs. No
+Development Run was started or altered, and neither pending Approval was
+decided. The visible Development graph remains a legacy published snapshot;
+controlled current-revision publication and Case-bound execution remain
+concrete gaps.
+
+### Resource check and cleanup
+
+After the image deployment and UI checks, the host had 2.6 GiB available RAM;
+the pre-existing `development-graph-build.swap` remained fully occupied at
+4/4 GiB. No task-owned browser, Playwright, Node test, TypeScript, Vite or
+build process remained. The managed notebook-runtime container for a live
+session and all productive/unknown containers were preserved. No further
+build was attempted.
+
+The earlier 16-GiB builder / 12-GiB-available figures were a conservative
+recommendation drawn from failed attempts, not a measured minimum. The exact
+candidate subsequently built on this Host with its temporary 4-GiB reserve;
+that successful result supersedes the recommendation for this candidate but
+does not establish a general minimum for future builds.
+
+After the captures were persisted, task-owned temporary Playwright and
+Chromium assets, probe scripts, candidate build log, detached exact-source
+build worktree, and generated Host Python bytecode caches were removed.
+The browser package/cache occupied about 677 MiB on disk and the detached
+build worktree about 43 MiB; these were not resident processes and are not
+counted as recovered RAM.
+Product services, the existing Development swap, unknown containers, Cases,
+Runs, Approvals, credentials and user data were not removed or changed.
+
+### Current status and short demonstration path
+
+| Dimension | Status |
+|---|---|
+| Implemented | Corrected DMS graph and exact-router editor/executor are in the deployed App candidate. |
+| Tested | Exact route survives reload; authenticated Case readback is HTTP 200; Intake succeeded with a NO_AI/`privacy_hold` ACK; parent/Approval and Development Run/Approval were read back without mutation; zero browser page errors. |
+| Deployed | Exact source `2bada0814fca2ac719518310cea2ce5113fd0a2c`, image `sha256:bab601c8c2fb8ac1c0b9266ca2ff13009a46cd7892f2a24e488744faeb50a193`, healthy. |
+| Visible / editable | DMS Parent and children, Case Work entry, exact router Inspector, Document Work Case and Development Canvas are visible in the authenticated UI. Development remains a legacy snapshot, not controlled-version proof. |
+| Functionally demonstrated | Intake ACK and persisted Case Runs/reload are demonstrated. Parent is suspended at Final Review. Existing Development Run is suspended outside a Case; no new Development execution or human takeover was attempted. |
+| Independent Acceptance | Not performed. Both DMS and Development pending Approvals remain untouched. |
+
+Demonstration: open `/swarms` and inspect the DMS Parent and child cards;
+open its Canvas and verify the exact-router Inspector before and after reload;
+open Case `d2bdd3af-2a4d-4cd5-aae2-ad9f666322d8` and inspect the successful
+Intake ACK plus the Parent Run's pending Final Review; finally open
+`/swarms` → **Recent runs** and show the Development `Awaiting approval`
+entry without selecting **Review approval** or **Cancel**. Do not describe
+these gated Runs as completed work or independent Acceptance.
