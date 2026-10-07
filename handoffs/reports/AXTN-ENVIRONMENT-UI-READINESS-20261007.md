@@ -130,3 +130,31 @@ This is the pre-install recovery state. The approved Reconstruction v1
 implementation and each subsequent install, deploy, UI and Run evidence update
 must be recorded below without collapsing source, installation, visibility,
 execution and independent Acceptance into one status.
+
+## Approved decision execution — source/test checkpoint
+
+Decision `801b96c30b62da7c34374b8cd205af324191313a` authorized the new
+version. The implementation was committed and pushed to the existing Gitea
+App branch as `4cc87eb94f231adb1dd7341a8678f123d3920708`. It adds the
+owner-bound `seed_dms` action to the existing superadmin-protected bootstrap,
+two new Agent Builder objects and manual version snapshots, two Skills, a
+non-sample KB embedded/indexed with the connected provider's exact model-space
+stamp, and native Parent/Privacy/Cleanup publication through
+`publishSwarmForOwner`. No migrations, providers, credentials or other
+worktrees were changed.
+
+**Source/test status:** implemented and source-pushed; `npm run check` exited
+0: typecheck, 610 test files / 10,005 PASS / 40 SKIP, docs and infrastructure
+checks, and production build. Lint passed with the repository's existing 235
+warnings. The single missing-tool infrastructure check and 40 skips remain
+skips, not runtime passes. Inventory fixtures distinguish the unrecovered
+historical Agent IDs from the newly authorized v1 IDs.
+
+**Still pending at this checkpoint:** exact Host-pin update, candidate build
+and deployment, authenticated browser proof, owner-bound install/publish
+readback and any synthetic Run. The active runtime remains App
+`339a35b940bdffbec3839bbb8dd149482cd43d41`; read-only recheck found one
+suspended Run and one pending Approval, both preserved. The live Parent
+remains blocked on the missing registered `privacy_preflight` resolver and
+protected privacy evidence; no semantic Agent execution or real external
+effect is claimed.
