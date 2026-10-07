@@ -3,10 +3,10 @@
   "requestRevision": "dad9629ae1ae98465beefa63deccd6c76aa42031",
   "historicalRevision": "7123d0ef167e72b39ee39a944e418003a253f50f",
   "ownerBinding": "authenticated-bootstrap-owner; no sample-owner substitution",
-  "deploymentState": "NOT_DEPLOYED",
+  "deploymentState": "NATIVE_PARENT_PUBLISHED_EXACT_ROUTER_RUNTIME_PENDING",
   "approvedReconstructionV1": {
     "decisionRevision": "801b96c30b62da7c34374b8cd205af324191313a",
-    "status": "SOURCE_IMPLEMENTED_TESTED_DEPLOYMENT_PENDING",
+    "status": "V1_OBJECTS_INSTALLED_PARENT_CORRECTED_AND_PUBLISHED_SYNTHETIC_RUN_PENDING",
     "source": "axtn/swarms/axtn-document-management/reconstruction-v1.mjs",
     "sourceSHA256": "f7280be2b257af672dd77a7f5f91db685ac3ee404b7d1b37f53139d64af01d82",
     "historicalAgentPayloadsRecovered": false,
@@ -109,6 +109,43 @@
       "runtimeMutated": false
     }
   },
+  "latestFollowUpReadback": {
+    "observedAt": "2026-10-07T12:02:22Z",
+    "sourceAuthority": "authenticated native Canvas readback and container image labels; no credentials, document body or Approval payload read",
+    "app": {
+      "deployedSourceRevision": "a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79",
+      "image": "sha256:aa3730e2f042af63ae1533847b9d1ca3b09f859a8789c3eef852c422b8ffa1e1",
+      "health": "healthy",
+      "candidateExactRouterRevision": "6c13432b",
+      "candidateExactRouterTests": "19 focused tests and targeted ESLint PASS; typecheck exit 137; build not attempted"
+    },
+    "documentManagementParent": {
+      "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
+      "publishedVersionId": "811c5e93-2d5e-4b7f-913d-3f8ad19ed243",
+      "publishedAt": "2026-10-07T11:35:32.843Z",
+      "nodes": 52,
+      "edges": 56,
+      "graphSHA256": "a329d334ff7bdcc99b50cf450fe6cfa91ff75db01679fcb7b4bde1163010a374",
+      "onlyRoot": "ingress",
+      "connectedBlacklistedCleanupPath": true,
+      "savedPublishedAndVersionSnapshotMatch": true
+    },
+    "syntheticCase": {
+      "id": "e6119ef6-9850-4e00-a992-f619e7803f0a",
+      "classification": "generic manual TODO Case, not a Document Work Case",
+      "priorFailedRunId": "f32988fb-28f2-51da-a6d8-af62a1e0e2a2",
+      "postCorrectionRunStarted": false,
+      "reason": "deployed headless executor ignored routerMode exact; fixed in candidate 6c13432b but candidate is not built or deployed"
+    },
+    "preserved": {
+      "suspendedRun": true,
+      "pendingApproval": true,
+      "activeSchedule": true,
+      "nativeParentCorrectedAndPublished": true,
+      "noRunOrApprovalDecisionByRuntimeFixFollowUp": true
+    },
+    "independentAcceptance": "PENDING"
+  },
   "objects": [
     {
       "id": "9b9ea6c2-a554-4fa7-9c40-908dad632ae7",
@@ -136,10 +173,12 @@
         "cleanup"
       ],
       "recovered": true,
-      "implemented": "historical graph plus explicitly approved Reconstruction v1 Stage Agents, Skill/KB snapshots and owner-bound publish seed; privacy resolver/authority and real effects remain blocked",
-      "tested": "pure source contract and exact Agent snapshot import fixtures; no deployed Parent execution",
-      "deployed": false,
-      "runtimeVerified": false
+      "implemented": "historical graph plus explicitly approved Reconstruction v1 Stage Agents, Skill/KB snapshots and owner-bound publish seed; Parent correction is natively published; exact-router runtime fix is a source candidate only",
+      "tested": "single-ingress and connected-cleanup regression; saved, published and manual-version native graph readback; no post-correction Case execution",
+      "deployed": true,
+      "runtimeVerified": true,
+      "publishedVersionId": "811c5e93-2d5e-4b7f-913d-3f8ad19ed243",
+      "liveGraphSHA256": "a329d334ff7bdcc99b50cf450fe6cfa91ff75db01679fcb7b4bde1163010a374"
     },
     {
       "id": "62bbd9a0-2fb3-4241-828d-584fa76edc74",
@@ -149,9 +188,9 @@
       "dependencies": ["case-profile", "local-table"],
       "recovered": true,
       "implemented": "explicit eight-node Case-bound native composition; compatibility five-node seed retained",
-      "tested": "seed/reseed/publish/apply empty-store fixtures and technical-envelope/ACK fixtures",
-      "deployed": false,
-      "runtimeVerified": false
+      "tested": "seed/reseed/publish/apply empty-store fixtures and technical-envelope/ACK fixtures; published native child was read back",
+      "deployed": true,
+      "runtimeVerified": true
     },
     {
       "name": "mail-materialization-ingress",
@@ -188,8 +227,8 @@
       "recovered": true,
       "implemented": "recovered Privacy graph; actual local analyzer service, native tool resolver and protected source/rights/coverage receipt remain unavailable",
       "tested": false,
-      "deployed": false,
-      "runtimeVerified": false
+      "deployed": true,
+      "runtimeVerified": true
     },
     {
       "id": "d0c6b64b-6a54-4db3-93ab-11be9d8d93a5",
@@ -207,8 +246,8 @@
       "recovered": true,
       "implemented": "historical native graph; implicit all-selection removed; protected deletion receipt still required",
       "tested": "explicit selection/binding fixtures only",
-      "deployed": false,
-      "runtimeVerified": false
+      "deployed": true,
+      "runtimeVerified": true
     },
     {
       "id": "54edaad4-4726-4781-ae07-5df795434837",
@@ -247,9 +286,9 @@
       "approved": true,
       "implemented": "new Stage 1 bounded proposal Agent, exact manual version and importer snapshot; not historical payload",
       "tested": "pure definition, safety and native snapshot contract tests",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Owner install, provider call, published Parent and authenticated UI proof remain pending."
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Historical payload remains unrecovered; approved v1 Agent is installed and bound in the published Parent snapshot. Semantic Stage execution is not demonstrated."
     },
     {
       "id": "e1000000-0000-4000-8000-000000000022",
@@ -262,9 +301,9 @@
       "approved": true,
       "implemented": "new Stage 2 bounded proposal Agent, exact manual version and importer snapshot; not historical payload",
       "tested": "pure definition, safety and native snapshot contract tests",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Owner install, provider call, published Parent and authenticated UI proof remain pending."
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Historical payload remains unrecovered; approved v1 Agent is installed and bound in the published Parent snapshot. Semantic Stage execution is not demonstrated."
     },
     {
       "name": "dms-skills-reconstruction-v1",
@@ -277,9 +316,9 @@
       "approved": true,
       "implemented": "two native Skill definitions with bounded proposal-only roles; not historical payloads",
       "tested": "pure definition and exact Agent binding tests",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Owner install and authenticated Library UI proof remain pending."
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Historical payload remains unrecovered; approved v1 Skills are installed and visibly bound. Skill-mediated execution is not demonstrated."
     },
     {
       "id": "e1000000-0000-4000-8000-000000000001",
@@ -293,27 +332,27 @@
       "approved": true,
       "implemented": "non-sample bounded Stage/route contract document with native chunking and provider/model provenance; no customer data",
       "tested": "exact source, ownership, chunk content and embedding provenance checks defined",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Provider embedding, native retrieval and authenticated Library UI proof remain pending."
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Historical KB remains unrecovered; approved v1 non-sample KB is installed, indexed to three chunks and visibly bound. Retrieval execution is not demonstrated."
     },
     {
       "name": "skills",
       "kind": "skill",
       "recovered": false,
-      "implemented": "two separately version-labelled native Skills are defined in approved Reconstruction v1; historical Skill IDs/payloads remain unrecovered",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Installation, UI verification and runtime binding remain pending."
+      "implemented": "two separately version-labelled native Skills are installed and bound to approved Reconstruction v1 Agents; historical Skill IDs/payloads remain unrecovered",
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Independent Skill/Agent execution is not demonstrated."
     },
     {
       "name": "knowledge-bases",
       "kind": "knowledge-base",
       "recovered": false,
-      "implemented": "one non-sample contract Knowledge Base with native embedding/chunking is defined in approved Reconstruction v1; historical KB payloads remain unrecovered",
-      "deployed": false,
-      "runtimeVerified": false,
-      "gap": "Installation, retrieval verification and runtime binding remain pending."
+      "implemented": "one non-sample contract Knowledge Base is installed, embedded and chunked for approved Reconstruction v1; historical KB payload remains unrecovered",
+      "deployed": true,
+      "runtimeVerified": true,
+      "gap": "Native retrieval execution is not demonstrated."
     },
     {
       "name": "local-table",

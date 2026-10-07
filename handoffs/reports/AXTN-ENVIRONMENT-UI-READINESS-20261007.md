@@ -1,7 +1,8 @@
 # Native UI readiness — DMS recovery follow-up
 
-**Status:** exact recovery sources identified; complete current DMS composition
-not installed; no runtime mutation or independent Acceptance.
+**Status:** Reconstruction v1 is installed; corrected Parent is natively
+published and visible. Exact-router fix is pushed but unbuilt/undeployed; no
+post-correction synthetic Run or independent Acceptance.
 
 Authority: clarification at Gitea commit
 `ad921802ade26d3a68125f5d65e1745dfc5d09d2`. App work remains on
@@ -274,3 +275,85 @@ exact published revision and every child/Agent/Skill/KB binding, then rerun
 the same synthetic Case and capture the authenticated Canvas and persisted
 result. Preserve the suspended Run, pending Approval, credentials and all
 existing data throughout.
+
+## 2026-10-07 continuation — native publish and exact-router safety
+
+This section supersedes the deployment, Canvas and handoff-status statements
+above where they refer to the earlier pre-correction runtime. Earlier
+observations remain as history.
+
+### Current deployed and native state
+
+At `2026-10-07T12:02:22Z`, the healthy AgentSwarms container ran source
+`a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79`, image
+`sha256:aa3730e2f042af63ae1533847b9d1ca3b09f859a8789c3eef852c422b8ffa1e1`.
+The corrected Parent graph was saved, reloaded and published in the
+authenticated native Canvas. Parent version
+`811c5e93-2d5e-4b7f-913d-3f8ad19ed243` was published at
+`2026-10-07T11:35:32.843Z`. Saved, published and manual-version graph arrays
+matched at SHA-256
+`a329d334ff7bdcc99b50cf450fe6cfa91ff75db01679fcb7b4bde1163010a374`;
+the graph has 52 nodes and 56 edges, with only `ingress` as a root and the
+connected `filing_result_route` → `run_blacklist_cleanup` path retained.
+Child/Agent/Skill/KB snapshots were not changed by this Parent publication.
+No API key or schedule was created, stopped or changed.
+
+Reviewed, privacy-safe authenticated UI captures are now stored in
+`evidence/dms-reconstruction-v1/`: Agent Builder, Skill and KB bindings,
+Agent version history, indexed Knowledge Base, the published Parent Canvas,
+and the earlier failed Run on the existing Case. The latter is clearly
+historical evidence; it is not a post-correction success.
+
+- [Agent Builder, including native DMS and Development Agent cards](../../evidence/dms-reconstruction-v1/agent-builder.png)
+- [DMS Skill binding](../../evidence/dms-reconstruction-v1/agent-skill-binding.png)
+- [DMS Knowledge Base binding](../../evidence/dms-reconstruction-v1/agent-knowledge-binding.png)
+- [Saved Agent version history](../../evidence/dms-reconstruction-v1/agent-version-history.png)
+- [Indexed DMS Knowledge Base document](../../evidence/dms-reconstruction-v1/knowledge-document.png)
+- [Published Parent Canvas, 52 nodes](../../evidence/dms-reconstruction-v1/parent-published-canvas.png)
+- [Historical failed synthetic Case Run](../../evidence/dms-reconstruction-v1/case-pre-fix-run.png)
+
+### Synthetic-run safety gate and executor correction
+
+The existing Case `e6119ef6-9850-4e00-a992-f619e7803f0a` is a generic
+manual `TODO` Case, not a Document Work Case; it has no persisted
+`document_work_identity` or document input manifest. Its previous failed Run
+`f32988fb-28f2-51da-a6d8-af62a1e0e2a2` and its old Parent snapshot remain
+unchanged. No post-correction Run has been started.
+
+Before another attempt, source inspection found that both Canvas and headless
+executors ignored the graph's explicit `routerMode: "exact"` and invoked an
+LLM for those routes. This could misroute NO_AI processing into semantic
+Stages or bypass a review route. The source fix in App commit
+`6c13432b` adds strict, case-insensitive exact-label matching in the shared
+runtime helper, applies it in both executors, rejects unmatched/ambiguous
+values, and preserves LLM routing for nodes without exact mode. It is pushed
+to the existing implementation branch; it is not deployed.
+
+**Validation:** the focused graph/executor tests pass (19/19), targeted ESLint
+passes, and `git diff --check` passes. `npm run typecheck` was killed with
+exit 137; this is not a pass. At the follow-up measurement, only 2.2 GiB RAM
+was available and 3.9/4 GiB swap was occupied. No production build was
+attempted, no further heap increase was tried, and no production service or
+container was stopped. Therefore the new executor behavior is not typecheck-,
+build- or runtime-verified and the synthetic Run remains gated.
+
+### Current handoff status
+
+| Dimension | Status |
+|---|---|
+| Implemented | Parent graph correction and exact-router runtime correction are source-controlled; runtime correction is App commit `6c13432b` on the existing branch. |
+| Tested | 19 focused tests and targeted ESLint pass. Typecheck exited 137; no production build for `6c13432b`. |
+| Deployed | App source `a0af9d2e85fc3d318c4645c0b2a6e63b404fcf79` and its image are healthy; exact-router commit `6c13432b` is not deployed. |
+| Visible / editable | Authenticated DMS Agent Builder, Skill/KB bindings, saved Agent version and Parent Canvas are evidenced. The Canvas screenshot is zoomed out; the exact version/hash are also recorded above. |
+| Case Management | Native Case Swarm panel is visible on the existing generic Case. No corrected Run was started; successful result persistence/reload is not demonstrated. |
+| Development | Development Agent Builder entries are visible in the captured Library; no new Development Swarm Canvas or end-to-end UI click-path evidence was collected in this continuation. |
+| Independent Acceptance | Not performed. |
+
+Next: build and deploy the exact-router source only on a suitably provisioned
+builder through the existing Host candidate process. Then re-read the native
+Parent and Case, prepare an explicitly synthetic, non-sensitive NO_AI input
+with deterministic identity, and execute only after confirming that all
+remaining routes stay fail-closed and no external effect can fire. Do not
+decide any Approval. Finish the Case/Development UI demonstrations and update
+the Host pins with the exact source, image and runtime evidence before
+claiming the broader readiness goal.
