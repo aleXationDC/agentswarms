@@ -31,6 +31,15 @@ export async function saveIntegrationForUser(
     is_active: boolean;
   },
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  if (data.type === "n8n" && data.config.binding_mode === "native") {
+    const { resolveNativeN8n } = await import("./nativeN8n.server");
+    try {
+      await resolveNativeN8n(userId);
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+    data = { ...data, config: { binding_mode: "native" } };
+  }
   const { encryptIntegrationConfig, preserveBlankSecrets, integrationSecretFields } =
     await import("../providers/integrationConfig.server");
   const { auditEvent } = await import("../audit.server");

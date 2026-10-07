@@ -37,7 +37,8 @@ const TestSchema = z.object({
 
 const N8nTestSchema = z.object({
   access_token: z.string().min(1).max(10000),
-  instance_url: z.string().min(1).max(500),
+  binding_mode: z.enum(["manual", "native"]).default("manual"),
+  instance_url: z.string().max(500).default(""),
   webhook_token: z.string().max(2000).default(""),
   auth_type: z.enum(["header", "basic", "none"]).default("header"),
 });
@@ -170,17 +171,92 @@ export const testIntegrationKey = createServerFn({ method: "POST" })
 // is real and what's reachable.
 export const testN8nInstance = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => N8nTestSchema.parse(input))
-  .handler(async ({ data }): Promise<TestResult & { workflowCount?: number }> => {
+  .handler(
+    async ({
+      data,
+    }): Promise<
+      TestResult & { workflowCount?: number; activeWorkflowCount?: number; checkedAt?: string }
+    > => {
+      const auth = await validateAccessToken(data.access_token);
+      if (!auth.ok) return { ok: false, detail: auth.detail };
+      const limited = await integrationTestGate(auth.userId);
+      if (limited) return limited;
+      if (data.binding_mode === "native") {
+        try {
+          const { requireNativeN8nUser, readManagedN8nStatus } =
+            await import("./integrations/nativeN8n.server");
+          await requireNativeN8nUser(auth.userId);
+          const status = await readManagedN8nStatus();
+          return {
+            ok: status.connected,
+            detail: status.detail,
+            workflowCount: status.connected ? status.workflows.length : undefined,
+            activeWorkflowCount: status.connected
+              ? status.workflows.filter((workflow) => workflow.active).length
+              : undefined,
+            checkedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          return { ok: false, detail: (error as Error).message };
+        }
+      }
+      const { testN8nCore } = await import("./integrations/testAdapters.server");
+      return testN8nCore({
+        instance_url: data.instance_url,
+        webhook_token: data.webhook_token,
+        auth_type: data.auth_type,
+      });
+    },
+  );
+
+export const getNativeN8nStatus = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ access_token: z.string().min(1).max(10000) }).parse(input),
+  )
+  .handler(async ({ data }) => {
     const auth = await validateAccessToken(data.access_token);
-    if (!auth.ok) return { ok: false, detail: auth.detail };
-    const limited = await integrationTestGate(auth.userId);
-    if (limited) return limited;
-    const { testN8nCore } = await import("./integrations/testAdapters.server");
-    return testN8nCore({
-      instance_url: data.instance_url,
-      webhook_token: data.webhook_token,
-      auth_type: data.auth_type,
-    });
+    if (!auth.ok) {
+      return {
+        available: false,
+        instanceUrl: null,
+        connected: false,
+        workflowCount: null,
+        activeWorkflowCount: null,
+        checkedAt: new Date().toISOString(),
+        detail: auth.detail,
+      };
+    }
+    try {
+      const { requireNativeN8nUser, readManagedN8nStatus } =
+        await import("./integrations/nativeN8n.server");
+      await requireNativeN8nUser(auth.userId);
+      const [resolved, status] = await Promise.all([
+        import("./operatorBindings.server"),
+        readManagedN8nStatus(),
+      ]);
+      const binding = resolved.readManagedN8nBinding();
+      return {
+        available: binding.ok && binding.binding !== null,
+        instanceUrl: binding.ok ? (binding.binding?.baseUrl ?? null) : null,
+        connected: status.connected,
+        workflowCount: status.connected ? status.workflows.length : null,
+        activeWorkflowCount: status.connected
+          ? status.workflows.filter((workflow) => workflow.active).length
+          : null,
+        checkedAt: new Date().toISOString(),
+        detail: status.detail,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        instanceUrl: null,
+        connected: false,
+        workflowCount: null,
+        activeWorkflowCount: null,
+        checkedAt: new Date().toISOString(),
+        detail: (error as Error).message,
+      };
+    }
   });
 
 // Live-test a Firecrawl API key with a cheap 1-result search so the user knows

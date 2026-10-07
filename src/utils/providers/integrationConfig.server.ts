@@ -89,6 +89,10 @@ export async function resolveIntegrationConfig(
   type: string,
   config: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (type === "n8n" && config.binding_mode === "native") {
+    const { resolveNativeN8n } = await import("../integrations/nativeN8n.server");
+    return resolveNativeN8n(userId);
+  }
   let out: Record<string, unknown> = { ...config };
   for (const f of integrationSecretFields(type)) {
     const enc = out[`${f}_enc`] as EncBlob | undefined;

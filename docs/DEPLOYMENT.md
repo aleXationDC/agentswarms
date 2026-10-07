@@ -95,9 +95,21 @@ All options share the same two prerequisites.
 
    On the native aXtn host, these platform bindings are generated in the
    protected host runtime environment, not in the component checkout's `.env`.
-   Managed n8n is read/list-only and its host API key is never returned by a
-   server function or saved in a per-user integration row. User-configured
-   external n8n instances remain separate in Integrations.
+   The managed n8n API key is read/list-only: it is used server-side to verify
+   the connection and read workflow metadata, and is never returned by a server
+   function or saved in a per-user integration row. User-configured external
+   n8n instances remain separate in Integrations.
+
+   Native `n8n_run_workflow` nodes are available to an authenticated
+   superadmin-owned Agent/Swarm only when that Agent/Node has an explicit
+   `n8n_workflow_ids` allow-list. n8n 2.36.9 has no public
+   `/api/v1/workflows/:id/execute` endpoint, so the managed adapter invokes a
+   selected active workflow through its production webhook after checking
+   workflow metadata. It accepts only one enabled static POST Webhook trigger
+   with no webhook authentication, disables redirects, and never forwards the
+   API key to the webhook. Other workflow shapes fail closed. Headless
+   `/api/swarm/run` remains excluded from this tool; use the authenticated
+   Canvas/Chat execution path.
 
 ---
 

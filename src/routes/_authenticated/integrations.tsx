@@ -56,6 +56,7 @@ import {
 import {
   testIntegrationKey,
   testN8nInstance,
+  getNativeN8nStatus,
   testFirecrawlKey,
   testLlmGateway,
   testNotificationChannel,
@@ -585,11 +586,16 @@ function IntegrationsPage() {
   const [n8nUrl, setN8nUrl] = useState("");
   const [n8nToken, setN8nToken] = useState("");
   const [n8nAuthType, setN8nAuthType] = useState("header");
+  const [n8nManagedAvailable, setN8nManagedAvailable] = useState(false);
+  const [n8nManagedInstanceUrl, setN8nManagedInstanceUrl] = useState<string | null>(null);
+  const [n8nManaged, setN8nManaged] = useState(false);
   const [n8nTesting, setN8nTesting] = useState(false);
   const [n8nStatus, setN8nStatus] = useState<{
     ok: boolean;
     detail: string;
     workflowCount?: number;
+    activeWorkflowCount?: number;
+    checkedAt?: string;
   } | null>(null);
   const [firecrawlKey, setFirecrawlKey] = useState("");
   const [firecrawlTesting, setFirecrawlTesting] = useState(false);
@@ -610,6 +616,34 @@ function IntegrationsPage() {
   // every Disconnect button is derived from `integrations`, so when these fail
   // the page has to say so rather than render an account with nothing in it.
   const [readState, setReadState] = useState<StatusReadState>({ loaded: false, error: null });
+
+  useEffect(() => {
+    setN8nManagedAvailable(false);
+    setN8nManagedInstanceUrl(null);
+    if (!session?.access_token) return;
+    let cancelled = false;
+    void getNativeN8nStatus({ data: { access_token: session.access_token } })
+      .then((status) => {
+        if (cancelled) return;
+        setN8nManagedAvailable(status.available);
+        setN8nManagedInstanceUrl(status.instanceUrl);
+        if (status.available) {
+          setN8nStatus({
+            ok: status.connected,
+            detail: status.detail,
+            workflowCount: status.workflowCount ?? undefined,
+            activeWorkflowCount: status.activeWorkflowCount ?? undefined,
+            checkedAt: status.checkedAt,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setN8nManagedAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
 
   useEffect(() => {
     loadIntegrations();
@@ -686,9 +720,22 @@ function IntegrationsPage() {
     const n8n = merged.find((i) => i.type === "n8n");
     if (n8n) {
       const c = n8n.config as Record<string, any>;
+      setN8nManaged(c?.binding_mode === "native");
       setN8nUrl(c?.instance_url || "");
       setN8nToken(c?.webhook_token || "");
       setN8nAuthType(c?.auth_type || "header");
+      if (c?.binding_mode !== "native") {
+        setN8nStatus(
+          c?.last_test_status === "success" || c?.last_test_status === "error"
+            ? {
+                ok: c.last_test_status === "success",
+                detail: typeof c.last_test_detail === "string" ? c.last_test_detail : "",
+                workflowCount: typeof c.workflow_count === "number" ? c.workflow_count : undefined,
+                checkedAt: typeof c.last_tested_at === "string" ? c.last_tested_at : undefined,
+              }
+            : null,
+        );
+      }
     }
   }
 
@@ -964,11 +1011,18 @@ function IntegrationsPage() {
 
     // Live-validate against /api/v1/workflows before persisting active=true,
     // so the "Connected" state on the n8n card reflects a real auth roundtrip.
-    let testResult: { ok: boolean; detail: string; workflowCount?: number };
+    let testResult: {
+      ok: boolean;
+      detail: string;
+      workflowCount?: number;
+      activeWorkflowCount?: number;
+      checkedAt?: string;
+    };
     try {
       testResult = await testN8nInstance({
         data: {
           access_token: session.access_token,
+          binding_mode: n8nManaged ? "native" : "manual",
           instance_url: n8nUrl,
           webhook_token: n8nToken,
           auth_type: n8nAuthType as "header" | "basic" | "none",
@@ -977,7 +1031,8 @@ function IntegrationsPage() {
     } catch (e) {
       testResult = { ok: false, detail: e instanceof Error ? e.message : "Test request failed" };
     }
-    setN8nStatus(testResult);
+    const checkedAt = testResult.checkedAt ?? new Date().toISOString();
+    setN8nStatus({ ...testResult, checkedAt });
     setN8nTesting(false);
 
     const existing = integrations.find((i) => i.type === "n8n");
@@ -991,13 +1046,18 @@ function IntegrationsPage() {
         provider: "n8n",
         name: "n8n",
         config: {
-          instance_url: n8nUrl,
-          webhook_token: n8nToken,
-          auth_type: n8nAuthType,
+          ...(n8nManaged
+            ? { binding_mode: "native" }
+            : {
+                instance_url: n8nUrl,
+                webhook_token: n8nToken,
+                auth_type: n8nAuthType,
+              }),
           last_test_status: testResult.ok ? "success" : "error",
           last_test_detail: testResult.detail,
-          last_tested_at: new Date().toISOString(),
+          last_tested_at: checkedAt,
           workflow_count: testResult.workflowCount ?? null,
+          active_workflow_count: testResult.activeWorkflowCount ?? null,
         },
         is_active: testResult.ok,
       },
@@ -1690,46 +1750,75 @@ function IntegrationsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>n8n Instance URL</Label>
-                  <Input
-                    placeholder="https://n8n.example.com"
-                    value={n8nUrl}
-                    onChange={(e) => setN8nUrl(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Authentication Type</Label>
-                  <Select value={n8nAuthType} onValueChange={setN8nAuthType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="header">Header Auth Token</SelectItem>
-                      <SelectItem value="basic">Basic Auth</SelectItem>
-                      <SelectItem value="none">No Authentication</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {n8nAuthType === "header" && (
-                  <p className="text-xs text-muted-foreground -mt-2">
-                    Use an n8n API key (Settings → API). Validation hits{" "}
-                    <code>GET /api/v1/workflows</code>.
-                  </p>
-                )}
-                {n8nAuthType !== "none" && (
+                {(n8nManagedAvailable || n8nManaged) && (
                   <div className="space-y-2">
-                    <Label>{n8nAuthType === "basic" ? "Credentials (user:pass)" : "API Key"}</Label>
-                    <Input
-                      type="password"
-                      placeholder={n8nAuthType === "basic" ? "admin:password" : "n8n_api_..."}
-                      value={n8nToken}
-                      onChange={(e) => setN8nToken(e.target.value)}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Stored encrypted, never shown again. Leave blank to keep the saved token.
-                    </p>
+                    <Label className="flex items-center gap-2">
+                      <Switch
+                        checked={n8nManaged}
+                        onCheckedChange={setN8nManaged}
+                        disabled={!n8nManagedAvailable && !n8nManaged}
+                      />
+                      Use host-managed native n8n (superadmins only)
+                    </Label>
+                    {n8nManaged && (
+                      <div className="rounded-md border p-2.5 text-xs">
+                        <p className="font-medium">Configured native instance</p>
+                        <p className="mt-1 font-mono text-muted-foreground break-all">
+                          {n8nManagedInstanceUrl ?? "Host-managed endpoint"}
+                        </p>
+                        <p className="mt-1 text-muted-foreground">
+                          API credentials stay server-side; superadmin access is rechecked at use.
+                        </p>
+                      </div>
+                    )}
                   </div>
+                )}
+                {!n8nManaged && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>n8n Instance URL</Label>
+                      <Input
+                        placeholder="https://n8n.example.com"
+                        value={n8nUrl}
+                        onChange={(e) => setN8nUrl(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Authentication Type</Label>
+                      <Select value={n8nAuthType} onValueChange={setN8nAuthType}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="header">Header Auth Token</SelectItem>
+                          <SelectItem value="basic">Basic Auth</SelectItem>
+                          <SelectItem value="none">No Authentication</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {n8nAuthType === "header" && (
+                      <p className="text-xs text-muted-foreground -mt-2">
+                        Use an n8n API key (Settings → API). Validation hits{" "}
+                        <code>GET /api/v1/workflows</code>.
+                      </p>
+                    )}
+                    {n8nAuthType !== "none" && (
+                      <div className="space-y-2">
+                        <Label>
+                          {n8nAuthType === "basic" ? "Credentials (user:pass)" : "API Key"}
+                        </Label>
+                        <Input
+                          type="password"
+                          placeholder={n8nAuthType === "basic" ? "admin:password" : "n8n_api_..."}
+                          value={n8nToken}
+                          onChange={(e) => setN8nToken(e.target.value)}
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Stored encrypted, never shown again. Leave blank to keep the saved token.
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
                 {n8nStatus && (
                   <div
@@ -1746,6 +1835,17 @@ function IntegrationsPage() {
                     >
                       {n8nStatus.detail}
                     </p>
+                    {n8nManaged && n8nStatus.ok && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {n8nStatus.workflowCount} workflows visible;{" "}
+                        {n8nStatus.activeWorkflowCount ?? "—"} active.
+                      </p>
+                    )}
+                    {n8nStatus.checkedAt && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Last validated: {new Date(n8nStatus.checkedAt).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 )}
                 {integrations.find((i) => i.type === "n8n" && i.is_active) &&
@@ -1763,7 +1863,10 @@ function IntegrationsPage() {
                       <Check className="h-3 w-3 mr-1" /> Currently connected
                     </Badge>
                   ))}
-                <Button onClick={saveN8n} disabled={n8nTesting || !n8nUrl}>
+                <Button
+                  onClick={saveN8n}
+                  disabled={n8nTesting || (n8nManaged ? !n8nManagedAvailable : !n8nUrl)}
+                >
                   {n8nTesting ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> Validating…

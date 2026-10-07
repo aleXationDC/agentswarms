@@ -173,7 +173,10 @@ describe("maintenance UI security and compatibility", () => {
     const page = readFileSync("src/routes/_authenticated/integrations.tsx", "utf8");
     expect(page).toContain("n8n Instance URL");
     expect(page).toContain("API Key");
-    expect(page).not.toContain("Use host-managed native n8n");
+    expect(page).toContain("Use host-managed native n8n (superadmins only)");
+    expect(page).toContain("getNativeN8nStatus({ data: { access_token: session.access_token } })");
+    expect(page).toContain("!n8nManaged &&");
+    expect(page).toContain("{n8nManaged && (");
     const nav = readFileSync("src/lib/appNav.ts", "utf8");
     expect(nav).toContain('{ title: "Maintenance access", url: "/admin/axtn-maintenance"');
   });

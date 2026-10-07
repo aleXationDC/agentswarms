@@ -75,6 +75,16 @@ async function runHealthTest(row: CandidateRow): Promise<TestResult> {
         provider: cfg.provider,
       });
     case "n8n":
+      if (cfg.binding_mode === "native") {
+        const { readManagedN8nStatus } = await import("./nativeN8n.server");
+        const status = await readManagedN8nStatus();
+        return status.connected
+          ? {
+              ok: true,
+              detail: `Authenticated against managed n8n (${status.workflows.length} workflows).`,
+            }
+          : { ok: false, detail: status.detail };
+      }
       return testN8nCore({
         instance_url: cfg.instance_url ?? "",
         webhook_token: cfg.webhook_token,

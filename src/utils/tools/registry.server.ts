@@ -1264,6 +1264,7 @@ async function loadN8nIntegration(ctx: AgentToolContext) {
     "n8n",
     (data.config || {}) as Record<string, unknown>,
   )) as {
+    binding_mode?: string;
     instance_url?: string;
     webhook_token?: string;
     auth_type?: string;
@@ -1276,7 +1277,11 @@ async function loadN8nIntegration(ctx: AgentToolContext) {
   const token = (cfg.webhook_token || "").trim();
   if (cfg.auth_type === "header" && token) headers["X-N8N-API-KEY"] = token;
   else if (cfg.auth_type === "basic" && token) headers.Authorization = `Basic ${btoa(token)}`;
-  return { baseUrl: cfg.instance_url.replace(/\/+$/, ""), headers };
+  return {
+    baseUrl: cfg.instance_url.replace(/\/+$/, ""),
+    headers,
+    managed: cfg.binding_mode === "native",
+  };
 }
 
 export async function runListN8nWorkflows(
@@ -1290,6 +1295,17 @@ export async function runListN8nWorkflows(
       error: "n8n is not connected. Tell the user to add it in Integrations.",
     });
   try {
+    if (cfg.managed) {
+      const { readManagedN8nStatus } = await import("@/utils/integrations/nativeN8n.server");
+      const status = await readManagedN8nStatus();
+      if (!status.connected) return JSON.stringify({ error: status.detail });
+      let items = status.workflows;
+      if (allowList && allowList.length > 0) {
+        const allow = new Set(allowList.map((s) => s.trim()).filter(Boolean));
+        items = items.filter((workflow) => allow.has(workflow.id));
+      }
+      return JSON.stringify({ workflows: items, count: items.length });
+    }
     const r = await safeFetch(`${cfg.baseUrl}/api/v1/workflows?limit=50`, {
       headers: cfg.headers,
       signal: AbortSignal.timeout(15_000),
@@ -1317,8 +1333,13 @@ export async function runN8nWorkflow(
   if (!cfg) return JSON.stringify({ error: "n8n is not connected." });
   const id = (args.workflow_id || "").trim();
   if (!id) return JSON.stringify({ error: "workflow_id is required" });
-  if (allowList && allowList.length > 0) {
-    const allow = new Set(allowList.map((s) => s.trim()).filter(Boolean));
+  const allow = new Set((allowList ?? []).map((s) => s.trim()).filter(Boolean));
+  if (cfg.managed && allow.size === 0) {
+    return JSON.stringify({
+      error: "Managed n8n execution requires an explicit workflow ID allow-list on this agent.",
+    });
+  }
+  if (allow.size > 0) {
     if (!allow.has(id)) {
       return JSON.stringify({
         error: `Workflow '${id}' is not in this agent's allow-list. Permitted ids: ${Array.from(allow).join(", ")}`,
@@ -1326,6 +1347,10 @@ export async function runN8nWorkflow(
     }
   }
   try {
+    if (cfg.managed) {
+      const { executeNativeN8nWorkflow } = await import("@/utils/integrations/nativeN8n.server");
+      return await executeNativeN8nWorkflow(cfg.baseUrl, cfg.headers, id, args.input ?? {});
+    }
     const r = await safeFetch(`${cfg.baseUrl}/api/v1/workflows/${encodeURIComponent(id)}/execute`, {
       method: "POST",
       headers: cfg.headers,

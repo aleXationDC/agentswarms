@@ -1502,11 +1502,17 @@ export const Route = createFileRoute("/api/chat")({
                   .eq("type", "n8n")
                   .eq("is_active", true)
                   .maybeSingle();
-                if (n8n?.is_active && n8n.config) {
+                const n8nConfig =
+                  n8n?.config && typeof n8n.config === "object" && !Array.isArray(n8n.config)
+                    ? (n8n.config as Record<string, unknown>)
+                    : null;
+                // A managed API key authenticates only to the configured n8n API.
+                // Never reuse it as a bearer token for an agent-supplied webhook URL.
+                if (n8n?.is_active && n8nConfig && n8nConfig.binding_mode !== "native") {
                   n8nGlobal = (await resolveIntegrationConfig(
                     userId,
                     "n8n",
-                    n8n.config as Record<string, unknown>,
+                    n8nConfig,
                   )) as unknown as typeof n8nGlobal;
                 }
               }
