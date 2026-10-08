@@ -99,7 +99,21 @@ It manages:
   > `GOTRUE_SAML_PRIVATE_KEY`. The SSO tab detects and explains this if it's
   > not enabled yet.
 
-## Use cases
+  ## Authenticator step-up
+
+  An enrolled TOTP authenticator does not by itself make the current session
+  AAL2. If the Account page reports AAL1, use **Account → Authenticator App →
+  Verify authenticator** and enter the current six-digit code. The Maintenance
+  Access page also offers this same step-up when a verified authenticator is
+  available. On success the native Supabase challenge updates the session; the
+  page confirms AAL2 from the refreshed session before showing success.
+
+  Maintenance remains server-gated on a valid AAL2 session. A missing factor,
+  invalid or expired code, failed verification, or failed session refresh never
+  opens the maintenance lease. No authenticator needs to be removed or
+  re-enrolled.
+
+  ## Use cases
 
 Every walkthrough below uses the tabs on **Admin → IAM**: _Users_, _Groups_,
 _Access_, _Attributes_, _Budgets_, _SSO_ and _Settings_.

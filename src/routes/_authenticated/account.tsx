@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { deleteMyAccount } from "@/lib/account.functions";
 import { mfaErrorMessage, totpQrCodeSource } from "@/lib/totpEnrollment";
+import { TotpReauthentication } from "@/components/auth/TotpReauthentication";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -574,6 +575,12 @@ function AccountPage() {
               <Button variant="outline" size="sm" disabled={mfaLoading} onClick={removeTotpFactor}>
                 Remove
               </Button>
+            </div>
+          )}
+
+          {totpFactor && !enrollment && mfaLevel === "aal1" && (
+            <div className="rounded-lg border border-primary/30 p-4">
+              <TotpReauthentication onVerified={loadMfaStatus} />
             </div>
           )}
 

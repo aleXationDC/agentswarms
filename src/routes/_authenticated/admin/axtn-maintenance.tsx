@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useAuth } from "@/hooks/use-auth";
 import { useIsSuperadmin } from "@/hooks/use-iam";
 import { supabase } from "@/integrations/supabase/client";
+import { TotpReauthentication } from "@/components/auth/TotpReauthentication";
 import {
   getAxtnMaintenanceSettings,
   getManagedN8nStatus,
@@ -199,6 +200,13 @@ function MaintenanceAccessPage() {
           <Link to="/account" className="text-sm font-medium text-primary hover:underline">
             Manage MFA in Account settings
           </Link>
+          {mfa?.enrolled && mfa.level !== "aal2" && (
+            <TotpReauthentication
+              onVerified={() =>
+                setMfa((current) => (current ? { ...current, level: "aal2" } : current))
+              }
+            />
+          )}
           {settingsError && (
             <p role="alert" className="text-sm text-destructive">
               {settingsError}
