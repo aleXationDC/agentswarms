@@ -11,6 +11,29 @@ The login page offers **Sign up** only when the instance IAM setting
 be read, registration is not offered. The existing database signup trigger
 continues to enforce invite-only mode independently of the UI.
 
+### Native login repair evidence (2026-10-08)
+
+The productive instance stores `allow_public_signup=false`. Candidate
+`eb191e152de0132b0107329d7bf444b10150fccb` now exposes that policy through the
+existing pre-auth configuration endpoint and hides the signup entry until
+registration is explicitly allowed. A real browser verified the deployed
+invite-only login, an enabled-policy response, and a failed-policy response
+that reports an error without offering signup. The application is healthy;
+only the AgentSwarms app was replaced and both prior app images are retained.
+
+The separate public login routing repair is host revision
+`c71260dc20382ac0af1f180ba90ee8ef03b7d7d3`, documented in
+`aXtn/aXtn-host:architecture/AGENTSWARMS_MAINTENANCE_ACCESS.md`.
+Public and private Auth probes reached the same native validation result,
+and Alex confirmed a successful real public login after the repair.
+The subsequent public browser signup check encountered HTTP 403 because the
+maintenance lease had closed; it was not reopened by the executor. The private
+HTTPS browser check covers the same deployed login and signup policy.
+
+Work remains in parent Case `732dec32-082a-423a-85cd-3cdda5ab1341` and repair
+child `8eac3503-c86b-490b-b819-a11ba40d7638`. Executor verification and completion
+do not constitute independent acceptance.
+
 > **Claim it before the instance is reachable.** The bootstrap account is
 > identified by an email address, and an address is a claim rather than a
 > credential. Public signup is on by default, so whoever registers that address
