@@ -76,16 +76,39 @@ function LoginPage() {
   }, []);
 
   // Instance SSO configuration (set by superadmins under /admin/iam → SSO).
-  const [ssoConfig, setSsoConfig] = useState<{ enabled: boolean; enforced: boolean } | null>(null);
+  const [ssoConfig, setSsoConfig] = useState<{
+    enabled: boolean;
+    enforced: boolean;
+    allow_public_signup: boolean;
+  } | null>(null);
   const [ssoOpen, setSsoOpen] = useState(false);
   const [ssoEmail, setSsoEmail] = useState("");
   const [ssoLoading, setSsoLoading] = useState(false);
 
   useEffect(() => {
+    let active = true;
     fetch("/api/auth/sso-config")
-      .then((r) => (r.ok ? r.json() : { enabled: false, enforced: false }))
-      .then((cfg) => setSsoConfig({ enabled: !!cfg.enabled, enforced: !!cfg.enforced }))
-      .catch(() => setSsoConfig({ enabled: false, enforced: false }));
+      .then((r) => {
+        if (!r.ok) throw new Error("Unable to load instance sign-in options");
+        return r.json();
+      })
+      .then((cfg) => {
+        if (active) {
+          setSsoConfig({
+            enabled: cfg.enabled === true,
+            enforced: cfg.enforced === true,
+            allow_public_signup: cfg.allow_public_signup === true,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          toast.error(error instanceof Error ? error.message : "Unable to load sign-in options");
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Escape hatch so a superadmin can always reach native login even when SSO
@@ -146,6 +169,11 @@ function LoginPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
+        if (ssoConfig?.allow_public_signup !== true) {
+          throw new Error(
+            "This instance is invite-only. Ask your administrator for an invitation.",
+          );
+        }
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -449,7 +477,7 @@ function LoginPage() {
                         Sign in
                       </button>
                     </>
-                  ) : (
+                  ) : ssoConfig?.allow_public_signup === true ? (
                     <>
                       Don't have an account?{" "}
                       <button
@@ -459,7 +487,7 @@ function LoginPage() {
                         Sign up
                       </button>
                     </>
-                  )}
+                  ) : null}
                 </div>
               )}
             </CardContent>

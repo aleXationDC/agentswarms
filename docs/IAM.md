@@ -6,6 +6,11 @@ The account whose email matches `ADMIN_EMAIL` is the instance's **bootstrap
 superadmin** — sign in with it and open **Admin → IAM** (`/admin/iam`) to
 manage everything else.
 
+The login page offers **Sign up** only when the instance IAM setting
+**Public signup** is enabled. Until that setting is loaded, or if it cannot
+be read, registration is not offered. The existing database signup trigger
+continues to enforce invite-only mode independently of the UI.
+
 > **Claim it before the instance is reachable.** The bootstrap account is
 > identified by an email address, and an address is a claim rather than a
 > credential. Public signup is on by default, so whoever registers that address
