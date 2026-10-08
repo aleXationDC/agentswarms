@@ -34,6 +34,32 @@ Work remains in parent Case `732dec32-082a-423a-85cd-3cdda5ab1341` and repair
 child `8eac3503-c86b-490b-b819-a11ba40d7638`. Executor verification and completion
 do not constitute independent acceptance.
 
+### Existing n8n personal owner access (2026-10-08)
+
+The unchanged n8n instance contained one `global:owner` shell user
+(`8fc07bfc-6e0b-4e89-88ba-f15078682dba`) with no email or password hash.
+Its non-null activity date caused the native setup guard to consider the
+otherwise uninitialized account already set up.
+
+The authorized targeted recovery reused the product's native
+`OwnershipService.setupOwner` with `overwriteExisting`, guarded to require
+that exact empty owner and exactly one user. The existing separately protected
+initial password was reused without disclosure. A mode-0600 online database
+snapshot was taken before recovery. No global user-management reset, user
+deletion, second owner, role transfer or API-key reset was performed.
+
+The existing owner now logs in as `x@alexation.com`. Personal password login
+returned HTTP 200 both locally and through the existing private HTTPS n8n
+entry on port 8443. The owner ID, workflow IDs and activation flags, credential
+IDs and API-key IDs were compared before and after and remained unchanged.
+The account uses the neutral display name `Instance Owner`; Alex's password
+and profile takeover are not claimed complete.
+
+This access result is recorded on the existing handover child
+`158a6a9c-d616-4908-8c67-efb102947eb0` of parent
+`732dec32-082a-423a-85cd-3cdda5ab1341`. It does not establish completion or
+independent acceptance of the remaining Swarm-to-n8n execution work.
+
 > **Claim it before the instance is reachable.** The bootstrap account is
 > identified by an email address, and an address is a claim rather than a
 > credential. Public signup is on by default, so whoever registers that address
