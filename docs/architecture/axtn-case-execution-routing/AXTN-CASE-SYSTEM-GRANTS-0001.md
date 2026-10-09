@@ -4,7 +4,7 @@
 production grants, migration, merge, or deployment authorized or performed.
 **Source:** PR #19 head `c05d74230ffae1db67538ebfa038e585693996a5`, on
 `work/AXTN-LLMHUB-PROD-LINEAGE-ACCEPTANCE-0001-integration`.
-**Working branch:** `work/AXTN-CASE-SYSTEM-GRANTS-0001`.
+**Implementation branch:** `work/AXTN-CASE-SYSTEM-GRANTS-0001-implementation`.
 **Date:** 2026-10-09 UTC.
 
 ## Decision and change
@@ -100,6 +100,11 @@ grants using existing IAM operations. An independent reviewer should verify
 this migration and the compatibility matrix against that inventory, then
 record a separate acceptance/release decision. This PR must not be merged or
 deployed without those independent gates.
+
+The task handoff is carried separately by PR #22 and its branch
+`work/AXTN-CASE-SYSTEM-GRANTS-0001`; that branch is not the implementation
+source. The implementation is based on PR #19's current head and is isolated
+on `work/AXTN-CASE-SYSTEM-GRANTS-0001-implementation`.
 
 **Review PR:** to be opened against
 `work/AXTN-LLMHUB-PROD-LINEAGE-ACCEPTANCE-0001-integration` after the candidate
