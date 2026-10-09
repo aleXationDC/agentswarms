@@ -182,6 +182,7 @@ async function serverChat(args: {
             operationKey: args.operationKey,
           }
         : {}),
+      routeThroughGateway: d.routeThroughGateway,
       provider: d.provider || "openrouter",
       model: d.model || "google/gemini-3-flash-preview",
       systemPrompt: args.systemPrompt,

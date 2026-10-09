@@ -6,6 +6,8 @@ import type { Database } from "@/integrations/supabase/types";
 import {
   streamWithProvider,
   resolveOpenAICompatTransport,
+  resolveUserGatewayOverride,
+  canRouteThroughGateway,
   type GatewayOverride,
 } from "@/utils/providers/credentials.server";
 import type { ProviderId } from "@/utils/providers/types";
@@ -1083,6 +1085,7 @@ export const Route = createFileRoute("/api/chat")({
             temperature?: number;
             maxTokens?: number;
             agentId?: string;
+            routeThroughGateway?: boolean;
             // Headless swarm runs (API key / cron) authenticate with the
             // service secret and name the owner here (see the internal-auth
             // block below). Ignored for normal browser requests.
@@ -1453,8 +1456,38 @@ export const Route = createFileRoute("/api/chat")({
             return merged;
           }
 
-          // Resolve gateway override + n8n notify config (best-effort).
-          let gatewayOverride: GatewayOverride | undefined;
+          const routeThroughGateway =
+            typeof body.routeThroughGateway === "boolean"
+              ? body.routeThroughGateway
+              : agentRouteThroughGateway;
+          if (caseExecution && routeThroughGateway) throw new Error("ROUTING_DECISION_REQUIRED");
+          if (routeThroughGateway && !userId) {
+            return new Response(
+              JSON.stringify({ error: "Authentication required for LLM Gateway." }),
+              {
+                status: 401,
+                headers: { "Content-Type": "application/json", ...corsHeaders },
+              },
+            );
+          }
+          // The same owner-scoped resolver serves browser and internal runs.
+          const gatewayOverride: GatewayOverride | undefined =
+            userId && !caseExecution
+              ? ((await resolveUserGatewayOverride(userId, {
+                  requireRouteAll: !routeThroughGateway,
+                  required: routeThroughGateway,
+                })) ?? undefined)
+              : undefined;
+          if (gatewayOverride && !canRouteThroughGateway(provider)) {
+            return new Response(
+              JSON.stringify({ error: "This provider cannot use the LLM Gateway." }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json", ...corsHeaders },
+              },
+            );
+          }
+          // Optional n8n notification retains its existing best-effort policy.
           let n8nGlobal: {
             instance_url?: string;
             webhook_token?: string;
@@ -1464,38 +1497,8 @@ export const Route = createFileRoute("/api/chat")({
             try {
               const sb = getServerSupabase(authToken);
               if (sb) {
-                // Secrets (gateway api_key / n8n webhook_token) are encrypted at
-                // rest in integrations.config — decrypt them server-side here.
                 const { resolveIntegrationConfig } =
                   await import("@/utils/providers/integrationConfig.server");
-                const { data: gw } = await sb
-                  .from("integrations")
-                  .select("config, is_active")
-                  .eq("type", "llm_gateway")
-                  .eq("is_active", true)
-                  .maybeSingle();
-                if (gw?.is_active && gw.config) {
-                  const cfg = (await resolveIntegrationConfig(
-                    userId,
-                    "llm_gateway",
-                    gw.config as Record<string, unknown>,
-                  )) as {
-                    base_url?: string;
-                    api_key?: string;
-                    provider?: string;
-                    route_all?: unknown;
-                  };
-                  // Route when the agent opted in OR the gateway is set to
-                  // route ALL traffic (the switch on the Integrations page).
-                  const shouldRoute = agentRouteThroughGateway || cfg.route_all === true;
-                  if (shouldRoute && cfg.base_url && cfg.api_key) {
-                    gatewayOverride = {
-                      baseUrl: cfg.base_url.replace(/\/+$/, ""),
-                      apiKey: cfg.api_key,
-                      provider: cfg.provider,
-                    };
-                  }
-                }
                 const { data: n8n } = await sb
                   .from("integrations")
                   .select("config, is_active")

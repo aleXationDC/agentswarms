@@ -58,6 +58,7 @@ type RawModel = {
   name?: string;
   architecture?: { modality?: string };
   context_length?: number;
+  type?: string;
   pricing?: { prompt?: string | number; completion?: string | number };
 };
 
@@ -65,6 +66,7 @@ type RawModel = {
 async function fetchProviderModels(
   accessToken: string,
   provider: string,
+  routeThroughGateway = false,
 ): Promise<{ ok: true; raw: RawModel[] } | { ok: false; error: string }> {
   const { data: auth, error } = await supabaseAdmin.auth.getUser(accessToken);
   if (error || !auth.user) return { ok: false, error: "Unauthorized" };
@@ -74,6 +76,7 @@ async function fetchProviderModels(
   const transport = await resolveOpenAICompatTransport({
     userId: auth.user.id,
     provider: provider as ProviderId,
+    routeThroughGateway,
   });
   if (!transport) return { ok: false, error: "Provider not configured" };
 
@@ -97,25 +100,44 @@ async function fetchProviderModels(
     clearTimeout(timer);
   }
   if (!r.ok) return { ok: false, error: `The models endpoint returned ${r.status}` };
-  const body = JSON.parse(payload || "{}") as { data?: RawModel[] };
-  return { ok: true, raw: body.data ?? [] };
+  let body: { data?: RawModel[] };
+  try {
+    body = JSON.parse(payload) as { data?: RawModel[] };
+  } catch {
+    return { ok: false, error: "The models endpoint returned an invalid catalogue." };
+  }
+  if (!body || !Array.isArray(body.data)) {
+    return { ok: false, error: "The models endpoint returned an invalid catalogue." };
+  }
+  return { ok: true, raw: body.data };
 }
 
 export const listProviderModels = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
-    z.object({ access_token: z.string().min(1), provider: z.string().min(1) }).parse(input),
+    z
+      .object({
+        access_token: z.string().min(1),
+        provider: z.string().min(1),
+        routeThroughGateway: z.boolean().optional(),
+      })
+      .parse(input),
   )
   .handler(
     async ({
       data,
     }): Promise<{ ok: true; models: ProviderModelInfo[] } | { ok: false; error: string }> => {
       try {
-        const res = await fetchProviderModels(data.access_token, data.provider);
+        const res = await fetchProviderModels(
+          data.access_token,
+          data.provider,
+          data.routeThroughGateway === true,
+        );
         if (!res.ok) return res;
         const models: ProviderModelInfo[] = [];
         const seen = new Set<string>();
         for (const m of res.raw) {
-          if (!m.id || seen.has(m.id)) continue;
+          if (!m || typeof m.id !== "string" || !m.id || seen.has(m.id)) continue;
+          if (typeof m.type === "string" && /embedding|rerank/i.test(m.type)) continue;
           const modality = m.architecture?.modality;
           // Text-output models only. OpenRouter publishes modality strings
           // ("text->text", "text+image->text") — trust them; providers without

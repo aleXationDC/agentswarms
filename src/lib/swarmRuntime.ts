@@ -181,6 +181,8 @@ export type SwarmNodeData = {
   agentId?: string | null;
   /** Provenance only. Executable configuration remains an independent snapshot. */
   agentSnapshot?: { agentId: string; versionId: string | null; configHash: string };
+  /** Snapshot opt-in; credentials are still resolved for the executing user. */
+  routeThroughGateway?: boolean;
   // tools — when present, only these tool ids are exposed to this node's LLM call
   enabledTools?: SwarmToolId[];
   // Skill library attachments — sample skill ids (string keys) and/or
@@ -764,6 +766,7 @@ async function callAgentImpl(
         maxTokens: resolveNodeMaxTokens(node.data.maxTokens),
         messages: messagesPayload,
         agentId: node.data.agentId || undefined,
+        routeThroughGateway: node.data.routeThroughGateway,
         // Per-node KB id (e.g. swarm template referencing a shared sample KB
         // without a saved agent). Server merges with whatever the agent itself
         // has configured.

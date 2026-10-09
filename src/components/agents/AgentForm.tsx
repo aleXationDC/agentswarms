@@ -1307,15 +1307,15 @@ export function AgentForm({
   // stale the moment they ship. `liveModels.models` is null until the first
   // fetch lands, which is when we keep showing the bundled list rather than
   // flashing an empty row.
-  const liveModels = useProviderModels(provider);
+  const liveModels = useProviderModels(provider, routeThroughGateway);
   const baseModelSuggestions: { id: string; free?: boolean }[] =
-    provider === "ollama" && ollamaLive.models.length > 0
+    !routeThroughGateway && provider === "ollama" && ollamaLive.models.length > 0
       ? ollamaLive.models.map((id) => ({ id }))
       : liveModels.models && liveModels.models.length > 0
         ? // Free ones lead (the server sorts them first); cap the row so a
           // 300-model catalogue doesn't become a wall of badges.
           liveModels.models.slice(0, 24).map((m) => ({ id: m.id, free: m.free }))
-        : (MODEL_SUGGESTIONS[provider] || []).map((id) => ({ id }));
+        : (routeThroughGateway ? [] : MODEL_SUGGESTIONS[provider] || []).map((id) => ({ id }));
   const suggestedModels = baseModelSuggestions.filter((m) =>
     isModelAllowedByRules(myModelRules, provider, m.id),
   );
@@ -1325,15 +1325,17 @@ export function AgentForm({
   // field reading empty.
   const modelOptions = useMemo<{ id: string; free?: boolean }[]>(() => {
     const live =
-      provider === "ollama" && ollamaLive.models.length > 0
+      !routeThroughGateway && provider === "ollama" && ollamaLive.models.length > 0
         ? ollamaLive.models.map((id) => ({ id }) as { id: string; free?: boolean })
         : (liveModels.models ?? []).map((m) => ({ id: m.id, free: m.free }));
     const source =
-      live.length > 0 ? live : (MODEL_SUGGESTIONS[provider] || []).map((id) => ({ id }));
+      live.length > 0
+        ? live
+        : (routeThroughGateway ? [] : MODEL_SUGGESTIONS[provider] || []).map((id) => ({ id }));
     const allowed = source.filter((m) => isModelAllowedByRules(myModelRules, provider, m.id));
     if (model && !allowed.some((m) => m.id === model)) return [{ id: model }, ...allowed];
     return allowed;
-  }, [provider, ollamaLive.models, liveModels.models, myModelRules, model]);
+  }, [provider, ollamaLive.models, liveModels.models, myModelRules, model, routeThroughGateway]);
   const availableProviders = PROVIDERS.filter(
     (p) => connectedProviders.has(p.value) || p.value === provider,
   ).filter((p) => !iamAllowedProviders || iamAllowedProviders.has(p.value) || p.value === provider);
@@ -1581,6 +1583,7 @@ export function AgentForm({
               value={model}
               onChange={setModel}
               provider={provider}
+              routeThroughGateway={routeThroughGateway}
               fallbackModels={suggestedModels.map((m) => m.id)}
               isAllowed={(m) => isModelAllowedByRules(myModelRules, provider, m)}
               placeholder="Search or type a model id..."

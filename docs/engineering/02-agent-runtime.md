@@ -34,6 +34,42 @@ mechanically, which is worth knowing before you add an import.
 
 ---
 
+## Gateway snapshots and effective model discovery
+
+An agent's `tools.routeThroughGateway` is copied into the immutable swarm node
+as `data.routeThroughGateway`; importing still sets `agentId` to null. Canvas,
+headless and embedded calls carry this intent without re-linking the mutable
+source agent. The node inspector exposes the same opt-in, not a separate
+gateway integration or credential store.
+
+The chat route resolves the gateway for the authenticated caller, or the
+server-authenticated headless owner. An explicit opt-in fails if that user's
+gateway is unavailable; it never falls back to another provider key.
+`route_all` remains an independent global setting. Signed providers that
+cannot use an OpenAI-compatible gateway are rejected rather than silently
+ignoring the gateway. Gateway streaming does not require an unrelated upstream
+provider credential.
+
+Agent and node model pickers use the effective route for dynamic `/models`
+discovery. The session cache is partitioned by caller, provider and gateway
+opt-in. Gateway picks do not add bundled upstream suggestions; the saved exact
+ID and explicit custom-ID entry remain available. Discovery errors are shown
+with a retry action rather than cached as a successful empty catalogue.
+Embedding/reranking model types are excluded from the text-LLM picker.
+The global Model Registry is separate and is not evidence that a configured
+gateway can execute a listed model. Configured base paths are preserved;
+endpoint compatibility and tool/schema capabilities still need real inference
+tests with an independently authorized credential.
+
+Case-bound execution keeps its server-derived routing and credential binding.
+Neither a node's gateway opt-in nor the run owner's global gateway can
+substitute for that binding. Explicit gateway requests on this path fail with
+`ROUTING_DECISION_REQUIRED` until a separately reviewed Case routing contract
+provides the intended gateway decision. Personal Canvas/headless routing
+parity does not constitute Case-bound gateway acceptance.
+
+---
+
 ## The tool-calling loop
 
 This is the part people get wrong when they reimplement it, so it is worth

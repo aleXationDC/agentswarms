@@ -33,6 +33,7 @@ export type ModelComboboxProps = {
   onChange: (modelId: string) => void;
   /** Which provider's catalogue to load. */
   provider: string;
+  routeThroughGateway?: boolean;
   /**
    * Ids to show when the live catalogue is empty or still loading — the
    * caller's bundled suggestions. Also unioned in so a curated id stays
@@ -54,6 +55,7 @@ export function ModelCombobox({
   value,
   onChange,
   provider,
+  routeThroughGateway = false,
   fallbackModels = [],
   isAllowed,
   renderBadge,
@@ -63,7 +65,7 @@ export function ModelCombobox({
 }: ModelComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const live = useProviderModels(provider);
+  const live = useProviderModels(provider, routeThroughGateway);
   // `models` is null until the first fetch lands. Distinguishing that from an
   // empty catalogue is what lets the list say "loading" instead of "no models",
   // which otherwise reads as "this provider has none".
@@ -73,7 +75,7 @@ export function ModelCombobox({
     const fromLive: Entry[] = (live.models ?? []).map((m) => ({ id: m.id, free: m.free }));
     const seen = new Set(fromLive.map((m) => m.id));
     const merged = [...fromLive];
-    for (const id of fallbackModels) {
+    for (const id of routeThroughGateway ? [] : fallbackModels) {
       if (!seen.has(id)) {
         merged.push({ id });
         seen.add(id);
@@ -84,7 +86,7 @@ export function ModelCombobox({
     // were selected and the next save would quietly clear it.
     if (value && !seen.has(value)) merged.unshift({ id: value });
     return isAllowed ? merged.filter((m) => isAllowed(m.id)) : merged;
-  }, [live.models, fallbackModels, value, isAllowed]);
+  }, [live.models, fallbackModels, value, isAllowed, routeThroughGateway]);
 
   const trimmed = query.trim();
   const filtered = useMemo(() => {
@@ -151,6 +153,14 @@ export function ModelCombobox({
             autoFocus
           />
           <CommandList className="max-h-64">
+            {live.error && (
+              <div role="alert" className="px-3 py-2 text-xs text-destructive">
+                {live.error}
+                <Button type="button" variant="ghost" size="sm" onClick={live.refresh}>
+                  Retry
+                </Button>
+              </div>
+            )}
             {loading && entries.length === 0 ? (
               <div className="flex items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

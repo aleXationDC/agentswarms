@@ -12,22 +12,22 @@ import { listProviderModels, type ProviderModelInfo } from "@/utils/providerMode
 
 const CACHE_PREFIX = "as:provider-models:";
 
-/** In-flight requests, so concurrent mounts share one fetch per provider. */
+/** Deduplicated per caller, provider and explicit gateway route. */
 const inflight = new Map<string, Promise<ProviderModelInfo[]>>();
 const memory = new Map<string, ProviderModelInfo[]>();
 
-function readSession(provider: string): ProviderModelInfo[] | null {
+function readSession(key: string): ProviderModelInfo[] | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_PREFIX + provider);
+    const raw = sessionStorage.getItem(CACHE_PREFIX + key);
     return raw ? (JSON.parse(raw) as ProviderModelInfo[]) : null;
   } catch {
     return null;
   }
 }
 
-function writeSession(provider: string, models: ProviderModelInfo[]): void {
+function writeSession(key: string, models: ProviderModelInfo[]): void {
   try {
-    sessionStorage.setItem(CACHE_PREFIX + provider, JSON.stringify(models));
+    sessionStorage.setItem(CACHE_PREFIX + key, JSON.stringify(models));
   } catch {
     /* private mode / quota — the in-memory cache still works */
   }
@@ -36,53 +36,60 @@ function writeSession(provider: string, models: ProviderModelInfo[]): void {
 /**
  * Fetch a provider's models, deduped across callers and cached for the session.
  *
- * Failure caches an empty list rather than retrying on every mount: a provider
- * that isn't connected, or whose key is rejected, would otherwise fire a
- * request from every picker on every render pass.
+ * Failed discovery is surfaced to the picker, not cached as a valid catalogue.
  */
 export async function loadProviderModels(
   provider: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; routeThroughGateway?: boolean } = {},
 ): Promise<ProviderModelInfo[]> {
+  const { data } = await supabase.auth.getSession();
+  const session = data.session;
+  if (!session) throw new Error("Sign in to load provider models.");
+  const key = `${provider}:${opts.routeThroughGateway ? "gateway" : "default"}:${session.user.id}`;
   if (!opts.force) {
-    const mem = memory.get(provider);
+    const mem = memory.get(key);
     if (mem) return mem;
-    const cached = readSession(provider);
+    const cached = readSession(key);
     if (cached) {
-      memory.set(provider, cached);
+      memory.set(key, cached);
       return cached;
     }
-    const pending = inflight.get(provider);
+    const pending = inflight.get(key);
     if (pending) return pending;
   }
 
   const run = (async () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return [];
-      const res = await listProviderModels({ data: { access_token: token, provider } });
-      const models = res.ok ? res.models : [];
-      memory.set(provider, models);
-      writeSession(provider, models);
+      const res = await listProviderModels({
+        data: {
+          access_token: session.access_token,
+          provider,
+          routeThroughGateway: opts.routeThroughGateway,
+        },
+      });
+      if (!res.ok) throw new Error(res.error);
+      const models = res.models;
+      memory.set(key, models);
+      writeSession(key, models);
       return models;
-    } catch {
-      memory.set(provider, []);
-      return [];
     } finally {
-      inflight.delete(provider);
+      inflight.delete(key);
     }
   })();
-  inflight.set(provider, run);
+  inflight.set(key, run);
   return run;
 }
 
 /** Drop the cache so the next read re-fetches (after connecting a provider). */
 export function invalidateProviderModels(provider?: string): void {
   if (provider) {
-    memory.delete(provider);
+    for (const key of memory.keys()) {
+      if (key.startsWith(`${provider}:`)) memory.delete(key);
+    }
     try {
-      sessionStorage.removeItem(CACHE_PREFIX + provider);
+      for (const key of Object.keys(sessionStorage)) {
+        if (key.startsWith(`${CACHE_PREFIX}${provider}:`)) sessionStorage.removeItem(key);
+      }
     } catch {
       /* ignore */
     }
@@ -114,7 +121,11 @@ export function usePrefetchProviderModels(): void {
       const providers = Array.from(
         new Set(
           data
-            .filter((r) => r.is_active !== false && (r.type === "llm" || r.type === null))
+            .filter(
+              (r) =>
+                r.is_active !== false &&
+                (r.type === "llm_provider" || r.type === "llm" || r.type === null),
+            )
             .map((r) => r.provider)
             .filter((p): p is string => Boolean(p)),
         ),
@@ -124,8 +135,14 @@ export function usePrefetchProviderModels(): void {
       // open is rude to both the browser and the providers.
       for (const p of providers) {
         if (cancelled) return;
-        if (memory.has(p)) continue;
-        await loadProviderModels(p);
+        try {
+          await loadProviderModels(p);
+        } catch (error) {
+          console.warn(
+            "[models] Prefetch failed:",
+            error instanceof Error ? error.message : "Discovery failed",
+          );
+        }
       }
     })();
     return () => {
@@ -135,36 +152,50 @@ export function usePrefetchProviderModels(): void {
 }
 
 /** The live catalogue for one provider. `null` while the first load is in flight. */
-export function useProviderModels(provider: string | null | undefined): {
+export function useProviderModels(
+  provider: string | null | undefined,
+  routeThroughGateway = false,
+): {
   models: ProviderModelInfo[] | null;
   free: ProviderModelInfo[];
   refresh: () => void;
+  error: string | null;
 } {
-  const [models, setModels] = useState<ProviderModelInfo[] | null>(() =>
-    provider ? (memory.get(provider) ?? null) : [],
-  );
+  const [models, setModels] = useState<ProviderModelInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
     (force = false) => {
+      setModels(provider ? null : []);
+      setError(null);
       if (!provider) {
         setModels([]);
         return;
       }
       let cancelled = false;
-      void loadProviderModels(provider, { force }).then((m) => {
-        if (!cancelled) setModels(m);
-      });
+      void loadProviderModels(provider, { force, routeThroughGateway }).then(
+        (m) => {
+          if (!cancelled) setModels(m);
+        },
+        (e: unknown) => {
+          if (!cancelled) {
+            setModels([]);
+            setError(e instanceof Error ? e.message : "Model discovery failed.");
+          }
+        },
+      );
       return () => {
         cancelled = true;
       };
     },
-    [provider],
+    [provider, routeThroughGateway],
   );
 
   useEffect(() => load(), [load]);
 
   return {
     models,
+    error,
     free: (models ?? []).filter((m) => m.free),
     refresh: () => {
       if (provider) invalidateProviderModels(provider);

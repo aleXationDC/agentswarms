@@ -99,6 +99,10 @@ async function loadLegacyConfig(
 // URL + key so all traffic goes through LiteLLM/Portkey/Helicone/etc.
 export type GatewayOverride = { baseUrl: string; apiKey: string; provider?: string };
 
+export function canRouteThroughGateway(provider: ProviderId): boolean {
+  return LEGACY_PROVIDERS.has(provider);
+}
+
 /**
  * Resolve the user's active LLM Gateway integration into a usable override.
  *
@@ -111,29 +115,36 @@ export type GatewayOverride = { baseUrl: string; apiKey: string; provider?: stri
  *    covered without each call site knowing about gateways.
  *
  * With `requireRouteAll`, returns null unless route_all is set. Lookup
- * failures return null (routing, not egress enforcement — a DB blip must not
- * take every provider down), but are logged.
+ * failures return null and are logged: global route-all is not egress enforcement.
+ * An explicit opt-in instead requires the gateway and fails closed.
  */
 export async function resolveUserGatewayOverride(
   userId: string,
-  opts: { requireRouteAll?: boolean } = {},
+  opts: { requireRouteAll?: boolean; required?: boolean } = {},
 ): Promise<GatewayOverride | null> {
   try {
-    const { data: gw } = await supabaseAdmin
+    const { data: gw, error } = await supabaseAdmin
       .from("integrations")
       .select("config, is_active")
       .eq("user_id", userId)
       .eq("type", "llm_gateway")
       .eq("is_active", true)
       .maybeSingle();
-    if (!gw?.is_active || !gw.config) return null;
+    if (error) throw new Error("Gateway integration lookup failed.");
+    if (!gw?.is_active || !gw.config) {
+      if (opts.required) throw new Error("LLM Gateway is not configured for the executing user.");
+      return null;
+    }
     const cfg = (await resolveIntegrationConfig(
       userId,
       "llm_gateway",
       gw.config as Record<string, unknown>,
     )) as { base_url?: string; api_key?: string; provider?: string; route_all?: unknown };
     if (opts.requireRouteAll && cfg.route_all !== true) return null;
-    if (!cfg.base_url || !cfg.api_key) return null;
+    if (!cfg.base_url || !cfg.api_key) {
+      if (opts.required) throw new Error("LLM Gateway configuration is incomplete.");
+      return null;
+    }
     return {
       baseUrl: cfg.base_url.replace(/\/+$/, ""),
       apiKey: cfg.api_key,
@@ -141,6 +152,7 @@ export async function resolveUserGatewayOverride(
     };
   } catch (e) {
     console.warn("[gateway] override lookup failed:", (e as Error).message);
+    if (opts.required) throw new Error("The requested LLM Gateway is unavailable.");
     return null;
   }
 }
@@ -265,6 +277,7 @@ export async function resolveOpenAICompatTransport(args: {
   provider: ProviderId;
   gateway?: GatewayOverride;
   credentialContext?: CaseCredentialContext;
+  routeThroughGateway?: boolean;
 }): Promise<OpenAICompatTransport | null> {
   const { userId, provider } = args;
   if (!OPENAI_COMPAT_PROVIDERS.has(provider)) return null;
@@ -272,10 +285,16 @@ export async function resolveOpenAICompatTransport(args: {
   // Gateway resolution: an explicit override from the caller (per-agent
   // opt-in) wins; otherwise honor the user's "route all LLM traffic" gateway
   // setting here, at the one chokepoint every OpenAI-compat surface shares.
-  if (args.credentialContext && args.gateway) throw new Error("ROUTING_DECISION_REQUIRED");
+  if (args.credentialContext && (args.gateway || args.routeThroughGateway === true)) {
+    throw new Error("ROUTING_DECISION_REQUIRED");
+  }
   const gateway = args.credentialContext
     ? undefined
-    : (args.gateway ?? (await resolveUserGatewayOverride(userId, { requireRouteAll: true })));
+    : (args.gateway ??
+      (await resolveUserGatewayOverride(userId, {
+        requireRouteAll: args.routeThroughGateway !== true,
+        required: args.routeThroughGateway === true,
+      })));
 
   // Gateway override short-circuits per-provider creds — every gateway we
   // support (LiteLLM/Portkey/Helicone) speaks OpenAI Chat Completions.
@@ -763,6 +782,22 @@ export async function streamWithProvider(args: {
     ? await loadCaseCredential(args.credentialContext, provider)
     : null;
 
+  if (gateway) {
+    if (!canRouteThroughGateway(provider)) {
+      throw new Error("This provider cannot use the LLM Gateway.");
+    }
+    return openAICompatChatStream({
+      baseUrl: gateway.baseUrl,
+      apiKey: gateway.apiKey,
+      modelId,
+      systemPrompt,
+      messages,
+      temperature,
+      maxTokens,
+      providerLabel: `${provider} via Gateway`,
+    });
+  }
+
   // Legacy providers (grok, openai, gemini, ollama) store creds in the
   // older `integrations` table as plaintext config. Route them through
   // a dedicated dispatcher so the chat route works for every provider
@@ -778,24 +813,6 @@ export async function streamWithProvider(args: {
       maxTokens,
       gateway,
       credentialContext: args.credentialContext,
-    });
-  }
-
-  // Anthropic uses encrypted creds but supports a custom base URL — route
-  // through the gateway via OpenAI-compat (which is how LiteLLM/Portkey
-  // proxy Anthropic models). Bedrock/Vertex/Azure/OCI use signed/IAM auth
-  // that can't be transparently proxied with a base URL swap, so the
-  // gateway flag is silently ignored for those.
-  if (gateway && provider === "anthropic") {
-    return openAICompatChatStream({
-      baseUrl: gateway.baseUrl,
-      apiKey: gateway.apiKey,
-      modelId,
-      systemPrompt,
-      messages,
-      temperature,
-      maxTokens,
-      providerLabel: "Anthropic via Gateway",
     });
   }
 

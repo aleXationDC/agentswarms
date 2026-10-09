@@ -97,6 +97,7 @@ const PROVIDERS: { value: string; label: string }[] = [
   { value: "azure_openai", label: "Azure OpenAI (your deployment)" },
   { value: "oci_genai", label: "OCI Generative AI (your tenancy)" },
   { value: "qwen", label: "Qwen (Alibaba DashScope)" },
+  { value: "vllm", label: "vLLM (self-hosted)" },
 ];
 
 // Same model catalog as AgentForm — single source of truth would be nice,
@@ -760,6 +761,20 @@ export function NodeInspector({
               </p>
             </Section>
 
+            <Section label="LLM Gateway">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs">Route through LLM Gateway</Label>
+                <Switch
+                  checked={data.routeThroughGateway === true}
+                  onCheckedChange={(routeThroughGateway) => onChange({ routeThroughGateway })}
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Uses the executing user's gateway from Integrations. If unavailable, the run fails
+                instead of calling the upstream provider. This does not change route-all.
+              </p>
+            </Section>
+
             <Section label="Model">
               {/* The provider's live catalogue, searchable. This used to be a
                   plain Select over MODEL_SUGGESTIONS -- about a dozen bundled
@@ -772,6 +787,7 @@ export function NodeInspector({
                 value={currentModel}
                 onChange={(m) => onChange({ model: m })}
                 provider={currentProvider}
+                routeThroughGateway={data.routeThroughGateway === true}
                 fallbackModels={suggestedModels}
                 isAllowed={(m) => isModelAllowedByRules(myModelRules, currentProvider, m)}
                 placeholder="Search or type a model id..."

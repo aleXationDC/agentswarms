@@ -234,10 +234,21 @@ describe("what cannot come across is said, not skipped", () => {
     expect(dropped.some((d) => d.what.includes("1 additional knowledge base"))).toBe(true);
   });
 
-  it("reports the gateway preference and webhooks", () => {
+  it("preserves the gateway preference but reports unsupported webhooks", () => {
+    const { patch } = agentToNodePatch(agent);
+    expect(patch.routeThroughGateway).toBe(true);
     const { dropped } = agentToNodePatch(agent);
-    expect(dropped.some((d) => d.what === "Route through gateway")).toBe(true);
+    expect(dropped.some((d) => d.what === "Route through gateway")).toBe(false);
     expect(dropped.some((d) => d.what === "Webhooks")).toBe(true);
+  });
+
+  it("does not opt an ordinary or malformed agent into the gateway", () => {
+    for (const value of [undefined, false, "true", 1]) {
+      expect(
+        agentToNodePatch({ ...agent, tools: { routeThroughGateway: value } }).patch
+          .routeThroughGateway,
+      ).toBe(value === false ? false : undefined);
+    }
   });
 
   it("drops nothing when there is nothing to drop", () => {

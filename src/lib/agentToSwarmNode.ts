@@ -192,12 +192,6 @@ export function agentToNodePatch(agent: ImportableAgentRow): AgentImport {
     });
   }
 
-  if (t.routeThroughGateway === true) {
-    dropped.push({
-      what: "Route through gateway",
-      why: "swarm runs resolve provider credentials per node",
-    });
-  }
   if (Array.isArray(t.webhooks) && t.webhooks.length > 0) {
     dropped.push({ what: "Webhooks", why: "add an HTTP node to the canvas instead" });
   }
@@ -250,6 +244,8 @@ export function agentToNodePatch(agent: ImportableAgentRow): AgentImport {
     // Snapshot, not a link: later edits to the agent must not reach a swarm
     // that has already been reviewed and deployed.
     agentId: null,
+    routeThroughGateway:
+      typeof t.routeThroughGateway === "boolean" ? t.routeThroughGateway : undefined,
   };
 
   return { patch, dropped };

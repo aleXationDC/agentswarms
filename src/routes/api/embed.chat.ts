@@ -103,6 +103,7 @@ type ResolvedConfig = {
    * unrestricted, exactly as it does for the chat tool.
    */
   sqlTableNames: string[];
+  routeThroughGateway?: boolean;
 };
 
 /** The saved shape is tools.toolConfigs.sql_query.table_names (see api/chat). */
@@ -135,6 +136,7 @@ async function resolveConfig(
       reranker?: { provider?: string; model?: string };
       guardrails?: unknown;
       biVisuals?: unknown;
+      routeThroughGateway?: unknown;
     };
     const kbIds = [
       ...(agent.knowledge_base_id ? [agent.knowledge_base_id] : []),
@@ -159,6 +161,7 @@ async function resolveConfig(
         guardrails: parseGuardrails(tools.guardrails),
         biVisuals: !!tools.biVisuals,
         sqlTableNames: readSqlTableNames(agent.tools),
+        routeThroughGateway: tools.routeThroughGateway === true,
       },
     };
   }
@@ -190,6 +193,7 @@ async function resolveConfig(
     reranker?: { provider?: string; model?: string } | null;
     guardrails?: Record<string, unknown>;
     agentId?: string;
+    routeThroughGateway?: boolean;
   };
 
   // Judge nodes use fixed classifier prompts; agent nodes their saved prompt.
@@ -201,6 +205,7 @@ async function resolveConfig(
   let agentKbId: string | null = null;
   let agentGuardrailsRaw: unknown;
   let agentReranker: { provider?: string; model?: string } | undefined;
+  let agentRouteThroughGateway = false;
   if (d.agentId) {
     const { data: linked } = await supabaseAdmin
       .from("agents")
@@ -212,9 +217,11 @@ async function resolveConfig(
       const t = (linked.tools ?? {}) as {
         guardrails?: unknown;
         reranker?: { provider?: string; model?: string };
+        routeThroughGateway?: unknown;
       };
       agentGuardrailsRaw = t.guardrails;
       agentReranker = t.reranker;
+      agentRouteThroughGateway = t.routeThroughGateway === true;
     }
   }
 
@@ -245,6 +252,7 @@ async function resolveConfig(
           : undefined,
       guardrails: mergedGuardrails,
       biVisuals: false,
+      routeThroughGateway: d.routeThroughGateway ?? agentRouteThroughGateway,
       // Swarm nodes never generate a widget (biVisuals is false above), but the
       // node's own allow-list is carried anyway so enabling it later cannot
       // reintroduce the bypass by forgetting this line.
@@ -381,6 +389,7 @@ export const Route = createFileRoute("/api/embed/chat")({
         const transport = await resolveOpenAICompatTransport({
           userId: keyRow.user_id,
           provider: cfg.provider,
+          routeThroughGateway: cfg.routeThroughGateway,
         });
         if (!transport || (!transport.apiKey && cfg.provider !== "ollama")) {
           return json({ error: "This embed's AI provider is not configured." }, 503);
