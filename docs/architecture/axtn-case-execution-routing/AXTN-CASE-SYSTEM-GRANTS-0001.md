@@ -106,6 +106,7 @@ The task handoff is carried separately by PR #22 and its branch
 source. The implementation is based on PR #19's current head and is isolated
 on `work/AXTN-CASE-SYSTEM-GRANTS-0001-implementation`.
 
-**Review PR:** to be opened against
-`work/AXTN-LLMHUB-PROD-LINEAGE-ACCEPTANCE-0001-integration` after the candidate
-commit is pushed. No independent approval or Acceptance is claimed.
+**Review PR:** [#23](https://git.alexation.com/aXtn/aXtn-agentswarms/pulls/23),
+open from `work/AXTN-CASE-SYSTEM-GRANTS-0001-implementation` against
+`work/AXTN-LLMHUB-PROD-LINEAGE-ACCEPTANCE-0001-integration`. No independent
+approval or Acceptance is claimed.
