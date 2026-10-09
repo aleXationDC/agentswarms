@@ -12,6 +12,12 @@ DECLARE a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); c uuid:=gen_random
   first_actor uuid; second_actor uuid; before_count bigint; original_case text;
   company_run uuid:=gen_random_uuid(); other_run uuid:=gen_random_uuid();
   other_group uuid:=gen_random_uuid(); company_case jsonb; other_case jsonb;
+  system_group uuid:=gen_random_uuid(); group_integration uuid; company_integration uuid;
+  group_swarm uuid:=gen_random_uuid();
+  group_case jsonb; group_child jsonb; group_run uuid:=gen_random_uuid();
+  group_child_run uuid:=gen_random_uuid(); signed_case jsonb; signed_run uuid:=gen_random_uuid();
+  signed_credential uuid:=gen_random_uuid(); wrong_model_run uuid:=gen_random_uuid();
+  wrong_provider_run uuid:=gen_random_uuid();
   private_trace uuid:=gen_random_uuid(); resource_key uuid:=gen_random_uuid(); total numeric;
   nested_parent uuid:=gen_random_uuid(); nested_child uuid:=gen_random_uuid();
   duplicate_child uuid:=gen_random_uuid(); child_swarm uuid:=gen_random_uuid();
@@ -92,9 +98,12 @@ BEGIN
   INSERT INTO budget_limits(scope_type,scope_id,monthly_cap_usd,is_active)
     VALUES('group',fixture_group,100,true),('group',other_group,100,true);
   INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern)
-    VALUES('user',a,'openai','fixture-model');
+    VALUES('user',a,'openai','fixture-model'),('user',a,'vllm','fixture-model'),
+      ('user',a,'gemini','fixture-model'),
+      ('user',a,'anthropic','fixture-model');
   INSERT INTO integrations(user_id,type,name,provider,is_active,config)
-    VALUES(a,'llm_provider','Synthetic company fixture','openai',true,'{}');
+    VALUES(a,'llm_provider','Synthetic company fixture','openai',true,'{}')
+    RETURNING id INTO company_integration;
   company_case:=axtn_case_manual(a,'create',jsonb_build_object('row',jsonb_build_object(
     'subject','Synthetic company budget','status','OPEN','priority',3,'source_kind','manual','source_id',a),
     'expectedVersion',0,'transitionKey','company-case','_principal',jsonb_build_object('kind','user_session','id',a)));
@@ -118,12 +127,206 @@ BEGIN
     (other_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"openai","model":"fixture-model"}}]}');
   PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
     'runId',company_run,'caseId',company_case->>'case_id','_principal',jsonb_build_object('kind','user_session','id',a)));
+  BEGIN
+    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
+      'runId',company_run,'nodeId','agent','operationKey','agent/no-own-grant'));
+    RAISE EXCEPTION 'SYSTEM_INTEGRATION accepted the actor-owned credential without an IAM grant';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('user',a,'integration',company_integration);
   result:=axtn_case_execution(a,'resolve',jsonb_build_object('runId',company_run,'nodeId','agent','operationKey','agent/0'));
   IF result->>'budget_subject_group_id'<>fixture_group::text OR result->>'budget_subject_user_id' IS NOT NULL
+    OR result->>'execution_class'<>'SYSTEM_INTEGRATION' OR result->>'policy_user_id'<>a::text
   THEN RAISE EXCEPTION 'Configured company funding did not bind responsible group'; END IF;
+  result:=axtn_case_execution(a,'credential',jsonb_build_object('runId',company_run,'nodeId','agent'));
+  IF result->>'ownerId'<>a::text OR result->>'source'<>'integration'
+    OR result->>'id'<>company_integration::text
+  THEN RAISE EXCEPTION 'Explicit user grant did not select the exact company integration'; END IF;
   PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
     'runId',other_run,'caseId',other_case->>'case_id','_principal',jsonb_build_object('kind','user_session','id',a)));
   PERFORM axtn_case_execution(a,'resolve',jsonb_build_object('runId',other_run,'nodeId','agent','operationKey','agent/0'));
+
+  INSERT INTO iam_groups(id,name) VALUES(system_group,'synthetic-system-grant-'||system_group);
+  INSERT INTO iam_group_members(group_id,user_id) VALUES(system_group,a);
+  INSERT INTO integrations(id,user_id,type,name,provider,is_active,config) VALUES
+    (gen_random_uuid(),b,'llm_provider','Synthetic group-granted company fixture','vllm',true,'{}')
+    RETURNING id INTO group_integration;
+  group_case:=axtn_case_manual(a,'create',jsonb_build_object('row',jsonb_build_object(
+    'subject','Synthetic group-granted company Case','status','OPEN','priority',3,
+    'source_kind','manual','source_id',a),
+    'expectedVersion',0,'transitionKey','system-group-case',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  group_case:=axtn_case_assignment(a,'case_assignment',jsonb_build_object(
+    'caseId',group_case->>'case_id','expectedVersion',1,'transitionKey','system-group-assignment',
+    'responsiblePrincipalType','GROUP','responsiblePrincipalId',system_group,'assigneeUserId',NULL,
+    'assignmentPolicy','MANUAL','assignmentInheritance','OVERRIDE',
+    'semanticRouteMode','SYSTEM_INTEGRATION','semanticRouteProviderId',NULL,'semanticRouteModelId',NULL,
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  group_child:=axtn_case_manual(a,'create',jsonb_build_object('row',jsonb_build_object(
+    'subject','Synthetic inherited system child','status','OPEN','priority',3,
+    'source_kind','manual','source_id',a,'parent_case_id',group_case->>'case_id'),
+    'expectedVersion',0,'transitionKey','system-group-child',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  SELECT r.row INTO group_child FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
+    WHERE t.user_id=a AND t.name='axtn_cases' AND r.row->>'parent_case_id'=group_case->>'case_id';
+  IF group_child->>'semantic_route_mode'<>'SYSTEM_INTEGRATION'
+    OR group_child->>'responsible_principal_id'<>system_group::text
+    OR group_child->>'assignment_inheritance'<>'INHERIT'
+  THEN RAISE EXCEPTION 'Child Case did not inherit company route and group responsibility'; END IF;
+  INSERT INTO swarms(id,user_id,name) VALUES(group_swarm,a,'Synthetic provider-credential fixture');
+  INSERT INTO swarm_runs(id,user_id,swarm_id,status,swarm_snapshot) VALUES
+    (group_run,a,group_swarm,'running',
+      '{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"vllm","model":"fixture-model"}}]}'),
+    (group_child_run,a,group_swarm,'running',
+      '{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"vllm","model":"fixture-model"}}]}');
+  PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+    'runId',group_run,'caseId',group_case->>'case_id',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  BEGIN
+    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
+      'runId',group_run,'nodeId','agent','operationKey','agent/no-third-party-grant'));
+    RAISE EXCEPTION 'SYSTEM_INTEGRATION accepted an ungranted third-party credential';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('group',system_group,'integration',group_integration);
+  result:=axtn_case_execution(a,'resolve',jsonb_build_object(
+    'runId',group_run,'nodeId','agent','operationKey','agent/group-grant'));
+  IF result->>'execution_class'<>'SYSTEM_INTEGRATION'
+    OR result->>'policy_user_id'<>a::text
+    OR result->>'provider_id'<>'vllm'
+  THEN RAISE EXCEPTION 'Effective group grant did not authorize the server-bound company Case'; END IF;
+  result:=axtn_case_execution(a,'credential',jsonb_build_object('runId',group_run,'nodeId','agent'));
+  IF result->>'ownerId'<>b::text OR result->>'source'<>'integration'
+    OR result->>'id'<>group_integration::text
+  THEN RAISE EXCEPTION 'Group grant selected a different provider credential'; END IF;
+  PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+    'runId',group_child_run,'caseId',group_child->>'case_id',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  result:=axtn_case_execution(a,'resolve',jsonb_build_object(
+    'runId',group_child_run,'nodeId','agent','operationKey','agent/inherited-group-grant'));
+  IF result->>'case_id'<>group_child->>'case_id'
+    OR result->>'execution_class'<>'SYSTEM_INTEGRATION'
+    OR result->>'policy_user_id'<>a::text
+  THEN RAISE EXCEPTION 'Inherited Child Case did not retain its native system execution binding'; END IF;
+  DELETE FROM iam_group_members WHERE group_id=system_group AND user_id=a;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',group_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Revoked group membership retained corporate credential access';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  INSERT INTO iam_group_members(group_id,user_id) VALUES(system_group,a);
+  UPDATE integrations SET is_active=false WHERE id=group_integration;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',group_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Inactive IAM-granted integration was selected';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  UPDATE integrations SET is_active=true WHERE id=group_integration;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('user',a,'integration',group_integration);
+  UPDATE integrations SET is_active=false WHERE id=group_integration;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',group_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Duplicate grants bypassed inactive resource rejection';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  UPDATE integrations SET is_active=true WHERE id=group_integration;
+  DELETE FROM iam_resource_grants WHERE resource_type='integration' AND resource_id=group_integration;
+  DELETE FROM integrations WHERE id=group_integration;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('group',system_group,'integration',group_integration);
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',group_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Deleted IAM-granted integration was selected';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+
+  signed_case:=axtn_case_manual(a,'create',jsonb_build_object('row',jsonb_build_object(
+    'subject','Synthetic provider-credential Case','status','OPEN','priority',3,
+    'source_kind','manual','source_id',a),
+    'expectedVersion',0,'transitionKey','signed-system-case',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  signed_case:=axtn_case_assignment(a,'case_assignment',jsonb_build_object(
+    'caseId',signed_case->>'case_id','expectedVersion',1,'transitionKey','signed-system-assignment',
+    'responsiblePrincipalType','USER','responsiblePrincipalId',a,'assigneeUserId',a,
+    'assignmentPolicy','MANUAL','assignmentInheritance','OVERRIDE',
+    'semanticRouteMode','SYSTEM_INTEGRATION','semanticRouteProviderId',NULL,'semanticRouteModelId',NULL,
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  INSERT INTO provider_credentials(id,user_id,provider,label,credentials,config,is_active)
+    VALUES(signed_credential,c,'anthropic','Synthetic company fixture',
+      '{"ciphertext":"synthetic-ciphertext","iv":"synthetic-iv"}','{}',true);
+  INSERT INTO swarm_runs(id,user_id,swarm_id,status,swarm_snapshot) VALUES
+    (signed_run,a,swarm,'running',
+      '{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"anthropic","model":"fixture-model"}}]}');
+  PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+    'runId',signed_run,'caseId',signed_case->>'case_id',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  BEGIN
+    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
+      'runId',signed_run,'nodeId','agent','operationKey','agent/provider-credential-no-grant'));
+    RAISE EXCEPTION 'SYSTEM_INTEGRATION accepted an ungranted provider_credentials row';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('user',a,'provider_credential',signed_credential);
+  result:=axtn_case_execution(a,'resolve',jsonb_build_object(
+    'runId',signed_run,'nodeId','agent','operationKey','agent/provider-credential-grant'));
+  result:=axtn_case_execution(a,'credential',jsonb_build_object('runId',signed_run,'nodeId','agent'));
+  IF result->>'ownerId'<>c::text OR result->>'source'<>'provider_credential'
+    OR result->>'id'<>signed_credential::text
+  THEN RAISE EXCEPTION 'Explicit IAM grant did not authorize the exact provider_credentials row'; END IF;
+  DELETE FROM iam_resource_grants WHERE resource_type='provider_credential' AND resource_id=signed_credential;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',signed_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Revoked provider-credential grant remained effective';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
+    VALUES('user',a,'provider_credential',signed_credential);
+  UPDATE provider_credentials SET is_active=false WHERE id=signed_credential;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',signed_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Inactive IAM-granted provider credential was selected';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
+  UPDATE provider_credentials SET is_active=true WHERE id=signed_credential;
+
+  INSERT INTO swarm_runs(id,user_id,swarm_id,status,swarm_snapshot) VALUES
+    (wrong_model_run,a,swarm,'running',
+      '{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"openai","model":"unapproved-model"}}]}'),
+    (wrong_provider_run,a,swarm,'running',
+      '{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"gemini","model":"fixture-model"}}]}');
+  PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+    'runId',wrong_model_run,'caseId',company_case->>'case_id',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  BEGIN
+    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
+      'runId',wrong_model_run,'nodeId','agent','operationKey','agent/wrong-model'));
+    RAISE EXCEPTION 'SYSTEM_INTEGRATION bypassed the native model allow rule';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'MODEL_ACCESS_DENIED' THEN RAISE; END IF;
+  END;
+  PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
+    'runId',wrong_provider_run,'caseId',company_case->>'case_id',
+    '_principal',jsonb_build_object('kind','user_session','id',a)));
+  BEGIN
+    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
+      'runId',wrong_provider_run,'nodeId','agent','operationKey','agent/wrong-provider'));
+    RAISE EXCEPTION 'Grant for another provider authorized this Case node';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
+  END;
   UPDATE budget_limits SET is_active=false WHERE scope_type='group' AND scope_id=fixture_group;
   result:=axtn_case_execution(a,'resolve',jsonb_build_object('runId',company_run,'nodeId','agent','operationKey','agent/1'));
   IF result->>'budget_subject_group_id'<>fixture_group::text
@@ -259,6 +462,13 @@ BEGIN
     RAISE EXCEPTION 'Revoked execution principal was not denied';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM<>'NO_ELIGIBLE_EXECUTION_PRINCIPAL' THEN RAISE; END IF;
+  END;
+  UPDATE auth.users SET deleted_at=now() WHERE id=c;
+  BEGIN
+    PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',signed_run,'nodeId','agent'));
+    RAISE EXCEPTION 'Credential owned by a deleted principal remained eligible';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
   END;
   IF (SELECT t.user_id FROM user_data_rows r JOIN user_data_tables t ON t.id=r.table_id
     WHERE r.row->>'case_id'=original_case)<>a

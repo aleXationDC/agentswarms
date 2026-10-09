@@ -113,6 +113,17 @@ describe("Case server credential transport reuses actual encrypted storage witho
     expect(anthropicChatStream).not.toHaveBeenCalled();
     expect(fixture.reads).toEqual([]);
   });
+  it("does not fall back to the executing user's credential when SYSTEM_INTEGRATION has no grant", async () => {
+    fixture.selected = new Error("SYSTEM_INTEGRATION_UNAVAILABLE");
+    await expect(
+      resolveOpenAICompatTransport({
+        userId: owner,
+        provider: "openai",
+        credentialContext: context,
+      }),
+    ).rejects.toThrow("SYSTEM_INTEGRATION_UNAVAILABLE");
+    expect(fixture.reads).toEqual([]);
+  });
   it("rejects a node gateway opt-in before resolving a Case credential or any personal integration", async () => {
     fixture.selected = new Error("Case credential must not be loaded for an unauthorized gateway");
     await expect(

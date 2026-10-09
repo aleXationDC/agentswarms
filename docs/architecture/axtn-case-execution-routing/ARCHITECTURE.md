@@ -156,12 +156,19 @@ Do not add a graph field that accepts `user_id`, credential owner or integration
 `SYSTEM_INTEGRATION`:
 
 - resolves exactly one active company/provider integration reachable through the existing IAM grant/configuration for the selected provider;
+- requires an explicit effective `iam_resource_grants` entry for the server-derived `policy_user_id` or one of that user's currently joined IAM groups; owning a matching integration or provider credential alone is insufficient;
+- rechecks the grant, group membership, active resource and active credential owner at resolution time; revoked, stale or provider-mismatched resources are ineligible;
 - returns `SYSTEM_INTEGRATION_UNAVAILABLE` when none is eligible and `SYSTEM_INTEGRATION_AMBIGUOUS` when more than one is eligible;
 - must not choose a credential by newest-row, insertion-order or other implicit preference;
 - does not add a second routing-policy table merely to resolve ambiguity in V1;
 - may use existing IAM resource grants;
+- does not define a standalone `system` IAM grant principal; a future service-owned grant requires a separate versioned policy contract;
 - must not consume a member's personal ChatGPT-plan connection;
 - remains the default for unattended document intake and other declared system automations.
+
+The grant-only rule applies to Case-bound `SYSTEM_INTEGRATION` credential
+resolution. It does not change non-Case provider lookup or the existing DMS
+automation credential path. No grant is created or migrated automatically.
 
 `PERSONAL_CONNECTION`:
 
