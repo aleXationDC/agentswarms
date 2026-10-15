@@ -1,3 +1,25 @@
+# aXtn Development Swarm – aktueller Ausführungshandoff
+
+Canonical repository: `aXtn/aXtn-agentswarms`
+Handoff branch: `work/AXTN-DEVSWARM-SLICE1-HANDOFF-20261015`
+Tracking issue: `aXtn/aXtn-agentswarms#7`
+Status: AUTHORIZED_CONTINUATION / EXECUTION_PENDING
+Datum: 2026-10-15
+
+## Aktuellen Auftrag vollständig lesen
+
+`handoffs/requests/AXTN-DEVSWARM-SLICE1-ACCEPTANCE-20261015.md`
+
+Dieser vollständige Request ist die aktuelle konkrete Fortsetzung des bestehenden nativen Slice. Den Basisvertrag `handoffs/requests/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md` ebenfalls vollständig lesen. Der neue Request ersetzt die ungeeigneten Read-only-Testprompts, nicht die bestehenden nativen Verträge. Aktuelle Heads/Runtime und passende Freigaben prüfen; dieser Dokumentationsbranch ist keine Deployment-Basis.
+
+CLI setzt innerhalb akzeptierter nativer Architektur um und behebt gewöhnliche Defekte; keine neue Architektur, Custom-Ansätze oder Codeabkürzungen ohne spezifische ausdrückliche Freigabe. Native-first gilt für Auftragsersteller und Executor.
+
+Case-Lineage, historische Runs und pending Approval erhalten. Issue #7 dient als Einstieg/Index und erhält den exakten Handoff-Commit. Repository-Handoff und Request tragen alle Ausführungsdetails; kein manueller Chat-Prompt als Ersatz.
+
+## Historischer Komponentenstand
+
+Der folgende ältere Handoff dokumentiert Ausgangspunkt und bisherige Autorisierung. Seine Status-/Reviewer-Aussagen sind mit dem aktuellen Request und der akzeptierten Environment-Owner-Entscheidung abzugleichen. Er ersetzt die obige Fortsetzung nicht.
+
 # aXtn Development Swarm – Repository Handoff
 
 **Canonical repository:** `aXtn/aXtn-agentswarms`
@@ -9,7 +31,7 @@
 
 ## Execute this assignment
 
-Read completely and execute:
+Historischer Basisauftrag, zusammen mit der aktuellen Fortsetzung vollständig lesen:
 
 `handoffs/requests/AXTN-DEVELOPMENT-SWARM-NATIVE-0002.md`
 
@@ -64,7 +86,7 @@ Do not reuse its:
 8. Test source, build immutable image, deploy directly to the existing Greenfield PROD environment, publish the Swarm visibly, execute retained FAIL and PASS Cases, repair within scope and repeat.
 9. Update the exact immutable AgentSwarms pin and rollback contract in `aXtn/aXtn-host`.
 10. Commit and push implementation plus secret-free evidence to Gitea; update Issue #7.
-11. Close completed Work Cases. Independent Acceptance remains separate; the Builder cannot accept its own Candidate.
+11. Close completed Work Cases only after the Result Contract is met. Independent Acceptance remains separate from executor completion and from the Builder; it does not inherently require a second human. An authorized environment owner may accept a candidate built by a separate agent through the existing native Approval path, bound to the exact revision. The Builder cannot accept its own Candidate, and the agent cannot claim owner authorization. Apply Gitea review gates only when actual environment policy or branch protection requires them.
 
 ## Authorization
 
