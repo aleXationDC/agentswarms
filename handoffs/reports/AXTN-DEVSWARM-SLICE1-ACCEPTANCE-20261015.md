@@ -82,3 +82,19 @@ Approve either (A) a new fachlicher attempt `acceptance-v2` with the previously 
 
 ### Still separate/open
 Owner-Acceptance policy (owner-exclusion migration 20261004060000; single auth user), registry `write:package`, LLM Hub mapping (openai/gpt-4.1-mini is not LLM Hub evidence), reload/restart durability checks (need a PASS-to-suspend run).
+
+## Continuation 2026-10-16c — acceptance-v2 (request commit dab4cd98)
+
+**Current summary: PUBLISHED / RUNS_EXECUTED / PASS_TO_APPROVAL / SUSPENDED.** The earlier owner-login blockade is resolved (see 16b). No new App deploy (live eb191e15, version 6caebb95 unchanged). PR_READY: no. ACCEPTED: no.
+
+- Same Work Case 402a1966-b74c-4780-8f13-70a124cef38c, new attempt `acceptance-v2`, Task text = the updated request JSON (explicit signature/bounds). Work-contract ref kept at the Case's original revision 7691a4d5 (re-ensuring with a different revision was rejected 409 and nothing was changed). v1 evidence preserved.
+- Native run **f615d338-ea36-4b49-b06b-16507540fa60**: Builder → effect-bound branch/file → Candidate **67a3a681665c4237bf7ad5d72fc6818eb26926bb** → contract/security/maintainability/verify in parallel → join → gate **PASS, 0 findings** → checks_case → review_case → hard_gate → verify_completed → native Approval node (24 steps), status `suspended`.
+- Receipt (Verify Child 5e9e2b02-fa12-4014-b797-eb9bce5dfcf1, CLOSED `NATIVE_DETERMINISTIC_RECEIPT`, session e686e558-8c68-4987-8327-0443f39e1a16, harness hash 64dc7eb3…, runtime image sha256:bf7a9345…): **baseline** (README-only base, function missing) fail, 2 tests / 19 failures — expected, not candidate failures; **candidate** pass, 2 tests / 0 failures / 0 errors. Candidate-PASS is the decisive result.
+- Approval 7aa0dcb3-60ae-4e37-9d94-91a84a5a2ff5 pending, bound to Case 402a1966 / attempt acceptance-v2; checkpoint suspended at `approved`, 23 completed nodes.
+- Owner decision denied natively (`NATIVE_APPROVAL_WORK_OWNER_DENIED` for approve and reject); approval, checkpoint (24 steps), Run 00ff44a5 and run count (43) unchanged. No Copilot decision, no bypass.
+- Restart durability: `docker restart` of the App container (same image/source, healthy afterwards); approval still pending, checkpoint still `approved`, step count 24, run count 43, 00ff44a5 still suspended; no write node repeated. Reload/headless checks via the same persisted rows; no UI reload test was done.
+- Case readback: 402a1966 OPEN `NATIVE_REVIEW_GATE_PASS` (candidate 67a3a681…); negative Case a97ee104 OPEN `HARD_GATE_FAIL_CLOSED`.
+- Not done / open: the Candidate branch/PR in aXtn/development-swarm-acceptance were not read back (no PR exists by design before approval; the CLI has no credentials for that repo's remote in this shell — readback pending). Idempotent duplicate-initiation and v2 repeat were not re-run.
+
+### Remaining owner step
+A decision-eligible principal other than the Work owner (Owner-Acceptance policy under AXTN-ENV-OWNER-AUTHORITY-0001 vs. migration 20261004060000) must decide Approval 7aa0dcb3. Separate open limits: registry `write:package`, LLM Hub mapping (openai/gpt-4.1-mini only), owner-acceptance policy change decision.
