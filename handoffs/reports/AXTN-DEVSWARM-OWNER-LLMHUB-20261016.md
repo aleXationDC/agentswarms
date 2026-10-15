@@ -32,5 +32,5 @@ Read-only live metadata: integrations `vLLM (self-hosted)` (provider `vllm`), `L
 
 ## Human decisions remaining
 
-1. Authorize applying `20261016000000` live (revision-bound), then decide `7aa0dcb3` via the native inbox.
+1. (Done, see update below.)
 2. Release of the PR #32 owner-or-grant build (host gate: registry `write:package` still missing), then LLMHub role mapping approval.
