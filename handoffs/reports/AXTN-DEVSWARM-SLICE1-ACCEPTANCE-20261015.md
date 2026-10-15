@@ -23,3 +23,33 @@ Independent open items: registry `write:package` for the release candidate; deci
 
 ## Status vocabulary
 IMPLEMENTED/TESTED: source only. DEPLOYED: no. PASS_TO_APPROVAL: no. PR_READY: no. ACCEPTED: no.
+
+## Continuation 2026-10-16 — Owner-login source trace (commit 7691a4d5)
+
+No further login attempts were made in this continuation; only source/metadata inspection. No values, hashes or env dumps recorded.
+
+### Source and priority (apply.mts)
+`apply.mts` reads `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` solely from process environment; it has no wrapper or file loader. Host producer chain (aXtn-host `scripts/prepare-agentswarms-env.py`):
+1. `/home/alex/.local/share/axtn/native/agentswarms-superadmin-password` (mode 0600, alex, written 2026-10-01 20:02) is the single source of truth for the operator identity `AGENTSWARMS_SUPERADMIN_EMAIL=x@alexation.com`.
+2. It is copied into `/home/alex/.local/share/axtn/native/agentswarms.env` as `ADMIN_EMAIL`/`ADMIN_PASSWORD` (mode 0600, written 2026-10-07 22:48). A derived copy, so it can only be as current as the file.
+3. `/home/alex/.local/share/axtn/native/agentswarms-admin-password` belongs to the separate technical identity `admin@localhost.local` (`AGENTSWARMS_ADMIN_EMAIL`), which does not exist in `auth.users`; it is not a valid source for this publish.
+
+### What the failed call actually used
+My first call sourced `agentswarms.env` and then overrode `ADMIN_PASSWORD` with the `agentswarms-admin-password` file: the **wrong identity's file** (mapping error on my side). The two follow-up checks used the superadmin file and the env value (same source) and both returned `invalid_credentials`. Three attempts in total; none further.
+
+### Cause (classification)
+- Evidenced: Auth audit log shows one `user_updated_password` event for x@alexation.com on 2026-10-08 (after the superadmin file, 10-01, and `agentswarms.env`, partly before 10-07 regeneration was from the same file), plus an interactive login 2026-10-09. The protected file therefore most likely predates the password the owner actually uses.
+- Not evidence: `auth.users.updated_at` 2026-10-12 coincides with token refresh; my earlier "rotated 12.10." statement is withdrawn.
+- Unproven: who performed the 10-08 change (the owner via UI is the only logged actor) and whether the new password was ever stored on the host.
+- Existing mechanism check: no host script takes hidden password input for this file. `scripts/bootstrap-admin.py` would force the account password to the stale file content (a password change; not authorized, not used). No account/password/MFA/recovery change, service-role publish or SQL was performed.
+
+### Single remaining user step (needs Alex; proposal, not an existing host mechanism)
+Run in a host terminal as user `alex`, type the current x@alexation.com password at the hidden prompt, no echo, not an argument, not in history:
+```
+umask 077; IFS= read -rs p && printf '%s\n' "$p" > /home/alex/.local/share/axtn/native/agentswarms-superadmin-password; unset p
+```
+(`read -rs` is a bash builtin; verified here only with a dummy value into a temp file: mode 0600 result.) Then tell Copilot "owner login updated". Copilot detects the handover by the file's mtime change, runs exactly one controlled password-grant check (status only), and on success continues `apply.mts` (reviewer group BoardMember 2a156ccf-9442-4e12-9717-ae89c71f0e1d, passing the password from that file in-process, then regenerating `agentswarms.env` via the existing `prepare-agentswarms-env.py` path), idempotent re-apply and the remaining acceptance steps. On failure it stops with the sanitized HTTP status.
+
+Native gap (for decision, no implementation): the host lacks a hidden-input credential refresh that also verifies login; a small option on the existing `scripts/prepare-credentials.sh` flow would close it. Not built without approval.
+
+Parent transition 85a1d829 remains rejected (409) and is not claimed. Acceptance-Child 11496f0f carries the BLOCKED event (`OWNER_CREDENTIAL_REFRESH_REQUIRED`) for 38f7d922; this continuation's evidence is referenced below.
