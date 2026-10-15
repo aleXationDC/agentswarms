@@ -87,9 +87,9 @@ Native Task-JSON; caseId wird erst aus dem echten gestarteten DEVELOPMENT_CHANGE
   "baseSHA": "0a38f20ccea94d937a5d4fa2ad18b37ae6439c09",
   "caseId": "<native gestarteter DEVELOPMENT_CHANGE Case>",
   "taskId": "AXTN-DEVSWARM-SLICE1-ACCEPTANCE-20261015",
-  "attemptId": "acceptance-v1",
+  "attemptId": "acceptance-v2",
   "path": "src/normalize_score.py",
-  "request": "Implement normalize_score with finite numeric inputs, bool rejection, ordered bounds and clipping to [0,1]."
+  "request": "Create src/normalize_score.py exporting normalize_score(value, minimum=0, maximum=100). Accept finite int/float inputs for value, minimum and maximum; reject bool, nonnumeric values, NaN and infinity with TypeError or ValueError. Require minimum < maximum; reject equal or reversed bounds, never swap them. Return the linear normalization (value - minimum) / (maximum - minimum), clipped to [0,1]. Default bounds are 0 and 100. No reject flag or extra required argument. Examples: normalize_score(50) == 0.5; normalize_score(-10) == 0; normalize_score(110) == 1; normalize_score(0, -10, 10) == 0.5; normalize_score(1.25, 1, 2) == 0.25. Implement independently; do not claim verification or approval."
 }
 ```
 
@@ -140,3 +140,20 @@ Ziel: den Owner-Login-Blocker auf eine exakt benannte geschützte Quelle und ein
 7. Den bestehenden Execution Report um verwendete Quelle/Priorität, Ursache, tatsächlich ausgeführte Schritte, Ergebnis und genau einen verbleibenden Nutzer-Schritt ergänzen. Native Evidence im bestehenden Acceptance-Child referenzieren. Fehlgeschlagene Parent-Transition nicht als erfolgreich behaupten.
 
 Definition of Done dieser Fortsetzung: entweder der bestehende autorisierte native Publish-Weg funktioniert nach einer belegten zulässigen Konfigurationskorrektur, oder der Nutzer erhält erstmals einen eindeutigen sicheren Aktualisierungsschritt mit verifizierten absoluten Pfaden und anschließendem Fortsetzungsweg. Keine Secretwerte im Ergebnis.
+
+## Verbindliche Fortsetzung 16.10.2026 — präziser Task-Vertrag acceptance-v2
+
+Normale Auftragspräzisierung innerhalb des bereits autorisierten Python-Fixture-Vertrags; keine neue Architektur-, Harness-, Graph-, Provider- oder Policyfreigabe. acceptance-v1 bleibt historische fehlgeschlagene Evidence.
+
+Source-Abgleich bei c55de4ba4f146a5bf2f91ed1ee9ee2c6a1d099f2:
+- docker/development-runtime/verify.py verlangt Standardgrenzen 0/100, lineare Normalisierung, Clipping, ungültige Typen/Bool und nichtfinite Zahlen ablehnen, gleiche/umgekehrte Grenzen ablehnen.
+- docker/development-runtime/invoke.py ruft module.normalize_score(*args) mit einem oder drei Argumenten auf.
+- Candidate 4adc9bbd0c824bd3e9db6de35c45cd4ded75398f in aXtn/development-swarm-acceptance definiert normalize_score(score, min_bound, max_bound, reject) mit vier Pflichtargumenten. Die Signatur ist damit nachweislich inkompatibel, nicht nur vermutet. Zusätzlich vertauscht er umgekehrte Grenzen und akzeptiert gleiche Grenzen; das widerspricht dem Harness. Kein produktiver Candidate-Fix durch Copilot.
+
+Nächste Ausführung:
+1. Denselben Work-Case 402a1966-b74c-4780-8f13-70a124cef38c und vorhandenen typisierten Work-/Verify-Vertrag weiterverwenden, regulär aus BLOCKED fortführen. Kein neuer Parent oder Ersatz-Test-Case. Neuen fachlichen Versuch acceptance-v2 und neue zugehörige Run-/Effect-Identitäten verwenden; technische Wiederholungen dieses Versuchs bleiben idempotent. Vorherigen Candidate/Attempt als Evidence erhalten.
+2. Den oben aktualisierten vollständigen Task-JSON verwenden: gleicher taskId, Basis-SHA, Pfad, Repository und Profil python-normalization-v1; echte Case-ID einsetzen. Gleiche publizierte Version 6caebb95-0f32-47e7-89e0-d729a31f8799 und vorhandene vier Agent-Snapshots nutzen, sofern unverändert/funktionsfähig. Graph, Agentprompts und Harness nicht für diesen Versuch ändern.
+3. Den Swarm erneut tatsächlich arbeiten lassen. Copilot darf weder normalize_score implementieren noch Candidate/Breaker-Ausgaben/Receipts ersetzen. Scheitert v2, konkrete Candidate-/Harness-Differenz belegen und im zulässigen Scope fortfahren; keine Tests lockern oder bloß denselben unveränderten Prompt wiederholen.
+4. Receipt baseline und candidate separat auswerten: Eine nur README.md enthaltende Baseline kann wegen fehlender Funktion erwartbar scheitern. Die im Bericht genannten 19 Failures nicht ohne Zuordnung als Candidate-Failures ausweisen. Candidate-PASS ist gemäß unverändertem Harness maßgeblich.
+5. Bei echtem Gate-PASS bis native Approval fortsetzen. Die Owner-Sperre bleibt bestehen; keine Annahme durch Copilot oder Umgehung. Wird schon die Erstellung der Approval durch eine native Sperre verhindert, exakten Fehler zeigen statt Suspension zu behaupten. Nur bei tatsächlich suspendiertem Run vorhandene Reload-/Restart-/Checkpoint-Tests innerhalb gültiger Runtime-Freigabe durchführen; Resume nach menschlicher Entscheidung getrennt.
+6. Bestehenden Bericht aktualisieren: aktuelle Zusammenfassung PUBLISHED/RUNS_EXECUTED (kein neuer App-Deploy), historische Login-Blockade klar als gelöst kennzeichnen. Source-/Image-/Version-/Attempt-/Candidate-/Receipt-Referenzen, tatsächliche baseline/candidate Resultate und PASS_TO_APPROVAL/SUSPENDED/PR_READY/ACCEPTED getrennt. Bestehendes Acceptance-Child mit Evidence aktualisieren. Registry, Owner-Acceptance und LLMHub bleiben eigene offene Grenzen.
