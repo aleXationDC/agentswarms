@@ -53,3 +53,32 @@ umask 077; IFS= read -rs p && printf '%s\n' "$p" > /home/alex/.local/share/axtn/
 Native gap (for decision, no implementation): the host lacks a hidden-input credential refresh that also verifies login; a small option on the existing `scripts/prepare-credentials.sh` flow would close it. Not built without approval.
 
 Parent transition 85a1d829 remains rejected (409) and is not claimed. Acceptance-Child 11496f0f carries the BLOCKED event (`OWNER_CREDENTIAL_REFRESH_REQUIRED`) for 38f7d922; this continuation's evidence is referenced below.
+
+## Continuation 2026-10-16b — Login updated; publication and first native runs
+
+### Auth and publication (executed)
+- One controlled password-grant check with the refreshed protected file `/home/alex/.local/share/axtn/native/agentswarms-superadmin-password` (mtime 2026-10-15 22:56): HTTP 200. (Cause of the earlier failure is thereby confirmed: stale host file.)
+- `apply.mts` (unchanged source, reviewer group BoardMember 2a156ccf-9442-4e12-9717-ae89c71f0e1d, password passed in-process only) → `PUBLISHED`, 31 nodes, 4 saved Agent snapshots, **published_version_id 6caebb95-0f32-47e7-89e0-d729a31f8799** (provider/model openai / gpt-4.1-mini, existing mapping, unchanged).
+- Second apply → `UNCHANGED`, same version id. Readback: 1 `swarm_versions` row, 4 Development Agents (no duplicates), 10 historical runs retained, suspended run 00ff44a5 still `suspended`. Existing `agentswarms.env` was not regenerated (not needed; apply received the password from the file).
+- Status: IMPLEMENTED, TESTED (76 focused), **PUBLISHED (immutable version, Prod)**. Image/source not changed (live eb191e15); not a new deployment.
+
+### Real native Swarm runs (driver: files/slice1-acceptance-run.mjs; only initiates `POST /api/swarm/run` and ensures/starts Cases; no Candidate, Breaker output or receipt authored by Copilot)
+Cases under Acceptance-Child 11496f0f, stable assignment keys = taskId, idempotency `<taskId>:<attempt>:run-v1`:
+
+| Run | Case | Task / attempt | Result |
+|---|---|---|---|
+| 7e1d2283-8a14-4165-8036-f2d28cd13395 | a97ee104-5efd-4771-b4db-c0e78a3d8208 | …-20261015-NEGATIVE / negative-v1 | Hard gate BLOCKED: two blocking HIGH findings by real Breaker agents (constant-0 implementation). No Approval node, no PR. |
+| 70a4b233-880e-481f-89aa-3bcaa534d3aa | 402a1966-b74c-4780-8f13-70a124cef38c | …-20261015 / acceptance-v1 | Hard gate BLOCKED: deterministic Verify FAIL (candidate 4adc9bbd0c82…, baseline run: 19 failures). No Approval node, no PR. |
+
+Trace (both): Builder → branch/file/candidate/Case nodes → contract, security, maintainability **and** verify started in the same second (parallel level) → join → gate → checks_case → review_case → hard_gate (error, fail-closed). 22 nodes executed per run, approval/PR nodes never reached.
+
+### Findings
+1. Genuine FAIL path proven twice through the native graph (blocking agent finding; deterministic Verify FAIL) → no Approval/PR: matches request acceptance bullet "FAIL ohne PR".
+2. The PASS path is **not** reached with the literal Task text of the request ("finite numeric inputs, bool rejection, ordered bounds and clipping to [0,1]"): the Developer Runtime harness (profile python-normalization-v1) failed 19 tests. The earlier NATIVE-0002 PASS used a more explicit Task text that names the exact signature `normalize_score(value, minimum=0, maximum=100)` and all parameters. So the request text is under-specified relative to the harness (probable cause, not proven: signature/default mismatch). Copilot did not change the Task text or Verify harness.
+3. Case events for the two attempts: STARTED written; no CHECKS/COMPLETED events written for failed attempts. Cases a97ee104 / 402a1966 stay open (not claimed as completed).
+
+### Decision needed (single)
+Approve either (A) a new fachlicher attempt `acceptance-v2` with the previously proven explicit Task text (same Work Contract, same Case 402a1966, request text amended in the request document), or (B) a harness/spec clarification. Recommendation: A. Until then PASS_TO_APPROVAL is not reached.
+
+### Still separate/open
+Owner-Acceptance policy (owner-exclusion migration 20261004060000; single auth user), registry `write:package`, LLM Hub mapping (openai/gpt-4.1-mini is not LLM Hub evidence), reload/restart durability checks (need a PASS-to-suspend run).
