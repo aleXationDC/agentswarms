@@ -1,3 +1,15 @@
+# Aktueller Abschlussauftrag — native administrierbarer Development Swarm
+
+Nutzerentscheidung 16.10.2026 16:21 Europe/Berlin: lauffähigen Swarm fertigstellen; Agents, Skills, Tools, Modell- und Swarm-Konfiguration nativ administrieren; nur minimaler aXtn vLLM Swarm Selector.
+
+Vollständig lesen und ausführen:
+handoffs/requests/AXTN-NATIVE-SWARM-COMPLETION-20261016.md
+
+Basis ist der verifizierte Update-Kandidat 084da7686b8254f56eb3ea8fe5be90e51a98d771 oder dessen geprüfter aktueller Nachfolger. Bestehende Lineage/Issue #7 verwenden. Bootstrap-/Seed-Einrichtung ist kein laufender Administrationsvertrag. Native UI-/Import-/Snapshot-/Publish-/Runtime-/Gateway-E2E-Abnahme abschließen. Der bisherige Python-Fixture-Slice ist kein universeller Development-Swarm-Nachweis.
+Keine neue Engine oder allgemeine Freigabeschleife. Tatsächliche Registry-/Tokenrotations-/verschlüsselte Backupvoraussetzungen über zulässigen vorhandenen Weg abarbeiten; keine Umgehung und keine Secretwerte ausgeben.
+
+## Frühere Aufträge — Herkunft und weiterhin geltende Detailverträge
+
 # Aktuell: Update zuerst, danach aXtn vLLM Swarm Selector — 16.10.2026 15:26 Europe/Berlin
 
 Maßgeblich ist die jüngste UPDATE-FIRST-Fortsetzung am Ende des vollständigen Auftrags:
