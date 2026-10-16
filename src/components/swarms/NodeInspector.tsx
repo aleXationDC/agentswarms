@@ -341,6 +341,12 @@ export function NodeInspector({
   const [connectedProviders, setConnectedProviders] = useState<Set<string>>(
     () => new Set<string>(["openrouter"]),
   );
+  // The user's native llm_gateway integration, as AgentForm reads it. Only the
+  // label fields are used; the gateway key is never read here.
+  const [gatewayConnected, setGatewayConnected] = useState<{
+    connected: boolean;
+    label?: string;
+  }>({ connected: false });
   // Data tables — used by the sql_query per-node allow-list picker.
   const [availableDataTables, setAvailableDataTables] = useState<
     { id: string; name: string; is_sample: boolean }[]
@@ -380,7 +386,7 @@ export function NodeInspector({
       const [{ data: creds, error: credsErr }, { data: integ, error: integErr }] =
         await Promise.all([
           supabase.from("provider_credentials").select("provider, is_active"),
-          supabase.from("integrations").select("provider, type, is_active"),
+          supabase.from("integrations").select("provider, type, is_active, name"),
         ]);
       const providersErr = credsErr ?? integErr;
       if (providersErr) noteError("providers", providersErr.message);
@@ -393,6 +399,17 @@ export function NodeInspector({
           if (r.is_active !== false && r.provider) connected.add(r.provider);
         });
       setConnectedProviders(connected);
+      const gw = (
+        integ as
+          | {
+              provider: string | null;
+              type: string;
+              is_active: boolean | null;
+              name?: string | null;
+            }[]
+          | null
+      )?.find((r) => r.type === "llm_gateway" && r.is_active);
+      if (gw) setGatewayConnected({ connected: true, label: gw.name || gw.provider || undefined });
       const { data: dt, error: dtErr } = await supabase
         .from("user_data_tables")
         .select("id, name, is_sample")
@@ -449,8 +466,11 @@ export function NodeInspector({
   const ollamaLive = useOllamaModels(currentProvider === "ollama");
   // Show every connected provider + the node's current one (even if it was
   // disconnected after the fact, so the value isn't silently dropped).
+  // An explicit gateway opt-in on a connected gateway does not need a direct
+  // connection to the provider; IAM below still applies.
+  const viaGateway = data.routeThroughGateway === true && gatewayConnected.connected;
   const availableProviders = PROVIDERS.filter(
-    (p) => connectedProviders.has(p.value) || p.value === currentProvider,
+    (p) => viaGateway || connectedProviders.has(p.value) || p.value === currentProvider,
   ).filter(
     (p) => !iamAllowedProviders || iamAllowedProviders.has(p.value) || p.value === currentProvider,
   );
@@ -765,6 +785,7 @@ export function NodeInspector({
                       {p.label}
                       {!listErrors.providers &&
                         !connectedProviders.has(p.value) &&
+                        !viaGateway &&
                         p.value !== "openrouter" && (
                           <span className="ml-2 text-[10px] text-muted-foreground">
                             (not connected)
@@ -791,10 +812,15 @@ export function NodeInspector({
                 <Label className="text-xs">Route through LLM Gateway</Label>
                 <Switch
                   checked={data.routeThroughGateway === true}
+                  // A node that already opted in can always switch off.
+                  disabled={!gatewayConnected.connected && data.routeThroughGateway !== true}
                   onCheckedChange={(routeThroughGateway) => onChange({ routeThroughGateway })}
                 />
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground">
+                {gatewayConnected.connected
+                  ? `Gateway connected${gatewayConnected.label ? `: ${gatewayConnected.label}` : ""}. `
+                  : "No active gateway found: configure one in Integrations → LLM Gateway. "}
                 Uses the executing user's gateway from Integrations. If unavailable, the run fails
                 instead of calling the upstream provider. This does not change route-all.
               </p>
