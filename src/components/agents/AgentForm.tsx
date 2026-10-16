@@ -672,7 +672,7 @@ export function AgentForm({
   // static suggestions whenever the user picks the ollama provider.
   const ollamaLive = useOllamaModels(provider === "ollama");
   const [model, setModel] = useState(agent?.llm_model || "google/gemini-3-flash-preview");
-  const [temperature, setTemperature] = useState(agent?.temperature || 0.7);
+  const [temperature, setTemperature] = useState(agent?.temperature ?? 0.7);
   const [maxTokens, setMaxTokens] = useState(agent?.max_tokens || 4096);
   const [n8nWebhook, setN8nWebhook] = useState(agent?.n8n_webhook_url || "");
   const [useN8n, setUseN8n] = useState(!!agent?.n8n_webhook_url);
