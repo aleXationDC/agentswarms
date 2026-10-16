@@ -1,6 +1,6 @@
 # AXTN-DEVSWARM-CLOSURE-20261016
 
-Status: EXISTING_NATIVE_REPAIRS_AUTHORIZED / NEW_RUNTIME_AND_SECRET_ROTATION_DECISION_REQUIRED
+Status: NATIVE_REPAIRS_AND_TWO_INTERNAL_SECRET_ROTATIONS_AUTHORIZED / NEW_RUNTIME_DECISION_SEPARATE
 Basisbericht: 1b4e7f7868298758f75e8f70295cdcc25057f8ad.
 Branch: work/AXTN-NATIVE-SWARM-COMPLETION-20261016. Tracking: Issue #7 und vorhandene Case-Lineage.
 AGENTS.md, Rollen- und Native-first-Grenzen gelten. Keine neue Kontrollplattform.
@@ -42,3 +42,20 @@ Native vorhandene Komponenten wiederverwenden; keine neue Shell-/Executor-/Orche
 ## Ergebnis
 Bestehende Reports/Case-Referenzen aktualisieren. Vier getrennte Zustände: (a) UI-Reparatur und Save-Roundtrip, (b) native KB-/Skill-Nutzung, (c) Sicherheitsvorfall/ausstehende konkrete Rotation, (d) weiterhin fehlende Produkt-Development-Runtime und deren freigabefähiger kleinster Entwurf.
 "Task complete" nur für ausdrücklich erfüllte Teilpakete, nicht für den gesamten Development-Swarm.
+
+## Ausdrückliche Fortsetzung und Incident-Rotation autorisiert — 16.10.2026 22:40 Europe/Berlin
+
+Alex beauftragt "Mach halt" und verlangt erst am Schluss eine präzise Liste eventuell selbst neu zu erstellender Secrets. Das autorisiert jetzt die sichere reguläre Rotation genau der im Bericht benannten offengelegten internen Secrets sowie die dafür notwendigen eng begrenzten nativen Betriebsmaßnahmen. Die bisherige gesonderte Zustimmungsanforderung dieses Dokuments für diese zwei Rotationen ist damit erfüllt; keine erneute allgemeine Rotationsfreigabe einholen.
+
+1. Betroffen sind ausschließlich AGENTSWARMS_INTERNAL_RUN_SECRET und AGENTSWARMS_PROVIDER_CREDS_SECRET im tatsächlichen geschützten Host-Konfigurationsweg. Mapping zu process.env und tatsächliche Dienstabhängigkeiten vor Mutation nichtgeheim prüfen. Keine daraus abgeleitete Rotation sämtlicher Provider-Keys, Benutzerpasswörter, SSH-Schlüssel, PATs oder Backup-Identitäten.
+2. Mit vorhandenem berechtigtem Betreiber-/nativem Adminzugriff neue starke interne Werte selbst generieren und geschützt bereitstellen. Keine Werte über Chat/Git/Tooloutput/History/Kommandoargumente; kein Anzeigen ganzer env-Dateien. Nur erlaubte Namen, Vorhandensein, Status, Counts und bereinigte Testergebnisse ausgeben. Kein neuer Credentialdienst.
+3. Zuerst vorhandene Wiederherstellbarkeit für die tatsächlich betroffenen verschlüsselten Daten und Schlüssel prüfen. Nur falls der vorhandene Stand dafür nicht genügt, genau den nötigen aktuellen geschützten Recoverypunkt erstellen, nicht routinemäßig die komplette Plattform neu sichern. Recoverymaterial bleibt außerhalb Git und Ausgaben; nicht als ungesichertes altes kompromittiertes Produktionscredential aktiv lassen.
+4. Internal-Run-Secret koordiniert über tatsächliche Consumer/Producer wechseln; notwendige Dienste gezielt neu laden/starten, ihre Gesundheit und native interne Aufrufe prüfen. Altes Secret darf danach nicht mehr für laufende interne Authentifizierung gültig sein. Historische suspendierte Runs nicht als Testeffekte neu ausführen.
+5. Credential-Verschlüsselungsschlüssel über vorhandenen Keyring mit Übergangs-Old-Key und native reEncryptCredentials-Superadminfunktion umstellen. Den zuvor beschriebenen Vollständigkeits-/Pagination-/Fehler-/Konkurrenzcheck erfüllen. Bei einer realen gefährlichen Implementierungslücke keine blinde Massenmutation: minimalen Produktfehler innerhalb bestehender Rotationsfunktion beheben und isoliert prüfen, keine neue Rotationengine.
+6. Alte aktive Entschlüsselungsannahme erst nach vollständigem nativen Status-/Datenintegritätsnachweis und begrenzten realen Funktionsprüfungen der betroffenen Integrationen entfernen. Gateway/Providerzugriff und interner Swarm-Aufruf müssen danach funktionieren, keine Wiederherstellung gespeicherter Verbindungen durch erneute manuelle Keyeingaben als Standardlösung.
+7. Recovery alter Backups getrennt sicherstellen. Offengelegter Verschlüsselungsschlüssel plus frühere Ciphertexte bleibt ein historischer Expositionsrest; Rotation allein macht existierende Kopien nicht rückwirkend geheim. Keine pauschale Backup-/Loglöschung oder ungefragte externe Schlüsselübermittlung. Tatsächlichen Expositionsumfang ohne Auslesen kompromittierter Secretlogs klären.
+8. Native UI-/Save-/KB-/Skill-Restarbeiten weiterhin abschließen. Bereits grüne Baselines, erledigtes Deployment und bestehende Zugangseinrichtung nicht wiederholen. Gezielte erforderliche Tests statt erneuter allgemeiner Prüfkampagne.
+9. Diese Incident-Autorisierung ist keine Freigabe einer neuen TypeScript-Runtime-/Executorarchitektur. Fehlende allgemeine Development-Fähigkeit und freigabefähigen kleinsten Entwurf separat ausweisen; keine Produktarbeit durch CLI als Swarm-Ergebnis ausgeben.
+10. Abschluss an Alex: genau welche der zwei internen Secrets tatsächlich rotiert wurden und welche Funktionsprüfungen bestanden; höchstens konkret noch nötige Kontoinhaber-Aktionen mit Begründung. Wenn der normale Betreiberweg alles erledigt, ausdrücklich "Von dir neu zu erstellen: keine." Kein Secretwert, keine pauschale Forderung nach neuen Credentials. Unerledigte ältere Codex-Token-Offenlegung als getrennte Altaufgabe nicht still mit erledigt melden.
+
+Status des Gesamtauftrags bleibt offen bis tatsächlich umgesetzte native Funktion; keine Erfolgsmeldung aus dieser Dokumentationsfreigabe ableiten.
