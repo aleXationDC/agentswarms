@@ -215,3 +215,27 @@ ChatGPT bleibt Solution Architect/Implementation Engineer; CLI prüft und berein
 10. Bericht handoffs/reports/AXTN-VLLM-SWARM-SELECTOR-UPDATE-PREFLIGHT-20261016.md mit exakten SHAs und wirklich ausgeführten Checks schreiben. Noch kein Upstream-Upgrade mergen, keine Live-Migration/Deployment oder Upstream-PR aufgrund dieses Prüfauftrags. Vorhandene allgemeine Release-Autorität nicht auf einen ungeprüften größeren Versionssprung ausdehnen.
 
 Die ältere Behauptung "Gateway am Agenten aktivieren und nativ neu importieren genügt" ist widerlegt: Original-Import verwirft das Flag. Bestehende Selector-Ergänzungen sind aXtn-Patches, nicht unveränderter Standard. Dieses Addendum ist der gezielte nächste Arbeitsauftrag; keine Wiederholung erledigter großer Suites ohne neue Änderung/konkreten Grund.
+
+## Maßgebliche Reihenfolge — UPDATE FIRST, Nutzerentscheidung 16.10.2026 15:26 Europe/Berlin
+
+Diese jüngste Entscheidung ersetzt die Einschränkung des vorigen Addendums auf bloße Update-Prüfung. Nutzer zieht ausdrücklich vor, ZUERST AgentSwarms zu aktualisieren und ERST DANACH darauf basierend aXtn vLLM Swarm Selector zu entwickeln.
+
+### Arbeitspaket 1: Upstream-Update umsetzen
+- Ziel fest pinnen: AgentSwarms v1.6.0@70c295f17af39c81b1a4b56e6552307f5d91eef3. Öffentliches main@7c95a69974bac08c946aa7130d7aa0ad1d3f0b06 ist nach dem Release; zusätzliche Sicherheits-/Fehlerfixes anhand konkreter Relevanz bewerten und gegebenenfalls separat begründet aufnehmen, nicht pauschal moving main.
+- Tatsächlichen aktuellen Source, Host-Pins und Git-Abstammung ermitteln. Wenn v1.6 bereits vollständig enthalten ist, nicht künstlich erneut mergen: Äquivalenz belegen, vorhandene lokale Änderungen trotzdem prüfen. Versionsfeld allein reicht nicht.
+- Taskbezogenen Update-Branch/Worktree von der verifizierten kompatiblen Ausgangslinie erstellen. Alle bisherigen Selector-Arbeiten auf ihrem Branch erhalten; nicht löschen. Den Update-Kandidaten nicht ungeprüft mit den noch nicht abgenommenen Selector-Patches vermischen: Selector-spezifische Core-Diffs anhand Inventar separat halten/aus dem reinen Update-Kandidaten gezielt ausklammern, ohne andere akzeptierte aXtn-Funktionen zu entfernen. Keine Historie umschreiben.
+- Upstream aktualisieren, vorhandene akzeptierte aXtn-Funktionen minimal portieren und veraltete/schon upstream vorhandene Patches ablösen. Normale Merge-/Compiler-/Testkonflikte selbst beheben. Keine neue Betriebs-/Sicherheitsarchitektur und keine Funktionsverluste still akzeptieren.
+- Migrationsmanifest/Checksummen/Ledger prüfen; bereits live angewendete additive Migrationen nicht umschreiben oder doppelt anwenden. Update-/Restore-Kompatibilität bei Schemaänderungen in geeignet isoliertem Clone belegen; vorgeschriebenen verschlüsselten Backupweg vor Live-Schritten erfüllen.
+- Canonical Checks der Zielversion sowie gezielte aXtn-Regressionen durchführen: Auth/IAM/Modellrechte/Budget, Agent/Swarm-Draft/Publish/Snapshots, Canvas/headless, Approval-Suspend/Resume, Case-Lifecycle/Evidence, DMS/MCP/n8n der tatsächlich betroffenen Verträge. Live-Tests durch begrenzte synthetische Fixture, keine fremden Produktivvorgänge.
+- Bestehende Host-Release-Linie, unabhängige Prüfungen und Freigaben nutzen. Die Nutzerentscheidung autorisiert die Update-Umsetzung und deren reguläre Inbetriebnahme innerhalb dieses Rahmens; keine erneute allgemeine "Soll ich das Update machen?"-Frage. Tatsächliche Registry-/Tokenrotations-/Backuprecipient-Voraussetzungen bleiben echte technische Grenzen; weder umgehen noch als Architekturfreigabeproblem darstellen. Alles unabhängig Ausführbare fertigstellen.
+- Update erst mit exaktem Source-/Image-/Host-Pin, Schema-Ledger, Health/Smoke und gezieltem Funktionsnachweis als deployed behaupten. Bei technischen Live-Blockern den vollständig getesteten konkreten Release-Kandidaten bereitstellen und genau die fehlende Voraussetzung nennen. Kein Task-complete allein bei Source-Merge.
+
+### Arbeitspaket 2: Selector auf neuer Basis
+Erst nach validiertem Update-Stand native Gateway-/vLLM-/Modellauswahl erneut prüfen. Wenn das Ziel nun nativ erfüllt ist, entsprechende alte Selector-Patches nicht portieren. Sonst ausschließlich den dokumentierten minimalen aXtn vLLM Swarm Selector auf der neuen Basis weiterentwickeln; vorhandenen Code nur gezielt wiederverwenden, keinen ungeprüften Sammel-Cherrypick.
+- Name und aXtn-Einordnung beibehalten.
+- Native Provider-/Gateway-/Katalog-/Snapshot-/IAM-Verträge verwenden, keine neue Engine.
+- Pro Knoten konkrete Modellwahl und Gateway-Opt-in; global route_all=false; direkter vLLM-Pfad getrennt.
+- Erweiterung getrennt vom Upstream-Update committen/testen, damit künftige Updates ihren tatsächlichen Patchumfang erkennen und gegebenenfalls durch native Unterstützung ersetzen können.
+- Bestehende Corporate-E2E-Abnahme nach regulärem Selector-Release fortsetzen; historische OpenAI-/direkte-vLLM-Proben nicht als Gateway-Beleg umdeuten.
+
+Bericht: handoffs/reports/AXTN-VLLM-SWARM-SELECTOR-UPDATE-PREFLIGHT-20261016.md darf um tatsächliche Update-Umsetzung/Evidence erweitert werden; Titel/Status entsprechend nachführen. Tatsächliches Update und anschließende Erweiterung klar getrennt berichten.
