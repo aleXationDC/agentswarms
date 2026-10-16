@@ -1,3 +1,5 @@
+> Zielkorrektur 16.10.2026, 11:15: Aktuelle LLMHub-Integration gemäß handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md. Native Gateway-Anbindung mit Agent-Opt-in und route_all=false ersetzt die frühere direkte-vLLM-Zielfestlegung. Historische Aufträge/Evidence bleiben; keine bestehende Integration löschen.
+
 # AXTN-DEVSWARM-OWNER-LLMHUB-20261016
 
 Status: IMPLEMENTATION_AND_VALIDATION_AUTHORIZED / LIVE_POLICY_CHANGE_GATED.
