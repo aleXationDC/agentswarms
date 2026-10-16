@@ -121,3 +121,24 @@ Es wurde nichts lokal als Release-Image eingesetzt.
 - Gegenproben: ungültige Modell-ID über Gateway → 502 ohne Direktfallback; Unit-Tests fail-closed bei fehlendem/unvollständigem/nicht lesbarem Gateway; zwei Nodes mit eigenen Modellen im selben Lauf bestätigt.
 
 **Grenzen:** Slice bleibt der normalize_score/Python-Fixture; allgemeine Development-Fähigkeit nicht behauptet. Live-IAM-Negativprobe pro Modell nicht ausgeführt. Offene Betriebsaufgaben: Owner-Escrow Backup-Schlüssel, Widerruf altes `axtn-codex`-Token, Helper-Image-Digest in `environments/*.env.example` per Host-Review.
+
+## Nachtrag: LLMHub-Rollenmodelle konfiguriert, publiziert und gemessen (Fortsetzung bed1069a)
+
+**Rollenmatrix (vorher → nachher), alle vLLM über Gateway-Opt-in, `route_all=false`:**
+
+| Rolle | Vorher | Nachher |
+|---|---|---|
+| Builder | openai/gpt-4.1-mini | vllm/GLM-5.3-Flash (Alternative Qwen3.6-35B-A3B-FP8 offen, nicht benötigt) |
+| Contract Breaker | openai/gpt-4.1-mini | vllm/GLM-5.2 (Alternative gpt-oss-120b) |
+| Security Breaker | vllm/gpt-oss-120b | unverändert |
+| Maintainability Breaker | vllm/Mistral-Small-4-119B-2603 | unverändert |
+
+**Native Bedienfolge (nur UI):** Gateway-Probe aller Kandidaten (200). Agent Builder → Edit → Model je Agent; danach im Swarm-Canvas Inspector „Import from agent library“ je Node (Labels zurückgesetzt), Save, Deploy → Publish (2026-10-16 18:11:52Z, Version `f7fc9cb5…`). Readback `nodes == published_nodes`; `agentSnapshot.versionId` zeigt auf die neuen Agent-Versionen (Builder `2a3d3702…`, Contract `30a90386…`, Security `29c84b1a…`, Maintainability `d50b0c1c…`). Keine SQL-/Seed-Patches. Vorherige Agent-Versionen bleiben erhalten (Rollback möglich).
+
+**UI-Befunde:** (1) AgentForm speichert Temperatur 0 als 0.7 (`agent?.temperature || 0.7`, `AgentForm.tsx`); per UI auf 0 zurückgesetzt, DB-Readback 0. Produktfix steht aus. (2) Speichern schreibt Guardrails als explizite Default-Werte (semantisch gleich, „Guarded“-Badge entfällt).
+
+**All-Gateway-Baseline (Run `0bbbb403-5e8a-48dc-8802-7d369a91a3bb`, Case `238a5f08-a2e8-443c-854e-6acf5d807f35`, attempt `rolemodels-v1`):** `execution_traces`: alle vier Nodes `vllm` + exakte Modell-ID + `gatewayRouted=true`. Builder lieferte gültiges `candidate-content/v1`; Contract/Security/Maintainability lieferten strukturiertes `review/v1` (Contract: ein LOW-Finding „toter Code“, nicht blockierend). Gate PASS, Run suspendiert, Approval `f4c73f0a-6155-4e91-8405-8f2f0b7019c2` über Review-UI entschieden (**TEST_SIMULATION** im bereits erteilten Fixture-Scope, keine Entscheidung von Alex), Resume → `success`, 31 Steps, Outcome `PR_READY`, PR #11 in `aXtn/development-swarm-acceptance` (offen). Alte Runs/Approvals unverändert.
+
+**Rollengrenzen:** Eine einzelne Fixture-Messung belegt Vertragstreue, nicht Qualität; kein bounded Vergleich mit fehlerhaften Kandidaten für Flash ausgeführt. Live-IAM-Negativprobe pro Modell mit synthetischer Identität weiterhin nicht ausgeführt (Voraussetzung: isolierte Test-Identität ohne Modellrecht).
+
+**Phase A `AXTN-SUPACASE-USABILITY-0001`: NOT_READY.** Der publizierte Swarm validiert fest `repository=aXtn/development-swarm-acceptance` (`axtnDevelopmentSwarm.ts:52`), `path=src/normalize_score.py` (:57), `request` ≤ 8000 (:56), Testprofil `python-normalization-v1` (:66), Candidate ≤ 16000 Zeichen (:76), PR-Ziel/Branch hart auf das Acceptance-Repo (:77/:85/:180) und Builder-Prompt auf normalize_score (:292). Der Case-Auftrag (Repo `aXtn/aXtn-agentswarms`, mehrere Dateien/Bereiche) passt nicht; Tarnung als Python-Task wäre unzulässig (SWARM-Work-Order). Kleinste native Anschlussmöglichkeit: neuer Task-Vertrag `axtn.development.task/v2` mit Repository-Allowlist, Mehrdatei-Candidate, Testprofil für TypeScript (`npm`-basiert) im Runtime-Verify-Tool, Builder-Prompt aus dem Vertrag, plus Case-Lineage (ein Parent, Pakete `master-data`, `case-workbench`, `logging-observation`, `acceptance`). Keine Ausführung des Auftrags erfolgt.
