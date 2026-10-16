@@ -93,3 +93,18 @@ Es wurde nichts lokal als Release-Image eingesetzt.
 - **Rechtebeleg:** Image `127.0.0.1:3000/axtn/axtn-agentswarms:6b1598c7c4766be03bb26f638ef4757acc9d83a2` aus Dockerfile des Heads `6b1598c7` (Revision-Label, VITE-Public-Build-Args aus der bestehenden nativen Umgebung) gebaut und **erfolgreich als `aXtn-copilot-cli` gepusht**. Packages-API: Owner `aXtn`, Creator `aXtn-copilot-cli`. Registry-API-HEAD bestätigt `Docker-Content-Digest: sha256:f5c80afb788badbc65622301006d0f9f9c128a13a91271fca9641a5ae6344c07`; lokaler RepoDigest identisch.
 - **Git** bleibt SSH (`axtn-gitea`, aXtn-copilot-cli). `/api/v1/user` mit diesem Token → 403 (bewusst kein `read:user`).
 - **Nächste Schritte:** Host-Pin auf den Digest (IMAGE-PROVENANCE/AGENTSWARMS-PIN, Review-Gates), Ledger-Prüfung/Migration 060, Deployment, Health, native UI-Abnahme, Corporate-E2E.
+
+## Release-Ausführung (16.10.2026 ~17:20 UTC) — deployed
+
+| Schritt | Ergebnis |
+| --- | --- |
+| Source/Image | Head `6b1598c7c4766be03bb26f638ef4757acc9d83a2` (v1.6.0 + Selector + Gegenproben), Image `127.0.0.1:3000/axtn/axtn-agentswarms:6b1598c7…` |
+| **RepoDigest** | `sha256:f5c80afb788badbc65622301006d0f9f9c128a13a91271fca9641a5ae6344c07` (Registry-HEAD = lokaler Digest, Push als `aXtn-copilot-cli`) |
+| Backup | `release-20261016T1625Z` (siehe oben), Ledger-Stand vor Migration: letzter Eintrag `…050000` |
+| Migration | `20261016060000_case_execution_native_identity_semantics.sql` (SHA256 `80dcf76c509f7b2bd37acc4848b501e00e49a4ccb72a16ca8d44d90ccfcae209`): zuvor Dry-run in zurückgerollter Transaktion OK, dann in einer Transaktion mit Ledger-Eintrag angewendet. **`20261009113000_case_system_integration_grant_only.sql` bewusst weiterhin NICHT angewendet** (laut Handoff AXTN-NATIVE-RESOURCE-CASE-ROUTING-0001 überholt; hätte die Live-Funktion zurückgesetzt). |
+| Deployment | Candidate-Checkout `candidates/agentswarms-6b1598c7…` (git worktree), `compose.env` → neuer Commit (Vorstand `compose.pre-release-6b1598c7.env`), `native-compose.sh agentswarms up -d --no-build --no-deps agentswarms`; lokaler Tag `axtn-agentswarms-native:6b1598c7…` zeigt auf den Registry-Digest (Image-ID = Digest). Andere Services unverändert. |
+| Health | Container `healthy`, Image-ID `sha256:f5c80afb…`, `GET :18080/` → 200 |
+| Rollback | Image `axtn-agentswarms-native:eb191e15…` + `compose.pre-release-6b1598c7.env`; Funktionsdefinitionen vor 050 in `backups-owner-policy-20261016/`; vollständiges Backup oben. Vorwärts-Migration 060 hat kein automatisches Down. |
+| Gateway-Inferenz am deployten Stand (`POST /api/chat`, `routeThroughGateway=true`, `provider=vllm`) | `gpt-oss-120b` 200 + exaktes JSON; `Mistral-Small-4-119B-2603` 200 + exaktes JSON; ungültige ID → 502 **„vllm via Gateway error [404]… Available models …“** (Fehlertext stammt vom Gateway ⇒ Gateway-Pfad, kein direkter Fallback, keine stille Substitution). |
+
+**Weiterhin offen (nicht behauptet):** native UI-Abnahme am deployten Stand (Agent → Canvas → Draft → Publish → Readback) und der Corporate-E2E-Lauf des Development-Swarms (`gatewayRouted=true`-Trace, Runtime-Receipt, Approval/Resume, Case-Abschluss). Der Live-Swarm `aXtn Development Swarm - Native V1` hat weiterhin `openai/gpt-4.1-mini` ohne Gateway-Opt-in; die Umstellung auf Gateway-Modelle ist die native Operator-Konfiguration (Vorschlag: Builder `gpt-oss-120b`, Reviewer `Mistral-Small-4-119B-2603`, beide mit Opt-in), historische Runs/Approvals bleiben bei Publish unverändert.
