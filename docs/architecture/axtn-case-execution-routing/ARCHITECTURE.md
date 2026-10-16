@@ -288,7 +288,7 @@ SYSTEM_INTEGRATION_AMBIGUOUS
 ROUTING_DECISION_REQUIRED
 ```
 
-Gateway opt-in (migration `20261016030000`): an agent node with `routeThroughGateway=true` in the run's published snapshot is routed through the executing user's active native `llm_gateway` integration, also for Case-bound runs. Model access still comes from user/group IAM; Case, account and cost center are not additional grants. A missing, inactive or ambiguous gateway fails closed (`SYSTEM_INTEGRATION_UNAVAILABLE`/`_AMBIGUOUS`) with no direct-provider fallback. A caller claim that contradicts the snapshot yields `ROUTING_DECISION_REQUIRED`. Nodes without the opt-in keep their bound credential.
+Gateway opt-in (migration `20261016030000`): an agent node with `routeThroughGateway=true` in the run's published snapshot is routed through the executing user's active native `llm_gateway` integration, also for Case-bound runs. Model access, the gateway lookup and the budget decision are those of the run owner (the validated native execution identity, same as without a Case), not the Case assignee or payer; Case, account and cost center are not additional grants. A missing, inactive or ambiguous gateway fails closed (`SYSTEM_INTEGRATION_UNAVAILABLE`/`_AMBIGUOUS`) with no direct-provider fallback. A caller claim that contradicts the snapshot yields `ROUTING_DECISION_REQUIRED`. Nodes without the opt-in keep their bound credential.
 
 All outcomes must be safe to retry. A failed or repeated request must not duplicate a Case, assignment event, Attempt binding, model call or billing event. Provider failures never close or accept a Case.
 

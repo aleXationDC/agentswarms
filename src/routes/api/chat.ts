@@ -33,6 +33,7 @@ import {
 import { internalSecretMatches } from "@/utils/internalOrigin.server";
 import {
   resolveCaseChat,
+  caseGatewayRoute,
   caseProviderFailure,
   caseProviderLine,
   caseFailureStatus,
@@ -1458,10 +1459,8 @@ export const Route = createFileRoute("/api/chat")({
 
           // Case-bound runs take the opt-in from the published run snapshot; a caller
           // claim that disagrees with it is rejected rather than honoured.
-          if (caseExecution && (body.routeThroughGateway === true) !== caseExecution.gatewayIntent)
-            throw new Error("ROUTING_DECISION_REQUIRED");
           const routeThroughGateway = caseExecution
-            ? caseExecution.gatewayIntent
+            ? caseGatewayRoute(body.routeThroughGateway, caseExecution.gatewayIntent)
             : typeof body.routeThroughGateway === "boolean"
               ? body.routeThroughGateway
               : agentRouteThroughGateway;

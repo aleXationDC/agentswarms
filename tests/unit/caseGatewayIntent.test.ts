@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nodeGatewayIntent } from "@/axtn/workbenches/cases/caseExecution.server";
+import { caseGatewayRoute, nodeGatewayIntent } from "@/axtn/workbenches/cases/caseExecution.server";
 
 const snapshot = {
   nodes: [
@@ -19,6 +19,19 @@ describe("per-agent gateway intent comes from the persisted run snapshot", () =>
     expect(nodeGatewayIntent(snapshot, "unknown")).toBe(false);
     expect(nodeGatewayIntent(null, "a")).toBe(false);
     expect(nodeGatewayIntent({ nodes: "x" }, "a")).toBe(false);
-    expect(nodeGatewayIntent({ nodes: [{ id: "a", data: { routeThroughGateway: "true" } }] }, "a")).toBe(false);
+    expect(
+      nodeGatewayIntent({ nodes: [{ id: "a", data: { routeThroughGateway: "true" } }] }, "a"),
+    ).toBe(false);
+  });
+});
+
+describe("body/snapshot drift for Case-bound calls", () => {
+  it("accepts matching claims and rejects any disagreement", () => {
+    expect(caseGatewayRoute(true, true)).toBe(true);
+    expect(caseGatewayRoute(false, false)).toBe(false);
+    expect(caseGatewayRoute(undefined, false)).toBe(false);
+    expect(() => caseGatewayRoute(true, false)).toThrow("ROUTING_DECISION_REQUIRED");
+    expect(() => caseGatewayRoute(false, true)).toThrow("ROUTING_DECISION_REQUIRED");
+    expect(() => caseGatewayRoute(undefined, true)).toThrow("ROUTING_DECISION_REQUIRED");
   });
 });

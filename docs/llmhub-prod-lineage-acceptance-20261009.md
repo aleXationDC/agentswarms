@@ -1,3 +1,10 @@
+> **SUPERSEDED (2026-10-16) for Case-bound gateway routing.** This is historical evidence from
+> 2026-10-09 and is left unchanged below. Its statement that Case-bound calls must not use the
+> gateway no longer describes the target: see
+> [`handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md`](../handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md),
+> [`docs/engineering/02-agent-runtime.md`](engineering/02-agent-runtime.md) and
+> [`handoffs/reports/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md`](../handoffs/reports/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md).
+
 # LLMHub accepted-production-lineage integration
 
 Assignment: `AXTN-LLMHUB-PROD-LINEAGE-ACCEPTANCE-0001`, authorized by

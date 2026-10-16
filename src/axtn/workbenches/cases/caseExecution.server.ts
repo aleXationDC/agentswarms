@@ -346,6 +346,12 @@ export function nodeGatewayIntent(snapshot: unknown, nodeId: string): boolean {
   return node?.data?.routeThroughGateway === true;
 }
 
+// A caller claim that disagrees with the snapshot is refused rather than honoured.
+export function caseGatewayRoute(bodyFlag: unknown, snapshotIntent: boolean): boolean {
+  if ((bodyFlag === true) !== snapshotIntent) throw new Error("ROUTING_DECISION_REQUIRED");
+  return snapshotIntent;
+}
+
 export async function loadCaseCredential(context: CaseCredentialContext, provider: string) {
   const selected = z
     .object({

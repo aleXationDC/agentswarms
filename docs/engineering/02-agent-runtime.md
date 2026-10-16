@@ -61,12 +61,19 @@ gateway can execute a listed model. Configured base paths are preserved;
 endpoint compatibility and tool/schema capabilities still need real inference
 tests with an independently authorized credential.
 
-Case-bound execution keeps its server-derived routing and credential binding.
-Neither a node's gateway opt-in nor the run owner's global gateway can
-substitute for that binding. Explicit gateway requests on this path fail with
-`ROUTING_DECISION_REQUIRED` until a separately reviewed Case routing contract
-provides the intended gateway decision. Personal Canvas/headless routing
-parity does not constitute Case-bound gateway acceptance.
+Case-bound execution uses the same native execution identity as the equivalent
+non-Case run: the validated run/API-key owner. Model rules, the gateway lookup
+and (for gateway nodes) the budget decision are that user's; the Case assignee,
+custodian-of-payment, account, customer and semantic-route fields add no
+entitlement. A node with `routeThroughGateway=true` in the run's immutable
+published snapshot is routed through that user's active `llm_gateway`
+integration (migrations `20261016030000`–`20261016050000`); a caller claim that
+disagrees with the snapshot is rejected with `ROUTING_DECISION_REQUIRED`.
+A missing or inactive gateway fails closed (`SYSTEM_INTEGRATION_UNAVAILABLE`)
+and never falls back to a direct provider credential. Case data access is
+checked separately and is not derived from model rights. Nodes without the
+opt-in keep their bound credential, and the personal ChatGPT account/plan path
+is unchanged.
 
 ---
 
