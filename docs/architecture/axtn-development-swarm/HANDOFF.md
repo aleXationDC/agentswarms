@@ -1,3 +1,15 @@
+# Aktueller Auftrag — natives LLM Gateway je Agent
+
+Nutzerziel bestätigt 16.10.2026, 11:15 Europe/Berlin:
+LLMHub über vorhandenes natives LLM Gateway, Opt-in je Agent, route_all=false. Direkte vLLM-Verbindung ist nicht der gewünschte Zielpfad.
+
+Aktuellen vollständigen Auftrag lesen:
+handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md
+
+Ältere direkte-vLLM-Zielvorgaben und pauschale Case-Gateway-Sperre sind damit nicht als Nutzeranforderungen fortzuführen. Native Gateway-Funktionen plus bestehende Case-/IAM-/Attempt-/Budgetverträge korrekt zusammenführen; keine bloße Guard-Löschung, keine neue Engine/Custom-Architektur. Native Fähigkeiten/kompatible Source-Nachfolger zuerst prüfen.
+
+## Vorherige Umsetzung und Evidenz
+
 # Aktuelle Ausführungsautorisierung — 16.10.2026, 01:28 Europe/Berlin
 
 Aktuellen vollständigen Request lesen:
