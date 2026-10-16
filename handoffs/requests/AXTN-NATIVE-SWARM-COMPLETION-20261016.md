@@ -141,3 +141,16 @@ Vor jeder erneuten Aufforderung an den Nutzer, ein axtn-codex-Token zu erzeugen:
 7. Sobald der bestehende Weg regulär funktioniert, mit fertiggestelltem Backup und geprüftem Kandidaten unmittelbar Image-Push/Digest, regulären Release und Deployment/E2E fortsetzen. Keine neuen allgemeinen Planungs-/Abnahmerunden vor Auslieferung.
 
 Der Screenshot ist ein Hinweis zur Kontozuordnung, keine im Chat erteilte Adminrolle, kein Secret und kein Beleg einer bereits geprüften alternativen Anmeldung.
+
+## Verbindliche Kontozuordnung — Nutzerentscheidung 16.10.2026 18:34 Europe/Berlin
+
+Copilot verwendet sein vorhandenes eigenes Gitea-Konto aXtn-copilot-cli. Das ist jetzt ausdrückliche Nutzeranweisung, nicht lediglich eine alternative zu prüfende Publisheridentität. Ältere Anweisungen, für diesen Copilot-Release ein axtn-codex-Token zu verlangen oder auszustellen, sind aufgehoben.
+
+- Zuerst Herkunft des irrtümlich übernommenen axtn-codex-Credentialhelpers/Registry-Logins feststellen und für den taskbezogenen Copilot-Workflow korrigieren. Vorhandenen vorgesehenen geschützten Zugang von aXtn-copilot-cli verwenden. Fremde Codex-/MCP-Konfiguration und deren Worktrees nicht verändern.
+- Git- und Registry-Authentifizierung separat korrekt auf aXtn-copilot-cli prüfen. Authentifizierte Identität und Repo-/Package-Berechtigung anhand nichtgeheimer Metadaten verifizieren, keine Tokenwerte/credentialhaltigen Ausgaben lesen oder veröffentlichen.
+- Vorhandenen Standard-Publishweg dieses Kontos wiederverwenden. Falls dessen eigener Zugang tatsächlich repariert werden muss, den legitimen nativen Kontoweg nutzen; nur konkret nötige Repo-/Package-Rechte für diesen Release. Keine neue Benutzeranlage, keine pauschale Admin-/write:user-Rolle, keine Passwortzurücksetzung oder DB-/Session-Umgehung aus dieser Anweisung ableiten.
+- Keine weiteren Kontoinhaber-Anforderungen für axtn-codex als Deploymentvoraussetzung. Das dort früher gemeldete Tokenleck als separate bestehende Sicherheitsaufgabe dem betroffenen Konto zugeordnet dokumentieren; Copilot-Release nicht weiter an dessen Publisher-Scope binden.
+- Mit vorhandenem Backup und getesteter Source unverzüglich regulären Image-Push/Digest, Host-Release, Migration/Deployment und native UI-/Corporate-E2E-Abnahme fortsetzen.
+- Nur falls der eigene vorgesehene Kontozugang konkret nicht verfügbar ist, exakt fehlende Authentifizierung/Einrichtung für aXtn-copilot-cli nachweisen. Existenz des Kontos allein beweist keinen erfolgreichen Zugriff; keine Erfolgsmeldung fingieren. Keine erneute allgemeine Planungs-/Freigabeschleife.
+
+Diese Kontozuordnung ändert keine Produkt-Endbenutzeridentität, kein AgentSwarms-IAM und keinen Gateway-/Case-Vertrag. Es handelt sich um die bereits vorhandene technische Identität des CLI-Umsetzers.
