@@ -61,3 +61,18 @@ Verschlüsseltes Backup → Image-Digest → Host-Pin/Review → Migration 060 (
 **Isolierte UI-Abnahme (Agent → Canvas → Draft → Publish → Readback):** nicht ausführbar, konkret fehlt: ein isoliertes synthetisches Supabase-/Auth-Backend für den Kandidaten (v1.6.0 + Migration 060). Das Live-Schema steht auf 050; ein zweiter dauerhafter Fullstack ist ausgeschlossen. Source-/Executorverträge sind oben abgedeckt; UI-Teil wird am regulär deployten Kandidaten bestätigt.
 
 **Weiterhin Kontoinhaber:** `write:package`-Token für `axtn-codex` (Ersatz/Widerruf) und echter age-Public-Key (`AXTN_BACKUP_RECIPIENT`). Kein LLMHub-Key-Refresh nötig.
+
+## Nachtrag zu 12888cdd (16.10.2026 ~16:30 UTC) — Backup erstellt, Publisher-Token nicht ausstellbar
+
+**Backup (erledigt, nichtgeheim berichtet):**
+- Wirksamer Host-Konfigurationspfad: `~/.local/share/axtn/native/compose.env` (Projekt `axtn-native`, Umgebung DEV-native; Vorsicherung `compose.pre-backup-setup.env`). `AXTN_BACKUP_HELPER_IMAGE` = geprüfter Digest `supabase/postgres@sha256:f371b5f3…7c00`; `AXTN_BACKUP_RECIPIENT` gesetzt.
+- Provenienz Recipient: **neu angelegte Betreiber-Backup-Identität** (einmalig mit `age-keygen`, nichts überschrieben), privat unter `~/.local/share/axtn/backup-identity/backup-age.key` (0700/0600, außerhalb Git). Kein persönlicher Owner-Key. Schützt nur dieses Deployment-Backup; **kein Schutz gegen vollständigen Hostverlust** — Owner-Escrow/externe Kopie des Schlüssels bleibt getrennte Betriebsaufgabe.
+- Backup: `~/.local/share/axtn/backups/release-20261016T1625Z/` (0700): `supabase.sql`, `gitea.sql`, `matrix.sql`, `matrix-runtime.tar`, `supabase-storage.tar`, `gitea-data.tar`, `n8n-data.tar`, `qdrant-data.tar` (alle `.age`), `manifest.sha256`, `metadata` (Ledger-Stand, AgentSwarms-Head `12888cdd`).
+- Abweichung vom `scripts/backup.sh`-Ablauf: Das Script adressiert Compose-Projekte (`axtn-native` host/gitea-db/postgres), die auf diesem Host nicht so laufen (Gitea/Matrix-DB sind eigenständige Container). Gleicher Vertrag (age-Stream, kein Klartext auf Platte, Manifest über Ciphertext) direkt mit `docker exec pg_dumpall` und Helper-Image-`tar` read-only umgesetzt. Matrix-Runtime enthält root-eigene Dateien → über Helper-Image gelesen.
+- Prüfung: Manifest-Hashes OK; alle drei SQL-Dumps entschlüsselbar mit Endmarker „dump complete“; alle Tar-Archive entschlüsselbar und listbar (7455/20/1629/5/7 Einträge). Kein Klartext ausgegeben. Der volle Restore-Drill wurde nicht neu gefahren.
+- Historische Dumps/Schlüssel unangetastet.
+
+**Publisher-Token (nicht ausstellbar mit vorhandener Authentifizierung):** Die Gitea-API verweigert Token-Erstellung für `axtn-codex` (`required=[write:user]`, vorhandenes Token hat `write:organization, write:repository, read:user`). Die Datei `~/.config/axtn-codex/git-http-credential` ist ein Token, kein Passwort; keine Passwortzurücksetzung/DB-Einfügung versucht (nicht autorisiert). **Einziger fehlender Schritt:** Kontoinhaber meldet sich als `axtn-codex` in der Gitea-UI an (Settings → Applications), erzeugt ein Token mit `write:package` (+ bestehende Scopes) und legt es im geschützten Credentialfile ab; danach altes Token `codex-git-http-20260914b` widerrufen. Alternativ ein Token mit `write:user`, dann stelle ich das Paket-Token selbst aus und rotiere.
+Es wurde nichts lokal als Release-Image eingesetzt.
+
+**Status:** Backup-Voraussetzung geschlossen. Release (Image-Push/Digest → Host-Pin → Migration 060 → Deployment → Health → UI-/Corporate-E2E) wartet ausschließlich auf den Publisher-Token.
