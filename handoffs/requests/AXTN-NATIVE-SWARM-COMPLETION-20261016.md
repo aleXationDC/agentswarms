@@ -66,3 +66,23 @@ ChatGPT spezifiziert innerhalb des akzeptierten Lösungsrahmens, Copilot impleme
 Bericht: handoffs/reports/AXTN-NATIVE-SWARM-COMPLETION-20261016.md.
 Enthält: tatsächliche aktuelle Git-/Image-/Host-/Runtime-Pins; native Bedienfolge ohne CLI-Zwang; exakt begrenzte aXtn-Patches; erfüllte E2E-Kriterien; Case/Run/Receipt/PR-Referenzen; echte offene technische Voraussetzungen.
 Funktionierender synthetischer Abnahmeslice, allgemeine Development-Fähigkeit, Native-Administration, deployed und Corporate-E2E getrennt ausweisen. Kein "Task complete", solange das zugesagte betriebsfähige Ergebnis offen ist.
+
+## Präzisierter Minimalumfang nach Pattern-Vergleich — 16.10.2026 16:26 Europe/Berlin
+
+Sourcevergleich am aktualisierten Kandidaten 084da7686b8254f56eb3ea8fe5be90e51a98d771, nicht nur Dokumentationsvermutung:
+
+- AgentForm.tsx und NodeInspector.tsx laden provider_credentials und integrations. Die Provider-Auswahl berücksichtigt Integrationen nur mit type=llm_provider; daher erscheinen OpenAI/Gemini/OpenRouter über das reguläre Pattern. llm_gateway ist ein separater nativer Integrationstyp und wird nicht als Provider in diese Liste aufgenommen.
+- AgentForm behandelt llm_gateway separat, liest den vorhandenen Gatewaystatus und bietet natives Route-through-Gateway-Opt-in. NodeInspector hat im Kandidaten bereits einen ergänzten Schalter, prüft/zeigt dabei den Gateway-Verbindungsstatus aber noch nicht gleichwertig zum AgentForm.
+- Nativer resolveOpenAICompatTransport nutzt für OpenAI, Gemini, OpenRouter und vllm dieselbe OpenAI-kompatible Transportschicht. GatewayOverride überschreibt dort Endpoint/Key vor der direkten Credential-Suche. Kein neuer HTTP-/Credential-/Provideradapter für LLMHub erforderlich.
+- Vorhandene ModelCombobox -> useProviderModels -> listProviderModels -> resolveOpenAICompatTransport liefert Modellkatalog und eigentliche Aufrufe über dieselbe wirksame Route. Kandidat reicht routeThroughGateway bereits durch. Die Model-ID bleibt exakte Auswahl, IAM bleibt auf dem vorhandenen logischen Provider-/Modellvertrag.
+- Die direkte vLLM-Integration ist llm_provider/provider=vllm. Der LLMHub-Gateway ist llm_gateway. Diese dürfen nicht zur Bequemlichkeit ineinander umgeschrieben, doppelt provisioniert oder durch "vllm im Dropdown" als Gateway-Nachweis ausgegeben werden.
+
+Daraus folgt der kleinste zulässige Umsetzungsweg:
+1. Bestehendes Provider-Auswahlpattern wiederverwenden; vllm nur als fehlenden bestehenden Provider anbieten, ohne zusätzlichen Adapter.
+2. Für das beauftragte LLMHub-Ziel das bereits native Agent-Gateway-Pattern am Swarm-Knoten vervollständigen: vorhandene nutzbare Verbindung/Status verständlich anzeigen, explizites Opt-in am einzelnen Node, danach Auswahl der über diese Route verfügbaren autorisierten Modelle. Kein neuer Providerwert "llmhub", kein Umwidmen von OpenAI-/vLLM-Credentials, keine zweite Verbindung. Falls der native Gatewaydatensatz keinen Anzeigenamen kennt, keinen Namen aus einer URL erraten; bestehende Gatewaybezeichnung anzeigen.
+3. Gespeichertes boolesches Intent entlang bestehender Agent-Import-/Node-/Draft-/Publish-/Portable-/Canvas-/headless-Verträge erhalten. Vorbereitete Implementierung gezielt vervollständigen, keinen zweiten Selector bauen.
+4. Standardmäßige Discovery und tatsächliche Inferenz müssen denselben vorhandenen Resolver verwenden. Gateway explizit gewählt -> kein Laden direkter Provider-Credentials; Gateway nicht gewählt -> vorhandenes Providerverhalten.
+5. Für gateway-only-Nutzer darf die UI nicht zusätzlich eine direkte vLLM-/OpenAI-Verbindung voraussetzen. Der aktuelle connectedProviders-Filter bildet direkte Integrationen ab; Gatewayroute und Provider-/Modell-IAM separat prüfen. Keine Verbindung als aktiv markieren, die nicht existiert, und keine IAM-Liste ausblenden/umgehen. Den passenden vorhandenen logischen Provider beibehalten; keine automatische Modell-/Provider-Präfixumschreibung erfinden.
+6. Gezielte Regression des realen Patterns: direkt OpenAI/Gemini/OpenRouter unverändert; vllm direkt als vorhandener Provider; nur Gateway angebunden mit Opt-in und exakter Modell-ID; fehlender Gateway/Modellrecht fail-closed; zwei Nodes unterschiedliche Modelle; Flag bleibt nach Import/Publish/Export/Reload erhalten. Die zusätzlich konfigurierte direkte vLLM-Verbindung beim Test nicht deaktivieren oder verändern; gateway-only-Fall isoliert abbilden.
+
+Größere Case-/Identitätskorrekturen sind Altlasten der bereits vorher eingebauten aXtn-Sonderregeln, kein notwendiges neues Integrationspattern für LLMHub. Vorliegende Korrekturen separat reviewen; keine weitere Case-/Payer-/Routingarchitektur für den Selector hinzufügen. Der Abschlussauftrag ist auf Wiederverwendung dieser vorhandenen nativen Bausteine begrenzt.
