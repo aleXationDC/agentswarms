@@ -76,3 +76,11 @@ Verschlüsseltes Backup → Image-Digest → Host-Pin/Review → Migration 060 (
 Es wurde nichts lokal als Release-Image eingesetzt.
 
 **Status:** Backup-Voraussetzung geschlossen. Release (Image-Push/Digest → Host-Pin → Migration 060 → Deployment → Health → UI-/Corporate-E2E) wartet ausschließlich auf den Publisher-Token.
+
+## Nachtrag zu 54e4b1bf (16.10.2026 ~16:45 UTC) — Kontozuordnung `aXtn-copilot-cli`
+
+- **Herkunft des Fehlers:** Das globale Git-Konfigurations-Credential-Helper (`~/.local/bin/axtn-codex-git-credential`, Datei `~/.config/axtn-codex/git-http-credential`) gehört zum Codex-Workflow und wurde irrtümlich für diesen Copilot-Release übernommen. Fremde Codex-Konfiguration wurde nicht verändert.
+- **Korrektur für diesen Workflow:** Git-Transport erfolgt ab jetzt per SSH-Alias `axtn-gitea` (Schlüssel `axtn_copilot_gitea`). Verifiziert: `Hi there, aXtn-copilot-cli! … successfully authenticated with the key named aXtn Copilot CLI`; `git ls-remote ssh://git@axtn-gitea/aXtn/aXtn-agentswarms.git` liest Refs; Push dieses Nachtrags erfolgt über dieselbe Identität (Ergebnis siehe Commit).
+- **Registry-Authentifizierung (separat geprüft):** SSH-Keys gelten nicht für `/v2` der Gitea-Container-Registry; dort ist ein HTTP-Token bzw. Passwort von `aXtn-copilot-cli` nötig. Für dieses Konto ist **kein** geschützter HTTP-/Registry-Zugang vorhanden (kein `~/.docker/config.json`, kein Copilot-Credentialfile; anonymer Token-Endpoint 401). Die Existenz des Kontos beweist keinen Registry-Zugriff; es wird kein Erfolg behauptet. Package-Rechte des Kontos sind damit unverifiziert.
+- **axtn-codex:** Als Deploymentvoraussetzung aufgehoben. Das offengelegte Token `codex-git-http-20260914b` bleibt separate Sicherheitsaufgabe des Kontos `axtn-codex` (Widerruf/Rotation), nicht Teil dieses Releases.
+- **Exakt fehlend:** Ein Registry-fähiges Credential für `aXtn-copilot-cli` (Gitea Settings → Applications, Scopes `write:package` + `read:package`, nur für Repo `aXtn/aXtn-agentswarms`/Org-Package-Schreibrecht), abgelegt in einem geschützten Copilot-eigenen Pfad (z. B. `~/.config/axtn-copilot/registry-credential`, 0600). Token-Erstellung verlangt eine authentifizierte Kontosession (API nur mit `write:user` oder Passwort/UI); ohne vorhandene Session/Token wurde nichts umgangen.
