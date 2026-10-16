@@ -1,3 +1,14 @@
+# Aktuelle Fortsetzung — offene Arbeit nach All-Gateway-Baseline
+
+Bericht e3d98968430e879d0039cbe356df760496028a75: vier Rollen über Corporate Gateway publiziert und Fixture-Baseline PR_READY. Realer Case-Management-Auftrag weiterhin NOT_READY.
+
+Vollständig ausführen:
+handoffs/requests/AXTN-DEVSWARM-REMAINING-GAPS-20261016.md
+
+Temperatur-0-Produktfix ist als Source 5a4d1405e83e5f82f0c6ee709326b7a8560dccb6 vorbereitet, noch nicht getestet/deployed. Native Modell-KB/Skill, bounded Rollen-/IAM-Gegenproben abschließen. Die echte native Produktrepo-/Mehrdatei-/TypeScript-Testfähigkeit mit Handlern und Runtime-Image belegen; task/v2 allein und Python-/Jupyter-Verifikation genügen nicht. Kein unfreigegebener neuer Executor oder bloßes Aufweichen des Fixture-Validators. Vorhandene normale Implementierungs-/Konfigurationsarbeit ohne neue allgemeine Zustimmung fortführen.
+
+## Weitergeltende Detailaufträge und Herkunft
+
 # Aktuelle Ergänzung — Modellwissen nativ in AgentSwarms bereitstellen
 
 Nutzerauftrag 16.10.2026 20:00 Europe/Berlin: recherchierte LLMHub-Informationen in nativer KB bereitstellen, wiederverwendbaren nativen Modellwahl-Skill einrichten und tatsächlichen Registry-/Agentzugriff prüfen.
