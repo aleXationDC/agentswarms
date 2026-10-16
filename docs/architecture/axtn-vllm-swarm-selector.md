@@ -1,6 +1,6 @@
 # aXtn vLLM Swarm Selector
 
-Status: USER_NAMED_EXTENSION / EXISTING_IMPLEMENTATION_UNDER_REVIEW.
+Status: UPDATE_FIRST_AUTHORIZED / SELECTOR_AFTER_VALIDATED_UPDATE.
 Name ausdrücklich vom Nutzer am 16.10.2026, 15:25 Europe/Berlin festgelegt.
 Komponente: aXtn/aXtn-agentswarms. Tracking: Issue #7.
 Ausgangskandidat: bdbdc5a3a4963dec9bedb68fdc057326307bb1de.
@@ -49,4 +49,4 @@ Das sind Core-Patches an bestehenden nativen Komponenten. Nicht als vollständig
 - Auch der neueste geprüfte Upstream-HEAD schließt die Selector-Lücke nicht.
 - Das 1.6-Changelog nennt Änderungen an Edit-Versionierung, Swarm-Abbruch und Sicherheits-/Runtime-Verhalten. Changelog nennt neun Migrationen gegenüber seiner Releasebasis. Nicht ungeprüft als neun fehlende Migrationen unserer Instanz behandeln: tatsächliches Dateimanifest und Ledger abgleichen.
 
-Nächster Schritt: read-only Git-/Migrations-/Kompatibilitätsprüfung gegen den festen Tag v1.6.0, relevante zusätzliche HEAD-Fixes getrennt bewerten. Nicht blind moving main mergen. Kein Upgrade, keine neue Runtime, keine Live-Migration und keine neue Betriebsarchitektur allein durch diese Prüfung autorisiert.
+Maßgebliche Nutzerentscheidung 16.10.2026, 15:26 Europe/Berlin: zuerst das reguläre Upstream-Update gegen den festen Tag v1.6.0 umsetzen, validieren und über die bestehenden Host-Verträge in Betrieb nehmen; erst danach den Selector auf dieser Basis prüfen/entwickeln. Relevante zusätzliche HEAD-Fixes getrennt bewerten. Vollständige Ausführungsgrenzen und echte technische Voraussetzungen stehen in der jüngsten UPDATE-FIRST-Fortsetzung unter handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md. Keine neue Runtime-/Betriebsarchitektur, kein blindes moving-main-Upgrade.
