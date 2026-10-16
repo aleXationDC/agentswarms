@@ -37,3 +37,22 @@ Wenn ein konkreter benötigter Schritt trotz Prüfung der nativen Implementierun
 Bestehende eigene Copilot-Zugänge und den etablierten Release-Weg nutzen; keine Codex-Identität, keine erneute pauschale Credential-Anforderung. Keine Secrets in Ausgaben/Git/Graph/Case. Die separat autorisierten Reparaturen und internen Secret-Rotationen bleiben gültig, sind aber nicht durch globale Neuverkabelung oder unnötige neue Backupschleifen auszuweiten.
 
 Bestehende Cases idempotent weiterführen, nur echte Arbeitspakete als Children. Bericht: handoffs/reports/AXTN-DEVSWARM-NATIVE-FIRST-20261016.md. Enthalten sein müssen native Objekt-/Versions-/Run-Referenzen, nachvollziehbare Toolausführung und Urheberschaft der Produktänderungen, exakte Prüfresultate und Grenzen. Nachweis der nativen Administration und echter Ausführung zuerst; nicht nur Architekturentwurf abgeben. Gitea ist autoritativ, Spiegelung nach bestehendem Vertrag. Fertig erst bei verifiziertem Endpunkt, andernfalls präzise BLOCKED mit tatsächlichem fehlendem Schritt.
+
+
+## Fortsetzung nach BLOCKED-Bericht 9469f0c — 16.10.2026, 23:30 Europe/Berlin
+
+Der Bericht erfüllt den Ausführungsauftrag nicht. Er belegt die Begrenzung des bisherigen Fixture-Pfads. Er belegt nicht, dass sämtliche nativen Integrationsmöglichkeiten erschöpft sind.
+
+Die Produktrepo-Konfiguration ist im vorstehenden Auftrag bereits eng beauftragt; keine globale MCP-Freigabe ableiten. Den vorhandenen nativen Gitea-MCP-Konfigurationsweg auf das exakte Zielrepo, den Auftragsbranch und die im PR-#8-Vertrag erlaubten Pfade begrenzen; Review-Modus sowie Merge-/Delete-/Admin-Sperren erhalten. Vor Änderung aktuelle exakte Repo-Schreibweise über Gitea bestätigen. Die Acceptance-Freigabe erhalten. Native Tool-Schemas und etwaige branchbezogene Grenzen tatsächlich prüfen; eine nicht unterstützte Branchsperre nicht erfinden.
+
+Authentifizierte Administration: den bereits funktionierenden geschützten Owner-Login und die vorhandene native UI-/Serverfunktion nutzen, ohne Secretwerte auszugeben. Eine App-Shell ohne Anmeldung ist kein Beleg für fehlenden Save/Publish-Zugriff. Nicht vorsorglich neue Credentials verlangen; erst einen konkreten bereinigten Auth-Fehler als solchen berichten. Keine Service-Role-/SQL-Änderung von Graph, Agents oder Freigaben als UI-Ersatz.
+
+Ausführungsweg sauber trennen:
+- src/utils/swarmNodes.server.ts führt deterministische Tool-Nodes auf; das ist nicht das vollständige Angebot an Agent-Tools.
+- src/utils/tools/registry.server.ts enthält native mcp_list_tools/mcp_call_tool und n8n_run_workflow/list_n8n_workflows sowie die native Agent-Toolschleife.
+- Daher zuerst tatsächlich vorhandene, autorisierte MCP-Tools, n8n-Workflows und bereits laufende CI-/Testdienste eng inventarisieren. Eine Integration ist noch kein existierender Test-Runner; nur real vorhandene passende Funktionen verwenden. Keine eigenen Shell-Wrapper oder Test-Runner in MCP/n8n verstecken.
+- .github/workflows/ci.yml enthält bereits den Standardablauf npm ci, generate:routes, Typecheck, Lint, Tests und Build für Node 20.19/22. Dies ist nur ein vorhandener Workflow-Vertrag, KEIN Nachweis eines aktiven Runners, keiner Gitea-Ausführung und keiner Erlaubnis zum Export vertraulichen Codes. Existierende Ausführung und native Erreichbarkeit read-only verifizieren, nicht voraussetzen oder neue externe Infrastruktur aufbauen.
+
+Die Source-Prüfung bestätigt bisher eine Python-Notebook-Runtime und keinen allgemeinen eingebauten TS-/Shell-Agent-Runner. Deshalb keine weitere Behauptung, eine vollständige native TypeScript-Entwicklungsumgebung sei schon nachgewiesen. Ebenso ist das fehlende Node im aXtn-Verify-Image kein alleiniger Gegenbeweis für eine vorhandene Standardintegration.
+
+Die unabhängig mögliche native Konfiguration und den ersten echten Quellkontext-/Toollauf jetzt durchführen und sichtbar machen. Falls danach genau die deterministische TypeScript-Prüfung fehlt, den verbleibenden Blocker auf diesen Schritt eingrenzen, mit geprüften tatsächlichen Tools/Diensten und ihren Ergebnissen. Keine neuen aXtn-Runtime-Komponenten implementieren. Kein Fixture-PASS und kein stellvertretender CLI-Produktcode.
