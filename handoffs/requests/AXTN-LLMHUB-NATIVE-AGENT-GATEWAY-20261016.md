@@ -24,6 +24,25 @@ Diese Präzisierung hat Vorrang vor allen älteren Case-/Payer-Routing-Anforderu
 - Vorhandene Case-/Attempt-Historie erhalten. Nicht wahllos Cases, Tabellen oder frühere Migrationen löschen. Die native Inferenz-/Credential-Auflösung gezielt vom ungewünschten Case-Entitlement-/Payer-Override entkoppeln; tatsächlich andere Abhängigkeiten als konkrete Auswirkungen dokumentieren. Keine Ersatz-Policyengine oder neue Architektur erfinden.
 - Tests verpflichtend: gleiche Native-IAM-/Agentkonfiguration mit/ohne Case und mit unterschiedlichem Account/Kostenträger → gleicher effektiver Gateway-/Modellweg; unberechtigter Benutzer bleibt gesperrt. Kein stiller direkter Provider-Fallback.
 
+## Verbindliche Trennung — persönliche ChatGPT-Verbindung vs. Standardintegrationen
+
+Zusätzliche Nutzerpräzisierung 16.10.2026, 11:21:
+Die besondere persönliche Accountzuordnung wurde für den ChatGPT-Account-/Abo-Zugang (axtn_chatgpt_plan / entsprechende ChatGPT-Accountintegration) benötigt. Diese Ausnahme folgt dessen besonderen Account-/Autorisierungsvorgaben. Sie ist KEIN allgemeines Ausführungs-/Credential-Modell für sämtliche Standardintegrationen.
+
+Für normale native LLM-/API-/Unternehmensintegrationen einschließlich LLM Gateway und Corporate-LLMHub:
+- vorhandene native Integrations-/Benutzer-/Gruppen-/Modellrechte verwenden;
+- keine neue Case-/Payer-Klassifizierung SYSTEM_INTEGRATION/PERSONAL_CONNECTION als Voraussetzung oder alternative Modellberechtigung erzwingen;
+- keine zusätzliche persönliche Konto-/Firmen-/Accountzuordnung verlangen, nur weil ein Case existiert;
+- keine persönliche ChatGPT-Accountbindung auf Unternehmens-API-Keys oder das native Gateway übertragen;
+- weiterhin reale native Authentifizierung, effektive bestehende Integrationsberechtigung, aktive Verbindung, native Modell-IAM und Budget prüfen. Dies gibt keine frei nutzbaren fremden Credentials frei.
+
+Für ChatGPT-Account-/Abo-Zugang:
+- persönliche verifizierte Accountbindung und dessen besondere nichtteilbare Credential-/Berechtigungsverträge unverändert erhalten;
+- keine Unternehmens-/Gruppenfreigabe als Ersatz für diesen persönlichen Account erlauben;
+- die Ausnahme im nativen zugehörigen Provider-/Accountpfad belassen, nicht auf Standard-Gateway-/Provideraufrufe verallgemeinern.
+
+Regression verpflichtend: Corporate-Gateway-Aufruf mit und ohne Case unabhängig von Personal-Connection-Class/Case-Kostenträger und ohne persönliche ChatGPT-Verbindung möglich, sofern native IAM/Integration zulässig; ChatGPT-Accountzugang bleibt korrekt persönlich gebunden. Keine Keys/Tokens lesen oder solche Regeln für einen Test abschalten.
+
 ## Rollen und Autorität
 
 ChatGPT ist Solution Architect/Implementation Engineer, CLI Programmierer/Umsetzer. Native capability > standard > reuse > configure > integrate > custom build. Bestehende native Funktionen zuerst vollständig nutzen und vergleichen. Kein Custom-Ansatz, Codeabkürzung, Controller, zusätzliche Stage oder alternative Architektur ohne spezifische ausdrückliche Freigabe. Normale native Verdrahtung und Bugfixes im genannten Vertrag sind erlaubt. Eine echte darüber hinausgehende native Lücke konkret belegen und kleinsten fertigen Änderungsvorschlag vorlegen; unabhängige Arbeiten weiterführen.
