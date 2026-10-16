@@ -1,3 +1,14 @@
+# Aktuelle Fortsetzung — belastbarer Teilabschluss und verbleibende Entscheidungen
+
+Berichte 1b4e7f7868298758f75e8f70295cdcc25057f8ad gelesen. Aktueller vollständiger Auftrag:
+handoffs/requests/AXTN-DEVSWARM-CLOSURE-20261016.md
+
+Vorhandene native Reparaturen: KB-Kartenabsturz beheben, Temperatur-0-Save-Roundtrip abschließen, gezielte Retrievalvollständigkeit und tatsächliche Skill-Komposition belegen. Inline-Skill benötigt keinen use_skill-Toolaufruf. Isolierte IAM-Tests nicht mit Live-Abnahme verwechseln; keine globale Produktiv-IAM-Umstellung.
+Gemeldete Secret-Offenlegung als Vorfall behandeln. Native Keyring-/Reencrypt-Funktionen sind vorhanden; sichere konkrete Rotation einschließlich vollständiger Daten-/Abhängigkeitsprüfung vorbereiten, keine blinde Schlüsselersetzung oder unfreigegebene Schlüsselmutation.
+TypeScript-Runtime fehlt weiterhin. Minimalen Erweiterungsentwurf auf vorhandener Infrastruktur konkret zur Entscheidung vorlegen, keinen neuen Executor/Orchestrator implementieren. Der reale Case-Management-Auftrag bleibt bis nachgewiesener Anschlussfähigkeit NOT_READY.
+
+## Bisherige Aufträge und Herkunft
+
 # Aktuelle Fortsetzung — offene Arbeit nach All-Gateway-Baseline
 
 Bericht e3d98968430e879d0039cbe356df760496028a75: vier Rollen über Corporate Gateway publiziert und Fixture-Baseline PR_READY. Realer Case-Management-Auftrag weiterhin NOT_READY.
