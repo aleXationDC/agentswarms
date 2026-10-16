@@ -4,7 +4,7 @@ Berichte 1b4e7f7868298758f75e8f70295cdcc25057f8ad gelesen. Aktueller vollständi
 handoffs/requests/AXTN-DEVSWARM-CLOSURE-20261016.md
 
 Vorhandene native Reparaturen: KB-Kartenabsturz beheben, Temperatur-0-Save-Roundtrip abschließen, gezielte Retrievalvollständigkeit und tatsächliche Skill-Komposition belegen. Inline-Skill benötigt keinen use_skill-Toolaufruf. Isolierte IAM-Tests nicht mit Live-Abnahme verwechseln; keine globale Produktiv-IAM-Umstellung.
-Gemeldete Secret-Offenlegung als Vorfall behandeln. Native Keyring-/Reencrypt-Funktionen sind vorhanden; sichere konkrete Rotation einschließlich vollständiger Daten-/Abhängigkeitsprüfung vorbereiten, keine blinde Schlüsselersetzung oder unfreigegebene Schlüsselmutation.
+Nutzerautorisierung 16.10.2026 22:40: die zwei offengelegten internen Secrets über den vorhandenen Betreiber-/Keyring-/Reencrypt-Weg selbst sicher rotieren und danach Funktion nachweisen. Die jüngste Fortsetzung im vollständigen Auftrag ersetzt das frühere Warten auf eine Rotationszustimmung. Keine pauschale Rotation anderer Zugänge; am Schluss nur tatsächlich verbleibende Kontoinhaber-Aktionen nennen. Keine Secretwerte ausgeben, keine blinde Schlüsselersetzung.
 TypeScript-Runtime fehlt weiterhin. Minimalen Erweiterungsentwurf auf vorhandener Infrastruktur konkret zur Entscheidung vorlegen, keinen neuen Executor/Orchestrator implementieren. Der reale Case-Management-Auftrag bleibt bis nachgewiesener Anschlussfähigkeit NOT_READY.
 
 ## Bisherige Aufträge und Herkunft
