@@ -9,21 +9,27 @@ import type { Database } from "@/integrations/supabase/types";
 import { encryptJson, decryptJson } from "@/utils/providers/crypto.server";
 import { auditEvent } from "@/utils/audit.server";
 import { runGitExport, type GitExportConfig } from "@/utils/git/exporter.server";
+import { callerFailure } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 
 function userClient(accessToken: string) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Server is missing Supabase configuration");
-  return createClient<Database>(url, key, {
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-  });
+  return createClient<Database>(
+    url,
+    key,
+    withNulSafeFetch({
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    }),
+  );
 }
 
 async function requireUser(accessToken: string) {
   const sb = userClient(accessToken);
   const { data, error } = await sb.auth.getUser(accessToken);
-  if (error || !data.user) throw new Error("Unauthorized");
+  if (error || !data?.user) throw new Error(callerFailure(error, "Unauthorized"));
   return { sb, userId: data.user.id };
 }
 
@@ -99,11 +105,20 @@ export const gitSaveConfig = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<GitError | { ok: true }> => {
     try {
       const { sb, userId } = await requireUser(data.access_token);
-      const { data: existing } = await sb
+      const { data: existing, error: existingErr } = await sb
         .from("git_export_config")
         .select("token_enc")
         .eq("user_id", userId)
         .maybeSingle();
+      // R254: an omitted token means "keep the saved one", kept by reading it
+      // here. A failed read kept null instead, and the upsert below erased the
+      // stored token on an edit that only changed the branch.
+      if (existingErr) {
+        return {
+          ok: false,
+          error: `Could not read the saved settings, so nothing was saved (the stored token would have been erased): ${existingErr.message}`,
+        };
+      }
 
       let token_enc = existing?.token_enc ?? null;
       if (data.token !== undefined) {

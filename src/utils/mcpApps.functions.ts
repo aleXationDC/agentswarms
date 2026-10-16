@@ -26,6 +26,9 @@ import {
   internalToolScope,
   InternalToolScopeError,
 } from "@/utils/mcpApps/internalScope";
+import { fingerprintOf } from "@/lib/definitionFingerprint";
+import { mcpSourceDefinition } from "@/lib/mcpSource";
+import { unversionedSave } from "@/lib/saveVersion";
 
 type Fail = { ok: false; error: string };
 
@@ -71,7 +74,12 @@ async function ownedApp(
   supabase: { from: (t: string) => any },
   appId: string,
 ): Promise<{ ok: true; app: any } | Fail> {
-  const { data } = await supabase.from("mcp_apps").select("*").eq("id", appId).maybeSingle();
+  const { data, error } = await supabase.from("mcp_apps").select("*").eq("id", appId).maybeSingle();
+  // R256: twelve actions start here - deploy, stop, delete, save, approve
+  // tools - and a failed read answered every one of them "MCP server not
+  // found", about a server that was there. It refused, which was right; it
+  // said why wrongly, which sends the reader looking for a deletion.
+  if (error) return { ok: false, error: `Could not read the MCP server: ${error.message}` };
   if (!data) return { ok: false, error: "MCP server not found" };
   return { ok: true, app: data };
 }
@@ -140,6 +148,14 @@ const SaveSchema = z.object({
   description: z.string().max(2000).optional(),
   source_code: z.string().max(500_000).optional(),
   requirements: z.string().max(20_000).optional(),
+  /**
+   * The fingerprint of the source and packages the editor read or last saved.
+   * A save carrying it lands only if the stored source still matches (R290).
+   * "Overwrite with mine" sends `overwrite` instead; a source save with
+   * neither is refused (R303).
+   */
+  expected_source_fingerprint: z.string().length(64).optional(),
+  overwrite: z.literal(true).optional(),
   keep_warm: z.boolean().optional(),
   idle_ttl_minutes: z.number().int().min(1).max(1440).optional(),
   allowed_origins: z.array(z.string().max(200)).max(50).optional(),
@@ -155,10 +171,48 @@ const SaveSchema = z.object({
 export const mcpAppSave = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => SaveSchema.parse(input))
-  .handler(async ({ data, context }): Promise<Fail | { ok: true }> => {
-    const { id, ...patch } = data;
-    const { error } = await context.supabase.from("mcp_apps").update(patch).eq("id", id);
+  .handler(async ({ data, context }): Promise<(Fail & { stale?: boolean }) | { ok: true }> => {
+    const { id, expected_source_fingerprint: expected, overwrite, ...patch } = data;
+    if (!expected) {
+      // The settings write without a fingerprint; the source and packages,
+      // which another tab may have saved, only with one or with `overwrite`.
+      if (patch.source_code !== undefined || patch.requirements !== undefined) {
+        const refused = unversionedSave("MCP server's source", { version: expected, overwrite });
+        if (refused) return { ok: false, error: refused };
+      }
+      const { error } = await context.supabase.from("mcp_apps").update(patch).eq("id", id);
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    }
+    // FOUND IN R290: the editor's autosave wrote the source over whatever was
+    // stored, so another tab's saved lines were undone. The stored source is
+    // compared with what the editor read, and the update lands only on the
+    // row read here.
+    const owned = await ownedApp(context.supabase, id);
+    if (!owned.ok) return owned;
+    if ((await fingerprintOf(mcpSourceDefinition(owned.app))) !== expected) {
+      return {
+        ok: false,
+        stale: true,
+        error:
+          "This MCP server's source was changed in another tab or session after this page read it",
+      };
+    }
+    const { data: row, error } = await context.supabase
+      .from("mcp_apps")
+      .update(patch)
+      .eq("id", id)
+      .eq("updated_at", owned.app.updated_at)
+      .select("id")
+      .maybeSingle();
     if (error) return { ok: false, error: error.message };
+    if (!row) {
+      return {
+        ok: false,
+        error:
+          "The MCP server was written to while this save was in progress (a deploy, or another tab). Nothing was saved; it saves again on the next edit.",
+      };
+    }
     return { ok: true };
   });
 
@@ -773,12 +827,15 @@ export const mcpAppRestoreVersion = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), version_id: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }): Promise<Fail | { ok: true }> => {
-    const { data: version } = await context.supabase
+    const { data: version, error: versionErr } = await context.supabase
       .from("mcp_app_versions")
       .select("source_code, requirements")
       .eq("id", data.version_id)
       .eq("app_id", data.id)
       .maybeSingle();
+    if (versionErr) {
+      return { ok: false, error: `Could not read that version: ${versionErr.message}` };
+    }
     if (!version) return { ok: false, error: "Version not found" };
 
     // Restores the SOURCE only; the running container keeps serving the old

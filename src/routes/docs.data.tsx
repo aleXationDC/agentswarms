@@ -527,6 +527,11 @@ function DataPage() {
         <C>sales/*.parquet</C> is <C>sales</C>. Files in the same bucket can be joined, including
         across formats — a Parquet fact table against a CSV lookup is an ordinary query.
       </P>
+      <P>
+        In the Workbench, <strong>Run Query</strong> and Ctrl+Enter (⌘+Enter on a Mac) run one query
+        at a time. A second press while one runs is ignored, so a query is never sent, kept in
+        Recent queries, or audited twice for one double press.
+      </P>
       <Table
         headers={["Format", "Schema", "Query", "Notes"]}
         rows={[
@@ -817,7 +822,7 @@ function DataPage() {
           ],
           [
             "AI descriptions",
-            "Generated plain-English descriptions for tables and columns. Agents read these too, so a described catalog measurably improves tool choice.",
+            "Generated plain-English descriptions for tables and columns. Agents read these too, so a described catalog measurably improves tool choice. AI docs in the asset drawer writes the description and leaves the owner, status and tags you are editing as they are; Save keeps them.",
           ],
           [
             "Lineage",
@@ -881,7 +886,14 @@ ORDER  BY 1;`}</Code>
         &ldquo;what percentage of total sales does each region account for?&rdquo; could return a
         different answer in the workspace than on a schedule — and did so <em>silently</em>: a
         running total came back as zero for every row rather than erroring. Window functions, CTEs
-        and correlated subqueries all work now, and they behave identically wherever they run.
+        and correlated subqueries all work now, and they behave identically wherever they run. Every
+        engine also runs in <strong>UTC</strong>, whatever your browser&apos;s or the server&apos;s
+        time zone, so <code>current_date</code> and a timestamp cast to a date name the same day in
+        the workbench as on a schedule. Dates and timestamps come back written the same way from
+        both, <code>2022-01-04</code> and <code>2022-01-01 00:00:00</code>, in the results grid and
+        in exports. Both are DuckDB 1.5, the browser&apos;s 1.5.4 and the server&apos;s 1.5.5, and a
+        test holds them to the same line and the same result types, so <code>date_trunc</code> on a
+        timestamp is a timestamp in both, and a chart draws the same axis from either.
       </Callout>
       <H3 id="workbench-first-query">The first query in a session is slower</H3>
       <P>
@@ -894,6 +906,11 @@ ORDER  BY 1;`}</Code>
         <li>
           It starts <strong>as soon as you open a data page</strong>, not when you press Run, so it
           usually finishes while you are still choosing a table.
+        </li>
+        <li>
+          Your datasets are loaded into it the same way. A query run before they are all in waits
+          for them, so it answers over every row rather than the ones loaded so far, and never says
+          a table that is on its way does not exist. Its time includes that wait.
         </li>
         <li>
           It downloads <strong>once per browser</strong>, not per query, per dataset or per tab.

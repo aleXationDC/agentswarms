@@ -7,9 +7,10 @@
 // source therefore shows EMPTY credential fields — leaving them empty keeps
 // what's stored; typing replaces it.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useResetOnOpen } from "@/hooks/use-reset-on-open";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Cloud, FileText, Layers, Box, Globe, BookOpen } from "lucide-react";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 export type ConnectorSourceRow = {
   id: string;
@@ -307,8 +309,11 @@ export function ConnectSourceDialog({
 
   const provider = useMemo(() => PROVIDERS.find((p) => p.kind === kind) ?? null, [kind]);
 
-  useEffect(() => {
-    if (!open) return;
+  // R219: filled when the dialog opens. Keyed on `editing`, which the
+  // knowledge page builds inline, this ran on every render of that page: a
+  // session refresh put the saved label, settings, schedule and scope back
+  // over an edit in progress, and emptied the credentials being typed.
+  useResetOnOpen(open, () => {
     if (editing) {
       setKind(editing.kind as ProviderDef["kind"]);
       setLabel(editing.label ?? "");
@@ -328,7 +333,7 @@ export function ConnectSourceDialog({
       setSchedule("manual");
       setScope("inherit");
     }
-  }, [open, editing]);
+  });
 
   async function save(syncNow: boolean) {
     if (!provider) return;
@@ -408,6 +413,8 @@ export function ConnectSourceDialog({
       }
       onSaved();
       onOpenChange(false);
+    } catch (e) {
+      reportFailure("connect the source", e);
     } finally {
       setSaving("idle");
     }

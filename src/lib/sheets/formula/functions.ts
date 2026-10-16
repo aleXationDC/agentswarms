@@ -11,7 +11,7 @@
 
 import * as formulajs from "@formulajs/formulajs";
 import type { Arg, FnCtx, FnImpl } from "./evaluate";
-import { formatValue } from "../format";
+import { excelRound, formatValue } from "../format";
 import {
   compareScalars,
   dateSerial,
@@ -21,6 +21,7 @@ import {
   isMatrix,
   jsDateToSerial,
   nowSerial,
+  numberText,
   parseNumberText,
   scalarOf,
   serialParts,
@@ -336,6 +337,7 @@ const LIBRARY_ARGS: Record<string, LibraryArgs> = {
   "STDEV.P": EVERY_LIST,
   STDEVP: EVERY_LIST,
   STDEVA: { lists: fromIndex(0), countAll: true },
+  VARA: { lists: fromIndex(0), countAll: true },
   "VAR.S": EVERY_LIST,
   "VAR.P": EVERY_LIST,
   GEOMEAN: EVERY_LIST,
@@ -350,6 +352,16 @@ const LIBRARY_ARGS: Record<string, LibraryArgs> = {
   "PERCENTILE.INC": FIRST_LIST,
   "PERCENTILE.EXC": FIRST_LIST,
   "QUARTILE.INC": FIRST_LIST,
+  // R258. Each checked against the answer Excel's documentation gives.
+  "QUARTILE.EXC": FIRST_LIST,
+  "PERCENTRANK.INC": FIRST_LIST,
+  "PERCENTRANK.EXC": FIRST_LIST,
+  TRIMMEAN: FIRST_LIST,
+  // From a reference, text is 0 and TRUE 1, as STDEVA (and as Excel's A-functions).
+  AVERAGEA: { lists: fromIndex(0), countAll: true },
+  MAXA: { lists: fromIndex(0), countAll: true },
+  MINA: { lists: fromIndex(0), countAll: true },
+  MMULT: { arrays: () => [0, 1] },
   IRR: FIRST_LIST,
   // Excel's MIRR skips blanks and text in its values, as IRR does (R177).
   MIRR: FIRST_LIST,
@@ -373,7 +385,27 @@ const LIBRARY_ARGS: Record<string, LibraryArgs> = {
 
 /** Wrap a formula.js function: arguments evaluated eagerly, converted both ways. */
 function fromLibrary(name: string): FnImpl | undefined {
-  const fn = (formulajs as unknown as Record<string, unknown>)[name.replace(/\./g, "")];
+  // R262: the exact Excel name first (formula.js keeps CHISQ.DIST, T.INV.2T,
+  // BINOM.INV and CONFIDENCE.NORM only as CHISQ.DIST and so on, with no
+  // flattened twin), then the flattened one. Measured over all 179 names
+  // registered before this round: where both exist they are the same
+  // function, so nothing that worked changes. NOTE the flattened LEGACY names
+  // are formula.js's MODERN functions under an old spelling - its FDIST is
+  // F.DIST, its TINV is T.INV, its BETADIST takes BETA.DIST's arguments - so
+  // an old Excel name must never be resolved here: give it a SAME_AS or write it.
+  const nested = name
+    .split(".")
+    .reduce<unknown>(
+      (o, k) =>
+        o && (typeof o === "object" || typeof o === "function")
+          ? (o as Record<string, unknown>)[k]
+          : undefined,
+      formulajs,
+    );
+  const fn =
+    typeof nested === "function"
+      ? nested
+      : (formulajs as unknown as Record<string, unknown>)[name.replace(/\./g, "")];
   if (typeof fn !== "function") return undefined;
   const how = LIBRARY_ARGS[name] ?? {};
   return (args) => {
@@ -669,36 +701,26 @@ const roundTo = (mode: "half" | "up" | "down"): FnImpl => {
     const d = num(args[1], 0);
     if (isError(n)) return n;
     if (isError(d)) return d;
-    const f = Math.pow(10, Math.trunc(d));
-    const x = Math.abs(n) * f;
-    // Guard against float noise: 2.675 * 100 = 267.49999999999997.
-    const eps = 1e-9;
-    let r: number;
-    if (mode === "half") r = Math.floor(x + 0.5 + eps);
-    else if (mode === "up") r = Math.ceil(x - eps);
-    else r = Math.floor(x + eps);
-    return (Math.sign(n) * r) / f;
+    // Excel's 15 digits, shifted as text: 2.675 is 2.68, not 2.67 (R200).
+    return excelRound(n, Math.trunc(d), mode);
   };
 };
 F.ROUND = roundTo("half");
 F.ROUNDUP = roundTo("up");
 F.ROUNDDOWN = roundTo("down");
-F.TRUNC = (args) => {
-  const n = num(args[0]);
-  const d = num(args[1], 0);
-  if (isError(n)) return n;
-  if (isError(d)) return d;
-  const f = Math.pow(10, Math.trunc(d));
-  return Math.trunc(n * f) / f;
-};
+// TRUNC is ROUNDDOWN in Excel. FOUND IN R200: it cut the binary, so
+// TRUNC(0.29, 2) was 0.28 (0.29 × 100 is 28.999999999999996).
+F.TRUNC = roundTo("down");
 /**
- * A quotient float noise put a hair off a whole number, as the whole number:
- * 0.3 / 0.1 is 2.9999999999999996, and FLOOR(0.3,0.1) must be 0.3 (R176).
+ * A quotient as Excel reads it, to 15 significant digits: 0.3 / 0.1 is
+ * 2.9999999999999996, and FLOOR(0.3,0.1) must be 0.3 (R176).
+ *
+ * FOUND IN R201: this snapped anything within 1e-9 × the quotient of a whole
+ * number, so CEILING(5.0000000001, 1) was 5, CEILING(0.0000000001, 1) 0 and
+ * CEILING(12345678901.005, 1) …901, where Excel says 6, 1 and …902. A table
+ * sheet's SQL reads the quotient the same way (sql/compile.ts quotient15Sql).
  */
-const snapWhole = (q: number): number => {
-  const r = Math.round(q);
-  return Math.abs(q - r) < 1e-9 * Math.max(1, Math.abs(q)) ? r : q;
-};
+const quotient15 = (q: number): number => (Number.isFinite(q) ? Number(q.toPrecision(15)) : q);
 /** A multiple of a step without the step's float noise: 3 × 0.1 is 0.3, not 0.30000000000000004. */
 const tidy = (x: number): number => Number(x.toPrecision(15));
 /**
@@ -708,7 +730,7 @@ const tidy = (x: number): number => Number(x.toPrecision(15));
  * number with a negative step gave a number where Excel gives #NUM!.
  */
 function toMultiple(n: number, s: number, up: boolean): number {
-  const q = snapWhole(n / s);
+  const q = quotient15(n / s);
   return tidy((up ? Math.ceil(q) : Math.floor(q)) * s);
 }
 F.CEILING = (args) => {
@@ -900,6 +922,98 @@ F.ISLOGICAL = isFn((x) => typeof x === "boolean");
 F.ISERROR = isFn((x) => isError(x));
 F.ISERR = isFn((x) => isError(x) && x.err !== "#N/A");
 F.ISNA = isFn((x) => isError(x) && x.err === "#N/A");
+
+// R258. TYPE and ERROR.TYPE read the value itself, errors included, so they
+// cannot go through formula.js (which is handed values, not errors).
+F.TYPE = (args) => {
+  const e = arity(args, 1, 1);
+  if (e) return e;
+  const v = args[0].value();
+  if (isMatrix(v)) return v.length === 1 && v[0].length === 1 ? typeCode(v[0][0]) : 64;
+  return typeCode(v);
+};
+/** Excel's TYPE codes: number (and a blank) 1, text 2, logical 4, error 16. */
+function typeCode(x: Scalar): number {
+  if (isError(x)) return 16;
+  if (typeof x === "string") return 2;
+  if (typeof x === "boolean") return 4;
+  return 1;
+}
+/**
+ * ERROR.TYPE's numbers, from Excel's documentation: 1-7 for the classic
+ * errors, 8 for the one Excel now calls #BUSY! (formerly #GETTING_DATA), 9 and
+ * 14 for #SPILL! and #CALC!. #CYCLE! is this engine's own word and Excel has
+ * no number for it, so it answers #N/A as Excel does for "anything else".
+ */
+const ERROR_TYPE: Partial<Record<ErrorCode, number>> = {
+  "#NULL!": 1,
+  "#DIV/0!": 2,
+  "#VALUE!": 3,
+  "#REF!": 4,
+  "#NAME?": 5,
+  "#NUM!": 6,
+  "#N/A": 7,
+  "#BUSY!": 8,
+  "#SPILL!": 9,
+  "#CALC!": 14,
+};
+F["ERROR.TYPE"] = (args) => {
+  const e = arity(args, 1, 1);
+  if (e) return e;
+  const x = scalarOf(args[0].value());
+  if (!isError(x)) return err("#N/A", "Not an error");
+  return ERROR_TYPE[x.err] ?? err("#N/A", `${x.err} has no ERROR.TYPE number`);
+};
+
+/**
+ * Student's t, as Excel's T.DIST family. FOUND IN R258: formula.js's T.DIST
+ * answers #NUM! for every input - registering it would have shipped a
+ * function that always fails - while its legacy TDIST (an upper tail) is
+ * right, so the family is built on that. The density is the closed form,
+ * through log-gamma so a large df does not overflow.
+ */
+function tUpperTail(x: number, df: number): number {
+  // TDIST takes x >= 0; the tail of a negative x is the mirror image.
+  const t = Number(
+    (formulajs as unknown as { TDIST: (...a: number[]) => unknown }).TDIST(Math.abs(x), df, 1),
+  );
+  return x >= 0 ? t : 1 - t;
+}
+function tArgs(args: Arg[], min: number, max: number): { x: number; df: number } | SheetError {
+  const e = arity(args, min, max);
+  if (e) return e;
+  const x = num(args[0]);
+  if (isError(x)) return x;
+  const d = num(args[1]);
+  if (isError(d)) return d;
+  const df = Math.trunc(d);
+  if (df < 1) return err("#NUM!", "Degrees of freedom must be at least 1");
+  return { x, df };
+}
+F["T.DIST"] = (args) => {
+  const a = tArgs(args, 3, 3);
+  if (isError(a)) return a;
+  const cumulative = toBool(scalarOf(args[2].value()));
+  if (isError(cumulative)) return cumulative;
+  if (cumulative) return 1 - tUpperTail(a.x, a.df);
+  const gl = (formulajs as unknown as { GAMMALN: (n: number) => number }).GAMMALN;
+  const v = a.df;
+  return (
+    (Math.exp(gl((v + 1) / 2) - gl(v / 2)) / Math.sqrt(v * Math.PI)) *
+    Math.pow(1 + (a.x * a.x) / v, -(v + 1) / 2)
+  );
+};
+F["T.DIST.RT"] = (args) => {
+  const a = tArgs(args, 2, 2);
+  if (isError(a)) return a;
+  return tUpperTail(a.x, a.df);
+};
+F["T.DIST.2T"] = (args) => {
+  const a = tArgs(args, 2, 2);
+  if (isError(a)) return a;
+  if (a.x < 0) return err("#NUM!", "T.DIST.2T needs x of 0 or more");
+  return 2 * tUpperTail(a.x, a.df);
+};
 F.ISEVEN = (args) => {
   const n = num(args[0]);
   return isError(n) ? n : Math.trunc(n) % 2 === 0;
@@ -953,8 +1067,15 @@ const textFn =
 F.LEN = textFn((s) => s.length);
 F.UPPER = textFn((s) => s.toUpperCase());
 F.LOWER = textFn((s) => s.toLowerCase());
+// FOUND IN R199: a letter was [a-z], so "É" counted as a word break and
+// PROPER("ÉCOLE normale") gave "éCole Normale"; Excel gives "École Normale".
+// Any letter, in any script, is a letter. A letter whose capital is two
+// ("ß" to "SS", "ﬁ" to "FI") stays as it is, as it did before.
 F.PROPER = textFn((s) =>
-  s.toLowerCase().replace(/(^|[^a-z])([a-z])/g, (_m, a, b) => a + b.toUpperCase()),
+  s.toLowerCase().replace(/(^|[^\p{L}])(\p{L})/gu, (_m, a: string, b: string) => {
+    const up = b.toUpperCase();
+    return a + (up.length === 1 ? up : b);
+  }),
 );
 F.TRIM = textFn((s) => s.trim().replace(/ {2,}/g, " "));
 F.LEFT = textFn((s, args) => {
@@ -1049,7 +1170,8 @@ F.TEXT = (args) => {
   const f = text(args[1]);
   if (isError(v)) return v;
   if (isError(f)) return f;
-  const n = typeof v === "string" ? (parseNumberText(v) ?? v) : v;
+  // A blank is 0 to TEXT, as in Excel: TEXT(A5, "0.00") is "0.00" (R199).
+  const n = v === null ? 0 : typeof v === "string" ? (parseNumberText(v) ?? v) : v;
   return formatValue(n, f);
 };
 F.VALUE = (args) => {
@@ -2033,6 +2155,67 @@ export const LIBRARY_NAMES = [
   "UNICODE",
   "FIXED",
   "DOLLAR",
+  // R258: #NAME? on a grid until now. formula.js answers each of these as
+  // Excel's documentation does (sheetsExcelBatch1.test.ts). T.DIST is NOT
+  // here: formula.js answers #NUM! for every input, so it is written below.
+  "AVERAGEA",
+  "MAXA",
+  "MINA",
+  "TRIMMEAN",
+  "MMULT",
+  "QUARTILE.EXC",
+  "PERCENTRANK.INC",
+  "PERCENTRANK.EXC",
+  "BINOM.DIST",
+  "TDIST",
+  "BITAND",
+  "BITOR",
+  "BITXOR",
+  "BITLSHIFT",
+  "BITRSHIFT",
+  "COMPLEX",
+  "VARA",
+  // R262: the distributions, each checked against a closed form, an identity
+  // or a round trip (sheetsDistributions.test.ts). GAMMA and the legacy
+  // LOGNORMDIST and TINV are NOT here: formula.js gets those wrong, so they
+  // are written below.
+  "EXPON.DIST",
+  "POISSON.DIST",
+  "WEIBULL.DIST",
+  "HYPGEOM.DIST",
+  "NEGBINOM.DIST",
+  "CHISQ.DIST",
+  "CHISQ.DIST.RT",
+  "CHISQ.INV",
+  "CHISQ.INV.RT",
+  "GAMMA.DIST",
+  "GAMMA.INV",
+  "BETA.DIST",
+  "BETA.INV",
+  "F.DIST",
+  "F.DIST.RT",
+  "F.INV",
+  "F.INV.RT",
+  "LOGNORM.DIST",
+  "LOGNORM.INV",
+  "GAMMALN",
+  "GAMMALN.PRECISE",
+  "FISHER",
+  "FISHERINV",
+  "PHI",
+  "GAUSS",
+  "STANDARDIZE",
+  "COMBINA",
+  "PERMUTATIONA",
+  "T.INV",
+  "T.INV.2T",
+  "BINOM.INV",
+  "CONFIDENCE.NORM",
+  "CONFIDENCE.T",
+  "EXPONDIST",
+  "HYPGEOMDIST",
+  "NEGBINOMDIST",
+  "GAMMADIST",
 ];
 for (const name of LIBRARY_NAMES) {
   if (F[name]) continue;
@@ -2047,6 +2230,65 @@ for (const name of LIBRARY_NAMES) {
  * =STDEV(A1:A9) was #NAME? on a grid while the lakehouse computed it over a
  * table sheet. A listed name that does not register now fails a test.
  */
+/**
+ * How many numbers a statistic needs, and the error Excel gives below that.
+ *
+ * FOUND IN R261. formula.js answered these with a NUMBER where Excel refuses:
+ * STDEV.S and VAR.S of no numbers were 0 (one number gave #NUM!), and
+ * HARMEAN(0) was 0. And it answered the wrong error for the rest: SKEW below
+ * three values and KURT below four were #NUM!, STDEV.P and VAR.P of nothing
+ * #NUM!, LARGE, SMALL, PERCENTILE and QUARTILE of an empty list #VALUE!,
+ * GEOMEAN of one #VALUE!, MODE of one #VALUE!. Each code below is the one
+ * the function's own page in Excel's documentation states.
+ */
+const TOO_FEW: Record<string, [number, ErrorCode]> = {
+  "STDEV.S": [2, "#DIV/0!"],
+  "VAR.S": [2, "#DIV/0!"],
+  STDEVA: [2, "#DIV/0!"],
+  VARA: [2, "#DIV/0!"],
+  "STDEV.P": [1, "#DIV/0!"],
+  "VAR.P": [1, "#DIV/0!"],
+  STDEVP: [1, "#DIV/0!"],
+  SKEW: [3, "#DIV/0!"],
+  KURT: [4, "#DIV/0!"],
+  GEOMEAN: [1, "#NUM!"],
+  "MODE.SNGL": [1, "#N/A"],
+  LARGE: [1, "#NUM!"],
+  SMALL: [1, "#NUM!"],
+  "PERCENTILE.INC": [1, "#NUM!"],
+  "PERCENTILE.EXC": [1, "#NUM!"],
+  "QUARTILE.INC": [1, "#NUM!"],
+  "QUARTILE.EXC": [1, "#NUM!"],
+};
+for (const [name, [min, code]] of Object.entries(TOO_FEW)) {
+  const inner = F[name];
+  const how = LIBRARY_ARGS[name];
+  if (!inner || !how?.lists) continue;
+  F[name] = (args, ctx) => {
+    const lists = how.lists!(args.length)
+      .map((i) => args[i])
+      .filter((a): a is Arg => !!a);
+    const xs = how.countAll ? collectNumbersA(lists) : collectNumbers(lists);
+    if (isError(xs)) return xs;
+    if (xs.length < min) {
+      return err(code, min === 1 ? "There are no numbers" : `It needs at least ${min} numbers`);
+    }
+    return inner(args, ctx);
+  };
+}
+/** HARMEAN: "If any data point is 0 or less, HARMEAN returns #NUM!" — formula.js said 0. */
+{
+  const inner = F.HARMEAN;
+  if (inner) {
+    F.HARMEAN = (args, ctx) => {
+      const xs = collectNumbers(args);
+      if (isError(xs)) return xs;
+      if (xs.some((x) => x <= 0)) return err("#NUM!", "Every value must be above 0");
+      return inner(args, ctx);
+    };
+  }
+}
+
 const SAME_AS: Record<string, string> = {
   STDEV: "STDEV.S",
   VAR: "VAR.S",
@@ -2055,6 +2297,24 @@ const SAME_AS: Record<string, string> = {
   RANK: "RANK.EQ",
   MODE: "MODE.SNGL",
   "FORECAST.LINEAR": "FORECAST",
+  PERCENTRANK: "PERCENTRANK.INC",
+  VARP: "VAR.P",
+  // R262: the pre-2010 names, where the arguments are the same.
+  POISSON: "POISSON.DIST",
+  WEIBULL: "WEIBULL.DIST",
+  NORMDIST: "NORM.DIST",
+  CHIDIST: "CHISQ.DIST.RT",
+  FDIST: "F.DIST.RT",
+  CHIINV: "CHISQ.INV.RT",
+  FINV: "F.INV.RT",
+  GAMMAINV: "GAMMA.INV",
+  BETAINV: "BETA.INV",
+  LOGINV: "LOGNORM.INV",
+  // formula.js's own TINV answers -0; T.INV.2T is the same function, right.
+  TINV: "T.INV.2T",
+  CRITBINOM: "BINOM.INV",
+  CONFIDENCE: "CONFIDENCE.NORM",
+  BINOMDIST: "BINOM.DIST",
 };
 for (const [name, now] of Object.entries(SAME_AS)) if (!F[name] && F[now]) F[name] = F[now];
 
@@ -2102,6 +2362,29 @@ if (libraryDollar) {
   };
 }
 
+/**
+ * DATEDIF in whole days ("D") is the difference of the serials, as Excel's
+ * is. FOUND IN R205: formula.js turns the serials into dates and back by two
+ * rules that disagree around Excel's 1900-02-29, so 1900-02-28 to 03-01 was 0
+ * days (Excel: 2) and 03-01 to 03-02 was 2 (Excel: 1). A start after the end
+ * is #NUM!, as in Excel. The calendar units still go to formula.js.
+ */
+const libraryDatedif = F.DATEDIF;
+if (libraryDatedif) {
+  F.DATEDIF = (args, ctx) => {
+    const unit = text(args[2]);
+    if (isError(unit) || unit.trim().toUpperCase() !== "D") return libraryDatedif(args, ctx);
+    const from = num(args[0]);
+    if (isError(from)) return from;
+    const to = num(args[1]);
+    if (isError(to)) return to;
+    const a = Math.floor(from);
+    const b = Math.floor(to);
+    if (a > b) return err("#NUM!", "DATEDIF's start date is after its end date");
+    return b - a;
+  };
+}
+
 /** Hexadecimal and base-36 digits in capitals, as Excel writes them. FOUND IN R176: ff. */
 for (const name of ["DEC2HEX", "BIN2HEX", "OCT2HEX", "BASE"]) {
   const lower = F[name];
@@ -2111,6 +2394,603 @@ for (const name of ["DEC2HEX", "BIN2HEX", "OCT2HEX", "BASE"]) {
     return typeof v === "string" ? v.toUpperCase() : v;
   };
 }
+
+// ── Database functions (DSUM, DAVERAGE, DGET…) ─────────────────────────────
+//
+// FOUND IN R259. formula.js has these, and they do not read criteria the way
+// Excel does: on Microsoft's own tree example its DSUM of the apple trees'
+// profit was the profit of EVERY tree (502.8, not 225), whichever way the
+// table was handed over, and most of the rest answered wrongly or threw. So
+// they are written here, to Excel's rules for a criteria range:
+//
+//   - the first row of the criteria range names fields of the database (case
+//     does not matter); each row below it is one alternative, and a record
+//     matches if ANY row matches;
+//   - within a row every non-blank cell must match (AND), and a blank cell is
+//     no condition at all;
+//   - a bare text criterion is "begins with" (Dav finds Davolio and David),
+//     "=Dav" is exact, and > < >= <= <> compare, with * ? ~ as wildcards.
+
+type Database = { headers: string[]; rows: Scalar[][] };
+
+/** A header or field label, compared without case. An error in a header names no field. */
+function labelOf(h: Scalar): string {
+  if (h === null || isError(h)) return "";
+  const t = toText(h);
+  return (isError(t) ? "" : t).trim().toLowerCase();
+}
+
+function databaseOf(a: Arg): Database | SheetError {
+  const m = asMatrix(a.value());
+  if (m.length < 1 || !m[0]?.length) return err("#VALUE!", "The database needs a header row");
+  return {
+    headers: m[0].map((h) => labelOf(h)),
+    rows: m.slice(1),
+  };
+}
+
+/** The field argument: a column label (any case) or a 1-based column number. */
+function fieldIndex(db: Database, a: Arg): number | SheetError {
+  const v = scalarOf(a.value());
+  if (isError(v)) return v;
+  if (typeof v === "number") {
+    const k = Math.trunc(v);
+    return k >= 1 && k <= db.headers.length ? k - 1 : err("#VALUE!", `There is no column ${k}`);
+  }
+  const name = labelOf(v);
+  const i = db.headers.indexOf(name);
+  return i >= 0 ? i : err("#VALUE!", `No column is labelled "${v}"`);
+}
+
+/** A criteria-range cell as a predicate; null when it sets no condition. */
+function databaseCriterion(c: Scalar): ((v: Scalar) => boolean) | null {
+  if (c === null || c === "") return null;
+  if (typeof c === "string" && !/^\s*(<=|>=|<>|<|>|=)/.test(c) && parseNumberText(c) === null) {
+    // Bare text: begins with.
+    return makeCriterion(`${c}*`);
+  }
+  return makeCriterion(c);
+}
+
+/** Which records the criteria range selects. */
+function matchingRows(db: Database, a: Arg): Scalar[][] | SheetError {
+  const m = asMatrix(a.value());
+  if (m.length < 2)
+    return err("#VALUE!", "The criteria need a header row and at least one row under it");
+  const cols = m[0].map((h) => db.headers.indexOf(labelOf(h)));
+  const alternatives = m
+    .slice(1)
+    .map((row) =>
+      row.map((cell, j) => ({ col: cols[j], test: databaseCriterion(cell) })).filter((c) => c.test),
+    );
+  return db.rows.filter((rec) =>
+    alternatives.some((conds) =>
+      // A condition under a label the database does not have selects nothing here.
+      // Excel reads such a column as a COMPUTED criterion (a formula), which this
+      // engine does not support; refusing to match is the cautious half of that.
+      conds.every((c) => c.col >= 0 && (c.test as (v: Scalar) => boolean)(rec[c.col] ?? null)),
+    ),
+  );
+}
+
+/** The selected records' values in the field; `field` may be omitted for the counts. */
+function databaseValues(
+  args: Arg[],
+  fieldOptional = false,
+): Scalar[] | { records: number } | SheetError {
+  const e = arity(args, 3, 3);
+  if (e) return e;
+  const db = databaseOf(args[0]);
+  if (isError(db)) return db;
+  const rows = matchingRows(db, args[2]);
+  if (isError(rows)) return rows;
+  if (fieldOptional && args[1].node.k === "empty") return { records: rows.length };
+  const i = fieldIndex(db, args[1]);
+  if (isError(i)) return i;
+  return rows.map((r) => r[i] ?? null);
+}
+
+function numbersOf(vals: Scalar[]): number[] | SheetError {
+  const out: number[] = [];
+  for (const v of vals) {
+    if (isError(v)) return v;
+    if (typeof v === "number") out.push(v);
+  }
+  return out;
+}
+
+const dbNumbers = (args: Arg[]): number[] | SheetError => {
+  const vals = databaseValues(args);
+  if (isError(vals)) return vals;
+  return numbersOf(vals as Scalar[]);
+};
+const variance = (xs: number[], sample: boolean): number | SheetError => {
+  const n = xs.length;
+  if (n === 0 || (sample && n < 2)) return err("#DIV/0!", "Not enough values");
+  const mean = xs.reduce((a, b) => a + b, 0) / n;
+  return xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (sample ? n - 1 : n);
+};
+
+F.DSUM = (args) => {
+  const xs = dbNumbers(args);
+  return isError(xs) ? xs : xs.reduce((a, b) => a + b, 0);
+};
+F.DAVERAGE = (args) => {
+  const xs = dbNumbers(args);
+  if (isError(xs)) return xs;
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : err("#DIV/0!", "No values match");
+};
+F.DMAX = (args) => {
+  const xs = dbNumbers(args);
+  return isError(xs) ? xs : xs.length ? Math.max(...xs) : 0;
+};
+F.DMIN = (args) => {
+  const xs = dbNumbers(args);
+  return isError(xs) ? xs : xs.length ? Math.min(...xs) : 0;
+};
+F.DPRODUCT = (args) => {
+  const xs = dbNumbers(args);
+  return isError(xs) ? xs : xs.length ? xs.reduce((a, b) => a * b, 1) : 0;
+};
+F.DCOUNT = (args) => {
+  const vals = databaseValues(args, true);
+  if (isError(vals)) return vals;
+  if (!Array.isArray(vals)) return vals.records;
+  return vals.filter((v) => typeof v === "number").length;
+};
+F.DCOUNTA = (args) => {
+  const vals = databaseValues(args, true);
+  if (isError(vals)) return vals;
+  if (!Array.isArray(vals)) return vals.records;
+  return vals.filter((v) => v !== null && v !== "").length;
+};
+F.DGET = (args) => {
+  const vals = databaseValues(args);
+  if (isError(vals)) return vals;
+  const list = vals as Scalar[];
+  if (list.length === 0) return err("#VALUE!", "No record matches");
+  if (list.length > 1) return err("#NUM!", "More than one record matches");
+  return list[0];
+};
+for (const [name, sample, root] of [
+  ["DSTDEV", true, true],
+  ["DSTDEVP", false, true],
+  ["DVAR", true, false],
+  ["DVARP", false, false],
+] as const) {
+  F[name] = (args) => {
+    const xs = dbNumbers(args);
+    if (isError(xs)) return xs;
+    const v = variance(xs, sample);
+    return isError(v) ? v : root ? Math.sqrt(v) : v;
+  };
+}
+
+// ── Complex numbers (IMSUM, IMPRODUCT, IMDIV…) ─────────────────────────────
+//
+// FOUND IN R260. formula.js has these and gets the arithmetic right where it is
+// exact, but not Excel's text: given "1+2j" and "3+4j" its IMSUM and IMPRODUCT
+// answered with an "i" ("-5+10i" where Excel writes "-5+10j"), a mix of "i"
+// and "j" was added up instead of being #VALUE!, and a result was written to
+// sixteen or seventeen digits ("0.3333333333333333", "-45.99999999999999+
+// 9.000000000000007i") where Excel writes any number as text to fifteen
+// significant digits ("0.333333333333333", "-46+9.00000000000001i"). So the
+// library computed, and a wrapper wrote the answer the way Excel does.
+//
+// FOUND IN R264, adding the rest of the family: formula.js could not be kept.
+// Its parser calls .substring on its argument, so a NUMBER threw - IMSUB(5,2),
+// IMPOWER(2,2), IMEXP(0) and IMSUB over two number cells were all #VALUE! - and
+// it misread a part written with an exponent, as Excel writes a small or large
+// one: "1E-07", "3E-5i" and "1.5E-07-2i" were #NUM!. Its IMPRODUCT never opened a range:
+// over "3+4i", 5 and a blank it answered "3+4i". Its IMARGUMENT put the negative
+// real axis at -pi, where Excel's range is (-pi, pi]: IMARGUMENT("-1") was
+// -3.14159..., which gave IMSQRT("-4") as -2i and IMPOWER("-8",1/3) as
+// 1-1.732i, both with the wrong sign. And its IMLN, IMLOG10 and IMLOG2 took the
+// angle as atan(y/x), wrong whenever the real part is negative: IMLN("-1") was
+// 0, where it is pi i. So the whole family is written here, on R260's parser
+// and writer.
+
+type Suffix = "i" | "j";
+
+/** The suffix a complex argument uses, if any; null for a plain number. */
+function suffixOf(v: Scalar): Suffix | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  const last = t[t.length - 1];
+  return last === "i" || last === "j" ? last : null;
+}
+
+/** Excel's complex text, read back: "3+4i", "-i", "2j", "5". */
+function parseComplexText(text: string): { re: number; im: number } | null {
+  const t = text.trim();
+  if (!t) return null;
+  const last = t[t.length - 1];
+  if (last !== "i" && last !== "j") {
+    const n = Number(t);
+    return Number.isFinite(n) ? { re: n, im: 0 } : null;
+  }
+  const body = t.slice(0, -1);
+  // The sign that starts the imaginary part: the last + or - that is neither
+  // the first character nor an exponent's.
+  let k = -1;
+  for (let i = body.length - 1; i > 0; i--) {
+    const ch = body[i];
+    if ((ch === "+" || ch === "-") && body[i - 1] !== "e" && body[i - 1] !== "E") {
+      k = i;
+      break;
+    }
+  }
+  const reText = k > 0 ? body.slice(0, k) : "";
+  let imText = k > 0 ? body.slice(k) : body;
+  if (imText === "" || imText === "+") imText = "1";
+  else if (imText === "-") imText = "-1";
+  const re = reText === "" ? 0 : Number(reText);
+  const im = Number(imText);
+  return Number.isFinite(re) && Number.isFinite(im) ? { re, im } : null;
+}
+
+/** A complex number as Excel writes it: "8+i", "-46+9.00000000000001i", "2j", "0". */
+function complexText(re: number, im: number, suffix: Suffix): string {
+  const reText = numberText(re);
+  const imText = numberText(im);
+  if (imText === "0") return reText;
+  const imPart = imText === "1" ? "" : imText === "-1" ? "-" : imText;
+  if (reText === "0") return `${imPart}${suffix}`;
+  return `${reText}${im > 0 ? "+" : ""}${imPart}${suffix}`;
+}
+
+type Complex = { re: number; im: number };
+
+/**
+ * One complex argument, as Excel reads it: a number, or text such as "3+4i",
+ * "-2j" or "5". A blank is 0; TRUE and FALSE are #VALUE!, and other text is
+ * #NUM!, as Excel's own pages for these functions say.
+ */
+function complexOf(v: Scalar): Complex | SheetError {
+  if (isError(v)) return v;
+  if (v === null) return { re: 0, im: 0 };
+  if (typeof v === "number") return { re: v, im: 0 };
+  if (typeof v === "boolean") return err("#VALUE!", "A complex number cannot be TRUE or FALSE");
+  return parseComplexText(v) ?? err("#NUM!", "Not a complex number such as 3+4i");
+}
+
+/** The suffix an answer takes: its arguments' own, or "i". Excel refuses a mix of "i" and "j". */
+function suffixAcross(values: Scalar[]): Suffix | SheetError {
+  let suffix: Suffix | null = null;
+  for (const v of values) {
+    const sx = suffixOf(v);
+    if (sx && suffix && sx !== suffix) return err("#VALUE!", 'Mixes "i" and "j"');
+    suffix = sx ?? suffix;
+  }
+  return suffix ?? "i";
+}
+
+/** A complex answer as Excel's text, or #NUM! when it divided by zero or overflowed. */
+function complexAnswer(z: Complex | SheetError | null, suffix: Suffix): Value {
+  if (z === null) return err("#NUM!", "Divides by zero");
+  if (isError(z)) return z;
+  if (!Number.isFinite(z.re) || !Number.isFinite(z.im)) return err("#NUM!", "Too large");
+  return complexText(z.re, z.im, suffix);
+}
+
+const cMul = (a: Complex, b: Complex): Complex => ({
+  re: a.re * b.re - a.im * b.im,
+  im: a.re * b.im + a.im * b.re,
+});
+
+/** a / b, or null when b is zero. */
+function cDiv(a: Complex, b: Complex): Complex | null {
+  const den = b.re * b.re + b.im * b.im;
+  if (den === 0) return null;
+  return { re: (a.re * b.re + a.im * b.im) / den, im: (a.im * b.re - a.re * b.im) / den };
+}
+
+const ONE: Complex = { re: 1, im: 0 };
+const cSin = (z: Complex): Complex => ({
+  re: Math.sin(z.re) * Math.cosh(z.im),
+  im: Math.cos(z.re) * Math.sinh(z.im),
+});
+const cCos = (z: Complex): Complex => ({
+  re: Math.cos(z.re) * Math.cosh(z.im),
+  im: 0 - Math.sin(z.re) * Math.sinh(z.im),
+});
+const cSinh = (z: Complex): Complex => ({
+  re: Math.sinh(z.re) * Math.cos(z.im),
+  im: Math.cosh(z.re) * Math.sin(z.im),
+});
+const cCosh = (z: Complex): Complex => ({
+  re: Math.cosh(z.re) * Math.cos(z.im),
+  im: Math.sinh(z.re) * Math.sin(z.im),
+});
+/** The natural logarithm, or null at zero. The angle is atan2's, in (-pi, pi]. */
+const cLn = (z: Complex): Complex | null =>
+  z.re === 0 && z.im === 0
+    ? null
+    : { re: Math.log(Math.hypot(z.re, z.im)), im: Math.atan2(z.im, z.re) };
+const scaled = (z: Complex | null, by: number): Complex | null =>
+  z && { re: z.re / by, im: z.im / by };
+
+/** A function of one complex number with a complex answer. */
+function complexFn(f: (z: Complex) => Complex | SheetError | null): FnImpl {
+  return (args) => {
+    const e = arity(args, 1, 1);
+    if (e) return e;
+    const v = scalarOf(args[0].value());
+    const z = complexOf(v);
+    if (isError(z)) return z;
+    return complexAnswer(f(z), suffixOf(v) ?? "i");
+  };
+}
+
+/** A function of one complex number with a number for an answer. */
+function complexPart(f: (z: Complex) => number | SheetError): FnImpl {
+  return (args) => {
+    const e = arity(args, 1, 1);
+    if (e) return e;
+    const z = complexOf(scalarOf(args[0].value()));
+    return isError(z) ? z : f(z);
+  };
+}
+
+/** A function of two complex numbers: IMSUB and IMDIV. */
+function complexPair(f: (a: Complex, b: Complex) => Complex | null): FnImpl {
+  return (args) => {
+    const e = arity(args, 2, 2);
+    if (e) return e;
+    const values = [scalarOf(args[0].value()), scalarOf(args[1].value())];
+    const a = complexOf(values[0]);
+    if (isError(a)) return a;
+    const b = complexOf(values[1]);
+    if (isError(b)) return b;
+    const suffix = suffixAcross(values);
+    return isError(suffix) ? suffix : complexAnswer(f(a, b), suffix);
+  };
+}
+
+/**
+ * IMSUM and IMPRODUCT: every value of every argument, ranges included; a blank
+ * cell is passed over, as SUM and PRODUCT pass it over.
+ */
+function complexFold(start: Complex, step: (acc: Complex, z: Complex) => Complex): FnImpl {
+  return (args) => {
+    const e = arity(args, 1);
+    if (e) return e;
+    const values = args.flatMap((a) => flat(a.value())).filter((v) => v !== null);
+    let acc = start;
+    for (const v of values) {
+      const z = complexOf(v);
+      if (isError(z)) return z;
+      acc = step(acc, z);
+    }
+    const suffix = suffixAcross(values);
+    return isError(suffix) ? suffix : complexAnswer(acc, suffix);
+  };
+}
+
+F.IMSUM = complexFold({ re: 0, im: 0 }, (a, z) => ({ re: a.re + z.re, im: a.im + z.im }));
+F.IMPRODUCT = complexFold(ONE, cMul);
+F.IMSUB = complexPair((a, b) => ({ re: a.re - b.re, im: a.im - b.im }));
+F.IMDIV = complexPair(cDiv);
+F.IMCONJUGATE = complexFn((z) => ({ re: z.re, im: 0 - z.im }));
+F.IMABS = complexPart((z) => Math.hypot(z.re, z.im));
+F.IMREAL = complexPart((z) => z.re);
+F.IMAGINARY = complexPart((z) => z.im);
+F.IMARGUMENT = complexPart((z) =>
+  z.re === 0 && z.im === 0 ? err("#DIV/0!", "Zero has no angle") : Math.atan2(z.im, z.re),
+);
+
+/**
+ * IMPOWER, in polar form as Excel computes it: |z|^n at n times the angle, so
+ * IMPOWER("i",2) keeps a residue of sin(pi) in its imaginary part.
+ */
+F.IMPOWER = (args) => {
+  const e = arity(args, 2, 2);
+  if (e) return e;
+  const v = scalarOf(args[0].value());
+  const z = complexOf(v);
+  if (isError(z)) return z;
+  const n = num(args[1]);
+  if (isError(n)) return n;
+  if (z.re === 0 && z.im === 0) {
+    return n > 0 ? "0" : err("#NUM!", "Zero to a power that is not positive");
+  }
+  const p = Math.pow(Math.hypot(z.re, z.im), n);
+  const t = Math.atan2(z.im, z.re) * n;
+  return complexAnswer({ re: p * Math.cos(t), im: p * Math.sin(t) }, suffixOf(v) ?? "i");
+};
+
+F.IMEXP = complexFn((z) => {
+  const m = Math.exp(z.re);
+  return { re: m * Math.cos(z.im), im: m * Math.sin(z.im) };
+});
+F.IMLN = complexFn(cLn);
+F.IMLOG10 = complexFn((z) => scaled(cLn(z), Math.LN10));
+F.IMLOG2 = complexFn((z) => scaled(cLn(z), Math.LN2));
+F.IMSIN = complexFn(cSin);
+F.IMCOS = complexFn(cCos);
+F.IMTAN = complexFn((z) => cDiv(cSin(z), cCos(z)));
+F.IMCOT = complexFn((z) => cDiv(cCos(z), cSin(z)));
+F.IMSEC = complexFn((z) => cDiv(ONE, cCos(z)));
+F.IMCSC = complexFn((z) => cDiv(ONE, cSin(z)));
+F.IMSINH = complexFn(cSinh);
+F.IMCOSH = complexFn(cCosh);
+F.IMSECH = complexFn((z) => cDiv(ONE, cCosh(z)));
+F.IMCSCH = complexFn((z) => cDiv(ONE, cSinh(z)));
+
+/**
+ * IMSQRT, the principal square root. Excel's root has a non-negative real part
+ * and, on the negative real axis, a positive imaginary one: the square root of
+ * -4 is 2i (formula.js said -2i). Computed the way C's csqrt and Python's
+ * cmath.sqrt compute it, not in polar form, whose cos(pi/2) leaves 1.2E-16 in
+ * the real part of 2i: one part is the root of (|re| + r) / 2, the other found
+ * by dividing, so neither cancels.
+ */
+F.IMSQRT = complexFn((z) => {
+  if (z.re === 0 && z.im === 0) return z;
+  const t = Math.sqrt(Math.abs(z.re) / 2 + Math.hypot(z.re, z.im) / 2);
+  return z.re >= 0
+    ? { re: t, im: z.im / (2 * t) }
+    : { re: Math.abs(z.im) / (2 * t), im: z.im < 0 ? -t : t };
+});
+
+// ── GAMMA and the legacy LOGNORMDIST (R262) ───────────────────────────────
+//
+// FOUND IN R262. formula.js's GAMMA is off in the ninth significant digit -
+// GAMMA(0.5) was 1.7724538559 where the answer is the square root of pi,
+// 1.7724538509 - which shows at a cell's default width. Its GAMMALN is right
+// to the last digit, so GAMMA is exp(GAMMALN), with the reflection formula
+// below 1/2 for negative arguments. And its legacy LOGNORMDIST answered the
+// DENSITY: LOGNORMDIST(4,1.2,0.5) was 0.186 where Excel's old function is
+// cumulative, 0.645, as LOGNORM.DIST(…,TRUE) is.
+
+function gammaOf(x: number): number | SheetError {
+  if (x <= 0 && Number.isInteger(x))
+    return err("#NUM!", "GAMMA is undefined at 0 and the negative whole numbers");
+  const ln = (formulajs as unknown as { GAMMALN: (n: number) => number }).GAMMALN;
+  if (x >= 0.5) return Math.exp(ln(x));
+  // Reflection: Gamma(x) Gamma(1-x) = pi / sin(pi x).
+  return Math.PI / (Math.sin(Math.PI * x) * Math.exp(ln(1 - x)));
+}
+F.GAMMA = (args) => {
+  const e = arity(args, 1, 1);
+  if (e) return e;
+  const x = num(args[0]);
+  if (isError(x)) return x;
+  return gammaOf(x);
+};
+/**
+ * BETADIST(x, alpha, beta, [A], [B]) is BETA.DIST(x, alpha, beta, TRUE, A, B).
+ * formula.js's BETADIST is its BETA.DIST, so its fourth argument is the
+ * cumulative flag: BETADIST(2.5,8,10,1,3) read 1 as "cumulative" and 3 as the
+ * lower bound. (A symmetric case, x = 2 between 1 and 3, happened to come
+ * out right, which is how this nearly shipped.)
+ */
+F.BETADIST = (args, ctx) => {
+  const e = arity(args, 3, 5);
+  if (e) return e;
+  const inner = F["BETA.DIST"];
+  if (!inner) return err("#NAME?");
+  return inner([args[0], args[1], args[2], numberArg(1), ...args.slice(3)], ctx);
+};
+F.LOGNORMDIST = (args, ctx) => {
+  const e = arity(args, 3, 3);
+  if (e) return e;
+  const inner = F["LOGNORM.DIST"];
+  if (!inner) return err("#NAME?");
+  // The old function is the cumulative one: LOGNORM.DIST(x, mean, sd, TRUE).
+  return inner([...args, numberArg(1)], ctx);
+};
+
+// ── VDB (R265) ────────────────────────────────────────────────────────────
+//
+// FOUND IN R265: formula.js has no VDB, so it was #NAME?. Depreciation from
+// one period to another by declining balance at `factor` (2, double, unless
+// given), switching to straight line over what is left once that is larger,
+// unless no_switch is TRUE. A part period takes its share of that period's
+// depreciation, so the pieces of a life always add up to cost - salvage. The
+// algorithm is the one LibreOffice uses for Excel's VDB; every test answer is
+// worked out from closed forms (sheetsVdb.test.ts).
+
+/** One period's double-declining-balance depreciation, never below the salvage value. */
+function ddbPeriod(
+  cost: number,
+  salvage: number,
+  life: number,
+  period: number,
+  factor: number,
+): number {
+  let rate = factor / life;
+  let before: number;
+  if (rate >= 1) {
+    rate = 1;
+    before = period === 1 ? cost : 0;
+  } else {
+    before = cost * Math.pow(1 - rate, period - 1);
+  }
+  const after = cost * Math.pow(1 - rate, period);
+  const d = after < salvage ? before - salvage : before - after;
+  return d < 0 ? 0 : d;
+}
+
+/**
+ * Depreciation over the first `periods` whole periods of an asset with `left`
+ * periods of its life to go, switching to straight line. (Part periods are
+ * taken off by the caller, so this needs no fraction of its own.)
+ */
+function vdbSpan(
+  cost: number,
+  salvage: number,
+  life: number,
+  left: number,
+  periods: number,
+  factor: number,
+): number {
+  let total = 0;
+  let remaining = cost - salvage;
+  let straight: number | null = null;
+  for (let i = 1; i <= periods; i++) {
+    let term: number;
+    if (straight === null) {
+      const d = ddbPeriod(cost, salvage, life, i, factor);
+      const line = remaining / (left - (i - 1));
+      if (line > d) {
+        straight = line;
+        term = line;
+      } else {
+        term = d;
+        remaining -= d;
+      }
+    } else {
+      term = straight;
+    }
+    total += term;
+  }
+  return total;
+}
+
+F.VDB = (args) => {
+  const e = arity(args, 5, 7);
+  if (e) return e;
+  const vals: number[] = [];
+  for (let i = 0; i < 6; i++) {
+    const v = num(args[i], i === 5 ? 2 : undefined);
+    if (isError(v)) return v;
+    vals.push(v);
+  }
+  const noSwitch = bool(args[6], false);
+  if (isError(noSwitch)) return noSwitch;
+  const [cost, salvage, life, start, end, factor] = vals;
+  if (cost < 0 || salvage < 0 || life <= 0 || start < 0 || factor <= 0) {
+    return err("#NUM!", "VDB needs positive numbers");
+  }
+  if (end < start) return err("#NUM!", "The span ends before it starts");
+  if (end > life) return err("#NUM!", "The span ends after the asset's life");
+  if (salvage > cost) return err("#NUM!", "The salvage value is more than the cost");
+  const first = Math.floor(start);
+  const last = Math.ceil(end);
+  if (noSwitch) {
+    let total = 0;
+    for (let i = first + 1; i <= last; i++) {
+      let term = ddbPeriod(cost, salvage, life, i, factor);
+      if (i === first + 1) term *= Math.min(end, first + 1) - start;
+      else if (i === last) term *= end + 1 - last;
+      total += term;
+    }
+    return total;
+  }
+  // The part periods at either end, taken off a span of whole periods.
+  let part = 0;
+  if (start > first) {
+    const value = cost - vdbSpan(cost, salvage, life, life, first, factor);
+    part += (start - first) * vdbSpan(value, salvage, life, life - first, 1, factor);
+  }
+  if (end < last) {
+    const value = cost - vdbSpan(cost, salvage, life, life, last - 1, factor);
+    part += (last - end) * vdbSpan(value, salvage, life, life - last + 1, 1, factor);
+  }
+  const value = cost - vdbSpan(cost, salvage, life, life, first, factor);
+  return vdbSpan(value, salvage, life, life - first, last - first, factor) - part;
+};
 
 export const FUNCTIONS: Readonly<Record<string, FnImpl>> = F;
 

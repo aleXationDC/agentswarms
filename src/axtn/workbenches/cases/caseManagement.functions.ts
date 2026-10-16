@@ -1,3 +1,5 @@
+import { callerFailure } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -60,11 +62,15 @@ async function requireUser(accessToken: string) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Server is missing Supabase configuration.");
-  const sb = createClient<Database>(url, key, {
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-  });
+  const sb = createClient<Database>(
+    url,
+    key,
+    withNulSafeFetch({
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    }),
+  );
   const { data, error } = await sb.auth.getUser(accessToken);
-  if (error || !data.user) throw new Error("Unauthorized");
+  if (error || !data.user) throw new Error(callerFailure(error, "Unauthorized"));
   return data.user.id;
 }
 

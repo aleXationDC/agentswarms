@@ -37,6 +37,7 @@ import { MarkdownMessage } from "@/components/playground/MarkdownMessage";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/use-auth";
+import { useTokenRef } from "@/hooks/use-token-ref";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { ServerRuntime, type CellRunResult, type ServerStatus } from "@/lib/serverRuntime";
@@ -45,6 +46,10 @@ import { PublishNotebookDialog } from "@/components/notebooks/PublishNotebookDia
 import { NotebookGitDialog } from "@/components/notebooks/NotebookGitDialog";
 import type { PyCell } from "@/lib/pythonNotebookTemplate";
 import { mayAutosave } from "@/lib/listClaim";
+import { useSharedFlight } from "@/lib/singleFlight";
+import { cellRunKey } from "@/lib/cellRunKey";
+import { useSaveBeforeLeave } from "@/hooks/use-save-before-leave";
+import { makeSaveQueue, readGuardedSave } from "@/lib/guardedSave";
 
 export const Route = createFileRoute("/_authenticated/notebooks/py/$pyNotebookId")({
   component: PyNotebookPage,
@@ -87,6 +92,8 @@ function PyNotebookPage() {
   const { pyNotebookId } = Route.useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
+  // The kernel outlives renders, so it reads the token when it calls (R271).
+  const { tokenRef } = useTokenRef(session?.access_token);
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
@@ -95,7 +102,20 @@ function PyNotebookPage() {
   const [notFound, setNotFound] = useState(false);
   /** Set when the notebook could not be READ, as opposed to not existing. */
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving">("saved");
+  // The notebook as loaded or last saved, and its title then, so the page can
+  // tell what a save still owes (R279, sweep 8).
+  const [savedAs, setSavedAs] = useState<string | null>(null);
+  const [savedTitle, setSavedTitle] = useState("");
+  const [saving, setSaving] = useState(0);
+  const form = cells === null ? null : JSON.stringify({ title, cells });
+  const unsaved = form !== null && savedAs !== null && form !== savedAs;
+  const reloadingRef = useRef(false);
+  // The version (`updated_at`) this page read or last wrote. A save lands only
+  // on it, so another tab's newer save is not written over (R283, sweep 9);
+  // once one has been, this page stops saving and says so.
+  const versionRef = useRef<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const saveQueueRef = useRef(makeSaveQueue());
   const [publishOpen, setPublishOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [outputs, setOutputs] = useState<Record<string, CellOutput>>({});
@@ -125,30 +145,37 @@ function PyNotebookPage() {
     };
   }, [pyNotebookId]);
 
-  /** Start the kernel on demand; reused for every subsequent cell. */
-  const ensureKernel = useCallback(async (): Promise<ServerRuntime | null> => {
-    if (serverRef.current) return serverRef.current;
-    const rt = new ServerRuntime(() => session?.access_token ?? null, pyNotebookId);
-    rt.onStatus = (s, msg) => {
-      setServerStatus(s);
-      if (s === "error" && msg) setRuntimeError(msg);
-    };
-    serverRef.current = rt;
-    setRuntimeError(null);
-    try {
-      await rt.start();
-      return rt;
-    } catch (e) {
-      serverRef.current = null;
-      setRuntimeError(e instanceof Error ? e.message : "Failed to start the kernel");
-      return null;
-    }
-  }, [session?.access_token, pyNotebookId]);
+  /** Start the kernel on demand; reused for every subsequent cell. A run
+   *  that arrives while it starts joins the start (R213), rather than being
+   *  handed a runtime that has not connected yet. On failure, the reason. */
+  const ensureKernel = useSharedFlight(
+    () => "kernel",
+    async (): Promise<ServerRuntime | string> => {
+      if (serverRef.current) return serverRef.current;
+      const rt = new ServerRuntime(() => tokenRef.current || null, pyNotebookId);
+      rt.onStatus = (s, msg) => {
+        setServerStatus(s);
+        if (s === "error" && msg) setRuntimeError(msg);
+      };
+      serverRef.current = rt;
+      setRuntimeError(null);
+      try {
+        await rt.start();
+        return rt;
+      } catch (e) {
+        serverRef.current = null;
+        const reason = e instanceof Error ? e.message : "Failed to start the kernel";
+        setRuntimeError(reason);
+        return reason;
+      }
+    },
+  );
 
   const stopKernel = useCallback(async () => {
     const rt = serverRef.current;
     serverRef.current = null;
     setServerStatus("idle");
+    // A stop that fails reports "error" through onStatus, with the reason.
     await rt?.stop();
   }, []);
 
@@ -161,7 +188,7 @@ function PyNotebookPage() {
     setOutputs({});
     supabase
       .from("user_python_notebooks")
-      .select("id, title, cells")
+      .select("id, title, cells, updated_at")
       .eq("id", pyNotebookId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -178,9 +205,13 @@ function PyNotebookPage() {
           setNotFound(true);
           return;
         }
+        const loadedCells = parseCells(data.cells);
+        versionRef.current = data.updated_at;
+        setStale(false);
         setTitle(data.title);
-        setCells(parseCells(data.cells));
-        setSaveState("saved");
+        setCells(loadedCells);
+        setSavedAs(JSON.stringify({ title: data.title, cells: loadedCells }));
+        setSavedTitle(data.title);
         // Let the autosave effect skip the initial hydration.
         setTimeout(() => {
           loadedRef.current = true;
@@ -189,28 +220,49 @@ function PyNotebookPage() {
   }, [pyNotebookId]);
 
   // ── Autosave (debounced) ──────────────────────────────────────────────────
+  // Saves what the editor holds now and records it as saved. An edit made while
+  // the save is in flight stays unsaved, and is saved by its own timer.
+  // Saves run one at a time, each on the version the last one returned.
+  const saveNow = useCallback(
+    (): Promise<string | null> =>
+      saveQueueRef.current(async () => {
+        if (form === null || cells === null || versionRef.current === null) return null;
+        setSaving((n) => n + 1);
+        const res = await supabase
+          .from("user_python_notebooks")
+          .update({ title: title.trim() || "Untitled notebook", cells: cells as unknown as Json })
+          .eq("id", pyNotebookId)
+          .eq("updated_at", versionRef.current)
+          .select("updated_at");
+        setSaving((n) => n - 1);
+        const saved = readGuardedSave(res, "this notebook");
+        if (!saved.ok) {
+          if (saved.stale) setStale(true);
+          return saved.error;
+        }
+        versionRef.current = saved.version;
+        setSavedAs(form);
+        setSavedTitle(title.trim() || "Untitled notebook");
+        return null;
+      }),
+    [form, title, cells, pyNotebookId],
+  );
+
   useEffect(() => {
     // Guards against saving an un-loaded editor over a real notebook — see
     // mayAutosave, which is where that rule is stated and tested.
-    if (!mayAutosave({ hydrated: loadedRef.current, cells })) return;
-    setSaveState("dirty");
+    if (!mayAutosave({ hydrated: loadedRef.current, cells }) || !unsaved || stale) return;
     const t = setTimeout(() => {
-      setSaveState("saving");
-      supabase
-        .from("user_python_notebooks")
-        .update({ title: title.trim() || "Untitled notebook", cells: cells as unknown as Json })
-        .eq("id", pyNotebookId)
-        .then(({ error }) => {
-          if (error) {
-            toast.error(`Save failed: ${error.message}`);
-            setSaveState("dirty");
-          } else {
-            setSaveState("saved");
-          }
-        });
+      void saveNow().then((error) => {
+        if (error) toast.error(`Save failed: ${error}`);
+      });
     }, 1200);
     return () => clearTimeout(t);
-  }, [cells, title, pyNotebookId]);
+  }, [cells, unsaved, stale, saveNow]);
+
+  // FOUND IN R279: the timer above is cleared when the page unmounts, so a link
+  // taken inside the 1.2 s, or after a failed save, dropped the edit.
+  useSaveBeforeLeave({ unsaved, saveNow, name: savedTitle, reloading: reloadingRef });
 
   // ── Cell operations ───────────────────────────────────────────────────────
   const updateCell = useCallback((id: string, source: string) => {
@@ -247,22 +299,22 @@ function PyNotebookPage() {
     });
 
   // ── Execution ─────────────────────────────────────────────────────────────
-  const runCell = useCallback(
-    async (cell: PyCell) => {
+  // One run per cell (R213): the button was disabled while a cell ran, but
+  // Shift+Enter ran it again. A second run of a cell already running joins
+  // that run. The error is the start's own reason, not this render's
+  // runtimeError, which is still null while the start is in flight.
+  const runCell = useSharedFlight(
+    (cell: PyCell) => cell.id,
+    async (cell: PyCell): Promise<CellRunResult> => {
       setOutputs((o) => ({ ...o, [cell.id]: "running" }));
       const rt = await ensureKernel();
-      const res = rt
-        ? await rt.run(cell.source)
-        : {
-            stdout: "",
-            result: null,
-            error: runtimeError ?? "The server runtime is unavailable.",
-            durationMs: 0,
-          };
+      const res =
+        typeof rt === "string"
+          ? { stdout: "", result: null, error: rt, durationMs: 0 }
+          : await rt.run(cell.source);
       setOutputs((o) => ({ ...o, [cell.id]: res }));
       return res;
     },
-    [ensureKernel, runtimeError],
   );
 
   const runAll = async () => {
@@ -326,6 +378,27 @@ function PyNotebookPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl p-4 lg:p-6">
+      {stale && (
+        <div
+          className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+          data-testid="notebook-stale"
+        >
+          <span className="min-w-0 flex-1">
+            This notebook was changed in another tab or session, so edits here are no longer saved
+            over it. Reload to see that version; edits made here since the last save are dropped.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              reloadingRef.current = true;
+              window.location.reload();
+            }}
+          >
+            Reload
+          </Button>
+        </div>
+      )}
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
@@ -338,14 +411,14 @@ function PyNotebookPage() {
           <Server className="h-3 w-3" /> Python · server kernel
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {saveState === "saved" ? (
+          {saving > 0 ? (
+            "Saving…"
+          ) : unsaved ? (
+            <span data-testid="notebook-unsaved">Unsaved changes</span>
+          ) : (
             <span className="inline-flex items-center gap-1">
               <Check className="h-3 w-3 text-emerald-500" /> Saved
             </span>
-          ) : saveState === "saving" ? (
-            "Saving…"
-          ) : (
-            "Unsaved changes"
           )}
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -516,19 +589,16 @@ function PyNotebookPage() {
                         <Play className="h-4 w-4" />
                       )}
                     </Button>
-                    <div
-                      className="min-w-0 flex-1"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && e.shiftKey) {
-                          e.preventDefault();
-                          void runCell(cell);
-                        }
-                      }}
-                    >
+                    <div className="min-w-0 flex-1">
                       <CodeMirror
                         value={cell.source}
                         onChange={(v) => updateCell(cell.id, v)}
-                        extensions={[python(), editorTheme, EditorView.lineWrapping]}
+                        extensions={[
+                          cellRunKey(() => void runCell(cell)),
+                          python(),
+                          editorTheme,
+                          EditorView.lineWrapping,
+                        ]}
                         theme={isDark ? vscodeDark : vscodeLight}
                         basicSetup={{ lineNumbers: true, foldGutter: false }}
                       />
@@ -606,7 +676,10 @@ function PyNotebookPage() {
         token={session?.access_token ?? ""}
         // A restore rewrites the stored cells; the editor is holding the old
         // ones, and autosave would push them straight back over the restore.
-        onRestored={() => window.location.reload()}
+        onRestored={() => {
+          reloadingRef.current = true;
+          window.location.reload();
+        }}
       />
     </div>
   );

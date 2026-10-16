@@ -10,6 +10,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { verifySessionToken } from "@/utils/notebookRuntime/token.server";
+import type { LakeManifest } from "@/utils/lakehouse/sandboxLake.server";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -61,6 +62,122 @@ async function mcpAppBundle(appId: string, userId: string): Promise<Response> {
   });
 }
 
+type LakeBody = {
+  id?: unknown;
+  parts?: unknown;
+  loads?: unknown;
+  cursors?: unknown;
+  which?: unknown;
+  uri?: unknown;
+};
+
+const LAKE_PARTS = new Set([
+  "lake_read",
+  "lake_stage",
+  "lake_commit",
+  "lake_cursors",
+  "lake_artifact",
+]);
+
+/**
+ * Pin what this session may do in the lake, when its environment is resolved:
+ * the reads and loads its run declared (sandboxLake.server). Every lake_*
+ * call is then served from the pin, never from what the sandbox sends. A
+ * session whose pin cannot be stored gets no environment.
+ */
+async function pinLake(
+  sessionId: string,
+  inputs: unknown,
+  lake: unknown,
+): Promise<Response | null> {
+  if (!lake) return null;
+  const base = inputs && typeof inputs === "object" ? (inputs as Record<string, unknown>) : {};
+  const { error } = await supabaseAdmin
+    .from("notebook_runtime_sessions")
+    .update({ inputs: { ...base, __lake: lake } as never })
+    .eq("id", sessionId);
+  return error
+    ? json(503, { error: `Could not record this session's lakehouse access: ${error.message}` })
+    : null;
+}
+
+/** One lake_* call, as the session's owner, from the session's pinned manifest. */
+async function lakePart(
+  part: string,
+  body: LakeBody,
+  s: { sessionId: string; userId: string; inputs: unknown; readOnly: boolean; via: string },
+): Promise<Response> {
+  const lake = await import("@/utils/lakehouse/sandboxLake.server");
+  const manifest = lake.lakeManifestOf(s.inputs);
+  if (!manifest) {
+    return json(409, {
+      error: "This session has no lakehouse access recorded; fetch its environment first",
+    });
+  }
+  const id = typeof body.id === "string" ? body.id : "";
+  try {
+    if (part === "lake_read") {
+      return json(
+        200,
+        await lake.lakeRead({ userId: s.userId, sessionId: s.sessionId, manifest, id, via: s.via }),
+      );
+    }
+    // A URL for one model artifact this run declared. A trainer writes its
+    // own and reads none; an assemble step reads its workers'; a prediction
+    // and a warm scorer read the version they were asked for.
+    if (part === "lake_artifact") {
+      const which = body.which === "put" ? "put" : "get";
+      if (which === "put" && s.readOnly) {
+        return json(403, { error: "A preview reads the lakehouse; it never writes it" });
+      }
+      return json(
+        200,
+        lake.lakeArtifact({ manifest, which, uri: typeof body.uri === "string" ? body.uri : "" }),
+      );
+    }
+    if (s.readOnly)
+      return json(403, { error: "A preview reads the lakehouse; it never writes it" });
+    if (part === "lake_stage") {
+      const parts = typeof body.parts === "number" ? body.parts : 1;
+      return json(200, lake.lakeStage({ sessionId: s.sessionId, manifest, id, parts }));
+    }
+    if (part === "lake_commit") {
+      const loads = (Array.isArray(body.loads) ? body.loads : []).map((l) => {
+        const o = (l ?? {}) as { id?: unknown; batch?: unknown; parts?: unknown; prefix?: unknown };
+        return {
+          id: typeof o.id === "string" ? o.id : "",
+          batch: typeof o.batch === "string" ? o.batch : "",
+          parts: typeof o.parts === "number" ? o.parts : 0,
+          // A cluster-written load names its batch, not its files: the app
+          // lists the prefix (R230). Dropping this flag here sent the load
+          // down the numbered-parts path, where it asked for 0 of them.
+          prefix: o.prefix === true,
+        };
+      });
+      const cursors: Record<string, string> = {};
+      if (body.cursors && typeof body.cursors === "object") {
+        for (const [k, v] of Object.entries(body.cursors as Record<string, unknown>)) {
+          if (typeof v === "string") cursors[k] = v;
+        }
+      }
+      return json(
+        200,
+        await lake.lakeCommit({
+          userId: s.userId,
+          sessionId: s.sessionId,
+          manifest,
+          loads,
+          cursors,
+          via: s.via,
+        }),
+      );
+    }
+    return json(200, { cursors: await lake.lakeCursors(manifest) });
+  } catch (e) {
+    return json(400, { error: (e as Error).message });
+  }
+}
+
 async function handle(request: Request): Promise<Response> {
   const auth = request.headers.get("authorization");
   const token = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
@@ -87,19 +204,30 @@ async function handle(request: Request): Promise<Response> {
     let tableId = "";
     let cursor: string | null = null;
     let consume = false;
+    let lakeBody: LakeBody = {};
     try {
       const body = (await request.json()) as {
         part?: string;
         table_id?: string;
         cursor?: string | null;
         consume?: boolean;
-      };
+      } & LakeBody;
       part = body?.part ?? "";
       tableId = typeof body?.table_id === "string" ? body.table_id : "";
       cursor = typeof body?.cursor === "string" ? body.cursor : null;
       consume = body?.consume === true;
+      lakeBody = body ?? {};
     } catch {
       /* empty body = default part */
+    }
+    if (LAKE_PARTS.has(part)) {
+      return lakePart(part, lakeBody, {
+        sessionId: claims.sid,
+        userId: claims.sub,
+        inputs: session.inputs,
+        readOnly: false,
+        via: `etl_run:${session.etl_run_id}`,
+      });
     }
     const etl = await import("@/utils/etl/service.server");
     if (part === "etl_ingest") {
@@ -113,12 +241,16 @@ async function handle(request: Request): Promise<Response> {
         : { error: "ETL run not found for this session" };
       return "error" in out ? json(404, out) : json(200, out);
     }
+    if (part === "etl_env") {
+      const out = await etl.etlEnvFor(session.etl_run_id, claims.sub, claims.sid);
+      if ("error" in out) return json(404, out);
+      const { lake, ...rest } = out;
+      return (await pinLake(claims.sid, session.inputs, lake)) ?? json(200, rest);
+    }
     const out =
       part === "etl_dataset"
         ? await etl.etlDatasetFor(tableId, claims.sub)
-        : part === "etl_env"
-          ? await etl.etlEnvFor(session.etl_run_id, claims.sub)
-          : await etl.etlBundleFor(session.etl_run_id, claims.sub);
+        : await etl.etlBundleFor(session.etl_run_id, claims.sub);
     return "error" in out ? json(404, out) : json(200, out);
   }
 
@@ -128,10 +260,36 @@ async function handle(request: Request): Promise<Response> {
     const serve = await import("@/utils/ml/serve.server");
     const stash = serve.mlScoreStashOf(session?.inputs);
     if (stash) {
-      // One call: the program, its config and the lakehouse credentials the
-      // artifact download needs. A scorer fetches this once, at start.
+      // FOUND IN R310. The scorer asks for a URL to its model's artifact
+      // with {"part":"lake_artifact"} (R231), and this branch never read the
+      // part: it answered every call with the bundle, so the scorer read a
+      // "url" the answer did not have and every warm endpoint failed to load
+      // with "KeyError: 'url'". A scorer only reads, so its lake calls are
+      // served read-only from the manifest pinned below.
+      let part = "";
+      let lakeBody: LakeBody = {};
+      try {
+        const body = (await request.json()) as { part?: string } & LakeBody;
+        part = body?.part ?? "";
+        lakeBody = body ?? {};
+      } catch {
+        /* empty body = the bundle */
+      }
+      if (LAKE_PARTS.has(part)) {
+        return lakePart(part, lakeBody, {
+          sessionId: claims.sid,
+          userId: claims.sub,
+          inputs: session?.inputs,
+          readOnly: true,
+          via: `ml_score:${stash.model_id}`,
+        });
+      }
+      // One call: the program and its config. A scorer fetches this once, at
+      // start, and asks for a URL to its model's artifact when it loads it.
       const out = await serve.mlScoreBundleFor(stash, claims.sub);
-      return "error" in out ? json(404, out) : json(200, out);
+      if ("error" in out) return json(404, out);
+      const { lake, ...rest } = out;
+      return (await pinLake(claims.sid, session?.inputs, lake)) ?? json(200, rest);
     }
   }
 
@@ -143,12 +301,29 @@ async function handle(request: Request): Promise<Response> {
     if (stash) {
       let part = "";
       let tableId = "";
+      let lakeBody: LakeBody = {};
       try {
-        const body = (await request.json()) as { part?: string; table_id?: string };
+        const body = (await request.json()) as { part?: string; table_id?: string } & LakeBody;
         part = body?.part ?? "";
         tableId = typeof body?.table_id === "string" ? body.table_id : "";
+        lakeBody = body ?? {};
       } catch {
         /* empty body = default part */
+      }
+      if (LAKE_PARTS.has(part)) {
+        return lakePart(part, lakeBody, {
+          sessionId: claims.sid,
+          userId: claims.sub,
+          inputs: session?.inputs,
+          readOnly: true,
+          via: `etl_preview:${stash.pipeline_id}`,
+        });
+      }
+      if (part === "etl_env") {
+        const out = await etl.etlPreviewEnvFor(stash, claims.sub);
+        if ("error" in out) return json(404, out);
+        const { lake, ...rest } = out;
+        return (await pinLake(claims.sid, session?.inputs, lake)) ?? json(200, rest);
       }
       const out =
         part === "etl_ingest"
@@ -156,9 +331,7 @@ async function handle(request: Request): Promise<Response> {
             await etl.etlIngestFor(stash.pipeline_id, claims.sub, { consume: false })
           : part === "etl_dataset"
             ? await etl.etlDatasetFor(tableId, claims.sub)
-            : part === "etl_env"
-              ? await etl.etlPreviewEnvFor(stash, claims.sub)
-              : await etl.etlPreviewBundleFor(stash, claims.sub);
+            : await etl.etlPreviewBundleFor(stash, claims.sub);
       return "error" in out ? json(404, out) : json(200, out);
     }
   }
@@ -171,15 +344,26 @@ async function handle(request: Request): Promise<Response> {
     const stash = ml.mlJobStashOf(session?.inputs);
     if (stash) {
       let part = "";
+      let lakeBody: LakeBody = {};
       try {
-        const body = (await request.json()) as { part?: string };
+        const body = (await request.json()) as { part?: string } & LakeBody;
         part = body?.part ?? "";
+        lakeBody = body ?? {};
       } catch {
         /* empty body = default part */
       }
+      if (LAKE_PARTS.has(part)) {
+        return lakePart(part, lakeBody, {
+          sessionId: claims.sid,
+          userId: claims.sub,
+          inputs: session?.inputs,
+          readOnly: false,
+          via: `ml_${stash.kind ?? "train"}:${stash.job_id}`,
+        });
+      }
       let out:
         | { code: string }
-        | { env: Record<string, string>; requirements: string[] }
+        | { env: Record<string, string>; requirements: string[]; lake?: LakeManifest }
         | { error: string };
       if (stash.kind === "predict") {
         const m = await import("@/utils/ml/predict.server");
@@ -194,7 +378,12 @@ async function handle(request: Request): Promise<Response> {
             ? await m.mlEnvFor(stash, claims.sub)
             : await m.mlBundleFor(stash, claims.sub);
       }
-      return "error" in out ? json(404, out) : json(200, out);
+      if ("error" in out) return json(404, out);
+      if ("lake" in out) {
+        const { lake, ...rest } = out;
+        return (await pinLake(claims.sid, session?.inputs, lake)) ?? json(200, rest);
+      }
+      return json(200, out);
     }
   }
 
@@ -212,10 +401,19 @@ async function handle(request: Request): Promise<Response> {
       } catch {
         /* empty body = default part */
       }
-      const out =
-        part === "etl_env"
-          ? await sq.sparkQueryEnvFor(stash, claims.sub)
-          : await sq.sparkQueryBundleFor(stash, claims.sub);
+      // A failed read of the query row is a 503, not the 404 an absent one
+      // is (R222).
+      let out:
+        | Awaited<ReturnType<typeof sq.sparkQueryEnvFor>>
+        | Awaited<ReturnType<typeof sq.sparkQueryBundleFor>>;
+      try {
+        out =
+          part === "etl_env"
+            ? await sq.sparkQueryEnvFor(stash, claims.sub)
+            : await sq.sparkQueryBundleFor(stash, claims.sub);
+      } catch (e) {
+        return json(503, { error: (e as Error).message });
+      }
       return "error" in out ? json(404, out) : json(200, out);
     }
   }

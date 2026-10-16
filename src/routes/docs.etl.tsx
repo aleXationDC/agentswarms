@@ -159,6 +159,11 @@ function EtlDocsPage() {
         own deployment — the runs fetch them from your instance&apos;s origin, so they work
         offline). Pick your destination bucket under Settings and run.
       </P>
+      <P>
+        Enter in the dialog&apos;s name field creates the pipeline, like Create. A second Enter
+        while the first is saving is ignored, so a quick double press makes one pipeline and no
+        &ldquo;duplicate key&rdquo; error. Pipeline names are unique per user.
+      </P>
       <Table
         headers={["Sample", "The hard part it solves"]}
         rows={[
@@ -232,7 +237,9 @@ function EtlDocsPage() {
         process. The run installs the pipeline&apos;s requirements, fetches its resolved credentials
         over HTTPS into process memory (never container environment variables, never the code text),
         executes <C>entrypoint(inputs)</C>, and reports metrics, logs and status back to the Runs
-        tab. Secret values are scrubbed from captured logs before they are stored.
+        tab. Secret values are scrubbed from captured logs before they are stored, first by the
+        sandbox itself with the values it was handed, so a secret replaced or deleted while the run
+        is going stays scrubbed. A node preview&apos;s output is scrubbed the same way.
       </P>
       <Callout kind="warn" title="The runtime must be enabled">
         Pipelines execute on the Developer-workspace runtime. If an administrator has not enabled it
@@ -240,14 +247,29 @@ function EtlDocsPage() {
         install), runs fail immediately with a message saying exactly that. See{" "}
         <DocLink to="/docs/self-hosting">Install &amp; deploy</DocLink>.
       </Callout>
-      <Callout kind="warn" title="Lakehouse targets need the catalog on the kernel's network">
-        Because the run happens in a kernel, a pipeline whose target is a lakehouse table attaches
-        the catalog from <em>there</em> — and kernels sit on an <C>internal</C> network whose only
-        way out is the HTTP egress proxy. Parquet is HTTP and travels through it; the catalog is a
-        raw Postgres connection and cannot. Name the catalog by service (
-        <C>lakehouse-catalog:5432</C>), not by a host IP or published port. The symptom otherwise is{" "}
-        <C>Network is unreachable</C> in the run log, and it shows up only once the app runs in a
-        container — under <C>npm run dev</C> kernels get a routable network instead. See{" "}
+      <Callout kind="info" title="A lakehouse node gets the SQL editor's checks">
+        A pipeline runs as its owner. Every schema a lakehouse source&apos;s query reads must be the
+        owner&apos;s or shared with them, whatever schema the node itself names; table functions
+        such as <C>read_parquet()</C> are refused. A shared table under its owner&apos;s row filter
+        or column masks is read through the policy, as the SQL editor reads it, and cannot be
+        written by anyone but its owner.
+      </Callout>
+      <Callout kind="info" title="The sandbox holds no lakehouse credential">
+        The app reads a pipeline&apos;s lakehouse sources and loads its lakehouse targets for it:
+        rows travel as Parquet behind short-lived presigned URLs under the run&apos;s own staging
+        prefix, and the app serves only the sources and targets the run declared. Code in the
+        sandbox, a Custom Python node included, has no catalog connection and no storage key. The
+        Spark engine&apos;s lakehouse target is the exception for now: the cluster writes its own
+        Parquet.
+      </Callout>
+      <Callout kind="warn" title="Spark lakehouse targets need the catalog on the kernel's network">
+        On the Spark engine, a pipeline whose target is a lakehouse table attaches the catalog from
+        the kernel — and kernels sit on an <C>internal</C> network whose only way out is the HTTP
+        egress proxy. Parquet is HTTP and travels through it; the catalog is a raw Postgres
+        connection and cannot. Name the catalog by service (<C>lakehouse-catalog:5432</C>), not by a
+        host IP or published port. The symptom otherwise is <C>Network is unreachable</C> in the run
+        log, and it shows up only once the app runs in a container — under <C>npm run dev</C>{" "}
+        kernels get a routable network instead. See{" "}
         <DocLink to="/docs/lakehouse">Lakehouse</DocLink>.
       </Callout>
 
@@ -261,6 +283,19 @@ function EtlDocsPage() {
         PySpark instead of pandas, and the sandbox drives a cluster over{" "}
         <strong>Spark Connect</strong> — it holds only the pure-Python client, no JVM, so every
         hardening decision made for it stands. Previews always sample in the sandbox.
+      </P>
+      <P>
+        The cluster is shared, so storage credentials reach it per read and per write, and each call
+        is served with its own. A SQL step on Spark is one <C>SELECT</C> over its input, the table{" "}
+        <C>t</C>: reading a file in place of a table, or running a statement, is refused when the
+        pipeline is saved. Read storage with a source node.
+      </P>
+      <P>
+        A <strong>lakehouse target</strong> on this engine is written by the executors and loaded by
+        the app. The cluster is given a credential the object store limits to that run&apos;s own
+        staging prefix, and which expires; no catalog connection reaches the cluster or the sandbox.
+        A store without this capability keeps the lakehouse&apos;s own credentials and records that
+        it did.
       </P>
       <Table
         headers={["On the cluster", "In the sandbox, then lifted into Spark"]}
@@ -577,6 +612,12 @@ function EtlDocsPage() {
         cannot forge or edit. Connections honour <DocLink to="/docs/iam">IAM</DocLink>: a connection
         shared with you works in a pipeline exactly as it does in BI, and the AI assist obeys your
         model allow-lists.
+      </P>
+      <P>
+        A pipeline card&apos;s status chip is its last finished run&apos;s outcome. When the program
+        a run started now would execute differs from what that run ran (an edit, an engine switch,
+        or a newer compiler building the graph differently), the card says{" "}
+        <strong>changed since this run</strong> under the chip, and the next run clears it.
       </P>
 
       <H2 id="sizing">Data-size limits and machine sizing</H2>

@@ -22,6 +22,8 @@ import {
   assertNativeApprovalResume,
   createNativeWorkApproval,
 } from "@/utils/swarmWorkApproval.server";
+import { callerFailure } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 
 type Fail = { ok: false; error: string };
 
@@ -114,13 +116,18 @@ export const resumeApprovedSwarmRun = createServerFn({ method: "POST" })
         const url = process.env.SUPABASE_URL;
         const key = process.env.SUPABASE_PUBLISHABLE_KEY;
         if (!url || !key) return { ok: false, error: "Server is not configured" };
-        const sb = createClient<Database>(url, key, {
-          global: { headers: { Authorization: `Bearer ${data.access_token}` } },
-        });
+        const sb = createClient<Database>(
+          url,
+          key,
+          withNulSafeFetch({
+            global: { headers: { Authorization: `Bearer ${data.access_token}` } },
+          }),
+        );
         const {
           data: { user },
+          error: authError,
         } = await sb.auth.getUser();
-        if (!user) return { ok: false, error: "Not signed in" };
+        if (!user) return { ok: false, error: callerFailure(authError, "Not signed in") };
 
         // Read under the caller's JWT: RLS decides whether this approval is
         // theirs to see, so a stolen id from another tenant resolves to nothing.
@@ -326,13 +333,18 @@ export const cancelParkedSwarmRun = createServerFn({ method: "POST" })
         const url = process.env.SUPABASE_URL;
         const key = process.env.SUPABASE_PUBLISHABLE_KEY;
         if (!url || !key) return { ok: false, error: "Server is not configured" };
-        const sb = createClient<Database>(url, key, {
-          global: { headers: { Authorization: `Bearer ${data.access_token}` } },
-        });
+        const sb = createClient<Database>(
+          url,
+          key,
+          withNulSafeFetch({
+            global: { headers: { Authorization: `Bearer ${data.access_token}` } },
+          }),
+        );
         const {
           data: { user },
+          error: authError,
         } = await sb.auth.getUser();
-        if (!user) return { ok: false, error: "Not signed in" };
+        if (!user) return { ok: false, error: callerFailure(authError, "Not signed in") };
 
         // Read under the caller's JWT: RLS decides whether the run is theirs.
         const { data: run, error: readErr } = await sb

@@ -54,7 +54,11 @@ function PlaygroundDoc() {
       <P>
         Pick an agent from the selector and the conversation runs against its saved configuration:
         provider, model, system prompt, knowledge bases, skills, tools, guardrails, and memory.
-        Conversations are persisted, so you can leave and pick a thread back up later.
+        Conversations are persisted, so you can leave and pick a thread back up later. If your
+        agents cannot be read, the page says so and offers <em>Try again</em>, rather than asking
+        you to pick from an empty selector. The same goes for a conversation that cannot be started:
+        the message box needs one, so the empty chat gives the reason and a <em>Try again</em>{" "}
+        instead of inviting a message it cannot take.
       </P>
       <UL>
         <li>
@@ -71,9 +75,11 @@ function PlaygroundDoc() {
           "remembered" rather than guessing.
         </li>
         <li>
-          <strong>Fallback override</strong> — if the primary model fails, the playground offers a
-          fallback model picker; your choice sticks for the rest of the session and is shown
-          explicitly.
+          <strong>Fallback override</strong> — if the provider rate-limits the model or runs out of
+          credits, the playground offers a fallback model picker; your choice sticks for the rest of
+          the session and is shown explicitly. A refusal from the platform itself (your monthly
+          budget, your administrator&apos;s model rules, a conversation too large to send) is shown
+          in its own words instead: another model would be refused the same way.
         </li>
       </UL>
 
@@ -83,7 +89,10 @@ function PlaygroundDoc() {
         for any message: the resolved prompt, tool calls with their arguments and results, tokens,
         cost, and latency. This is the playground's real purpose — the fastest loop from "I changed
         something in my agent" to "I can see exactly what that change did". The same traces are
-        queryable later from <DocLink to="/docs/debugging">Logs &amp; traces</DocLink>.
+        queryable later from <DocLink to="/docs/debugging">Logs &amp; traces</DocLink>. The Trace
+        tab says <em>Trace not recorded</em> only when it read the table and found no row; when the
+        read itself fails it says <em>Trace not read</em>, names the error and offers{" "}
+        <em>Try again</em>.
       </P>
 
       <H2 id="skill-samples">Skill-sample agents</H2>

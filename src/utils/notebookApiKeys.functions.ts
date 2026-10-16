@@ -13,6 +13,8 @@ import {
   hashNotebookApiKey,
   notebookKeyPrefix,
 } from "@/utils/notebookApiKeys";
+import { callerFailure } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 
 export type NbApiKeyRow = {
   id: string;
@@ -37,13 +39,18 @@ async function ownerOf(
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return { ok: false, error: "Server is not configured" };
-  const sb = createClient(url, key, {
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-  });
+  const sb = createClient(
+    url,
+    key,
+    withNulSafeFetch({
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    }),
+  );
   const {
     data: { user },
+    error: authError,
   } = await sb.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in" };
+  if (!user) return { ok: false, error: callerFailure(authError, "Not signed in") };
 
   const { data } = await sb
     .from("user_python_notebooks")

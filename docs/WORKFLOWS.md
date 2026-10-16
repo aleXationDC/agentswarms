@@ -64,7 +64,8 @@ because it is about the graph rather than about any one system.
 ### Three shapes of work, and why the difference matters
 
 - **Polled** — the subsystem records its own run row, so the step stores that
-  id and reads it back.
+  id and reads it back. A read of it that fails is "not settled yet", and the
+  next poll asks again; only a row that is really gone fails the step (R255).
 - **Immediate** — the work is over before the call returns (a condition, a
   notification, an HTTP request).
 - **Detached** — the call resolves only when the whole job is done, which can
@@ -185,6 +186,24 @@ ticked and flagged, rather than vanishing from the step that depends on it.
 
 What stays free text is text that really is text: a SQL statement, a
 notification, a question for a person, a JSON body.
+
+### Unsaved changes
+
+Edits stay in the editor until **Save**, and the editor says so: **Unsaved
+changes** shows beside Save whenever the steps, arrows, parameters or settings
+differ from what was saved, and goes when they match again — undoing an edit by
+hand counts. **Run now** runs the saved version, as its note says. Picking
+another workflow, or creating one, asks first — "Discard the changes to
+"Nightly load"?" — and Cancel keeps them. Deleting a different workflow from the
+list leaves the open one alone (R268); before, it emptied the editor, unsaved
+edits and all. Leaving the page by a link asks the same question, and closing or
+reloading the tab gets the browser's own "Leave site?" (R269).
+
+Save writes only over the version the editor opened. If the workflow was saved
+from another tab or session since, Save is refused — "This workflow was changed
+in another tab or session after this page read it" — and beside Save the editor
+reads "Changed elsewhere, not saved", with **Reload** and **Overwrite with mine**
+(R289). Runs and the scheduler do not count: only a save moves the version.
 
 ## Retries and timeouts
 
@@ -364,6 +383,17 @@ children whatever its flag says — it did not run.
 A run with any failure is failed, even when later steps succeeded around it.
 Calling it green because the last step it reached was fine is how a broken
 nightly load goes unnoticed for a week. A skip alone is not a failure.
+
+The status beside a workflow in the list is the latest run's, and it is
+about the graph that run pinned (`workflow_runs.graph`). When the graph now
+differs in anything a run executes, the list says **changed since this run**
+under the name (R184); before, a save kept "succeeded" over a step that
+could no longer succeed. Layout and labels do not count (a step's `x`, `y`
+and `label`, a parameter's description), nor the order steps and arrows are
+stored in; a step's kind, target, statement, retries, trigger rule and
+timeout, the arrows and their branches, and the parameters' names and
+defaults do. With no run, or a run that could not be read, the list says
+nothing.
 
 ## Guarantees and limits
 

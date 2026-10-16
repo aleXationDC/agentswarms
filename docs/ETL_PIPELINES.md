@@ -111,8 +111,40 @@ The run sequence:
    replaced wholesale per pipeline so renamed targets never strand old edges);
    notifies the owner on failure.
 
+**Secrets in the output.** Every value the environment hands a run (destination keys, connection URLs,
+`{{secret:NAME}}` bindings, the Spark Connect token) is replaced with `***` in what the run prints, and
+it is done twice. The sandbox does it first. The `etl_env` reply carries the values as `scrub`, the
+prelude keeps them for as long as the run lasts, and the batch runner scrubs the live logs, the final
+logs, the error and the traceback it writes on the way out before it posts any of them. Then the platform
+scrubs again, against the values that are current when the output arrives.
+
+The sandbox's pass is the one that matters in two cases:
+
+- **A secret is replaced or deleted mid-run.** The platform's list no longer has the value the run
+  printed (R292).
+- **A node preview.** Its output is shown from its session row, and nothing else scrubs it.
+
+Both passes take the longest value first, and both scrub a log before cutting it, so neither leaves part
+of a value behind. A runtime image older than R292 ignores `scrub`, so rebuild
+`agentswarms/notebook-runtime` along with the app.
+
+**What the logs hold.** The logs hold everything the run writes to stdout and stderr, in order and
+scrubbed. That includes `print`, the `logging` module's default handler, warnings, and libraries that
+report through them. Before R299 only stdout was kept. A run's `logging.info` lines went to the container's
+log, which is removed with the container, and the Logs dialog showed `print` alone.
+
 **The runtime must be enabled** (Admin → Developer runtime; its containers start with every install; on
 Compose). Without it, runs fail immediately with a message saying exactly that.
+
+**What a card's status vouches for.** The chip on a pipeline card is the last
+finished run's outcome, and that run's pinned code is what it vouches for. When
+the program a run started now would execute differs from it - the pipeline was
+edited, its engine switched, or a newer compiler builds its graph differently
+(a visual pipeline is recompiled at every run start) - the card says **changed
+since this run** under the chip (R183). The comparison uses the code each run
+already pins on its `etl_runs` row, compiled the way the run start compiles it;
+the next run of the current definition clears it. Before, a save kept
+"Succeeded" over a target the pipeline had never written.
 
 ## Engines: the sandbox, or a Spark cluster
 
@@ -139,6 +171,25 @@ pipeline:
 | Database reads and writes over JDBC (PostgreSQL, MySQL and SQL Server families)                          | CDC, webhook ingest, stream drains (Kafka, Kinesis, Pub/Sub)                                                                     |
 | Every transform: filter, select, rename, derive, join, union, aggregate, sort, dedupe, nulls, limit, SQL | Custom Python (its contract is a whole pandas frame), the lakehouse (DuckLake has no Spark connector), HTTP API and SaaS targets |
 | Quality gates                                                                                            |                                                                                                                                  |
+
+**Credentials on a shared cluster.** Storage credentials reach the cluster per
+read and per write, never in its shared configuration, and each call builds a
+storage client of its own (`fs.s3a.impl.disable.cache`): Hadoop otherwise keeps
+one client per bucket per JVM with the credentials that built it, and later
+calls with other keys were served by it (R229). After upgrading past R229,
+restart Spark Connect once so no client cached before the fix survives.
+
+**A lakehouse target on this engine** is written by the executors and loaded by
+the app. The cluster gets a credential the object store limits to that run's
+own staging prefix, which expires; the sandbox names the batch and the app
+loads it, so no catalog connection reaches either (R230). A store without STS
+keeps the lakehouse's credentials and logs that it did — see
+[Sandbox lakehouse access](./SANDBOX_LAKEHOUSE_ACCESS.md).
+
+**A SQL step on Spark** is one `SELECT` (or `WITH`) over its input, the table
+`t`. Spark SQL can also read a file in place of a table and run statements;
+both are refused when the pipeline is saved and when it compiles. Storage is
+read through source nodes, whose connections govern it.
 
 The sandbox-side nodes are bounded by design — a CDC peek, a stream drain, a
 SaaS push — and none of them is where the size problem lives. Each reuses
@@ -345,7 +396,10 @@ for _stop after quiet_, and reports the new positions - Kafka offsets per
 partition, Kinesis sequence numbers per shard - as its engine-managed
 watermark, the same `etl_pipeline_state` cursor the CDC source uses. The
 cursor is persisted only when the run's load committed, so a run that fails
-after reading re-reads the same messages: **at-least-once, never lost**. No
+after reading re-reads the same messages: **at-least-once, never lost**. A
+cursor that cannot be read is not a missing one: the run does not start, and
+the retry ladder tries again, rather than reading every source from the
+beginning (R253). No
 consumer-group offsets are committed to the broker; the platform is the
 record, and a preview reads without moving anything. Pub/Sub is the
 exception, because it has no replayable position: a message is acknowledged
@@ -652,10 +706,56 @@ process memory), destinations and drift baselines are skipped. A broken graph
 fails at the compile step with the compiler's message, before any container
 starts.
 
-## Lakehouse targets need the catalog on the kernel network
+## What a lakehouse node may read and write
 
-A pipeline whose target is a lakehouse table attaches DuckLake **from inside the
-notebook kernel**, not from the app. Kernels run on an `internal` Docker network
+A pipeline runs as its owner, and its lakehouse nodes get the same checks as
+the owner's queries in the Lakehouse SQL editor:
+
+- **Every schema a source query reads** must be the owner's own or shared with
+  them. The node's own schema field is only where the query starts. Table
+  functions such as `read_parquet()` and unqualified table names are refused,
+  as they are in the editor.
+- **A shared table under its owner's row filter or column masks** is read
+  through the policy: the pipeline gets the rows and values its owner may
+  see, exactly as the SQL editor shows them.
+- **A shared table under a policy is read-only** for everyone but its owner,
+  so a pipeline cannot target it.
+
+These are checked before a run or a preview starts, so a graph that cannot run
+fails with its node's name, and again by the app on every read and load.
+
+## The sandbox holds no lakehouse credential
+
+A pipeline's code runs in a sandbox, and since October 2026 that sandbox is
+given **no lakehouse credential at all**: no catalog connection string, no
+object-store key. The app does the lakehouse work for it, over the session
+channel the sandbox already uses for its code and secrets:
+
+- **A source** is read by the app, as the pipeline's owner, through the SQL
+  editor's checks and the owners' policies. The rows come back as one Parquet
+  file behind a short-lived presigned URL, which the sandbox deletes once read.
+- **A target's** rows go up as Parquet to a presigned URL under the run's own
+  staging prefix, and the app loads them into the table. A merge refuses rows
+  that lack its primary key instead of matching the whole table.
+- **Exactly-once** continuous runs gather every target's rows for a tick and
+  hand them to the app with the tick's positions; the app commits both in one
+  transaction, and a restarted run resumes from the positions that committed.
+
+The app serves only what the run declared when it started: its own lakehouse
+sources, by node, and its own targets. A Custom Python node can call the
+helpers, and it can read nothing else and write nowhere else. Staging lives
+beside the lake (`_sandbox_staging/<session>/`), is deleted when a load
+commits, and the runtime reaper deletes whatever a dead session leaves.
+
+The Spark engine's lakehouse target is the exception for now: the cluster
+writes its Parquet itself, so that target still runs with the store's
+credentials. See [Sandbox lakehouse access](./SANDBOX_LAKEHOUSE_ACCESS.md).
+
+## Spark lakehouse targets need the catalog on the kernel network
+
+A pipeline on the **Spark engine** whose target is a lakehouse table attaches
+DuckLake **from inside the notebook kernel**, not from the app (sandbox-engine
+pipelines no longer do: the app loads their targets). Kernels run on an `internal` Docker network
 with no route off it except the HTTP egress proxy — Parquet is HTTP and goes
 through it, the catalog is a raw Postgres connection and cannot. So the catalog
 has to be on the kernel's network and named by service (`lakehouse-catalog:5432`),
@@ -698,6 +798,18 @@ content back and records the restore as the newest version, so history only
 moves forward and a regretted restore has its own undo. Rows are
 service-role-written and owner-read-only, and deleting a pipeline cascades its
 history away.
+
+Edits stay in the editor until **Save** (which turns on when there is something
+to save; **Run now** saves first). Going back to the list, following a link, or
+closing the tab with unsaved edits asks first — "Discard the changes to
+"orders"?" — and Cancel keeps them (R275).
+
+Save writes only over the pipeline the editor opened. If it was saved from
+another tab or session since, Save is refused — "This pipeline was changed in
+another tab or session after this page read it" — and a banner offers **Reload**
+or **Overwrite with mine**; **Run now**, which saves first, does not run then.
+Runs write the same row, so the check compares a fingerprint of the definition
+(`src/lib/etlDefinition.ts`), not the row's `updated_at` (R287).
 
 ## Schema drift
 

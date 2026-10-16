@@ -8,7 +8,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { generateScimToken, hashScimToken, scimTokenPrefix } from "@/lib/scim";
 import { USER_ATTR_TOKEN_RE } from "@/lib/semanticPolicy";
 import { auditEvent } from "@/utils/audit.server";
-import { isBootstrapAdmin, requireSuperadmin } from "@/utils/iam.server";
+import {
+  isBootstrapAdmin,
+  isProtectedAccount,
+  readSuperadminRoleRow,
+  requireSuperadmin,
+  type SuperadminRoleRow,
+} from "@/utils/iam.server";
+import { deleteKeepingAtLeastOne } from "@/utils/lastOneGuard";
 
 /**
  * A row-filter value is either a plain literal or a WELL-FORMED attribute
@@ -238,13 +245,20 @@ export const iamSetUserBan = createServerFn({ method: "POST" })
     if (data.user_id === guard.userId) return { ok: false, error: "You cannot ban yourself" };
 
     if (data.banned) {
-      const { data: role } = await supabaseAdmin
-        .from("user_roles")
-        .select("id")
-        .eq("user_id", data.user_id)
-        .eq("role", "superadmin")
-        .maybeSingle();
-      if (role) return { ok: false, error: "Demote this superadmin before banning them" };
+      // R236: this read used to drop its error, so a transient failure answered
+      // "not a superadmin" and banned the account the message says to demote.
+      try {
+        if (await isProtectedAccount(data.user_id)) {
+          return { ok: false, error: "Demote this superadmin before banning them" };
+        }
+      } catch (e) {
+        return {
+          ok: false,
+          error: `Could not check whether this account is protected, so it was not banned: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        };
+      }
     }
 
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, {
@@ -269,13 +283,19 @@ export const iamDeleteUser = createServerFn({ method: "POST" })
     if (!guard.ok) return guard;
     if (data.user_id === guard.userId) return { ok: false, error: "You cannot delete yourself" };
 
-    const { data: role } = await supabaseAdmin
-      .from("user_roles")
-      .select("id")
-      .eq("user_id", data.user_id)
-      .eq("role", "superadmin")
-      .maybeSingle();
-    if (role) return { ok: false, error: "Demote this superadmin before deleting them" };
+    // R236. Deletion does not come back, so an unverifiable protection refuses.
+    try {
+      if (await isProtectedAccount(data.user_id)) {
+        return { ok: false, error: "Demote this superadmin before deleting them" };
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        error: `Could not check whether this account is protected, so it was not deleted: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      };
+    }
 
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
     if (error) return { ok: false, error: error.message };
@@ -321,27 +341,70 @@ export const iamRevokeSuperadmin = createServerFn({ method: "POST" })
     const guard = await requireSuperadmin(data.access_token);
     if (!guard.ok) return guard;
 
-    if (await isBootstrapAdmin(data.user_id)) {
+    try {
+      if (await isBootstrapAdmin(data.user_id)) {
+        return {
+          ok: false,
+          error: "This account is the ADMIN_EMAIL bootstrap superadmin and cannot be demoted",
+        };
+      }
+    } catch (e) {
+      // R236: isBootstrapAdmin throws now rather than reporting an unreadable
+      // account as "not the bootstrap one". A demotion is reversible, but it
+      // is still not something to do on a guess.
       return {
         ok: false,
-        error: "This account is the ADMIN_EMAIL bootstrap superadmin and cannot be demoted",
+        error: `Could not check whether this is the bootstrap superadmin, so it was not demoted: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
       };
     }
 
-    const { count } = await supabaseAdmin
-      .from("user_roles")
-      .select("id", { count: "exact", head: true })
-      .eq("role", "superadmin");
-    if ((count ?? 0) <= 1) {
-      return { ok: false, error: "Cannot demote the last superadmin" };
+    // R246: this counted the superadmins and then deleted one, two round
+    // trips apart. Two demotions arriving together both read 2, both passed,
+    // and both deleted — a deployment with no superadmin left, and nobody
+    // able to grant the role back, because granting it is superadmin-gated.
+    // The count that decides is taken after the delete now. It also dropped
+    // the count's own error, so an unreadable table reported the deployment's
+    // last superadmin as a fact; it is read and raised now.
+    let result;
+    try {
+      result = await deleteKeepingAtLeastOne<SuperadminRoleRow>(
+        {
+          read: () => readSuperadminRoleRow(data.user_id),
+          remove: async () => {
+            const { data: rows, error } = await supabaseAdmin
+              .from("user_roles")
+              .delete()
+              .eq("user_id", data.user_id)
+              .eq("role", "superadmin")
+              .select("id");
+            if (error) throw new Error(error.message);
+            return !!rows?.length;
+          },
+          countRemaining: async () => {
+            const { count, error } = await supabaseAdmin
+              .from("user_roles")
+              .select("id", { count: "exact", head: true })
+              .eq("role", "superadmin");
+            if (error) throw new Error(`Could not count the superadmins: ${error.message}`);
+            if (count === null) throw new Error("the superadmins could not be counted");
+            return count;
+          },
+          restore: async (row) => {
+            const { error } = await supabaseAdmin.from("user_roles").insert(row);
+            if (error) throw new Error(error.message);
+          },
+        },
+        {
+          refusal: "Cannot demote the last superadmin",
+          missing: "This account is not a superadmin",
+        },
+      );
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
-
-    const { error } = await supabaseAdmin
-      .from("user_roles")
-      .delete()
-      .eq("user_id", data.user_id)
-      .eq("role", "superadmin");
-    if (error) return { ok: false, error: error.message };
+    if (!result.ok) return result;
     auditEvent({
       userId: guard.userId,
       action: "iam.role.revoke_superadmin",

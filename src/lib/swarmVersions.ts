@@ -4,6 +4,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Node, Edge } from "@xyflow/react";
 import type { SwarmNodeData } from "@/lib/swarmRuntime";
+import { canonicalJson } from "@/lib/definitionFingerprint";
 
 const MAX_VERSIONS = 30;
 
@@ -47,6 +48,41 @@ export function serializeGraph(nodes: Node<SwarmNodeData>[], edges: Edge[]) {
   return { cleanNodes, cleanEdges };
 }
 
+/** Objects with their keys in a fixed order, so the order they were built in cannot matter. */
+function sortedKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortedKeys);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      out[k] = sortedKeys((v as Record<string, unknown>)[k]);
+    }
+    return out;
+  }
+  return v;
+}
+
+/**
+ * The canvas as Save would write it: its name, and the graph without React
+ * Flow's UI state or a run's, keys in a fixed order. The same string means Save
+ * would change nothing, so the canvas can tell whether anything is unsaved.
+ * Position counts: arranging the canvas is work Save keeps. FOUND IN R270: the
+ * canvas marked itself unsaved on every render that set its nodes, the load
+ * among them, so closing a swarm nobody had touched asked "Leave site?".
+ */
+export function canvasForm(name: string, nodes: Node<SwarmNodeData>[], edges: Edge[]): string {
+  const { cleanNodes, cleanEdges } = serializeGraph(nodes, edges);
+  return JSON.stringify(sortedKeys({ name, nodes: cleanNodes, edges: cleanEdges }));
+}
+
+/**
+ * A swarm's definition as it is stored, for telling whether someone saved it
+ * since this page read it (R288, sweep 9). Runs, deploys and publishing write
+ * other columns of the row, so its updated_at cannot say.
+ */
+export function swarmStoredForm(row: { name: unknown; nodes: unknown; edges: unknown }): string {
+  return canonicalJson({ name: row.name ?? "", nodes: row.nodes ?? [], edges: row.edges ?? [] });
+}
+
 // Stable fingerprint of the serialized graph — used to skip snapshotting a Save
 // that didn't actually change anything.
 export function graphHash(nodes: Node<SwarmNodeData>[], edges: Edge[]): string {
@@ -54,6 +90,10 @@ export function graphHash(nodes: Node<SwarmNodeData>[], edges: Edge[]): string {
   return JSON.stringify({ n: cleanNodes, e: cleanEdges });
 }
 
+// Resolves to the insert's error message, or null when the version landed.
+// The autosave on Save ignores it, since versioning must never block a save.
+// A version asked for by name, and the snapshot a restore promises to take
+// first, must not: FOUND IN R190, both went on as if it had landed.
 export async function snapshotSwarmVersion(opts: {
   swarmId: string;
   userId: string;
@@ -61,7 +101,7 @@ export async function snapshotSwarmVersion(opts: {
   edges: Edge[];
   label: string;
   kind: SwarmVersionKind;
-}): Promise<void> {
+}): Promise<string | null> {
   const { cleanNodes, cleanEdges } = serializeGraph(opts.nodes, opts.edges);
   const { error } = await supabase.from("swarm_versions").insert({
     swarm_id: opts.swarmId,
@@ -72,7 +112,7 @@ export async function snapshotSwarmVersion(opts: {
     edges: cleanEdges as never,
     node_count: cleanNodes.length,
   });
-  if (error) return; // versioning is best-effort; never block a save
+  if (error) return error.message;
 
   // Prune to the most recent MAX_VERSIONS for this swarm.
   const { data: ids } = await supabase
@@ -84,4 +124,5 @@ export async function snapshotSwarmVersion(opts: {
     const toDelete = ids.slice(MAX_VERSIONS).map((r) => r.id);
     if (toDelete.length) await supabase.from("swarm_versions").delete().in("id", toDelete);
   }
+  return null;
 }

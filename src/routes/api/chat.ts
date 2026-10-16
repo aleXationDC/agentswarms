@@ -26,6 +26,11 @@ import {
   type OutputDecision,
 } from "@/utils/guardrails";
 import {
+  agentConfigRefusal,
+  failedRead,
+  type AgentConfigRead,
+} from "@/utils/agents/agentConfigGate";
+import {
   budgetMessage,
   getBudgetDecision,
   getCaseBudgetDecision,
@@ -125,19 +130,28 @@ function getServerSupabase(authToken?: string) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return null;
-  return createClient<Database>(url, key, {
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-    global: authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : undefined,
-  });
+  return createClient<Database>(
+    url,
+    key,
+    withNulSafeFetch({
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      global: authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : undefined,
+    }),
+  );
 }
 
-async function getUserIdFromRequest(request: Request): Promise<string | null> {
+async function getUserIdFromRequest(request: Request): Promise<string | null | CallerCheckFailed> {
   const auth = request.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const token = auth.slice(7);
   const sb = getServerSupabase();
   if (!sb) return null;
-  const { data } = await sb.auth.getClaims(token);
+  const { data, error } = await sb.auth.getClaims(token);
+  // R297: a check that failed is not "nobody". A null user skips the IAM
+  // model rules and the budget cap below, so this turn would have run
+  // ungoverned on a token that is good.
+  const failed = checkFailed(error);
+  if (failed) return failed;
   return data?.claims?.sub ?? null;
 }
 
@@ -495,6 +509,8 @@ import {
 import { approxTokens, estimateImageCost, isImageModel } from "@/utils/observability/pricing";
 import { priceCall } from "@/utils/observability/priceResolver";
 import { providerReportedCost } from "@/utils/observability/providerCost";
+import { CallerCheckFailed, checkFailed } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 
 const DECISION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1211,6 +1227,15 @@ export const Route = createFileRoute("/api/chat")({
           // the service-role key) so the secret can't be probed by timing.
           const isInternalRun = internalSecretMatches(request.headers.get("x-internal-run-secret"));
           caseBoundRequest = Boolean(isInternalRun && body.runId);
+          const caller = isInternalRun
+            ? (body.internalUserId ?? null)
+            : await getUserIdFromRequest(request);
+          if (caller !== null && typeof caller === "object") {
+            return new Response(JSON.stringify({ error: caller.checkFailed }), {
+              status: 503,
+              headers: { "Content-Type": "application/json", ...corsHeaders },
+            });
+          }
           const caseExecution =
             isInternalRun && body.runId
               ? await resolveCaseChat({
@@ -1230,9 +1255,7 @@ export const Route = createFileRoute("/api/chat")({
             model = caseExecution.route.model_id;
             if (isImageModel(model)) throw new Error("PROVIDER_CAPABILITY_UNSUPPORTED");
           }
-          const userId =
-            caseExecution?.binding.data_scope_user_id ??
-            (isInternalRun ? (body.internalUserId ?? null) : await getUserIdFromRequest(request));
+          const userId = caseExecution?.binding.data_scope_user_id ?? caller;
           const policyUserId = caseExecution?.binding.policy_user_id ?? userId;
           const caseCostScope =
             caseExecution?.principal?.kind === "swarm_api_key"
@@ -1285,7 +1308,25 @@ export const Route = createFileRoute("/api/chat")({
 
           // Look up the agent for trace label, gateway flag, n8n webhook,
           // saved built-in tool toggles, AND saved tool-configs (per-tool
-          // alt-provider keys, n8n workflow allow-list, MCP server allow-list).
+          // alt-provider keys, n8n workflow allow-list, MCP server allow-list)
+          // — and the guardrails.
+          //
+          // R234: this read used to drop its error, under a comment saying the
+          // trace label is non-critical. That was true when the label was all
+          // it fetched. It has not been true since the allow-lists and the
+          // guardrails moved here, and nothing updated the handling: a read
+          // that failed left every default in place, which is the registry's
+          // default tool set (enabledToolsFromToggles returns undefined for an
+          // empty toggle record, and callers read that as "the default set")
+          // and DEFAULT_GUARDRAILS, where every filter is off. An agent whose
+          // owner had set a PII policy, a blocked-pattern list and a narrow
+          // tool allow-list ran as an unguarded assistant, and the turn looked
+          // entirely normal.
+          //
+          // So the configuration is established or the turn does not run. A
+          // missing row refuses too: the delete dialog promises that "API calls
+          // that reference it will stop working", and before this it kept
+          // answering, minus the guardrails it was deleted with.
           let agentName = "Playground";
           if (isInternalRun && typeof body.agentName === "string" && body.agentName.trim()) {
             agentName = body.agentName.trim().slice(0, 120);
@@ -1305,114 +1346,130 @@ export const Route = createFileRoute("/api/chat")({
           let agentSkillIds: string[] = [];
           let agentGuardrails: Guardrails = parseGuardrails(undefined);
           if (body.agentId && authToken) {
-            try {
-              const sb = getServerSupabase(authToken);
-              if (sb) {
-                const { data: a } = await sb
+            const sb = getServerSupabase(authToken);
+            let read: AgentConfigRead = null;
+            if (sb) {
+              try {
+                read = await sb
                   .from("agents")
                   .select("name, tools, n8n_webhook_url")
                   .eq("id", body.agentId)
                   .maybeSingle();
-                if (a?.name) agentName = a.name;
-                const tools = (a?.tools ?? {}) as {
-                  routeThroughGateway?: unknown;
-                  builtInTools?: Record<string, unknown>;
-                  toolConfigs?: Record<string, Record<string, unknown>>;
-                  workflows?: Record<string, Record<string, unknown>>;
-                  activeWorkflows?: Record<string, unknown>;
-                  mcpServerNames?: unknown;
-                  guardrails?: unknown;
-                  skillIds?: unknown;
-                };
-                if (Array.isArray(tools.skillIds)) {
-                  agentSkillIds = tools.skillIds.filter(
-                    (s): s is string => typeof s === "string" && s.length > 0,
-                  );
-                }
-                agentGuardrails = parseGuardrails(tools.guardrails);
-                agentRouteThroughGateway = tools.routeThroughGateway === true;
-                agentN8nWebhookUrl = a?.n8n_webhook_url ?? null;
-                if (tools.builtInTools && typeof tools.builtInTools === "object") {
-                  for (const [k, v] of Object.entries(tools.builtInTools)) {
-                    if (typeof v === "boolean") agentBuiltInToggles[k] = v;
-                  }
-                }
-                // toolConfigs.web_search / web_browse — provider + api_key
-                const ws = tools.toolConfigs?.web_search;
-                if (ws && typeof ws === "object") {
-                  agentToolConfigs.web_search = {
-                    provider: typeof ws.provider === "string" ? ws.provider : undefined,
-                    api_key: typeof ws.api_key === "string" ? ws.api_key : undefined,
-                  };
-                }
-                const wb = tools.toolConfigs?.web_browse;
-                if (wb && typeof wb === "object") {
-                  agentToolConfigs.web_browse = {
-                    provider: typeof wb.provider === "string" ? wb.provider : undefined,
-                    api_key: typeof wb.api_key === "string" ? wb.api_key : undefined,
-                  };
-                }
-                // n8n workflow allow-list — comma-separated string in the
-                // form's workflow config OR an array under the new field.
-                const n8nWf = tools.workflows?.n8n;
-                if (n8nWf && typeof n8nWf === "object") {
-                  const raw = (n8nWf as { workflow_ids?: unknown }).workflow_ids;
-                  if (typeof raw === "string") {
-                    agentToolConfigs.n8n_workflow_ids = raw
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean);
-                  } else if (Array.isArray(raw)) {
-                    agentToolConfigs.n8n_workflow_ids = raw.filter(
-                      (s): s is string => typeof s === "string",
-                    );
-                  }
-                }
-                // MCP server allow-list
-                if (Array.isArray(tools.mcpServerNames)) {
-                  agentToolConfigs.mcp_server_names = tools.mcpServerNames.filter(
-                    (s): s is string => typeof s === "string" && s.trim().length > 0,
-                  );
-                }
-                // SQL table allow-list — saved on the agent under
-                // tools.toolConfigs.sql_query.table_names as a string array.
-                const sqlCfg = tools.toolConfigs?.sql_query;
-                if (sqlCfg && typeof sqlCfg === "object") {
-                  const raw = (sqlCfg as { table_names?: unknown }).table_names;
-                  if (Array.isArray(raw)) {
-                    agentToolConfigs.sql_table_names = raw.filter(
-                      (s): s is string => typeof s === "string" && s.trim().length > 0,
-                    );
-                  }
-                }
-                // Semantic model allow-list — saved under
-                // tools.toolConfigs.metric_query.model_names. Unlike the SQL
-                // list this is deny-by-default, so an absent config correctly
-                // leaves the tool with nothing and it is not registered.
-                const metricCfg = tools.toolConfigs?.metric_query;
-                if (metricCfg && typeof metricCfg === "object") {
-                  const raw = (metricCfg as { model_names?: unknown }).model_names;
-                  if (Array.isArray(raw)) {
-                    agentToolConfigs.metric_model_names = raw.filter(
-                      (s): s is string => typeof s === "string" && s.trim().length > 0,
-                    );
-                  }
-                }
-                // ML models. An ABSENT list means every model (the pre-list
-                // behaviour every existing agent relies on); a present one,
-                // even empty, means exactly what it says.
-                const mlCfg = tools.toolConfigs?.ml_predict;
-                if (mlCfg && typeof mlCfg === "object") {
-                  const raw = (mlCfg as { model_names?: unknown }).model_names;
-                  if (Array.isArray(raw)) {
-                    agentToolConfigs.ml_model_names = raw.filter(
-                      (s): s is string => typeof s === "string" && s.trim().length > 0,
-                    );
-                  }
-                }
+              } catch (e) {
+                read = failedRead(e);
               }
-            } catch {
-              /* ignore — trace label is non-critical */
+            }
+            const refusal = agentConfigRefusal(read);
+            if (refusal) {
+              return new Response(
+                JSON.stringify({ error: refusal.code, message: refusal.message }),
+                {
+                  status: refusal.status,
+                  headers: { "Content-Type": "application/json", ...corsHeaders },
+                },
+              );
+            }
+            const a = read!.data as {
+              name?: string | null;
+              tools?: unknown;
+              n8n_webhook_url?: string | null;
+            };
+            if (a?.name) agentName = a.name;
+            const tools = (a?.tools ?? {}) as {
+              routeThroughGateway?: unknown;
+              builtInTools?: Record<string, unknown>;
+              toolConfigs?: Record<string, Record<string, unknown>>;
+              workflows?: Record<string, Record<string, unknown>>;
+              activeWorkflows?: Record<string, unknown>;
+              mcpServerNames?: unknown;
+              guardrails?: unknown;
+              skillIds?: unknown;
+            };
+            if (Array.isArray(tools.skillIds)) {
+              agentSkillIds = tools.skillIds.filter(
+                (s): s is string => typeof s === "string" && s.length > 0,
+              );
+            }
+            agentGuardrails = parseGuardrails(tools.guardrails);
+            agentRouteThroughGateway = tools.routeThroughGateway === true;
+            agentN8nWebhookUrl = a?.n8n_webhook_url ?? null;
+            if (tools.builtInTools && typeof tools.builtInTools === "object") {
+              for (const [k, v] of Object.entries(tools.builtInTools)) {
+                if (typeof v === "boolean") agentBuiltInToggles[k] = v;
+              }
+            }
+            // toolConfigs.web_search / web_browse — provider + api_key
+            const ws = tools.toolConfigs?.web_search;
+            if (ws && typeof ws === "object") {
+              agentToolConfigs.web_search = {
+                provider: typeof ws.provider === "string" ? ws.provider : undefined,
+                api_key: typeof ws.api_key === "string" ? ws.api_key : undefined,
+              };
+            }
+            const wb = tools.toolConfigs?.web_browse;
+            if (wb && typeof wb === "object") {
+              agentToolConfigs.web_browse = {
+                provider: typeof wb.provider === "string" ? wb.provider : undefined,
+                api_key: typeof wb.api_key === "string" ? wb.api_key : undefined,
+              };
+            }
+            // n8n workflow allow-list — comma-separated string in the
+            // form's workflow config OR an array under the new field.
+            const n8nWf = tools.workflows?.n8n;
+            if (n8nWf && typeof n8nWf === "object") {
+              const raw = (n8nWf as { workflow_ids?: unknown }).workflow_ids;
+              if (typeof raw === "string") {
+                agentToolConfigs.n8n_workflow_ids = raw
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+              } else if (Array.isArray(raw)) {
+                agentToolConfigs.n8n_workflow_ids = raw.filter(
+                  (s): s is string => typeof s === "string",
+                );
+              }
+            }
+            // MCP server allow-list
+            if (Array.isArray(tools.mcpServerNames)) {
+              agentToolConfigs.mcp_server_names = tools.mcpServerNames.filter(
+                (s): s is string => typeof s === "string" && s.trim().length > 0,
+              );
+            }
+            // SQL table allow-list — saved on the agent under
+            // tools.toolConfigs.sql_query.table_names as a string array.
+            const sqlCfg = tools.toolConfigs?.sql_query;
+            if (sqlCfg && typeof sqlCfg === "object") {
+              const raw = (sqlCfg as { table_names?: unknown }).table_names;
+              if (Array.isArray(raw)) {
+                agentToolConfigs.sql_table_names = raw.filter(
+                  (s): s is string => typeof s === "string" && s.trim().length > 0,
+                );
+              }
+            }
+            // Semantic model allow-list — saved under
+            // tools.toolConfigs.metric_query.model_names. Unlike the SQL
+            // list this is deny-by-default, so an absent config correctly
+            // leaves the tool with nothing and it is not registered.
+            const metricCfg = tools.toolConfigs?.metric_query;
+            if (metricCfg && typeof metricCfg === "object") {
+              const raw = (metricCfg as { model_names?: unknown }).model_names;
+              if (Array.isArray(raw)) {
+                agentToolConfigs.metric_model_names = raw.filter(
+                  (s): s is string => typeof s === "string" && s.trim().length > 0,
+                );
+              }
+            }
+            // ML models. An ABSENT list means every model (the pre-list
+            // behaviour every existing agent relies on); a present one,
+            // even empty, means exactly what it says.
+            const mlCfg = tools.toolConfigs?.ml_predict;
+            if (mlCfg && typeof mlCfg === "object") {
+              const raw = (mlCfg as { model_names?: unknown }).model_names;
+              if (Array.isArray(raw)) {
+                agentToolConfigs.ml_model_names = raw.filter(
+                  (s): s is string => typeof s === "string" && s.trim().length > 0,
+                );
+              }
             }
           }
 
@@ -1787,6 +1844,8 @@ export const Route = createFileRoute("/api/chat")({
                   // restricted docs stay owner-only, which is the safe side.
                   let principalEmail: string | null = null;
                   try {
+                    // caller-lookup: a failed check leaves the email unknown, and
+                    // restricted documents owner-only - the safe side (above).
                     const { data: claimsRes } = await sbAuto.auth.getClaims(authToken);
                     principalEmail =
                       (claimsRes?.claims as { email?: string } | undefined)?.email ?? null;

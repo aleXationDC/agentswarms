@@ -13,6 +13,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { auditEvent } from "@/utils/audit.server";
 import type { Json } from "@/integrations/supabase/types";
 import { validateCron } from "@/lib/cron";
+import { workflowChangedSinceRun } from "@/lib/workflowDrift";
 import {
   MAX_NODES,
   NODE_KINDS,
@@ -22,12 +23,14 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from "@/lib/workflows";
+import { callerFailure } from "@/utils/callerLookup.server";
+import { unversionedSave } from "@/lib/saveVersion";
 
 type Fail = { ok: false; error: string };
 
 async function resolveCaller(accessToken: string): Promise<string> {
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data?.user) throw new Error("Not signed in");
+  if (error || !data?.user) throw new Error(callerFailure(error, "Not signed in"));
   return data.user.id;
 }
 
@@ -56,6 +59,11 @@ export type WorkflowRowDto = {
   has_trigger_token: boolean;
   last_run_at: string | null;
   last_run_status: string | null;
+  /**
+   * Whether the graph changed since the run behind `last_run_status` (R184);
+   * null when there is no run to compare with. Set by the list only.
+   */
+  changed_since_last_run: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -104,6 +112,7 @@ function toRow(row: Record<string, unknown>): WorkflowRowDto {
     has_trigger_token: Boolean(row.trigger_token_hash),
     last_run_at: (row.last_run_at as string | null) ?? null,
     last_run_status: (row.last_run_status as string | null) ?? null,
+    changed_since_last_run: null,
     created_at: String(row.created_at ?? ""),
     updated_at: String(row.updated_at ?? ""),
   };
@@ -119,7 +128,27 @@ export const workflowsList = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
     if (error) return { ok: false, error: error.message };
-    return { ok: true, workflows: (rows ?? []).map(toRow) };
+    const workflows = (rows ?? []).map(toRow);
+    // FOUND IN R184: the status beside a workflow outlived the graph it
+    // vouched for. The run behind it is the latest one started: the run
+    // writes "running" when it starts and its outcome when it ends.
+    const drift = await Promise.all(
+      workflows.map(async (w) => {
+        if (!w.last_run_status) return null;
+        const { data: run, error: runErr } = await supabaseAdmin
+          .from("workflow_runs")
+          .select("graph")
+          .eq("workflow_id", w.id)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return runErr || !run ? null : workflowChangedSinceRun(w.graph, run.graph);
+      }),
+    );
+    return {
+      ok: true,
+      workflows: workflows.map((w, i) => ({ ...w, changed_since_last_run: drift[i] })),
+    };
   });
 
 export const workflowGet = createServerFn({ method: "POST" })
@@ -170,6 +199,13 @@ export const workflowSave = createServerFn({ method: "POST" })
       .object({
         accessToken: z.string().min(1),
         id: z.string().uuid(),
+        // The updated_at this page read or last saved. Only a save sets it
+        // (runs and the scheduler write other columns, and no trigger moves
+        // it), so it is the version: the update lands only on it (R289).
+        // "Overwrite with mine" sends `overwrite` instead; a save with neither
+        // is refused (R303).
+        expectedUpdatedAt: z.string().min(1).optional(),
+        overwrite: z.literal(true).optional(),
         name: z.string().trim().min(1).max(WORKFLOW_NAME_MAX),
         description: z.string().trim().max(2000).nullable().optional(),
         schedule: z.enum(["manual", "hourly", "daily", "weekly", "cron"]),
@@ -201,65 +237,95 @@ export const workflowSave = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data }): Promise<Fail | { ok: true }> => {
-    const userId = await resolveCaller(data.accessToken);
-    const graph: WorkflowGraph = {
-      nodes: data.nodes as WorkflowNode[],
-      edges: data.edges,
-      params: data.params,
-    };
-    const invalid = validateWorkflow({ name: data.name, graph });
-    if (invalid) return { ok: false, error: invalid };
-    if (data.schedule === "cron") {
-      if (!data.cronExpr?.trim()) {
-        return { ok: false, error: "A cron schedule needs an expression" };
+  .handler(
+    async ({ data }): Promise<(Fail & { stale?: boolean }) | { ok: true; updatedAt: string }> => {
+      const userId = await resolveCaller(data.accessToken);
+      const refused = unversionedSave("workflow", {
+        version: data.expectedUpdatedAt,
+        overwrite: data.overwrite,
+      });
+      if (refused) return { ok: false, error: refused };
+      const graph: WorkflowGraph = {
+        nodes: data.nodes as WorkflowNode[],
+        edges: data.edges,
+        params: data.params,
+      };
+      const invalid = validateWorkflow({ name: data.name, graph });
+      if (invalid) return { ok: false, error: invalid };
+      if (data.schedule === "cron") {
+        if (!data.cronExpr?.trim()) {
+          return { ok: false, error: "A cron schedule needs an expression" };
+        }
+        try {
+          validateCron(data.cronExpr, data.timezone ?? undefined);
+        } catch (e) {
+          return { ok: false, error: (e as Error).message };
+        }
       }
-      try {
-        validateCron(data.cronExpr, data.timezone ?? undefined);
-      } catch (e) {
-        return { ok: false, error: (e as Error).message };
+
+      // Every target must still be the caller's own. Checked at SAVE as well as
+      // at run, because "it silently stopped running that pipeline" is a much
+      // worse discovery than a refusal at the moment you press Save.
+      const missing = await missingTargets(userId, graph, data.id);
+      if (missing) return { ok: false, error: missing };
+
+      const { nextWorkflowRunAt } = await import("@/utils/workflows/run.server");
+      const reclock = await scheduleDiffers(data.id, data);
+      let q = supabaseAdmin
+        .from("workflows")
+        .update({
+          name: data.name,
+          description: data.description ?? null,
+          graph: graph as unknown as Json,
+          schedule: data.schedule,
+          cron_expr: data.schedule === "cron" ? (data.cronExpr ?? null) : null,
+          timezone: data.timezone ?? null,
+          overlap: data.overlap,
+          notify_on: data.notifyOn,
+          timeout_minutes: data.timeoutMinutes,
+          params: data.params as unknown as Json,
+          is_active: data.isActive,
+          // A schedule that changed needs a new clock; one that did not is left
+          // alone so saving a label does not postpone tonight's run.
+          ...(reclock
+            ? {
+                next_run_at:
+                  data.schedule === "manual"
+                    ? null
+                    : nextWorkflowRunAt(data.schedule, new Date(), data.cronExpr, data.timezone),
+              }
+            : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", data.id)
+        .eq("user_id", userId);
+      if (data.expectedUpdatedAt) q = q.eq("updated_at", data.expectedUpdatedAt);
+      const { data: row, error } = await q.select("id, updated_at").maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!row) {
+        // Nothing matched: the workflow is gone, or it moved on since this page
+        // read it. Only the second is a stale save.
+        if (data.expectedUpdatedAt) {
+          const { data: still, error: stillError } = await supabaseAdmin
+            .from("workflows")
+            .select("id")
+            .eq("id", data.id)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (stillError) return { ok: false, error: stillError.message };
+          if (still) {
+            return {
+              ok: false,
+              stale: true,
+              error: "This workflow was changed in another tab or session after this page read it",
+            };
+          }
+        }
+        return { ok: false, error: "Workflow not found" };
       }
-    }
-
-    // Every target must still be the caller's own. Checked at SAVE as well as
-    // at run, because "it silently stopped running that pipeline" is a much
-    // worse discovery than a refusal at the moment you press Save.
-    const missing = await missingTargets(userId, graph, data.id);
-    if (missing) return { ok: false, error: missing };
-
-    const { nextWorkflowRunAt } = await import("@/utils/workflows/run.server");
-    const reclock = await scheduleDiffers(data.id, data);
-    const { error } = await supabaseAdmin
-      .from("workflows")
-      .update({
-        name: data.name,
-        description: data.description ?? null,
-        graph: graph as unknown as Json,
-        schedule: data.schedule,
-        cron_expr: data.schedule === "cron" ? (data.cronExpr ?? null) : null,
-        timezone: data.timezone ?? null,
-        overlap: data.overlap,
-        notify_on: data.notifyOn,
-        timeout_minutes: data.timeoutMinutes,
-        params: data.params as unknown as Json,
-        is_active: data.isActive,
-        // A schedule that changed needs a new clock; one that did not is left
-        // alone so saving a label does not postpone tonight's run.
-        ...(reclock
-          ? {
-              next_run_at:
-                data.schedule === "manual"
-                  ? null
-                  : nextWorkflowRunAt(data.schedule, new Date(), data.cronExpr, data.timezone),
-            }
-          : {}),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", data.id)
-      .eq("user_id", userId);
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
-  });
+      return { ok: true, updatedAt: String(row.updated_at) };
+    },
+  );
 
 async function scheduleDiffers(
   id: string,

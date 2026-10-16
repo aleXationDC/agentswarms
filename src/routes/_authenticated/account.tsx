@@ -9,7 +9,6 @@ import { TotpReauthentication } from "@/components/auth/TotpReauthentication";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertDialog,
@@ -22,7 +21,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   LogOut,
@@ -30,13 +28,13 @@ import {
   Mail,
   ShieldCheck,
   UserCircle2,
-  Upload,
-  Loader2,
   Trash2,
   AlertTriangle,
   Smartphone,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ProfileSettingsPanel } from "@/components/settings/ProfileSettingsPanel";
 
 export const Route = createFileRoute("/_authenticated/account")({
   head: () => ({
@@ -45,32 +43,15 @@ export const Route = createFileRoute("/_authenticated/account")({
   component: AccountPage,
 });
 
-type ProfileRow = {
-  id?: string;
-  user_id: string;
-  display_name: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
-  role: string | null;
-  designation: string | null;
-  organization: string | null;
-  bio: string | null;
-};
-
 function AccountPage() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  // Set once the account is deleted, so the way out does not ask about the
+  // profile form's unsaved edits (R282).
+  const accountGoneRef = useRef(false);
   const callDelete = useServerFn(deleteMyAccount);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
-
-  // Profile state
-  const [profile, setProfile] = useState<ProfileRow | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // Auth controls
   const [newPassword, setNewPassword] = useState("");
@@ -93,7 +74,6 @@ function AccountPage() {
 
   useEffect(() => {
     if (!user) return;
-    void loadProfile();
     void loadMfaStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -208,117 +188,6 @@ function AccountPage() {
     }
   }
 
-  async function loadProfile() {
-    if (!user) return;
-    setProfileLoading(true);
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (data) {
-      setProfile(data as unknown as ProfileRow);
-    } else {
-      setProfile({
-        user_id: user.id,
-        display_name: user.email ?? "",
-        first_name: null,
-        last_name: null,
-        avatar_url: null,
-        role: null,
-        designation: null,
-        organization: null,
-        bio: null,
-      });
-    }
-    setProfileLoading(false);
-  }
-
-  async function saveProfile() {
-    if (!user || !profile) return;
-    setProfileSaving(true);
-    try {
-      const first = profile.first_name?.trim() || "";
-      const last = profile.last_name?.trim() || "";
-      // Keep display_name in sync with first/last when both are present
-      const display = first && last ? `${first} ${last}` : profile.display_name?.trim() || null;
-      const payload = {
-        user_id: user.id,
-        first_name: first || null,
-        last_name: last || null,
-        display_name: display,
-        role: profile.role?.trim() || null,
-        designation: profile.designation?.trim() || null,
-        organization: profile.organization?.trim() || null,
-        bio: profile.bio?.trim() || null,
-        avatar_url: profile.avatar_url ?? null,
-      } as Record<string, unknown>;
-      const { error } = await supabase
-        .from("profiles")
-        .upsert(payload as never, { onConflict: "user_id" });
-      if (error) throw error;
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save profile");
-    } finally {
-      setProfileSaving(false);
-    }
-  }
-
-  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5 MB");
-      return;
-    }
-    setAvatarUploading(true);
-    try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "png";
-      const path = `${user.id}/avatar-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
-      const publicUrl = pub.publicUrl;
-
-      const { error: updErr } = await supabase
-        .from("profiles")
-        .upsert({ user_id: user.id, avatar_url: publicUrl } as never, { onConflict: "user_id" });
-      if (updErr) throw updErr;
-
-      setProfile((p) => (p ? { ...p, avatar_url: publicUrl } : p));
-      toast.success("Profile picture updated");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setAvatarUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
-  async function handleAvatarRemove() {
-    if (!user || !profile?.avatar_url) return;
-    setAvatarUploading(true);
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .upsert({ user_id: user.id, avatar_url: null } as never, { onConflict: "user_id" });
-      if (error) throw error;
-      setProfile((p) => (p ? { ...p, avatar_url: null } : p));
-      toast.success("Profile picture removed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove");
-    } finally {
-      setAvatarUploading(false);
-    }
-  }
-
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
@@ -369,20 +238,13 @@ function AccountPage() {
       await callDelete();
       toast.success("Your account has been deleted");
       await supabase.auth.signOut();
+      accountGoneRef.current = true;
       navigate({ to: "/" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete account");
       setDeleting(false);
     }
   };
-
-  const initials = (profile?.display_name || user?.email || "?")
-    .split(/\s+/)
-    .map((s) => s[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -396,7 +258,9 @@ function AccountPage() {
         </p>
       </div>
 
-      {/* PROFILE EDITOR */}
+      {/* PROFILE EDITOR — shared with the quick Settings dialog's Profile
+          tab (see src/components/settings/ProfileSettingsPanel.tsx) so
+          there's exactly one copy of this logic, not two that drift. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -407,146 +271,98 @@ function AccountPage() {
             beside anything you do.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {profileLoading || !profile ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading profile…
+        <CardContent>
+          <ProfileSettingsPanel goneRef={accountGoneRef} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4 text-primary" /> Account
+          </CardTitle>
+          <CardDescription>Your current sign-in info.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Email</span>
+            <span className="font-medium">{user?.email ?? "—"}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">User ID</span>
+            <span className="font-mono text-xs text-muted-foreground">{user?.id ?? "—"}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound className="h-4 w-4 text-primary" /> Change Password
+          </CardTitle>
+          <CardDescription>
+            Choose a new password. You'll stay signed in on this device.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handlePasswordChange} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                placeholder="••••••••"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                minLength={6}
+                required
+              />
             </div>
-          ) : (
-            <>
-              {/* Avatar */}
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20 border border-border">
-                  {profile.avatar_url ? (
-                    <AvatarImage src={profile.avatar_url} alt="Profile" />
-                  ) : null}
-                  <AvatarFallback className="text-lg">{initials}</AvatarFallback>
-                </Avatar>
-                <div className="space-y-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleAvatarChange}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={avatarUploading}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {avatarUploading ? (
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Upload className="mr-1.5 h-3.5 w-3.5" />
-                      )}
-                      {profile.avatar_url ? "Change picture" : "Upload picture"}
-                    </Button>
-                    {profile.avatar_url && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={avatarUploading}
-                        onClick={handleAvatarRemove}
-                      >
-                        <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Remove
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">PNG or JPG, up to 5 MB.</p>
-                </div>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm New Password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                minLength={6}
+                required
+              />
+            </div>
+            <Button type="submit" disabled={pwLoading}>
+              {pwLoading ? "Updating..." : "Update Password"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-              <Separator />
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="first-name">
-                    First name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="first-name"
-                    value={profile.first_name ?? ""}
-                    onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
-                    placeholder="Ada"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="last-name">
-                    Last name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="last-name"
-                    value={profile.last_name ?? ""}
-                    onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
-                    placeholder="Lovelace"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="display-name">
-                    Display name{" "}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      (auto-set from first + last; shown in the sidebar and user list)
-                    </span>
-                  </Label>
-                  <Input
-                    id="display-name"
-                    value={profile.display_name ?? ""}
-                    onChange={(e) => setProfile({ ...profile, display_name: e.target.value })}
-                    placeholder="Your name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="role">Current role</Label>
-                  <Input
-                    id="role"
-                    value={profile.role ?? ""}
-                    onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                    placeholder="e.g. AI Engineer"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="designation">Designation</Label>
-                  <Input
-                    id="designation"
-                    value={profile.designation ?? ""}
-                    onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
-                    placeholder="e.g. Senior Staff"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="organization">Organization</Label>
-                  <Input
-                    id="organization"
-                    value={profile.organization ?? ""}
-                    onChange={(e) => setProfile({ ...profile, organization: e.target.value })}
-                    placeholder="e.g. Acme Inc."
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="bio">Short bio</Label>
-                  <Textarea
-                    id="bio"
-                    rows={3}
-                    value={profile.bio ?? ""}
-                    onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                    placeholder="A short bio for your profile."
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={saveProfile} disabled={profileSaving}>
-                  {profileSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                  Save profile
-                </Button>
-              </div>
-            </>
-          )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mail className="h-4 w-4 text-primary" /> Change Email
+          </CardTitle>
+          <CardDescription>
+            We'll send a confirmation link to your new email address.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleEmailChange} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-email">New Email</Label>
+              <Input
+                id="new-email"
+                type="email"
+                placeholder="you@example.com"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" variant="outline" disabled={emailLoading}>
+              {emailLoading ? "Sending..." : "Send Confirmation"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
@@ -641,96 +457,6 @@ function AccountPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4 text-primary" /> Account
-          </CardTitle>
-          <CardDescription>Your current sign-in info.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Email</span>
-            <span className="font-medium">{user?.email ?? "—"}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">User ID</span>
-            <span className="font-mono text-xs text-muted-foreground">{user?.id ?? "—"}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="h-4 w-4 text-primary" /> Change Password
-          </CardTitle>
-          <CardDescription>
-            Choose a new password. You'll stay signed in on this device.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                placeholder="••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                minLength={6}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                minLength={6}
-                required
-              />
-            </div>
-            <Button type="submit" disabled={pwLoading}>
-              {pwLoading ? "Updating..." : "Update Password"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Mail className="h-4 w-4 text-primary" /> Change Email
-          </CardTitle>
-          <CardDescription>
-            We'll send a confirmation link to your new email address.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleEmailChange} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-email">New Email</Label>
-              <Input
-                id="new-email"
-                type="email"
-                placeholder="you@example.com"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" variant="outline" disabled={emailLoading}>
-              {emailLoading ? "Sending..." : "Send Confirmation"}
-            </Button>
-          </form>
         </CardContent>
       </Card>
 

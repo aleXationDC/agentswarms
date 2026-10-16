@@ -95,10 +95,16 @@ function SheetsDocsPage() {
         <C>SUMPRODUCT(--ISNUMBER(SEARCH(&quot;x&quot;,A2:A9)))</C>, TEXT and date arithmetic,
         whole-column and cross-sheet references, and Excel&apos;s precedence (<C>-2^2</C> is 4).
         Statistics skip blank cells and text in a range, as Excel&apos;s do, and working days count
-        backwards as Excel counts them, as do DAYS360 and WEEKDAY&apos;s return types 11 to 17. A
-        cell with an error explains it on hover. A number joined into text keeps 15 significant
-        digits, and FLOOR and CEILING land on a decimal step (<C>=FLOOR(4.35,0.05)</C> is 4.35).
-        Loan sheets have CUMIPMT and CUMPRINC, as in Excel.
+        backwards as Excel counts them, as do DAYS360 and WEEKDAY&apos;s return types 11 to 17.
+        Dates follow Excel&apos;s 1900 system, its 29 February 1900 included, so the year of a blank
+        cell is 1900, as in Excel. A cell with an error explains it on hover. A number joined into
+        text keeps 15 significant digits, and ROUND, TRUNC, a number format and TEXT() all round
+        those digits (<C>=TEXT(2.675,&quot;0.00&quot;)</C> is 2.68, and TEXT of a blank is TEXT of
+        0). PROPER capitalises words in any alphabet (<C>=PROPER(&quot;ÉCOLE&quot;)</C> is École).
+        FLOOR and CEILING read the quotient at 15 digits, so they land on a decimal step (
+        <C>=FLOOR(4.35,0.05)</C> is 4.35) and still see a tenth of a billionth (
+        <C>=CEILING(0.0000000001,1)</C> is 1). A format past 15 digits shows zeros after the 15th,
+        as Excel does. Loan sheets have CUMIPMT and CUMPRINC, as in Excel.
       </P>
       <UL>
         <li>
@@ -270,11 +276,16 @@ function SheetsDocsPage() {
 =XLOOKUP([@customer_id], Customers[id], Customers[name], "unknown")
 =TEXT([@order_date], "yyyy-mm")`}</Code>
       <P>
-        Excel&apos;s meaning is kept where SQL&apos;s differs: blanks count as 0 in arithmetic, text
-        compares without case, MOD follows the divisor&apos;s sign, and VLOOKUP defaults to an
-        approximate match. A table column has no error values: a division by zero or a failed
-        conversion leaves that row blank, and IFERROR fills it. A formula that fails on some row is
-        shown empty with the engine&apos;s reason while the rest of the table still shows.
+        Excel&apos;s meaning is kept where SQL&apos;s differs: blanks count as 0 in arithmetic and
+        as &quot;&quot; in text, MIN, MAX and AVERAGE of a row&apos;s values skip a blank, text
+        compares without case, MOD follows the divisor&apos;s sign, ROUND, TRUNC and TEXT round the
+        15 digits Excel keeps (<C>ROUND(1.005,2)</C> is 1.01), a number in text has 15 digits,
+        PROPER starts a word after anything that is not a letter, and VLOOKUP defaults to an
+        approximate match, so a calculated column answers as the same formula in a grid sheet does.
+        A number with no value (a negative to a fractional power) shows #NUM!. Otherwise a table
+        column has no error values: a division by zero or a failed conversion leaves that row blank,
+        and IFERROR fills it. A formula that fails on some row is shown empty with the engine&apos;s
+        reason while the rest of the table still shows.
       </P>
 
       <H2 id="formulas-over-tables">Formulas over tables in grid sheets</H2>

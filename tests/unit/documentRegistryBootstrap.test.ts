@@ -1,3 +1,4 @@
+import { AuthApiError } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (args: { request: Request }) => Promise<Response>;
@@ -83,7 +84,10 @@ describe("existing bootstrap authorization for explicit Registry provisioning", 
     "denies Local Table provisioning through %s",
     async (condition) => {
       if (condition === "revoked")
-        fixture.auth.mockResolvedValue({ data: { user: null }, error: { message: "revoked" } });
+        fixture.auth.mockResolvedValue({
+          data: { user: null },
+          error: new AuthApiError("revoked", 401, "bad_jwt"),
+        });
       if (condition === "wrong-admin")
         fixture.auth.mockResolvedValue({
           data: { user: { id: owner, email: "other@example.invalid" } },
@@ -117,7 +121,10 @@ describe("existing bootstrap authorization for explicit Registry provisioning", 
   });
   it("denies missing or rejected session without any provisioning", async () => {
     expect((await request(undefined, false)).status).toBe(401);
-    fixture.auth.mockResolvedValue({ data: { user: null }, error: { message: "revoked" } });
+    fixture.auth.mockResolvedValue({
+      data: { user: null },
+      error: new AuthApiError("revoked", 401, "bad_jwt"),
+    });
     expect((await request()).status).toBe(401);
     expect(fixture.seed).not.toHaveBeenCalled();
   });

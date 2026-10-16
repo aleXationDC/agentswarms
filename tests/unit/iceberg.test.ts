@@ -14,6 +14,8 @@ import {
   icebergListNamespacesSql,
   icebergListTablesSql,
   icebergPublishSql,
+  icebergRetiredName,
+  icebergSwapBackSql,
   icebergSecretNames,
   icebergSecretSql,
   icebergViewName,
@@ -124,21 +126,32 @@ describe("what the engine is told", () => {
   });
 
   it("publishing creates the namespace then the table from the governed lakehouse table; import is the reverse", () => {
-    const [ns, ct] = icebergPublishSql({
+    const columns = [
+      { name: "region", type: "VARCHAR" },
+      { name: "revenue", type: "DECIMAL(18,2)" },
+    ];
+    const [ns, ct, ins] = icebergPublishSql({
       alias,
       namespace: "sales",
       table: "revenue_facts",
       sourceSchema: "analytics",
       sourceTable: "revenue_facts",
       mode: "create",
+      columns,
     });
     expect(ns).toBe(`CREATE SCHEMA IF NOT EXISTS "${alias}"."sales";`);
+    // The table from the source's columns, then its rows (R181: the
+    // extension misplaces a CREATE TABLE AS's files).
     expect(ct).toBe(
-      `CREATE TABLE "${alias}"."sales"."revenue_facts" AS SELECT * FROM "lake"."analytics"."revenue_facts";`,
+      `CREATE TABLE "${alias}"."sales"."revenue_facts" ("region" VARCHAR, "revenue" DECIMAL(18,2));`,
     );
-    // The extension has no CREATE OR REPLACE, so replace is a drop and a
-    // create. Since R107 the new data is staged first, so a write that cannot
-    // happen fails before the old table is dropped.
+    expect(ins).toBe(
+      `INSERT INTO "${alias}"."sales"."revenue_facts" ("region", "revenue") SELECT "region", "revenue" FROM "lake"."analytics"."revenue_facts";`,
+    );
+    // The extension has no CREATE OR REPLACE. Since R107 the new data is
+    // staged first, so a write that cannot happen fails before the old table
+    // is touched; since R182 the staged table is swapped into the name by
+    // two renames in one transaction, and the old one dropped last.
     const replace = icebergPublishSql({
       alias,
       namespace: "sales",
@@ -146,27 +159,42 @@ describe("what the engine is told", () => {
       sourceSchema: "a",
       sourceTable: "b",
       mode: "replace",
+      columns: [{ name: "id", type: "INTEGER" }],
       staging: "t__publishing_0a1b2c3d",
+      retired: "t__replaced_0a1b2c3d",
     });
     expect(replace).toEqual([
       `CREATE SCHEMA IF NOT EXISTS "${alias}"."sales";`,
-      `CREATE TABLE "${alias}"."sales"."t__publishing_0a1b2c3d" AS SELECT * FROM "lake"."a"."b";`,
-      `DROP TABLE IF EXISTS "${alias}"."sales"."t";`,
-      `CREATE TABLE "${alias}"."sales"."t" AS SELECT * FROM "${alias}"."sales"."t__publishing_0a1b2c3d";`,
-      `DROP TABLE IF EXISTS "${alias}"."sales"."t__publishing_0a1b2c3d";`,
+      `CREATE TABLE "${alias}"."sales"."t__publishing_0a1b2c3d" ("id" INTEGER);`,
+      `INSERT INTO "${alias}"."sales"."t__publishing_0a1b2c3d" ("id") SELECT "id" FROM "lake"."a"."b";`,
+      `BEGIN TRANSACTION; ALTER TABLE IF EXISTS "${alias}"."sales"."t" RENAME TO "t__replaced_0a1b2c3d"; ` +
+        `ALTER TABLE "${alias}"."sales"."t__publishing_0a1b2c3d" RENAME TO "t"; COMMIT;`,
+      `DROP TABLE IF EXISTS "${alias}"."sales"."t__replaced_0a1b2c3d";`,
     ]);
-    // Without a staging table of its own a replace would have to reuse a
-    // name somebody could own, so it refuses.
-    expect(() =>
-      icebergPublishSql({
-        alias,
-        namespace: "sales",
-        table: "t",
-        sourceSchema: "a",
-        sourceTable: "b",
-        mode: "replace",
-      }),
-    ).toThrow(/staging table/);
+    expect(icebergSwapBackSql(alias, "sales", "t__replaced_0a1b2c3d", "t")).toBe(
+      `ALTER TABLE IF EXISTS "${alias}"."sales"."t__replaced_0a1b2c3d" RENAME TO "t";`,
+    );
+    expect(icebergRetiredName("t", "0a1b2c3d")).toBe("t__replaced_0a1b2c3d");
+    // Without tables of its own a replace would have to reuse names somebody
+    // could own, so it refuses.
+    for (const own of [
+      { staging: "t__publishing_0a1b2c3d" },
+      { retired: "t__replaced_0a1b2c3d" },
+      {},
+    ]) {
+      expect(() =>
+        icebergPublishSql({
+          alias,
+          namespace: "sales",
+          table: "t",
+          sourceSchema: "a",
+          sourceTable: "b",
+          mode: "replace",
+          columns: [{ name: "id", type: "INTEGER" }],
+          ...own,
+        }),
+      ).toThrow(/staging table/);
+    }
     expect(
       icebergImportSql({
         alias,

@@ -1,3 +1,4 @@
+import { AuthApiError } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (context: { request: Request }) => Promise<Response>;
@@ -366,7 +367,10 @@ describe("actual shared Case API feedback boundary without LLM/orchestrator", ()
     expect(state.rpc).not.toHaveBeenCalled();
   });
   it("rejects invalid user sessions instead of accepting a claimed Human label", async () => {
-    state.getUser.mockResolvedValueOnce({ data: { user: null }, error: { message: "invalid" } });
+    state.getUser.mockResolvedValueOnce({
+      data: { user: null },
+      error: new AuthApiError("invalid", 401, "bad_jwt"),
+    });
     expect((await request()).status).toBe(401);
     expect(state.rpc).not.toHaveBeenCalled();
   });

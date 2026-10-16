@@ -10,6 +10,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
+import { callerFailure } from "@/utils/callerLookup.server";
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
 
 // Providers we support live-testing for.
 const ProviderEnum = z.enum([
@@ -70,14 +72,21 @@ async function validateAccessToken(accessToken: unknown): Promise<AuthResult> {
     return { ok: false, detail: "Server auth configuration is missing" };
   }
 
-  const supabase = createClient<Database>(url, key, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-  });
+  const supabase = createClient<Database>(
+    url,
+    key,
+    withNulSafeFetch({
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+    }),
+  );
 
   const { data, error } = await supabase.auth.getClaims(token);
   if (error || !data?.claims?.sub) {
-    return { ok: false, detail: "Your session is invalid or expired. Please sign in again." };
+    return {
+      ok: false,
+      detail: callerFailure(error, "Your session is invalid or expired. Please sign in again."),
+    };
   }
 
   return { ok: true, userId: data.claims.sub };

@@ -309,7 +309,7 @@ function formatNumberSection(n: number, code: string): string {
   const minDec = decPat.replace(/[^0]/g, "").length;
   const minInt = intPat.replace(/[^0]/g, "").length;
 
-  const fixed = Math.abs(v).toFixed(decPlaces);
+  const fixed = excelFixed(Math.abs(v), decPlaces);
   let [ip, dp = ""] = fixed.split(".");
   // Drop optional trailing decimals (#) down to the required ones (0).
   while (dp.length > minDec && dp.endsWith("0")) dp = dp.slice(0, -1);
@@ -319,6 +319,65 @@ function formatNumberSection(n: number, code: string): string {
   // A pattern with a decimal point always shows it, as Excel does ("0.##" on 5 is "5.").
   const body = pattern.includes(".") ? `${ip}.${dp}` : ip;
   return restore(prefix + body + suffix);
+}
+
+/**
+ * `toFixed`, rounding the number Excel shows rather than the one stored.
+ *
+ * FOUND IN R199: 2.675 is stored as 2.67499999999999982…, so `toFixed(2)`
+ * gave "2.67" for TEXT(2.675, "0.00") and for a cell formatted 0.00, while
+ * ROUND(2.675, 2) on the same sheet, and Excel, said 2.68. Excel rounds the
+ * 15 significant digits it keeps, so this does too: the decimal text of the
+ * 15-digit value is scaled by a power of ten as text, which is exact.
+ */
+export function excelFixed(v: number, places: number): string {
+  const r = excelRound(v, places, "half");
+  if (!Number.isFinite(r) || r === 0) return r.toFixed(places);
+  const [mantissa, exp] = Math.abs(r).toExponential(14).split("e");
+  const e = Number(exp);
+  // Up to 15 digits shown, toFixed writes them as they are.
+  if (e + places < 15) return r.toFixed(places);
+  // FOUND IN R201: past 15 digits toFixed wrote the binary's own digits
+  // (TEXT(12345678901234567, "#,##0") was …234,568 where Excel shows
+  // …234,600), and from 1E+21 an exponent, which "0" then read as 1
+  // (TEXT(1.5E+21, "0") was "1"). Excel shows 15 digits and then zeros.
+  const digits = mantissa.replace(".", "");
+  const sign = r < 0 ? "-" : "";
+  if (e < 0)
+    return `${sign}0.${("0".repeat(-e - 1) + digits).padEnd(places, "0").slice(0, places)}`;
+  const all = digits.padEnd(e + 1 + places, "0");
+  const frac = all.slice(e + 1, e + 1 + places);
+  return sign + all.slice(0, e + 1) + (places > 0 ? `.${frac}` : "");
+}
+
+/**
+ * x rounded at d decimal places as Excel rounds: the 15 significant digits it
+ * keeps are shifted by d as decimal text, which is exact, then rounded half
+ * away from zero ("half"), away from zero ("up") or toward it ("down"), and
+ * shifted back. ROUND, ROUNDUP, ROUNDDOWN, TRUNC and every number format use
+ * it, and a table sheet's SQL does the same steps (sql/compile.ts,
+ * excelRoundSql), so a grid and a table agree.
+ *
+ * FOUND IN R200: ROUND guarded float noise with an absolute 1e-9 after
+ * scaling. A large amount's binary error is bigger than that, so
+ * ROUND(12345678901.005, 2) was ….00 where Excel says ….01, and the guard
+ * rounded 2.674999999999 up to 2.68. TRUNC had no guard: TRUNC(0.29, 2) was
+ * 0.28, as 0.29 × 100 is 28.999999999999996.
+ */
+export function excelRound(x: number, d: number, mode: "half" | "up" | "down"): number {
+  if (!Number.isFinite(x) || x === 0) return x;
+  const [mantissa, exp] = Math.abs(x).toExponential(14).split("e");
+  const e = Number(exp);
+  // At the 15th digit or past it, there is nothing left to round.
+  if (e + d >= 14) return x;
+  const scaled = Number(`${mantissa}e${e + d}`);
+  const r =
+    mode === "half"
+      ? Math.floor(scaled + 0.5)
+      : mode === "up"
+        ? Math.ceil(scaled)
+        : Math.floor(scaled);
+  return Math.sign(x) * Number(`${r}e${-d}`);
 }
 
 /**

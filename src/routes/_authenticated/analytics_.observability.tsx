@@ -1,3 +1,4 @@
+import { formatUsd } from "@/lib/usd";
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { listClaim, UNKNOWN_COUNT } from "@/lib/listClaim";
@@ -146,7 +147,12 @@ function ObservabilityList() {
               <TableHead className="text-center">Status</TableHead>
               <TableHead className="text-right">Steps</TableHead>
               <TableHead className="text-right">Errors</TableHead>
-              <TableHead className="text-right">Latency</TableHead>
+              <TableHead
+                className="text-right"
+                title="Time the run's steps spent working, added up. A run that waited for an approval can take hours and work for none of them."
+              >
+                Step time
+              </TableHead>
               <TableHead className="text-right">Tokens</TableHead>
               <TableHead className="text-right">Cost</TableHead>
             </TableRow>
@@ -255,7 +261,7 @@ function ObservabilityList() {
                     params={{ runId: r.id }}
                     className="block p-2"
                   >
-                    ${Number(r.total_cost_usd ?? 0).toFixed(4)}
+                    {formatUsd(r.total_cost_usd ?? 0)}
                   </Link>
                 </TableCell>
               </TableRow>

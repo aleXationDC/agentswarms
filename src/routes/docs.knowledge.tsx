@@ -59,6 +59,13 @@ function KnowledgePage() {
         <strong>Add source</strong> covers one-shot ingestion — files, a web page, a repository.{" "}
         <strong>Connect</strong> links an external service that is synced on a schedule and kept
         deduplicated. Both land documents in the same collection and the same retrieval pipeline.
+        Each file added lands with its source or leaves neither: when some do not, the dialog says
+        how many did, names the rest with the reason, and keeps them listed to try again. A source
+        whose document did not land and that could not be taken back is marked as an error in{" "}
+        <em>Sources</em>, not left reading <em>ok</em>. A file that landed but could not be indexed
+        is announced as not fully indexed, with the reason, and is found by keyword only until{" "}
+        <em>Re-index</em> embeds it. An uploaded text file is listed as a file, not as a manual
+        paste.
       </P>
 
       <H3 id="s-file">File upload</H3>
@@ -114,7 +121,7 @@ function KnowledgePage() {
         (the platform's BYOK pattern — no OAuth consent screens to register), validated against the
         provider at save time, <strong>encrypted at rest</strong>, and never sent back to the
         browser: editing a source shows empty credential fields, and leaving them empty keeps what
-        is stored.
+        is stored. What you change while editing stays until you save or close the wizard.
       </P>
       <Table
         headers={["Provider", "Credentials", "What syncs", "Mirrors sharing?"]}
@@ -246,7 +253,9 @@ question ──▶ embed ──▶ nearest chunks ──▶ pasted into the prom
         through your own integration or, with no integration at all, through the operator's{" "}
         <C>OPENROUTER_API_KEY</C>, so a fresh install gets retrieval for free from the same account
         that already makes chat work. Any other connected provider exposing an OpenAI-compatible{" "}
-        <C>/embeddings</C> endpoint can be selected instead.
+        <C>/embeddings</C> endpoint can be selected instead. The suggested default applies only
+        until you pick a provider or a model; after that, your pick is what uploads and re-indexing
+        use, and the line under Add Document names it.
       </P>
       <Callout kind="warn" title="Not every embedding model fits this store">
         The vector column is fixed at <strong>1536 dimensions</strong> and ingest rejects any other

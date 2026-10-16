@@ -1,3 +1,4 @@
+import { callerFailure, callerFailureStatus } from "@/utils/callerLookup.server";
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeCaseWork, type WorkPrincipal } from "@/axtn/workbenches/cases/work.server";
@@ -37,7 +38,10 @@ export const Route = createFileRoute("/api/cases/work")({
         } else {
           const { data, error } = await supabaseAdmin.auth.getUser(token);
           if (error || !data.user)
-            return Response.json({ error: "Invalid credential" }, { status: 401 });
+            return Response.json(
+              { error: callerFailure(error, "Invalid credential") },
+              { status: callerFailureStatus(error) },
+            );
           userId = data.user.id;
           principal = { kind: "user_session", id: userId };
         }

@@ -1,6 +1,6 @@
 {
   "name": "agentswarms",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "The hands-on playground for learning Agentic AI — build agents, run multi-agent swarms, and inspect traces in your browser.",
   "license": "Elastic-2.0",
   "repository": {
@@ -45,7 +45,7 @@
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/lang-python": "^6.2.1",
-    "@duckdb/duckdb-wasm": "1.32.0",
+    "@duckdb/duckdb-wasm": "1.33.1-dev57.0",
     "@duckdb/node-api": "^1.5.5-r.2",
     "@formulajs/formulajs": "^4.6.1",
     "@hookform/resolvers": "^5.2.2",

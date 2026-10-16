@@ -7,6 +7,7 @@
 //   - Manual paste: same, kind="manual"
 //
 // All four are real ingestion paths — no stubs.
+import { formatUsd } from "@/lib/usd";
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useServerFn } from "@tanstack/react-start";
@@ -23,7 +24,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { indexNote, type EmbedOutcome } from "@/lib/kbIndexNote";
 import { Globe, GitBranch, UploadCloud, FileText, Loader2, X } from "lucide-react";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 type Props = {
   open: boolean;
@@ -37,6 +40,21 @@ type Props = {
   onConnectInstead?: () => void;
 };
 
+/**
+ * A source whose document did not land read "ok · 0 docs" in the Sources
+ * list, as if the file were there (R192). Take the source back; if even that
+ * fails, mark it so the list says what happened.
+ */
+async function withdrawSource(sourceId: string, why: string) {
+  const { error } = await supabase.from("kb_sources").delete().eq("id", sourceId);
+  if (error) {
+    await supabase
+      .from("kb_sources")
+      .update({ status: "error", error: `The document was not saved: ${why}` })
+      .eq("id", sourceId);
+  }
+}
+
 export function AddSourceDialog({
   open,
   onOpenChange,
@@ -48,6 +66,16 @@ export function AddSourceDialog({
   const [tab, setTab] = useState<"file" | "url" | "github" | "manual">("file");
   const [busy, setBusy] = useState(false);
   const embedFn = useServerFn(embedKbDocuments);
+  /** Embed what was just added, and say what came of it (R208). */
+  const embedAndNote = async (documentIds: string[]): Promise<string | null> => {
+    let outcome: EmbedOutcome;
+    try {
+      outcome = { ok: await embedFn({ data: { documentIds } }) };
+    } catch (err) {
+      outcome = { error: err };
+    }
+    return indexNote(outcome);
+  };
   const visionFn = useServerFn(documentVisionExtract);
 
   // ── URL state ──────────────────────────────────────────────────────────
@@ -125,7 +153,7 @@ export function AddSourceDialog({
             text = joinPageTexts(texts);
             ocr = { pages: total, model, cost_usd: cost };
             toast.success(
-              `${file.name}: read ${total} page${total === 1 ? "" : "s"} with ${model}${cost !== null ? ` · $${cost.toFixed(4)}` : ""}`,
+              `${file.name}: read ${total} page${total === 1 ? "" : "s"} with ${model}${cost !== null ? ` · ${formatUsd(cost)}` : ""}`,
             );
           }
           if (!text || !text.trim()) {
@@ -296,15 +324,14 @@ export function AddSourceDialog({
           .select("id")
           .single();
         if (docErr || !insertedDoc) {
-          toast.error(docErr?.message || "Insert failed");
+          const why = docErr?.message || "no row came back";
+          await withdrawSource(src.id, why);
+          toast.error("The document was not added", { description: why });
           return;
         }
-        try {
-          await embedFn({ data: { documentIds: [insertedDoc.id] } });
-        } catch (err) {
-          console.warn("[AddSourceDialog] embedding failed:", err);
-        }
-        toast.success("Document added");
+        const note = await embedAndNote([insertedDoc.id]);
+        if (note) toast.warning("Document added, not fully indexed", { description: note });
+        else toast.success("Document added");
         reset();
         onAdded();
         onOpenChange(false);
@@ -315,6 +342,12 @@ export function AddSourceDialog({
           return;
         }
         const newDocIds: string[] = [];
+        // FOUND IN R192: with one document insert refused, two files said "2
+        // files added", the dialog closed, and the refused file's source
+        // stayed in the list as "ok · 0 docs". Each file now either lands
+        // with its source or leaves neither, and the ones that did not land
+        // stay in the dialog for another try.
+        const notAdded: { file: (typeof files)[number]; why: string }[] = [];
         for (const f of files) {
           const ext = f.name.split(".").pop()?.toLowerCase() || "";
           const kind = ext === "pdf" ? "pdf" : ext === "csv" ? "csv" : "manual";
@@ -332,10 +365,10 @@ export function AddSourceDialog({
             .select("id")
             .single();
           if (srcErr || !src) {
-            toast.error(srcErr?.message || `Could not record source for ${f.name}`);
+            notAdded.push({ file: f, why: srcErr?.message || "the source was not recorded" });
             continue;
           }
-          const { data: insertedDoc } = await supabase
+          const { data: insertedDoc, error: docErr } = await supabase
             .from("knowledge_documents")
             .insert({
               knowledge_base_id: knowledgeBaseId,
@@ -347,20 +380,43 @@ export function AddSourceDialog({
             })
             .select("id")
             .single();
-          if (insertedDoc) newDocIds.push(insertedDoc.id);
-        }
-        if (newDocIds.length > 0) {
-          try {
-            await embedFn({ data: { documentIds: newDocIds } });
-          } catch (err) {
-            console.warn("[AddSourceDialog] embedding failed:", err);
+          if (docErr || !insertedDoc) {
+            const why = docErr?.message || "no row came back";
+            await withdrawSource(src.id, why);
+            notAdded.push({ file: f, why });
+            continue;
           }
+          newDocIds.push(insertedDoc.id);
         }
-        toast.success(`${files.length} file${files.length === 1 ? "" : "s"} added`);
+        const note = newDocIds.length > 0 ? await embedAndNote(newDocIds) : null;
+        const added = files.length - notAdded.length;
+        if (notAdded.length > 0) {
+          const reasons = notAdded.map((n) => `${n.file.name}: ${n.why}`).join("; ");
+          toast.error(
+            added > 0
+              ? `${added} of ${files.length} files added`
+              : notAdded.length === 1
+                ? "The file was not added"
+                : `None of the ${notAdded.length} files were added`,
+            {
+              description: `Not added, still listed here to try again: ${reasons}${note ? ` ${note}` : ""}`,
+            },
+          );
+          // Even with nothing added, a source that could not be withdrawn is
+          // now marked as an error, and the Sources list should show it.
+          onAdded();
+          setFiles(notAdded.map((n) => n.file));
+          return;
+        }
+        const addedTitle = `${added} file${added === 1 ? "" : "s"} added`;
+        if (note) toast.warning(`${addedTitle}, not fully indexed`, { description: note });
+        else toast.success(addedTitle);
         reset();
         onAdded();
         onOpenChange(false);
       }
+    } catch (e) {
+      reportFailure("add the source", e);
     } finally {
       setBusy(false);
     }

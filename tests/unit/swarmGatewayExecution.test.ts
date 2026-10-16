@@ -285,7 +285,9 @@ describe("real native executors, mocked HTTP/storage (MOCK)", () => {
     mocks.from.mockReturnValue({
       insert,
       update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({ error: null }),
+      eq: vi.fn(function eq(): unknown {
+        return Object.assign(Promise.resolve({ error: null }), { eq });
+      }),
     });
     const nodes: Node<SwarmNodeData>[] = [
       {

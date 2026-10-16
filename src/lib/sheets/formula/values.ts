@@ -133,13 +133,21 @@ export function formatGeneral(n: number): string {
   if (!Number.isFinite(n)) return "#NUM!";
   if (Number.isInteger(n) && Math.abs(n) < 1e11) return String(n);
   const abs = Math.abs(n);
-  if (abs !== 0 && (abs >= 1e11 || abs < 1e-9)) {
+  // Ten significant digits, and eleven from 1E+10, so that a whole part of
+  // eleven digits is written out as an eleven-digit whole number is.
+  const s = n.toPrecision(abs >= 1e10 ? 11 : 10);
+  // FOUND IN R201: toPrecision writes an exponent of its own for eleven whole
+  // digits and under 1E-6, and the zero trim below then cut it short:
+  // 12345678901.005 showed as "1.234567890e+1", about 12, in a table sheet
+  // and as #### in a grid; 1.5E-07 showed as "1.500000000e-7". Excel
+  // writes those as 12345678901 and 1.5E-07.
+  if (abs !== 0 && (abs >= 1e11 || abs < 1e-9 || s.includes("e"))) {
     return n
       .toExponential(5)
       .replace(/\.?0+e/, "e")
+      .replace(/e([+-])(\d)$/, "e$10$2")
       .replace(/e/, "E");
   }
-  const s = n.toPrecision(10);
   return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }
 
@@ -149,10 +157,27 @@ const DAY_MS = 86_400_000;
 // 1899-12-30 as a UTC epoch offset. Serials are calendar days, never shifted by a time zone.
 const EPOCH_UTC = Date.UTC(1899, 11, 30);
 
+/**
+ * Excel's 1900 date system, kept from Lotus 1-2-3: serial 1 is 1900-01-01,
+ * serial 60 is 1900-02-29, a day that never was, and from 61 (1900-03-01)
+ * a serial counts days from 1899-12-30. Serial 0 reads as 1900-01-00.
+ *
+ * FOUND IN R205: every serial counted from 1899-12-30, which is right only
+ * from 1900-03-01. YEAR, MONTH and DAY of a blank cell (serial 0) were 1899,
+ * 12 and 30, where Excel says 1900, 1 and 0; TEXT(1,"yyyy-mm-dd") was
+ * 1899-12-31; DATE(1900,3,1)-DATE(1900,2,28) was 1, where Excel says 2; and
+ * DATEDIF, which formula.js reads by Excel's rule, gave 0 for that pair and
+ * 2 for 1900-03-01 to 03-02.
+ */
+const MAR_1_1900 = 61;
+
 /** A calendar date (and optional time) → Excel serial. Month is 1-based; overflow rolls like Excel. */
 export function dateSerial(y: number, m: number, d: number, h = 0, mi = 0, s = 0): number {
-  const ms = Date.UTC(y, m - 1, d, h, mi, s);
-  return (ms - EPOCH_UTC) / DAY_MS;
+  const time = (h * 3600 + mi * 60 + s) / 86_400;
+  // The day Excel counts and the calendar does not.
+  if (y === 1900 && m === 2 && d === 29) return 60 + time;
+  const serial = (Date.UTC(y, m - 1, d, h, mi, s) - EPOCH_UTC) / DAY_MS;
+  return serial < MAR_1_1900 ? serial - 1 : serial;
 }
 
 /** Excel serial → calendar parts (in UTC, which is how serials are defined here). */
@@ -165,6 +190,19 @@ export function serialParts(serial: number): {
   s: number;
   dow: number;
 } {
+  if (serial >= 0 && serial < MAR_1_1900) {
+    // Before 1900-03-01, by Excel's count (see MAR_1_1900).
+    const all = Math.round(serial * DAY_MS);
+    const day = Math.floor(all / DAY_MS);
+    const t = new Date(all - day * DAY_MS);
+    const time = { h: t.getUTCHours(), mi: t.getUTCMinutes(), s: t.getUTCSeconds() };
+    // Excel's weekday runs on from serial 1, a Sunday by its count.
+    const dow = (day + 6) % 7;
+    if (day === 0) return { y: 1900, m: 1, d: 0, ...time, dow };
+    if (day === 60) return { y: 1900, m: 2, d: 29, ...time, dow };
+    const dt = new Date(Date.UTC(1900, 0, day));
+    return { y: 1900, m: dt.getUTCMonth() + 1, d: dt.getUTCDate(), ...time, dow };
+  }
   const ms = EPOCH_UTC + Math.round(serial * DAY_MS);
   const dt = new Date(ms);
   return {

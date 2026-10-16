@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { clickable } from "@/lib/clickable";
 import { parseFileToText } from "@/lib/fileParsers";
+import { isUploadedFile, kbSourceBadge } from "@/lib/kbSourceLabel";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +81,7 @@ import {
   type VectorStoreChoice,
   resolveRetrievalSettings,
 } from "@/lib/kbRag";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 // Chunks scanned to build the per-document counts. Well past any real
 // collection — the point of the ceiling is that an unbounded client scan
@@ -290,6 +292,10 @@ function KnowledgePage() {
   // Why a list could not be read. Each is rendered ahead of its empty state:
   // a read that failed is not "No knowledge bases yet".
   const [basesError, setBasesError] = useState<string | null>(null);
+  // FOUND IN R192: until the first read landed the list said "No knowledge
+  // bases yet." (two seconds and more on a slow read) beside "New Knowledge
+  // Base", over an account with a dozen.
+  const [basesLoaded, setBasesLoaded] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
   const [sourcesError, setSourcesError] = useState<string | null>(null);
   // Whether the selected base's lists have been read. FOUND FROM THE UI
@@ -316,6 +322,7 @@ function KnowledgePage() {
   // about what is indexed, because a document missing from a partial scan
   // looks exactly like a document with no chunks.
   const [chunkCountsWhole, setChunkCountsWhole] = useState(true);
+  const basesState = listState({ loaded: basesLoaded, error: basesError, count: bases.length });
   const docsState = listState({ loaded: docsLoaded, error: docsError, count: docs.length });
   const sourcesState = listState({
     loaded: sourcesLoaded,
@@ -343,8 +350,11 @@ function KnowledgePage() {
   // Vector store settings
   const [embeddingModel, setEmbeddingModel] = useState("text-embedding-3-small");
   const [embedProvider, setEmbedProvider] = useState(DEFAULT_EMBED_PROVIDER);
-  // Set once the user picks a provider, so the auto-default stops interfering.
-  const [embedProviderTouched, setEmbedProviderTouched] = useState(false);
+  // Set once the user picks a provider or a model, so the auto-default stops
+  // interfering. R220: only the provider set it, so a model picked under the
+  // default provider was put back to that provider's first model whenever the
+  // default ran again, which a session refresh made it do.
+  const [embedChoiceTouched, setEmbedChoiceTouched] = useState(false);
   const [anyProviderResolvable, setAnyProviderResolvable] = useState<boolean | null>(null);
   // Result of actually calling the provider. The store is vector(1536) and
   // ingest hard-rejects any other width, so "has an embeddings API" is not the
@@ -429,9 +439,10 @@ function KnowledgePage() {
   // instances already have a key for, so embedding works without connecting a
   // second account. Falls back to any other connected embedding-capable
   // integration. Only ever moves off an untouched default — once the user picks
-  // a provider themselves, `embedProviderTouched` stops this from overriding it.
+  // a provider or model themselves, `embedChoiceTouched` stops this from
+  // overriding it.
   useEffect(() => {
-    if (embedProviderTouched) return;
+    if (embedChoiceTouched) return;
     // Mirrors resolveEmbedTarget on the server: a connected OpenRouter
     // integration, then the operator's OpenRouter key, then any other connected
     // provider. If this order disagreed with the server's, the dialog would
@@ -449,7 +460,7 @@ function KnowledgePage() {
       setEmbedProvider(preferred.id);
       if (preferred.models[0]) setEmbeddingModel(preferred.models[0]);
     }
-  }, [anyProviderResolvable, openrouterAvailable, connectedProviders, embedProviderTouched]);
+  }, [anyProviderResolvable, openrouterAvailable, connectedProviders, embedChoiceTouched]);
   const embedModelSuggestions = EMBED_PROVIDERS.find((p) => p.id === embedProvider)?.models ?? [];
   const effectiveEmbedModel = customEmbedModel.trim() || embeddingModel;
   const currentEmbeddingDef = ALL_EMBEDDING_MODELS.find((m) => m.value === embeddingModel);
@@ -501,9 +512,14 @@ function KnowledgePage() {
     setConnectedProviders(connected);
   }
 
+  // R220: keyed on the user's id, not the user object, which is new on every
+  // session refresh: each refresh reloaded the providers into a new Set and
+  // ran the embedding default above again.
+  const userId = user?.id;
   useEffect(() => {
-    if (user) loadConnectedProviders();
-  }, [user]);
+    if (userId) loadConnectedProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   // The dialog must open showing what this KB actually does. Leaving the
   // controls on their defaults would tell a user with hybrid enabled that they
@@ -528,6 +544,7 @@ function KnowledgePage() {
       .order("created_at", { ascending: false });
     setBasesError(error ? error.message : null);
     if (data) setBases(data);
+    setBasesLoaded(true);
   }
 
   async function reindexWithCurrentSettings() {
@@ -714,6 +731,8 @@ function KnowledgePage() {
           loadDocs(selectedBase.id);
           loadSources(selectedBase.id);
         }
+      } catch (e) {
+        reportFailure("sync the source", e);
       } finally {
         setResyncingId(null);
       }
@@ -764,6 +783,8 @@ function KnowledgePage() {
           loadSources(selectedBase.id);
         }
       }
+    } catch (e) {
+      reportFailure("re-sync the source", e);
     } finally {
       setResyncingId(null);
     }
@@ -1232,7 +1253,7 @@ function KnowledgePage() {
                         value={embedProvider}
                         onValueChange={(v) => {
                           setEmbedProvider(v);
-                          setEmbedProviderTouched(true);
+                          setEmbedChoiceTouched(true);
                           setCustomEmbedModel("");
                           setProbe(null);
                           const first = EMBED_PROVIDERS.find((p) => p.id === v)?.models[0];
@@ -1317,6 +1338,7 @@ function KnowledgePage() {
                                 : "__custom__"
                           }
                           onValueChange={(v) => {
+                            setEmbedChoiceTouched(true);
                             if (v === "__custom__") setCustomEmbedModel(embeddingModel);
                             else {
                               setEmbeddingModel(v);
@@ -1742,12 +1764,16 @@ function KnowledgePage() {
                 )}
               </Card>
             ))}
-            {basesError ? (
+            {basesState === "error" ? (
               <p className="text-sm text-destructive py-8 text-center" role="alert">
                 <AlertTriangle className="inline h-4 w-4 mr-1 align-text-bottom" />
                 Could not load your knowledge bases: {basesError}
               </p>
-            ) : bases.length === 0 ? (
+            ) : basesState === "loading" ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                Loading your knowledge bases…
+              </p>
+            ) : basesState === "empty" ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
                 No knowledge bases yet.
               </p>
@@ -1977,16 +2003,7 @@ function KnowledgePage() {
                       <div className="space-y-2">
                         {docs.map((doc) => {
                           const sourceForDoc = sources.find((s) => s.id === doc.source_id);
-                          const sourceBadge =
-                            sourceForDoc?.kind === "url"
-                              ? "URL"
-                              : sourceForDoc?.kind === "github"
-                                ? "GitHub"
-                                : sourceForDoc?.kind === "pdf"
-                                  ? "PDF"
-                                  : sourceForDoc?.kind === "csv"
-                                    ? "CSV"
-                                    : "Manual";
+                          const sourceBadge = kbSourceBadge(sourceForDoc);
                           return (
                             <Card
                               key={doc.id}
@@ -2185,7 +2202,7 @@ function KnowledgePage() {
                                             "Website")
                                           : src.kind === "dropbox"
                                             ? cfg.path || "Entire Dropbox"
-                                            : src.kind === "pdf" || src.kind === "csv"
+                                            : isUploadedFile(src)
                                               ? "Uploaded file"
                                               : "Manual paste";
                           const docCount = docs.filter((d) => d.source_id === src.id).length;
@@ -2205,7 +2222,7 @@ function KnowledgePage() {
                                       >
                                         {isConnector
                                           ? CONNECTOR_LABELS[src.kind as ConnectorKind]
-                                          : src.kind}
+                                          : kbSourceBadge(src)}
                                       </Badge>
                                       {isConnector && src.sync_schedule !== "manual" && (
                                         <Badge

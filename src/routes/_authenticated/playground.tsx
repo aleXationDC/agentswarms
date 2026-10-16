@@ -1,3 +1,4 @@
+import { formatUsd } from "@/lib/usd";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -91,6 +92,7 @@ import {
   ModelFallbackDialog,
   type FallbackChoice,
 } from "@/components/playground/ModelFallbackDialog";
+import { classifyChatFailure, type ChatFailureReason } from "@/lib/chatFailure";
 import { TemplateTour, type TourSignals } from "@/components/playground/TemplateTour";
 import { SkillSampleTour } from "@/components/playground/SkillSampleTour";
 import { ensureSampleAgentsForUser } from "@/lib/sampleAgentsWithSkills";
@@ -199,6 +201,10 @@ function PlaygroundPage() {
   const { user } = useAuth();
   const { agentId } = Route.useSearch();
   const [agents, setAgents] = useState<Agent[]>([]);
+  // Why the agent list is empty when its read failed; bumping the attempt
+  // reads it again.
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [agentsAttempt, setAgentsAttempt] = useState(0);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvo, setActiveConvo] = useState<string>("");
@@ -211,6 +217,9 @@ function PlaygroundPage() {
   // path returns after its toast. A read that comes back for a selection no
   // longer on screen is dropped.
   const [convosLoaded, setConvosLoaded] = useState(false);
+  // Why no conversation could be started for this agent (R206). Without one the
+  // message box is disabled, so the page says so and offers to try again.
+  const [convoError, setConvoError] = useState<string | null>(null);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
   const convoReq = useRef(0);
   const messageReq = useRef(0);
@@ -387,10 +396,14 @@ function PlaygroundPage() {
         console.warn("[playground] sample-agent seed failed:", err);
       }
       if (cancelled) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("agents")
         .select("id, name, llm_provider, llm_model, system_prompt, tools");
-      if (cancelled || !data) return;
+      if (cancelled) return;
+      // FOUND IN R191: a failed read left an empty picker under a pulsing
+      // "Pick an agent to begin", pointing at a list with nothing in it.
+      setAgentsError(error ? error.message : null);
+      if (error || !data) return;
       setAgents(data as Agent[]);
       if (agentId && data.find((a) => a.id === agentId)) {
         setSelectedAgent(agentId);
@@ -401,7 +414,7 @@ function PlaygroundPage() {
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentId, agentsAttempt]);
 
   useEffect(() => {
     if (!selectedAgent) return;
@@ -474,17 +487,24 @@ function PlaygroundPage() {
       if (data.length > 0) {
         if (!activeConvo) setActiveConvo(data[0].id);
       } else if (user && selectedAgent) {
-        // Auto-create a first conversation so the input is usable
-        const { data: newConvo } = await supabase
+        // Auto-create a first conversation so the input is usable.
+        // FOUND IN R206: a failed insert was dropped, and the page stood with
+        // its message box disabled under "Ask a question, share a task".
+        const { data: newConvo, error: insertError } = await supabase
           .from("conversations")
           .insert({ user_id: user.id, agent_id: selectedAgent, title: "New Chat" })
           .select()
           .single();
-        if (newConvo) {
-          setConversations([newConvo as Conversation]);
-          setActiveConvo(newConvo.id);
-          setMessages([]);
+        if (insertError || !newConvo) {
+          const why = insertError?.message ?? "no conversation came back";
+          setConvoError(why);
+          toast.error("Could not start a conversation", { description: why });
+          return;
         }
+        setConvoError(null);
+        setConversations([newConvo as Conversation]);
+        setActiveConvo(newConvo.id);
+        setMessages([]);
       }
     }
   }
@@ -519,11 +539,18 @@ function PlaygroundPage() {
       })
       .select()
       .single();
-    if (data) {
-      setActiveConvo(data.id);
-      setMessages([]);
-      loadConversations();
+    // FOUND IN R206: New Chat read `error` and never looked at it, so a failed
+    // insert did nothing at all.
+    if (error || !data) {
+      const why = error?.message ?? "no conversation came back";
+      setConvoError(why);
+      toast.error("Could not start a new chat", { description: why });
+      return;
     }
+    setConvoError(null);
+    setActiveConvo(data.id);
+    setMessages([]);
+    loadConversations();
   }
 
   async function renameConversation(id: string, title: string) {
@@ -589,7 +616,7 @@ function PlaygroundPage() {
         ok: false;
         status: number;
         errorMessage: string;
-        reason: "rate_limit" | "credits" | "error";
+        reason: ChatFailureReason;
       }
   > {
     if (!user || !activeConvo) {
@@ -786,8 +813,10 @@ function PlaygroundPage() {
         const errText = await resp.text();
         rawResponseText = errText;
         let errMsg = `Request failed (${resp.status})`;
+        let errBody: unknown = null;
         try {
           const j = JSON.parse(errText);
+          errBody = j;
           // Prefer the human-readable message (e.g. IAM model_not_allowed).
           if (j?.message) errMsg = j.message;
           else if (j?.error) errMsg = j.error;
@@ -804,16 +833,9 @@ function PlaygroundPage() {
           durationMs: Date.now() - startedAt,
           traceId,
         });
-        let reason: "rate_limit" | "credits" | "error";
-        if (resp.status === 429) {
-          reason = "rate_limit";
-        } else if (resp.status === 402 || /credit|payment required|insufficient/i.test(errMsg)) {
-          reason = "credits";
-        } else if (/rate limit|too many requests/i.test(errMsg)) {
-          reason = "rate_limit";
-        } else {
-          reason = "error";
-        }
+        // A budget cap or a model rule is the platform's refusal, not the
+        // provider's: no fallback model helps, and the provider did not say it.
+        const reason = classifyChatFailure(resp.status, errBody, errMsg);
         if (reason === "error") {
           errMsg = `${provider}: ${errMsg}`;
         }
@@ -1589,16 +1611,29 @@ function PlaygroundPage() {
                 ))}
               </SelectContent>
             </Select>
-            {!selectedAgent && (
-              <div
-                className="flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-amber-600 dark:text-amber-400"
-                title="Pick the agent you want to chat with from the dropdown"
+            {agentsError ? (
+              // Only a mark here: with the inspector open this bar is ~330px
+              // wide, and the picker takes 170 of it. The message and Try
+              // again are in the middle of the page.
+              <span
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-destructive/40 bg-destructive/10 text-destructive"
+                title={`Your agents could not be read: ${agentsError}`}
               >
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden whitespace-nowrap text-[11px] font-medium sm:inline">
-                  Pick an agent to begin
-                </span>
-              </div>
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span className="sr-only">Agents not read</span>
+              </span>
+            ) : (
+              !selectedAgent && (
+                <div
+                  className="flex animate-pulse items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-amber-600 dark:text-amber-400"
+                  title="Pick the agent you want to chat with from the dropdown"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden whitespace-nowrap text-[11px] font-medium sm:inline">
+                    Pick an agent to begin
+                  </span>
+                </div>
+              )
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -1662,13 +1697,41 @@ function PlaygroundPage() {
                     <Bot className="h-8 w-8" />
                   </div>
                   <h2 className="text-2xl font-semibold tracking-tight">
-                    {currentAgent ? `Chat with ${currentAgent.name}` : "Select an agent to start"}
+                    {currentAgent
+                      ? `Chat with ${currentAgent.name}`
+                      : agentsError
+                        ? "Your agents could not be read"
+                        : "Select an agent to start"}
                   </h2>
                   <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-                    {currentAgent
-                      ? "Ask a question, share a task, or try a starter below."
-                      : "Choose an agent from the top bar, then send your first message."}
+                    {currentAgent && !activeConvo && convoError
+                      ? `A conversation could not be started, so there is nowhere to write yet: ${convoError.replace(/[.!?]?\s*$/, ".")}`
+                      : currentAgent
+                        ? "Ask a question, share a task, or try a starter below."
+                        : agentsError
+                          ? `So there is nothing to pick yet: ${agentsError.replace(/[.!?]?\s*$/, ".")}`
+                          : "Choose an agent from the top bar, then send your first message."}
                   </p>
+                  {!currentAgent && agentsError && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => setAgentsAttempt((n) => n + 1)}
+                    >
+                      Try again
+                    </Button>
+                  )}
+                  {currentAgent && !activeConvo && convoError && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => void createConversation()}
+                    >
+                      Try again
+                    </Button>
+                  )}
                   {currentAgent && activeConvo && (
                     <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
                       {STARTER_PROMPTS.map((p) => (
@@ -2490,6 +2553,10 @@ type TraceRow = {
 function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thinking: boolean }) {
   const [trace, setTrace] = useState<TraceRow | null>(null);
   const [loading, setLoading] = useState(false);
+  // The last read's error. "Trace not recorded" is a claim about the server,
+  // so it is only made when the reads worked and found no row.
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   // Poll the execution_traces table by trace_id (set as the row's `id`).
   // The chat route generates the UUID and writes the row when the LLM call
@@ -2503,10 +2570,11 @@ function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thi
     let attempts = 0;
     setLoading(true);
     setTrace(null);
+    setReadError(null);
 
     const tick = async () => {
       attempts += 1;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("execution_traces")
         .select("*")
         .eq("id", traceId)
@@ -2514,9 +2582,14 @@ function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thi
       if (cancelled) return;
       if (data) {
         setTrace(data as TraceRow);
+        setReadError(null);
         setLoading(false);
         return;
       }
+      // FOUND IN R191: eight refused reads ended in "Trace not recorded · The
+      // request may have failed before the trace row was written." for a
+      // request that had answered and whose trace was in the table.
+      setReadError(error ? error.message : null);
       if (attempts < 8) {
         setTimeout(tick, 750);
       } else {
@@ -2527,7 +2600,7 @@ function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thi
     return () => {
       cancelled = true;
     };
-  }, [traceId]);
+  }, [traceId, attempt]);
 
   if (!traceId && !thinking) {
     return (
@@ -2547,6 +2620,27 @@ function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thi
         <Activity className="h-8 w-8 text-primary/60 mb-3 animate-pulse" />
         <p className="text-sm font-medium text-muted-foreground">Recording trace…</p>
         <p className="text-xs text-muted-foreground/70 mt-1 font-mono break-all">{traceId}</p>
+      </div>
+    );
+  }
+
+  if (!trace && readError) {
+    return (
+      <div className="h-full rounded-lg border border-border bg-background/60 flex flex-col items-center justify-center text-center p-6">
+        <AlertTriangle className="h-8 w-8 text-destructive/70 mb-3" />
+        <p className="text-sm font-medium text-muted-foreground">Trace not read</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">
+          The trace could not be read, so this says nothing about whether it was recorded:{" "}
+          {readError}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3 h-7 text-xs"
+          onClick={() => setAttempt((n) => n + 1)}
+        >
+          Try again
+        </Button>
       </div>
     );
   }
@@ -2592,7 +2686,7 @@ function RealExecutionTrace({ traceId, thinking }: { traceId: string | null; thi
         <div className="p-3 space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-2">
             <Stat label="Latency" value={`${trace.latency_ms} ms`} />
-            <Stat label="Cost" value={`$${Number(trace.cost_usd).toFixed(6)}`} />
+            <Stat label="Cost" value={formatUsd(trace.cost_usd)} />
             <Stat label="Tokens in" value={String(trace.tokens_in)} />
             <Stat label="Tokens out" value={String(trace.tokens_out)} />
           </div>

@@ -135,8 +135,9 @@ function toNum(t: T): string {
         ? `(CASE WHEN ${t.sql} IS NULL OR ${t.sql} = '' THEN 0 ELSE TRY_CAST(${t.sql} AS DOUBLE) END)`
         : `TRY_CAST(${t.sql} AS DOUBLE)`;
     case "date":
-      // Excel's serial day number: days since 1899-12-30.
-      return `CAST(date_diff('day', DATE '1899-12-30', ${t.sql}) AS DOUBLE)`;
+      // Excel's serial day number: days since 1899-12-30, one fewer before
+      // 1900-03-01, as the grid counts (values.ts MAR_1_1900, R205).
+      return `CAST(date_diff('day', DATE '1899-12-30', ${t.sql}) - CASE WHEN ${t.sql} < DATE '1900-03-01' THEN 1 ELSE 0 END AS DOUBLE)`;
     case "datetime":
       return `(epoch(CAST(${t.sql} AS TIMESTAMP)) / 86400.0 + 25569)`;
     default:
@@ -144,14 +145,132 @@ function toNum(t: T): string {
   }
 }
 
+/**
+ * A value as MIN, MAX and AVERAGE read it: a reference to a blank, text or
+ * TRUE/FALSE is NULL (Excel ignores it), anything else is its number.
+ */
+function referencedNumber(t: T): string {
+  if (!t.col) return toNum(t);
+  switch (t.kind) {
+    case "number":
+      return `CAST(${t.sql} AS DOUBLE)`;
+    case "date":
+    case "datetime":
+      return `(CASE WHEN ${t.sql} IS NULL THEN NULL ELSE ${toNum(t)} END)`;
+    default:
+      return "CAST(NULL AS DOUBLE)";
+  }
+}
+
+/**
+ * Whether an argument can be written out each time it is read: a short one
+ * with no subquery (a column, a literal, a little arithmetic). A long one is
+ * bound once by a one-item lambda instead, so a nested formula is not
+ * repeated into itself, and a whole-column total is not summed ten times.
+ * A lambda costs a list per row, which over a million rows was most of the
+ * time, so the common case does without one.
+ *
+ * A lambda's body never reads a subquery (DuckDB refuses one there): what it
+ * needs goes in through the list. Its names are not short: the column SQL
+ * reads its row as `p`, and a lambda named p made `p.d` the row's column d
+ * (R200's first cut).
+ */
+function writtenOut(expr: string): boolean {
+  return expr.length <= 160 && !/\bSELECT\b/i.test(expr);
+}
+
+/**
+ * x rounded at d places as Excel and the grid round (format.ts excelRound):
+ * the 15 significant digits, shifted by d as text, rounded, shifted back.
+ *
+ * FOUND IN R200: DuckDB's round() rounds the binary, so ROUND(1.005, 2) and
+ * TEXT(1.005, "0.00") were 1 and 1.00 in a table and 1.01 in the grid beside
+ * it; ROUNDUP had no guard at all.
+ */
+function excelRoundSql(x: string, d: string, mode: "half" | "up" | "down"): string {
+  const step = (s: string) =>
+    mode === "half" ? `floor(${s} + 0.5)` : mode === "up" ? `ceil(${s})` : `floor(${s})`;
+  const body = (v: string, dd: string) => {
+    // The exact way, as the grid does it: the 15 digits as text, shifted by d.
+    // It runs for few rows, so the 15 digits are written out where read.
+    const m = `format('{:.14e}', abs(${v}))`;
+    const e = `CAST(split_part(${m}, 'e', 2) AS INTEGER)`;
+    const shifted = `CAST(split_part(${m}, 'e', 1) || 'e' || CAST(${e} + ${dd} AS VARCHAR) AS DOUBLE)`;
+    const exact = `CASE WHEN ${e} + ${dd} >= 14 THEN ${v} ELSE sign(${v}) * CAST(CAST(CAST(${step(shifted)} AS BIGINT) AS VARCHAR) || 'e' || CAST(-${dd} AS VARCHAR) AS DOUBLE) END`;
+    // The quick way, for most rows: s = |x| × 10^d in binary (10^d is exact
+    // up to 10^22). The 15 digits and the binary each sit within s × 1e-14
+    // of the true value, so where s is clear of the point the rounding turns
+    // at (a half, or a whole number for up and down) by s × 1e-13, rounding
+    // s gives the exact way's answer. Formatting every row as text was 18
+    // times slower than round() over a million rows; this is 1.1 times on
+    // random doubles and 3 on three-place decimals, a tenth of which sit on
+    // a half and go the exact way.
+    // sheetsExcelRounding.test.ts holds the two ways together.
+    const s = `(abs(${v}) * power(10, ${dd}))`;
+    const clear =
+      mode === "half"
+        ? `abs(${s} - floor(${s}) - 0.5) > ${s} * 1e-13`
+        : `(${s} = floor(${s}) OR least(${s} - floor(${s}), ceil(${s}) - ${s}) > ${s} * 1e-13)`;
+    return `CASE WHEN ${v} IS NULL OR NOT isfinite(${v}) OR ${v} = 0 THEN ${v} WHEN ${dd} BETWEEN 0 AND 22 AND ${s} < 1e14 AND ${clear} THEN sign(${v}) * ${step(s)} / power(10, ${dd}) ELSE ${exact} END`;
+  };
+  const vx = `CAST(${x} AS DOUBLE)`;
+  const dx = `CAST(${d} AS INTEGER)`;
+  if (writtenOut(vx) && writtenOut(dx)) return `(${body(`(${vx})`, `(${dx})`)})`;
+  return `(list_transform([{'v': ${vx}, 'd': ${dx}}], lambda xr_a: ${body("xr_a.v", "xr_a.d")})[1])`;
+}
+
+/**
+ * A number as text, as the grid writes it (values.ts numberText) and Excel
+ * does: 15 significant digits, written out from 1E-9 to under 1E+15, and in
+ * scientific notation outside that.
+ *
+ * FOUND IN R200: DuckDB's own text has 17 digits, so 0.01 + 0.075 joined into
+ * text was "0.08499999999999999" (LEN 19) where the grid says 0.085; 1E-5 was
+ * "1e-05", and 1E+15 "1000000000000000.0".
+ */
+function numberTextSql(x: string): string {
+  const body = (v: string) => {
+    const exact = `list_transform([format('{:.14e}', ${v})], lambda xt_m: CASE WHEN abs(CAST(xt_m AS DOUBLE)) >= 1e15 OR abs(CAST(xt_m AS DOUBLE)) < 1e-9 THEN regexp_replace(xt_m, '\\.?0*e', 'E') ELSE regexp_replace(printf('%.*f', greatest(0, 14 - CAST(split_part(xt_m, 'e', 2) AS INTEGER)), CAST(xt_m AS DOUBLE)), '(\\.[0-9]*[1-9])0+$|\\.0+$', '\\1') END)[1]`;
+    // The quick way, for most rows: a whole number, or a double whose
+    // shortest text (DuckDB's own) has 15 digits or fewer and no exponent,
+    // is already what Excel writes.
+    const shortest = `CAST(${v} AS VARCHAR)`;
+    return `CASE WHEN ${v} IS NULL THEN NULL WHEN NOT isfinite(${v}) THEN '#NUM!' WHEN ${v} = trunc(${v}) AND abs(${v}) < 1e15 THEN CAST(CAST(${v} AS BIGINT) AS VARCHAR) WHEN NOT contains(${shortest}, 'e') AND length(replace(replace(${shortest}, '-', ''), '.', '')) <= 15 THEN ${shortest} ELSE ${exact} END`;
+  };
+  const vx = `CAST(${x} AS DOUBLE)`;
+  if (writtenOut(vx)) return `(${body(`(${vx})`)})`;
+  return `(list_transform([${vx}], lambda xt_v: ${body("xt_v")})[1])`;
+}
+
+/**
+ * A quotient at Excel's 15 significant digits, as the grid reads one
+ * (functions.ts quotient15), for CEILING and FLOOR to take whole.
+ *
+ * FOUND IN R201: the quotient was rounded to 9 decimal places, so
+ * CEILING(0.0000000001, 1) and CEILING(5.0000000001, 1) were 0 and 5 in a
+ * table; Excel says 1 and 6. Most rows are clear of a whole number by more
+ * than the 15th digit could move them and are taken as they are; only a
+ * quotient on the edge is read from its digits.
+ */
+function quotient15Sql(q: string): string {
+  const body = (v: string) =>
+    `CASE WHEN ${v} IS NULL OR NOT isfinite(${v}) OR (abs(${v}) < 1e14 AND (${v} = floor(${v}) OR least(${v} - floor(${v}), ceil(${v}) - ${v}) > abs(${v}) * 1e-13)) THEN ${v} ELSE CAST(format('{:.14e}', ${v}) AS DOUBLE) END`;
+  if (writtenOut(q)) return `(${body(`(${q})`)})`;
+  return `(list_transform([${q}], lambda xq_v: ${body("xq_v")})[1])`;
+}
+
 function toText(t: T): string {
   switch (t.kind) {
     case "text":
       return t.col ? `coalesce(${t.sql}, '')` : t.sql;
     case "number": {
-      // 3, not 3.0; 0.5 stays 0.5.
-      const x = toNum(t);
-      return `(CASE WHEN ${x} = trunc(${x}) AND abs(${x}) < 1e15 THEN CAST(CAST(${x} AS BIGINT) AS VARCHAR) ELSE CAST(${x} AS VARCHAR) END)`;
+      // 3, not 3.0; 0.085, not 0.08499999999999999 (R200).
+      const shown = numberTextSql(toNum(t));
+      // FOUND IN R198: a blank number cell is "" in text, as Excel reads it
+      // (A1&"" is "", LEN(A1) is 0, CONCAT of two blanks is ""). Reading it
+      // as 0 is for arithmetic only; here it printed "0" where the grid,
+      // given the same row, printed nothing.
+      return t.col ? `(CASE WHEN ${t.sql} IS NULL THEN '' ELSE ${shown} END)` : shown;
     }
     case "bool":
       return `(CASE WHEN ${t.sql} THEN 'TRUE' WHEN NOT ${t.sql} THEN 'FALSE' ELSE '' END)`;
@@ -184,7 +303,8 @@ function toDate(t: T): string {
     case "datetime":
       return `CAST(${t.sql} AS DATE)`;
     case "number":
-      return `CAST(DATE '1899-12-30' + CAST(trunc(${toNum(t)}) AS INTEGER) AS DATE)`;
+      // One day on before serial 61 (1900-03-01), as the grid reads it (R205).
+      return `CAST(DATE '1899-12-30' + CAST(trunc(${toNum(t)}) AS INTEGER) + CASE WHEN ${toNum(t)} < 61 THEN 1 ELSE 0 END AS DATE)`;
     default:
       return `TRY_CAST(${t.sql} AS DATE)`;
   }
@@ -716,13 +836,12 @@ class Compiler {
         const d = args[1] ? S(1) : num(0);
         const xs = toNum(x);
         const ds = `CAST(trunc(${toNum(d)}) AS INTEGER)`;
-        const scale = `power(10, ${ds})`;
-        const sql =
-          fn === "ROUND"
-            ? `round(${xs}, ${ds})`
-            : fn === "ROUNDUP"
-              ? `(sign(${xs}) * ceil(abs(${xs}) * ${scale}) / ${scale})`
-              : `(sign(${xs}) * floor(abs(${xs}) * ${scale}) / ${scale})`;
+        // Excel's 15 digits, as the grid rounds; TRUNC is ROUNDDOWN (R200).
+        const sql = excelRoundSql(
+          xs,
+          ds,
+          fn === "ROUND" ? "half" : fn === "ROUNDUP" ? "up" : "down",
+        );
         return { sql, kind: "number", dbl: true, sub: sub(x, d) };
       }
       case "CEILING":
@@ -737,9 +856,10 @@ class Compiler {
         const ss = fn.endsWith(".MATH")
           ? `nullif(abs(${toNum(sig)}), 0)`
           : `nullif(${toNum(sig)}, 0)`;
-        // The quotient rounded first: 0.3 / 0.1 is 2.9999999999999996, and FLOOR(0.3,0.1) is 0.3 (R176).
+        // The quotient at 15 digits: 0.3 / 0.1 is 2.9999999999999996, and
+        // FLOOR(0.3,0.1) is 0.3 (R176); CEILING(0.0000000001,1) is 1 (R201).
         return {
-          sql: `(${f}(round(${toNum(x)} / ${ss}, 9)) * ${ss})`,
+          sql: `(${f}(${quotient15Sql(`(${toNum(x)} / ${ss})`)}) * ${ss})`,
           kind: "number",
           dbl: true,
           sub: sub(x, sig),
@@ -750,8 +870,11 @@ class Compiler {
         const x = S(0);
         const m = S(1);
         const ms = `nullif(${toNum(m)}, 0)`;
+        // FOUND IN R198: signs that differ are #NUM! in Excel, and a value
+        // here (MROUND(-2.5, 0.5) was -2.5). NaN is what a table cell shows
+        // as #NUM!, as it does for a negative to a fractional power.
         return {
-          sql: `(round(${toNum(x)} / ${ms}) * ${ms})`,
+          sql: `(CASE WHEN ${toNum(x)} * ${toNum(m)} < 0 THEN CAST('NaN' AS DOUBLE) ELSE round(${toNum(x)} / ${ms}) * ${ms} END)`,
           kind: "number",
           dbl: true,
           sub: sub(x, m),
@@ -779,7 +902,11 @@ class Compiler {
         this.args(fn, args, 1, 1);
         const t = S(0);
         return {
-          sql: `array_to_string(list_transform(string_split(lower(${toText(t)}), ' '), lambda w: upper(left(w, 1)) || substring(w, 2)), ' ')`,
+          // FOUND IN R200: words were split at spaces only, so "o'neil 2-way"
+          // was "O'neil 2-Way" here and "O'Neil 2-Way" in the grid and Excel.
+          // Runs of letters and of anything else alternate; each letter run is
+          // capitalised. "ß", whose capital is two letters, stays, as in the grid.
+          sql: `array_to_string(list_transform(regexp_extract_all(lower(${toText(t)}), '\\p{L}+|\\P{L}+'), lambda xp_w: CASE WHEN left(xp_w, 1) = 'ß' THEN xp_w ELSE upper(left(xp_w, 1)) || substring(xp_w, 2) END), '')`,
           kind: "text",
           sub: t.sub,
         };
@@ -1107,8 +1234,29 @@ class Compiler {
     const x = pct ? `(${toNum(v)} * 100)` : toNum(v);
     const spec = `{:${m[1] ? "," : ""}.${places}f}`;
     // Round half away from zero first; format() alone rounds half to even.
+    const grouping = Boolean(m[1]);
+    const shown = (v: string) => `format('${spec}', ${excelRoundSql(v, String(places), "half")})`;
+    // FOUND IN R201: past 15 digits format() wrote the binary's own digits
+    // (TEXT(12345678901234567, "#,##0") was …234,568; Excel and the grid
+    // show …234,600). There the 15 digits are written out, then zeros.
+    const big = (v: string) => {
+      const mt = `format('{:.14e}', abs(${v}))`;
+      const e = `CAST(split_part(${mt}, 'e', 2) AS INTEGER)`;
+      const all = `rpad(replace(split_part(${mt}, 'e', 1), '.', ''), ${e} + ${places + 1}, '0')`;
+      const whole = `left(${all}, ${e} + 1)`;
+      const grouped = grouping
+        ? `(CASE WHEN ${e} < 38 THEN format('{:,}', CAST(${whole} AS HUGEINT)) ELSE ${whole} END)`
+        : whole;
+      const frac = places > 0 ? ` || '.' || substring(${all}, ${e} + 2, ${places})` : "";
+      return `(CASE WHEN ${v} < 0 THEN '-' ELSE '' END || ${grouped}${frac})`;
+    };
+    const body = (v: string) =>
+      `CASE WHEN isfinite(${v}) AND abs(${v}) * ${10 ** places} >= 1e15 THEN ${big(v)} ELSE ${shown(v)} END`;
+    const text = writtenOut(x)
+      ? body(`(${x})`)
+      : `list_transform([${x}], lambda xt_x: ${body("xt_x")})[1]`;
     return {
-      sql: `(format('${spec}', round(${x}, ${places}))${pct ? " || '%'" : ""})`,
+      sql: `(${text}${pct ? " || '%'" : ""})`,
       kind: "text",
       sub: v.sub,
     };
@@ -1127,7 +1275,12 @@ class Compiler {
       }
       const ts = args.map((a) => this.scalar(a));
       if (!ts.length) throw new CompileError(`${fn} needs at least one value`);
-      return { sql: spec.scalar(ts.map(toNum)), kind: "number", dbl: true, sub: sub(...ts) };
+      return {
+        sql: spec.scalar(ts.map(toNum), ts.map(referencedNumber)),
+        kind: "number",
+        dbl: true,
+        sub: sub(...ts),
+      };
     }
     if (args.length !== 1 && fn !== "SUMPRODUCT") {
       throw new CompileError(
@@ -1403,24 +1556,35 @@ class Compiler {
 type AggSpec = {
   /** Over a whole column: the aggregate expression. */
   whole: (col: string, numeric: string, kind: ColKind) => string;
-  /** Over this row's values: plain arithmetic (SUM([@a], [@b])). */
-  scalar?: (xs: string[]) => string;
+  /**
+   * Over this row's values: plain arithmetic (SUM([@a], [@b])). `xs` reads a
+   * blank as 0; `refs` is NULL for what Excel ignores in a reference (a
+   * blank, text or TRUE/FALSE), for the functions that skip it.
+   */
+  scalar?: (xs: string[], refs: string[]) => string;
   ifs?: boolean;
 };
 
 const AGGREGATES: Record<string, AggSpec> = {
   SUM: { whole: (_c, n) => `coalesce(sum(${n}), 0)`, scalar: (xs) => `(${xs.join(" + ")})` },
+  // FOUND IN R198: these read a blank reference as 0, so AVERAGE([@a], 1)
+  // was 0.5 and MIN([@a], 1) was 0 on a row where [@a] is empty; Excel, and
+  // the grid on the same row, ignore the empty reference and give 1 and 1.
+  // An AVERAGE of nothing is #DIV/0! in Excel, which is a blank here.
   AVERAGE: {
     whole: (_c, n) => `avg(${n})`,
-    scalar: (xs) => `((${xs.join(" + ")}) / ${xs.length})`,
+    scalar: (_xs, refs) =>
+      `((${refs.map((r) => `coalesce(${r}, 0)`).join(" + ")}) / nullif(${refs
+        .map((r) => `CAST(${r} IS NOT NULL AS INTEGER)`)
+        .join(" + ")}, 0))`,
   },
   MIN: {
     whole: (c, n, k) => (k === "date" || k === "datetime" ? `min(${c})` : `coalesce(min(${n}), 0)`),
-    scalar: (xs) => `least(${xs.join(", ")})`,
+    scalar: (_xs, refs) => `coalesce(least(${refs.join(", ")}), 0)`,
   },
   MAX: {
     whole: (c, n, k) => (k === "date" || k === "datetime" ? `max(${c})` : `coalesce(max(${n}), 0)`),
-    scalar: (xs) => `greatest(${xs.join(", ")})`,
+    scalar: (_xs, refs) => `coalesce(greatest(${refs.join(", ")}), 0)`,
   },
   COUNT: { whole: (_c, n) => `count(${n})` },
   COUNTA: { whole: (c) => `count(CASE WHEN CAST(${c} AS VARCHAR) <> '' THEN 1 END)` },

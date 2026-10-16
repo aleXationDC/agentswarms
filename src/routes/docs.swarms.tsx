@@ -168,6 +168,12 @@ function SwarmsPage() {
           [<C key="l">memory</C>, "object", "See memory scope below"],
         ]}
       />
+      <P>
+        The inspector&apos;s pickers read your tables, semantic models, ML models, MCP servers and
+        connected providers when it opens. A list that could not be read says so rather than
+        inviting you to create your first one, and names what the node keeps selected, so a node
+        restricted to one table still shows that it is.
+      </P>
       <H3 id="node-memory">Node memory scope</H3>
       <Table
         headers={["ltm_scope", "Behaviour"]}
@@ -687,6 +693,16 @@ input ──▶ split ┼──▶ legal analysis ─────┼──▶ me
         ]}
       />
 
+      {/* ── SAVING ── */}
+      <H2 id="saving">Saving</H2>
+      <P>
+        <strong>Save</strong> writes the canvas — its name, nodes and edges — and the toolbar says
+        Unsaved changes until it has. Save writes only over the swarm the canvas opened: if it was
+        saved from another tab or session since, Save is refused, the toolbar reads Changed
+        elsewhere, not saved, and offers <strong>Reload</strong> or{" "}
+        <strong>Overwrite with mine</strong>.
+      </P>
+
       {/* ── RUNNING ── */}
       <H2 id="running">Running and observing</H2>
       <UL>
@@ -713,7 +729,13 @@ input ──▶ split ┼──▶ legal analysis ─────┼──▶ me
           <DocLink to="/docs/debugging">Logs &amp; traces</DocLink>.
         </li>
         <li>
-          <strong>Versions</strong> — the graph is snapshotted on save; diff and restore.
+          <strong>Versions</strong> — the graph is snapshotted on save; diff and restore. A history
+          that cannot be read says so rather than <em>No versions yet</em>. Restore first saves the
+          current graph as a <em>Before restore</em> version, so it can be undone; if that version
+          cannot be saved, nothing is restored and the canvas stays as it was. A version you capture
+          by name that does not land says so, and keeps its name for another try; pressing Enter
+          twice captures it once. Deleting a version asks first, because a deleted snapshot cannot
+          be restored.
         </li>
       </UL>
 
@@ -730,14 +752,23 @@ input ──▶ split ┼──▶ legal analysis ─────┼──▶ me
         current graph, and after that your saves stay private until you press{" "}
         <strong>Publish</strong> — so you can rewrite a prompt at 3am without changing what a live
         integration receives. The Deploy dialog shows <em>Draft ahead</em> whenever the canvas has
-        moved on, and <DocLink to="/docs/api">API &amp; webhooks</DocLink> covers the states.
+        moved on, and <DocLink to="/docs/api">API &amp; webhooks</DocLink> covers the states. When
+        the dialog cannot read the swarm&apos;s keys, schedules or published snapshot it says{" "}
+        <em>Deployment not read</em> rather than guessing, each list names its error, and adding a
+        schedule is off until the schedules can be read, since a second copy of an existing one
+        would run the swarm twice. The toolbar&apos;s Deploy button carries the same{" "}
+        <em>Draft ahead</em> badge; if what is live cannot be re-read after a Publish, the button
+        says <em>Live not checked</em> instead of dropping the badge.
       </P>
 
       <H2 id="components">Custom components</H2>
       <P>
         A <strong>Function</strong> node holds a snippet used once. <strong>Components</strong> are
         the reusable form: author a snippet with a declared parameter schema in the palette&rsquo;s{" "}
-        <em>My components → Manage</em>, and it appears in the palette of every swarm you build.
+        <em>My components → Manage</em>, and it appears in the palette of every swarm you build. If
+        your components cannot be read, the palette and the library say so and name the error rather
+        than showing <em>None yet</em>; the palette reads them once, so its message has a{" "}
+        <em>Try again</em>.
       </P>
       <Table
         headers={["Piece", "What it is"]}
@@ -844,6 +875,13 @@ input ──▶ split ┼──▶ legal analysis ─────┼──▶ me
         <C>suspended</C> and waits for a person, which is rarely what a batch wants, so remove the
         gate from a swarm you mean to evaluate unattended. Each result links to its full execution
         trace.
+      </P>
+      <P>
+        A list the page could not read says so, rather than showing nothing: the cases, a run&apos;s
+        results and a comparison baseline each name the error, and a comparison is never drawn
+        against a baseline that was not read. When a run cannot read its cases to carry on it stops
+        and says why, and &ldquo;Executing cases…&rdquo; shows only while cases execute. A delete
+        that is refused says so, and the case or dataset stays.
       </P>
 
       <H2 id="export">Export</H2>

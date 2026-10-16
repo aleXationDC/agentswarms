@@ -7,9 +7,9 @@
 // tables, readable and - on a catalog that allows it - writable. A mount
 // creates views under a lakehouse schema over those tables, so the per-user
 // schema guard, the listing and the tools see Iceberg tables exactly as they
-// see everything else; nothing is copied. Publishing is a CREATE TABLE AS
-// into the catalog. Everything below is text and rules; the server and the
-// tests import it.
+// see everything else; nothing is copied. Publishing creates the table in the
+// catalog from the source's columns and inserts its rows. Everything below is
+// text and rules; the server and the tests import it.
 
 export const ICEBERG_AUTH_TYPES = ["none", "bearer", "oauth2"] as const;
 export type IcebergAuthType = (typeof ICEBERG_AUTH_TYPES)[number];
@@ -181,10 +181,24 @@ export function icebergViewSql(
   );
 }
 
+/** A source column as the engine describes it (`duckdb_columns()`). */
+export type PublishColumn = { name: string; type: string };
+
 /**
- * Publishing a lakehouse table into the catalog: the namespace first, then a
- * CREATE TABLE AS over the governed table. `replace` drops and recreates on
- * the catalog side; `create` refuses an existing table.
+ * Publishing a lakehouse table into the catalog: the namespace first, then
+ * the table from the source's own column list, then its rows. `replace`
+ * swaps the new table in on the catalog side; `create` refuses an existing
+ * table.
+ *
+ * FOUND IN R181. This was a CREATE TABLE AS, and the extension build a fresh
+ * image bakes writes a CREATE TABLE AS to a relative `data/` directory
+ * whenever the ducklake extension is loaded, which in this engine it always
+ * is: every publish failed with `Failed to create directory "data":
+ * Permission denied`. A CREATE TABLE with columns, then an INSERT, writes to
+ * the table's own location in the catalog. Explicit column types are refused
+ * or accepted exactly as the CREATE TABLE AS did (checked type by type on
+ * the extension: UTINYINT, UBIGINT, ENUM and INTERVAL refused; HUGEINT, MAP,
+ * TIMESTAMPTZ, lists and structs accepted).
  */
 export function icebergPublishSql(args: {
   alias: string;
@@ -193,35 +207,123 @@ export function icebergPublishSql(args: {
   sourceSchema: string;
   sourceTable: string;
   mode: "create" | "replace";
+  /** The source's columns in order, from icebergSourceColumnsSql. */
+  columns: PublishColumn[];
   /** A replace's staging table, from icebergStagingName; unused by create. */
   staging?: string;
+  /** Where a replace moves the old table, from icebergRetiredName; unused by create. */
+  retired?: string;
 }): string[] {
+  if (args.columns.length === 0) {
+    throw new Error(`${args.sourceSchema}.${args.sourceTable} has no columns to publish.`);
+  }
   const ns = `${ident(args.alias)}.${ident(args.namespace)}`;
   const target = `${ns}.${ident(args.table)}`;
   const source = `${ident("lake")}.${ident(args.sourceSchema)}.${ident(args.sourceTable)}`;
   const schema = `CREATE SCHEMA IF NOT EXISTS ${ns};`;
+  const defs = args.columns.map((col) => `${ident(col.name)} ${col.type}`).join(", ");
+  const names = args.columns.map((col) => ident(col.name)).join(", ");
+  const make = (t: string) => `CREATE TABLE ${t} (${defs});`;
+  const fill = (t: string, from: string) =>
+    `INSERT INTO ${t} (${names}) SELECT ${names} FROM ${from};`;
   if (args.mode === "create") {
-    return [schema, `CREATE TABLE ${target} AS SELECT * FROM ${source};`];
+    return [schema, make(target), fill(target, source)];
   }
-  // The extension has no CREATE OR REPLACE for Iceberg tables, so a replace
-  // is a drop and a create. FOUND IN R107: run in that order, a create that
-  // failed AFTER the drop (a column type Iceberg cannot store, a catalog
-  // error) left the catalog with no table at all, where the owner had asked
-  // to replace one. The new data is now written to a staging table first.
-  // Only once that has succeeded is the old table dropped and the staged
-  // copy moved into its name. A write that cannot happen fails before
-  // anything is dropped. The staging table is named afresh for each publish,
-  // so the only tables a replace drops are the one the owner named and the
-  // one it has just created itself.
-  if (!args.staging) throw new Error("A replace needs a staging table.");
+  // The extension has no CREATE OR REPLACE for Iceberg tables. FOUND IN
+  // R107: a drop and then a create left the catalog with no table when the
+  // create failed, so the new data is written to a staging table first, and
+  // a write that cannot happen fails before the old table is touched.
+  //
+  // FOUND IN R182: the staged copy then went into the old name by a drop, a
+  // create and an insert, and for that time a reader of the catalog found no
+  // table (0.9 s, driven) and then an empty one (1.7 s). When the old table
+  // has the new data's columns, a replace is now icebergOverwriteSql, one
+  // commit with no gap. Otherwise the staged table is swapped in by name: the
+  // old table renamed aside and the staged one renamed into its place, in one
+  // transaction, and the old table dropped last. The catalog applies those as
+  // two renames, one after the other (1.5 s apart on the development
+  // catalog), so a reader can still miss the table for that long, but never
+  // finds it empty, and nothing is copied a second time. Both names are made
+  // for this publish, so the only tables a replace drops are ones it has just
+  // made or moved.
+  if (!args.staging || !args.retired) throw new Error("A replace needs a staging table.");
   const staging = `${ns}.${ident(args.staging)}`;
   return [
     schema,
-    `CREATE TABLE ${staging} AS SELECT * FROM ${source};`,
-    `DROP TABLE IF EXISTS ${target};`,
-    `CREATE TABLE ${target} AS SELECT * FROM ${staging};`,
-    `DROP TABLE IF EXISTS ${staging};`,
+    make(staging),
+    fill(staging, source),
+    `BEGIN TRANSACTION; ALTER TABLE IF EXISTS ${target} RENAME TO ${ident(args.retired)}; ` +
+      `ALTER TABLE ${staging} RENAME TO ${ident(args.table)}; COMMIT;`,
+    `DROP TABLE IF EXISTS ${ns}.${ident(args.retired)};`,
   ];
+}
+
+/**
+ * A replace when the old table already has the new data's columns (R182):
+ * its rows deleted and the new ones inserted in one transaction, which the
+ * catalog takes as one commit. A reader sees the old rows or the new ones,
+ * never a missing or an empty table, and a failed write leaves the old rows.
+ */
+export function icebergOverwriteSql(args: {
+  alias: string;
+  namespace: string;
+  table: string;
+  sourceSchema: string;
+  sourceTable: string;
+  columns: PublishColumn[];
+}): string {
+  const target = `${ident(args.alias)}.${ident(args.namespace)}.${ident(args.table)}`;
+  const source = `${ident("lake")}.${ident(args.sourceSchema)}.${ident(args.sourceTable)}`;
+  const names = args.columns.map((col) => ident(col.name)).join(", ");
+  return (
+    `BEGIN TRANSACTION; DELETE FROM ${target}; ` +
+    `INSERT INTO ${target} (${names}) SELECT ${names} FROM ${source}; COMMIT;`
+  );
+}
+
+/** The catalog table's columns as the engine reads them; fails if it does not exist. */
+export function icebergDescribeSql(alias: string, namespace: string, table: string): string {
+  return `DESCRIBE ${ident(alias)}.${ident(namespace)}.${ident(table)};`;
+}
+
+/**
+ * Whether the old table can take the new rows as they are: the same column
+ * names, in the same order, with the same types as the engine reads them. A
+ * type Iceberg widens (SMALLINT is stored as int) reads back differently and
+ * takes the swap instead, which is never wrong, only slower.
+ */
+export function sameColumns(a: PublishColumn[], b: PublishColumn[]): boolean {
+  return (
+    a.length > 0 &&
+    a.length === b.length &&
+    a.every((col, i) => col.name === b[i].name && col.type === b[i].type)
+  );
+}
+
+/**
+ * After a swap that failed: the old table back into its name, if the first
+ * rename had moved it. A no-op when it had not.
+ */
+export function icebergSwapBackSql(
+  alias: string,
+  namespace: string,
+  retired: string,
+  table: string,
+): string {
+  return `ALTER TABLE IF EXISTS ${ident(alias)}.${ident(namespace)}.${ident(retired)} RENAME TO ${ident(table)};`;
+}
+
+/** The source's columns in order, for icebergPublishSql. */
+export function icebergSourceColumnsSql(sourceSchema: string, sourceTable: string): string {
+  return (
+    `SELECT column_name, data_type FROM duckdb_columns() WHERE database_name = 'lake' ` +
+    `AND schema_name = ${lit(sourceSchema)} AND table_name = ${lit(sourceTable)} ORDER BY column_index`
+  );
+}
+
+/** Dropping a table this publish created, when filling it failed. */
+export function icebergDropTableSql(alias: string, namespace: string, table: string): string {
+  return `DROP TABLE IF EXISTS ${ident(alias)}.${ident(namespace)}.${ident(table)};`;
 }
 
 /**
@@ -231,6 +333,11 @@ export function icebergPublishSql(args: {
  */
 export function icebergStagingName(table: string, token: string): string {
   return `${table}__publishing_${token}`;
+}
+
+/** Where a replace moves the old table while the new one takes its name (R182). */
+export function icebergRetiredName(table: string, token: string): string {
+  return `${table}__replaced_${token}`;
 }
 
 /** Copying an Iceberg table into the lakehouse (a real DuckLake table, no dependence on the catalog). */

@@ -105,11 +105,36 @@ export function parseDateValue(v: unknown): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
   }
   if (typeof v !== "string" || !v.trim()) return null;
+  const s = v.trim();
   // Reject plain numbers ("2026" is a year but "42" is not a date).
-  if (/^\d{1,3}(\.\d+)?$/.test(v.trim())) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (/^\d{1,3}(\.\d+)?$/.test(s)) return null;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  // FOUND IN R196: text with no offset was read as the VIEWER's local time.
+  // The SQL engines run in UTC (R195) and write a TIMESTAMP as
+  // "2026-01-01 00:00:00", so for a viewer east of UTC a server-run tile put
+  // every month one back ("2025-12" for January) while the same tile run in
+  // the browser, which hands over an epoch, was right. Text without an offset
+  // is the engines' wall-clock time and is read as UTC. An ISO date, month or
+  // year is UTC already, and text with an offset means what it says.
+  if (NAIVE_UTC_ALREADY.test(s) || HAS_OFFSET.test(s)) return d;
+  return new Date(
+    Date.UTC(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      d.getHours(),
+      d.getMinutes(),
+      d.getSeconds(),
+      d.getMilliseconds(),
+    ),
+  );
 }
+
+/** ISO forms `new Date` already reads as UTC: "2026", "2026-01", "2026-01-01". */
+const NAIVE_UTC_ALREADY = /^\d{4}(-\d{2}(-\d{2})?)?$/;
+/** A time followed by Z or ±hh[[:]mm], or a GMT/UTC zone anywhere. */
+const HAS_OFFSET = /\d:\d{2}(:\d{2}(\.\d+)?)?\s*(Z|[+-]\d{2}(:?\d{2})?)$|\b(GMT|UTC)\b/i;
 
 /** True when ≥80% of the field's non-null values parse as dates. */
 export function isMostlyDates(rows: Record<string, unknown>[], field: string): boolean {
@@ -176,6 +201,15 @@ function plausibleEpoch(n: number): boolean {
   return (a >= 1e12 && a <= 4.102e12) || (a >= 1e9 && a <= 4.102e9);
 }
 
+/**
+ * The engines' TIMESTAMP text: "2026-01-01 00:00:00", with fractions and an
+ * offset or not. A day alone ("2026-01-05") is NOT here: text cannot tell a
+ * DATE from a `strftime(d, '%Y-%m-%d')` label someone chose, and a label must
+ * not be rewritten (see the tests on hasRawDateValues).
+ */
+const ENGINE_TIMESTAMP_TEXT =
+  /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}(:?\d{2})?)?$/;
+
 export function hasRawDateValues(rows: Record<string, unknown>[], field: string): boolean {
   let raw = 0;
   let total = 0;
@@ -188,6 +222,11 @@ export function hasRawDateValues(rows: Record<string, unknown>[], field: string)
     // same reading parseDateValue takes of it. Everything else must look like
     // an actual epoch, or a column of revenue becomes a column of dates.
     else if (typeof v === "number" && plausibleEpoch(v)) raw++;
+    // The SQL engines' own TIMESTAMP text is a stamp too, not a label a person
+    // wrote: a time down to the second is what a query returns. The server's
+    // rows reached an axis as "2026-02-01 00:00:00" where the browser's,
+    // epochs then, were labelled "2026-02-01" (R197).
+    else if (typeof v === "string" && ENGINE_TIMESTAMP_TEXT.test(v.trim())) raw++;
   }
   return total > 0 && raw / total >= 0.8;
 }

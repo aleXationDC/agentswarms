@@ -83,7 +83,7 @@ function LakehouseDocsPage() {
           },
           {
             title: "Query",
-            body: "Type SQL (Ctrl+Enter runs) or ask in plain language. Results are a virtualized grid with CSV export.",
+            body: "Type SQL (Ctrl+Enter runs) or ask in plain language. One statement runs at a time: a second Ctrl+Enter or click while one is running is ignored, so an INSERT never lands twice. Results are a virtualized grid with CSV export.",
           },
           {
             title: "Inspect and time-travel",
@@ -182,10 +182,11 @@ function LakehouseDocsPage() {
         <strong>one commit</strong> (<C>CREATE OR REPLACE TABLE … AS query</C>), so anyone querying
         mid-rebuild sees the old rows or the new ones, never a half-built table. A{" "}
         <strong>failed rebuild keeps the previous data</strong> — stale rows you can see and
-        diagnose beat an empty table — and the error is recorded on the view. And the definition is{" "}
-        <strong>re-checked at every rebuild</strong>, not just when it was saved, so a grant revoked
-        since then stops the refresh and a definition edited into a write is refused rather than
-        executed.
+        diagnose beat an empty table — and the table&apos;s badge reads{" "}
+        <strong>last rebuild failed</strong>, beside the reason and the time of the rebuild the rows
+        are from. And the definition is <strong>re-checked at every rebuild</strong>, not just when
+        it was saved, so a grant revoked since then stops the refresh and a definition edited into a
+        write is refused rather than executed.
       </P>
       <P>
         Rebuilds run as the view&apos;s owner, since a schedule has no session behind it, and ride
@@ -217,9 +218,10 @@ function LakehouseDocsPage() {
         policed table into a subquery that carries the filter and the masks. The rewrite is applied
         to the AST DuckDB itself produced, not to the SQL text — text rewriting can be defeated by
         comments, casing, aliases or a CTE, while the parser sees through all of them. If the
-        rewrite can&apos;t be completed, the query is refused rather than run unfiltered. Filters
-        are checked against the real table when you save, so a typo surfaces then rather than by
-        blocking every reader at once.
+        rewrite can&apos;t be completed, the query is refused rather than run unfiltered. A
+        reader&apos;s <C>SUMMARIZE</C> goes through the same rewrite, so its minimums, maximums and
+        counts are over the rows and values they may see. Filters are checked against the real table
+        when you save, so a typo surfaces then rather than by blocking every reader at once.
       </P>
 
       <H3 id="tag-policies">Policies by tag</H3>
@@ -296,8 +298,11 @@ function LakehouseDocsPage() {
         engine, at one chokepoint. One statement per request, classified select / DML / DDL —
         anything else (<C>ATTACH</C>, <C>COPY</C>, <C>SET</C>, <C>INSTALL</C>, transactions) is
         refused. Every SELECT is parsed to an AST and each table it reads must resolve to a schema
-        you own or hold a grant on; writes must be schema-qualified into an accessible schema. Every
-        statement — refusals included — lands in your query history and the platform audit trail.
+        you own or hold a grant on; writes must be schema-qualified into an accessible schema. Table
+        functions that read files or other systems (<C>read_parquet</C>, <C>read_text</C>,{" "}
+        <C>glob</C>, …) are refused in a write as they are in a SELECT; the generators <C>range</C>{" "}
+        and <C>generate_series</C> work in both. Every statement — refusals included — lands in your
+        query history and the platform audit trail.
       </P>
       <Callout>
         Sharing a lakehouse schema from Admin → IAM grants query <em>and</em> write on its tables.
@@ -393,9 +398,16 @@ function LakehouseDocsPage() {
         </li>
         <li>
           <strong>Publish a table.</strong> On a table tab, <em>Publish to Iceberg</em> writes a
-          copy into a catalog namespace as an Iceberg table; replace drops and recreates, refuse
-          keeps an existing one. Import is the reverse: an Iceberg table copied into a schema you
-          created, as a real lakehouse table.
+          copy into a catalog namespace as an Iceberg table: the table from the source&apos;s own
+          columns, then its rows. A publish whose rows do not go in removes the empty table it made.
+          Replace never leaves the name empty: over a table with the same columns it swaps the rows
+          in one commit, so readers see the old rows or the new ones; otherwise it stages the new
+          table and renames it into place (a reader can miss the table for the moment between the
+          two renames, never find it empty), and a swap that fails puts the old table back. Refuse
+          keeps an existing one. Only the owner can publish a table that has a security policy: a
+          reader sees it through the owner&apos;s filter and masks, which an Iceberg copy cannot
+          carry. Import is the reverse: an Iceberg table copied into a schema you created, as a real
+          lakehouse table.
         </li>
         <li>
           <strong>Audited:</strong> catalog definitions through the <C>iceberg_catalog</C> row
@@ -424,6 +436,11 @@ function LakehouseDocsPage() {
         the answer), an encrypted lakehouse, and every write. The page names the reason. A query
         holds its cluster for at most <C>LAKEHOUSE_SPARK_QUERY_MINUTES</C> (default 30).
       </Callout>
+      <P>
+        While a Spark query runs the page checks on it every two seconds. A check that fails is
+        tried again; after five failures in a row the page stops waiting and says the query may
+        still be running, and the <strong>History</strong> tab shows it when it ends.
+      </P>
 
       <H2 id="scaling">Scaling and limits</H2>
       <P>

@@ -94,6 +94,16 @@ function BudgetsPage() {
         ]}
       />
 
+      <P>
+        The Budgets page saves the cap as you type, one write at a time, so the figure stored is the
+        last one typed. An emptied field writes nothing; leaving it puts the stored figure back.
+      </P>
+      <Callout kind="warn" title="Agent-specific limits are stored, not enforced">
+        The page&apos;s per-agent daily limit and its auto-disable switch are saved, but nothing in
+        the platform reads them yet: an agent past its daily figure keeps running. Rely on the
+        monthly cap: it is the one that can refuse calls (see Enforcement is opt-in, below).
+      </Callout>
+
       <H3 id="cap-scoped">Scoped caps</H3>
       <P>
         Set in <strong>Observability → AI Budgets</strong>, and per group in{" "}
@@ -290,6 +300,12 @@ function BudgetsPage() {
           ],
         ]}
       />
+      <P>
+        A cost under a cent keeps two significant digits wherever it is shown, so a call to a cheap
+        model reads <C>$0.0000046</C>, not <C>$0.0000</C>, and is never mistaken for a free one.
+        Zero is <C>$0.00</C>; totals and caps are in whole cents. The database keeps six places, so
+        a trace shows that call as <C>$0.000005</C>.
+      </P>
       <Callout kind="warn" title="A model nobody has priced counts as $0">
         If none of those layers knows a model, the call is recorded with real tokens and a cost of
         zero, and the trace is flagged <C>pricing_missing</C>. It still appears in your usage; it

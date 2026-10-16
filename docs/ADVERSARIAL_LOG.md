@@ -109,6 +109,5617 @@ Never infer it from what rendered.
 
 <!-- newest first -->
 
+### 2026-10-06 — R314: the idle reaper's "stopped", and a redeploy's order, after R311
+
+**Severity: low, ML serving.** R311 left these two in the queue. The first is partly R311's own
+doing.
+
+**The idle reaper.** It stopped an idle endpoint's copies first, then marked the endpoint stopped,
+and that mark was held to nothing. A Deploy that started the endpoint again between the two had
+its new start marked stopped. Before R311, that deploy's unguarded "ready" wrote over the mark and
+the endpoint served. Since R311, the deploy gives up and says the endpoint was stopped, though
+nobody pressed Stop. The mark could also write "stopped" over a start that had just failed, which
+loses the failure.
+
+**A redeploy's order.** Deploy retired the old copies, then wrote its own start. A copy of the old
+start that came up between the two found the old start still there. It stayed, serving the old
+version under the new one.
+
+**The before** was not staged in the UI. A Deploy has to stop the same copies the reaper is
+stopping, and waits on the same container removal, so the reaper's mark lands first in every
+ordering that can be set up here (see the R304–R312 smoke). Four of the new cases fail on the
+unfixed code, and the reaper control passes.
+
+**The fix:**
+
+- **The reaper** marks the endpoint stopped first, and only if it is still the start it judged
+  idle: still starting or ready, from the same `last_started_at`. If that write lands on nothing,
+  the reaper leaves the endpoint alone. Otherwise it lists the copies again and stops them.
+- **A Deploy** writes its start, then retires the old copies. A copy recorded after that list
+  reads the new start as it comes up and stops itself (R311).
+
+**Tests:** five cases added to `mlStopWhileDeploying.test.ts`, the R311 harness:
+
+- the reaper still stops an idle endpoint;
+- the reaper marks the endpoint before it stops a copy;
+- a Deploy that starts the endpoint again as the reaper marks it serves, and only its copy is
+  left running;
+- a start that failed meanwhile keeps "failed";
+- a redeploy writes its start before it retires a copy.
+
+The reaper's pin in `mlReplicas` moved with the code. All 11 test files that read the serving
+module passed, and the race file passed 10 runs in a row.
+
+- **Mutation harness:** 5 mutants caught, and the control survived.
+
+**The after**, hot-deployed:
+
+- `threshold_probe`: Deploy, then "Stop after" set to 1 minute idle.
+- The reaper stopped the endpoint on its own about 1 min 50 s after the deploy. The scorer was
+  gone at 15:12:11, and the panel read off.
+- The idle limit was put back to 15 minutes and the endpoint stopped again.
+
+**Read on the way, and left: the catalog's Crawl now.** Its guard is a read of the status before
+the crawl (`catalog.functions`), so two presses at once can both pass it. Assets upsert by
+`(source_id, fqn)`, so the overlap costs a second crawl and a second audit, and could double
+Databricks lineage edges. Low, and nothing to see on this deployment, so it was not driven.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R313: two syncs of one knowledge-base source ran together, and one said it failed
+
+**Severity: medium, knowledge bases** (a false failure, and a source that can be left reading
+"error" after a good sync). From sweep 10's queue: the knowledge-base syncs that overlap.
+
+**The defect.** Nothing claimed a sync. The scheduler claims a due source by pushing
+`next_sync_at` forward, but "Sync now" claimed nothing, and neither did the URL or GitHub re-sync.
+So a press could run beside a scheduled sync or beside a second tab's press. Both read the same
+documents and both inserted the same new ones. The second hit their unique key and recorded
+"error" alongside a sync that had succeeded. Whichever finished last decided what the source read,
+and both fetched the site and paid for the embedding.
+
+**The before**, on the smoke image (`5999240b211d`). A new knowledge base `r313_sync` with a
+website source on `https://example.com/` synced once ("Synced — 1 added"). Its document was then
+deleted, so the next sync would add it again, and Sync now was pressed in two tabs a moment apart:
+
+- **Tab-10:** "Synced — 1 added, 0 updated, 0 unchanged, 0 removed".
+- **Tab-13:** "inserting https://example.com/: duplicate key value violates unique constraint
+  "idx_knowledge_documents_source_external"". Its source row read **error** with that message.
+- **Reloaded,** the source read ok: this time the good sync happened to write last.
+
+**The fix** is one claim, `claimKbSync`, used by the connector engine and by the URL and GitHub
+re-syncs:
+
+- **The claim** moves the source to "syncing", and only from another status, or from a "syncing"
+  whose row has not changed for `KB_SYNC_LEASE_MINUTES` (60 by default): a sync that died. A
+  trigger keeps the row's `updated_at`, and a sync writes the row only at its start and its end.
+- **A press that finds a sync running** does not start. It is told: "A sync of this source is
+  already running, so this one did not start. Its result will show here when it finishes." The
+  route answers 409.
+- **The scheduler** treats that answer as nothing to report.
+- **A source that is not the caller's** is answered 404, not "running".
+
+**Tests:** `kbSyncClaim.test.ts` runs `syncKbSource` and both re-sync routes over an in-memory
+table store. It has a unique key, a trigger-kept `updated_at`, and PostgREST's `or` filter. Its
+cases:
+
+- a second sync started while the first is listing is told it is running, lists nothing, and
+  leaves the first to finish "ok" with one document;
+- a claim older than the lease is taken over, and one within it is not;
+- the URL and GitHub re-syncs each answer 409 without fetching anything;
+- another user's source is answered 404;
+- the route's 409.
+
+A warm-up import keeps the routes' slow first import out of the first test's time (R305). Every
+other test that reads these files passed.
+
+- **Mutation harness:** 9 mutants caught, and the control survived.
+
+**The after**, hot-deployed and staged the same way:
+
+- **Tab-13:** "Synced — 1 added".
+- **Tab-10:** "A sync of this source is already running, so this one did not start…"
+- No duplicate-key error. Reloaded, the source reads ok, with one document.
+- The hosted PostgREST took the claim's quoted-timestamp filter.
+
+`r313_sync` is kept.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — Smoke of the real images after R304 to R312
+
+**The app image.** `5999240b211d` was built from `215aba16` with `docker compose build agentswarms` and
+started with `docker compose up -d`. It was healthy 77 s after `up`, a run that included the
+`minio-init` and runtime-image steps. Workers were listening, eight schedulers started, and nothing
+in the log matched "error" or "warn".
+
+**The runtime image.** `agentswarms/notebook-runtime` is unchanged: nothing under `docker/` has changed
+since R299's rebuild.
+
+**Markers.** Each is in the chunk it ships in:
+
+- R304: "The query you had not run was replaced", in the SQL page's chunks;
+- R307: the ETL start's "…so the sandbox was stopped and nothing ran", in its `service.server`;
+- R308: training's "…so they were stopped and nothing trained", in `train.server`;
+- R309: "The run was cancelled while it was running", in `swarmExecute.server`;
+- R310: ``via: `ml_score:``, in the server's `router` chunk;
+- R311: "while this copy of the model was starting", in `serve.server`;
+- R312: "found the table healthy and resolved this incident", in `dataMonitors.functions`.
+
+R305 and R306 ship nothing to look for. The invented control is absent. The first pass reported
+R310 missing because it looked in a chunk named after the route; the API routes are bundled into
+`router`, where the string is.
+
+**The Iceberg publish.** `analytics.fct_region_revenue` → `local_rest`, `r181`, `smoke_5999240b211d`.
+
+- **First attempt:** "Failed to commit Iceberg transaction: Request returned HTTP 500". This was the
+  standalone dev catalog again, as in the R292–R295 smoke: after 17 hours up, its SQLite answered
+  the commit with `SQLITE_BUSY: The database file is locked`. The app reported the error in the
+  toast and kept the dialog open.
+- **After `docker restart aswarm-iceberg-rest`**, which keeps the volume, it gave "Published 4
+  row(s) to r181.smoke_5999240b211d".
+- **The catalog's own metadata** shows `region, orders, revenue` and one `append` snapshot: **4
+  records in 1 file**.
+
+**R310 and R311 on the real images**, on `threshold_probe`:
+
+- Deploy reached "Serving v1" in about 30 s.
+- Try it → Predict gave payment_rows **1** at 100.0%, lightgbm, in **0.0632 s**: the warm copy.
+- Stop gave "Endpoint stopped", and no sandbox was left.
+
+**Read for R313, and not staged: the idle reaper's late "stopped".** The reaper stops an idle
+endpoint's copies, then marks the endpoint stopped, and that write is held to nothing. A Deploy
+that started the endpoint again between the two would be undone, and since R311 such a deploy
+gives up rather than writing "ready" back. But no ordering that can be set up here lets the Deploy
+write its start first:
+
+- The Deploy has to stop the same copies.
+- It waits on the same container removal; the second stop is answered "removal already in
+  progress", R302.
+- After that, the reaper has fewer writes left, so its "stopped" lands before the new start.
+
+What is left is milliseconds. It stays in the queue as low, with the order Deploy retires in.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R312: a data incident's two writers wrote over each other
+
+**Severity: medium, data monitors** (an incident opened again after it was resolved, and a failing
+check reported to nobody). From sweep 10's data-incidents row.
+
+**The defect.** An incident has two writers. Its owner acknowledges or resolves it. The monitor's
+run extends it while the check fails, and resolves it once the check passes. Each writer read the
+incident, then wrote without holding the write to what it had read:
+
+- **Acknowledge** pressed as a run resolved the incident opened it again, as "acknowledged".
+- **A passing run** as the owner resolved the incident took the resolve over ("by run"),
+  audited a second resolve, and told the owner "Recovered" about an incident they had closed.
+- **A failing run** as the owner resolved the incident extended the closed incident and stopped
+  there. The new failure opened no incident and told nobody until the next run, a day later on a
+  daily monitor.
+
+**The page had a gap too.** After any refused action, the monitors page toasted and kept showing
+what it had shown before.
+
+**The before.** Each race window is one database round trip. Holding a row lock to stage it would
+take the hosted database's password, so the race was not staged in the UI. The test below fails
+5 of its 8 cases on the unfixed code. The page's half was driven, with a new custom-SQL monitor
+`r312_probe` (`SELECT 5`, maximum 1) alerting:
+
+- Tab-10 resolved the incident.
+- Tab-13, still showing it open, pressed **Acknowledge**. It was told "This incident is already
+  resolved", and went on listing it as open, with Acknowledge and Resolve and a count of 3 open
+  incidents. The true count was 2.
+
+**The fix:**
+
+- **The owner's writes** are held to "not resolved". When a write lands on nothing, the answer
+  says who resolved it: "The monitor's run found the table healthy and resolved this incident a
+  moment ago, so nothing was changed."
+- **The run's resolve** is held the same way. On losing, it records and announces nothing.
+- **The run's extend** is held the same way. On losing, the failure opens its own incident and
+  notifies.
+- **The page** reloads after a refused action.
+
+**Tests:** `dataIncidentTwoWriters.test.ts` runs `runDataMonitor` and the server function
+together over an in-memory table store. Its cases:
+
+- Acknowledge and Resolve each pressed as a run resolves the incident;
+- a passing run, and a failing run, as the owner resolves it;
+- three controls: a failing run extends, a passing run resolves and says Recovered, and
+  Acknowledge then Resolve still work;
+- the page's reload after a refusal.
+
+The pins in `dataMonitorRecordWrites` moved with the code. Every other test that reads these
+files passed.
+
+- **Mutation harness:** 8 mutants caught, and the control survived. One planned mutant, the refusal not
+  naming the run, would have survived the first draft, which matched only the words both
+  refusals share. The test now checks the whole message.
+
+**The after**, hot-deployed:
+
+- **The stale tab.** Staged the same way, Acknowledge was told "This incident is already resolved"
+  and the page reloaded: 2 open incidents, `r312_probe` gone from the list.
+- **Control.** A fresh `r312_probe` incident, acknowledged, read "acknowledged" with only Resolve
+  left.
+- `r312_probe` is paused and kept, with its incident acknowledged.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R311: a warm endpoint stopped while it was starting came back serving
+
+**Severity: medium-high, ML serving** (a Stop that did not hold, with a scorer left running and
+counted against the caps). From sweep 10's ML-deployments row.
+
+**The defect.** Deploy records each state of its start: the copy's sandbox, the copy's "ready" or
+"failed", then the endpoint's "ready" or "failed". None of those writes checked that the endpoint
+was still the one it had started.
+
+- Stop retires each copy through the sandbox on its row. A copy whose sandbox was still being
+  created (4–21 s on this host) had none there yet. So the Stop stopped nothing and marked the copy
+  "stopped".
+- The start then recorded its sandbox on the stopped copy, marked the copy ready and marked the
+  endpoint "ready".
+- A Stop pressed while the model loaded did stop the scorer. The start then wrote "failed" over
+  the Stop.
+
+**The before**, on R310's build, with two tabs on `threshold_probe`: Deploy in one, and in the
+other Stop while the badge read "starting".
+
+- The Stop said the endpoint stopped, and its panel read **off**.
+- The scorer container `nb-e7c803dd` stayed up.
+- About a minute later the deploying tab read **"serving v1 · 1 of 1 copy answering"**. So did
+  the tab that had pressed Stop, once its panel was reopened.
+
+**The fix** applies the class's shape to every write a start makes:
+
+- **The copy's own writes.** Its sandbox, "ready" and "failed" are held to the copy's "starting".
+  A write that lands on nothing stops the sandbox this start began, and the deploy says: "The
+  endpoint was stopped, or deployed again, while this copy of the model was starting, so the copy
+  was stopped and is not serving."
+- **The endpoint's writes.** Its "ready" and "failed" are held to this start: "starting", and this
+  deploy's own `last_started_at`. A deploy then writes over neither a Stop nor a second Deploy's
+  start.
+- **A copy coming up.** It checks that the endpoint is still the start it was made for. Extra
+  copies, the scaler's copies and candidates have no endpoint stamp after them to catch this.
+- **Stop's order.** Stop marks the endpoint stopped before it stops the copies, so a copy recorded
+  after the Stop listed them still sees the Stop.
+- **The page.** The page that pressed Deploy reloads after a deploy that did not serve.
+
+**Tests:** `mlStopWhileDeploying.test.ts` runs `serve.server` itself over an in-memory table
+store, with the sandbox service, the orchestrator and the health check faked. Its 15 cases cover:
+
+- a Stop at each point of a start: the sandbox being created, the model loading, before the copy
+  is recorded (with the copy then failing, or coming up), and between the copy coming up and the
+  endpoint's stamp;
+- two deploys overlapping, once on the failure and once on the stamp;
+- a candidate under a Stop, under a redeploy, replaced while it starts, and replaced while it
+  loads;
+- the Stop's order and the page's reload;
+- two controls: a deploy nobody stops serves, and one whose copy fails on its own still reads
+  failed.
+
+The pins in `mlServeStateWrites` and `mlReplicas` moved with the code. The first full gate then
+failed on a third pin, in `mlShadowWiring`. It read `undeploy` only up to the status write, which
+R311 moved ahead of the copies, so it now reads up to the audit.
+
+**Mutation harness:** 15 mutants caught, and the control survived.
+
+**A flaky test, fixed in the test.** The test's first draft failed 4 runs in 10. The fake started
+a second deploy in the same millisecond as the first, and a start is told apart by its
+`last_started_at` only to the millisecond. The test's second deploys now start 5 ms later, and 15
+of 15 runs then passed. A real deploy takes a database round trip and more before it writes its
+start, so two starts share a millisecond only if two requests arrive together; the guards then
+fall back to the status alone.
+
+**The after**, hot-deployed and staged the same way:
+
+- The Stop was pressed while the scorer's container was still being created. The container came
+  up, the deploy stopped it at once (exit 137), and it was gone 14 s later.
+- The deploying tab said **"The endpoint was stopped, or deployed again, while this copy of the
+  model was starting, so the copy…"** and reloaded to **off**.
+- The other tab read off, and no sandbox was left.
+- **Control:** a plain Deploy reached "Serving v1" in about 25 s, and a Stop then took it down.
+
+**Left in the queue:** the idle reaper's order, and the window between Deploy retiring the old
+copies and writing its own start.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R310: every warm endpoint failed to load since R231, with "KeyError: 'url'"
+
+**Severity: high (a feature that cannot work), ML serving.** Found while staging sweep 10's ML-deployments
+row.
+
+R231 took the storage credential out of every ML sandbox. A sandbox now asks the app for a signed URL to
+its model's artifact, through `/api/notebook/runtime/source` with `{"part":"lake_artifact"}`. The route's
+branch for batch ML jobs serves that part. The branch for a warm scorer never read the part: it answered
+every call with the scoring bundle, status 200. So the scorer read a `url` the answer did not have, and
+`_lake_call` raised nothing, since the status was 200. Every Deploy of a warm endpoint has failed since.
+
+The scorer restarts on failure until the ready wait runs out, so the person waited about 2.5 minutes for
+"KeyError: 'url'". The endpoint on `threshold_probe` read "3 requests served · last 19d ago".
+
+**The before**, on R309's build: Automation → Warm endpoint → **Deploy**. After about 2.5 minutes the
+toast said **"KeyError: 'url'"**, and the endpoint read **failed**.
+
+**The fix:** the scorer's branch reads the part. A lake call is served read-only from the manifest pinned
+when the scorer fetched its bundle, with `ml_score:<model>` as its audit tag. Anything else still returns
+the bundle.
+
+**Tests:** `mlScorerArtifactUrl.test.ts` runs the route's own POST handler:
+
+- a scorer's `lake_artifact` "get" returns the signed URL, and the bundle is not built;
+- a "put" is refused, 403;
+- a call with no part still returns the bundle.
+
+- **Mutation harness:** 2 mutants caught, and the control survived.
+
+**The after**, hot-deployed:
+
+- **Deploy:** "Serving v1" in **31 s**. The panel read "1 of 1 copy answering".
+- **Predictions → Try it → Predict:** predicted payment_rows **1**, lightgbm, in **0.7057 s**. That is the
+  warm path, not a 20-second sandbox.
+
+**Seen on the way, for R311:** the first Deploy was staged with a Stop pressed while it was starting. The
+endpoint the Stop had stopped then read **failed**, written over it by the failed deploy.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R309: a swarm run cancelled from Recent runs ran on to the end, and was recorded a success
+
+**Severity: high (a cancel that is not one: every node still ran, and spent), sweep 10.** Recent runs
+says "Cancel a running run here", and offers Cancel on each. Two executors run a swarm:
+
+- **The browser's run manager** watches the run's `cancel_requested` flag and aborts.
+- **`executeSwarmServer`**, which runs workflow steps, schedules, the API and python-agent, never read
+  the flag.
+
+So the cancel flagged the row, wrote "cancelled", and the toast said "Cancelling run…". Meanwhile the
+server went on through every node. Its tracer's close then wrote `status: "success"` over the cancel.
+The parking write (an approval node) had the same unconditional shape. `resumeSwarmRun` refused only
+success and error, so it would have resumed a cancelled run that still had a checkpoint.
+
+**The before**, on R308's build:
+
+- **The swarm:** `r309_llm`, three agent nodes on `openai/gpt-4o-mini` writing a paragraph each.
+- **How it ran:** the step of a workflow, `r309_swarm_cancel`, so the server executed it.
+- **The cancel:** Recent runs → Cancel on "r309_llm (schedule) · Running · started 2s ago", at 06:26:52.
+  The toast said "Cancelling run…".
+- **A fresh read:** **Success**, 19 s, all **5 steps**, **$0.00064**.
+
+Two earlier tries used `r309_slow`: six Function nodes busy-waiting on `Date.now()`. They failed at the
+first node with "Function timed out after 5000ms", because the JS sandbox's clock does not advance inside
+a call. Even so, their close wrote **Error** over the cancel. So the late write showed up in all three
+tries.
+
+**The fix:**
+
+- **The executor watches its run's row** every `SWARM_CANCEL_POLL_MS` (2 s). A cancel aborts the same
+  controller as the deadline, and so the model call in flight. No node starts on a cancelled run.
+- **The run is closed** `cancelled`, and callers are answered "The run was cancelled while it was
+  running; nothing after that point ran."
+- **Both tracers' close** (server and browser) lands only on a running run. A run cancelled meanwhile
+  keeps "cancelled", and still gets the totals it spent.
+- **The park** is held to `running`, and the resume refuses a cancelled run.
+
+**Tests:** `swarmCancelServerRun.test.ts` runs the server tracer's close against an in-memory table:
+
+- a "success" close on a cancelled run leaves it cancelled, with its totals;
+- a running run closes.
+
+It pins the executor's watch, the check at a node's start, the cancelled close, the guarded park, the
+resume's refusal, and the browser tracer's guard.
+
+- **Mutation harness:** 8 mutants caught, and the control survived.
+
+**The after**, hot-deployed, with the same workflow and Cancel at 2 s:
+
+- **Recent runs:** **Cancelled**, 3 s, 2 steps, no cost.
+- **The workflow's run:** failed with "The run was cancelled while it was running; nothing after that
+  point ran."
+
+**Left open, and queued:** overlapping knowledge-base syncs, experiment-run writes from a notebook, and a
+resume whose reopen fails.
+
+**Fixtures:** the swarms `r309_slow`, `r309_slow2` and `r309_llm`, and the workflow `r309_swarm_cancel`
+with its five runs. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R308: a training job cancelled while its workers started, which trained a promotable version anyway
+
+**Severity: high (a cancel that is not one, and a version anyone can put into production), sweep 10.**
+R307's shape on the ML side.
+
+`startTrainingJob` inserts the job `queued` and starts its workers one after another, seconds each. The
+model page shows "Training in progress · queued · Starting the sandbox…" with Cancel. `cancelMlJob` was
+already right: it is held to the live statuses, and it stops the sessions the row holds. But the row held
+none yet. The start then wrote `running` and the workers' sessions with no condition. The workers
+trained, and the job's guarded claim accepted the result from `running`.
+
+`startPrediction` had the same write, and it also left the write's error unread.
+
+**The before**, on R307's build, model `threshold_probe (payment_rows)` in two tabs. One pressed Train
+(v6). The other refreshed, saw the queued banner, and pressed Cancel → Confirm at about 05:35:16. Docker
+created the container from 05:35:10 for 9.2 s and started it at 05:35:25.
+
+- **The sandbox:** ran until 05:37:43.
+- **Jobs:** **succeeded**, 2m 18s, lightgbm with F1 58.8%.
+- **Versions:** **v6, candidate**, with Promote and Archive.
+
+**The fix:**
+
+- **The training start** takes its workers only while the job is still `queued`, `.eq("status",
+"queued")` with `.select()`. Otherwise it stops every worker it started and answers "The training job
+  was cancelled while its workers were starting, so they were stopped and nothing trained."
+- **The prediction start** does the same. When its write fails, it stops the sandbox and fails the
+  prediction, rather than leave a sandbox no row knows.
+
+**The after found one more late writer.** With the start fixed, the job stayed cancelled, but its version
+read **failed**. `createAndTrainVersion` answers any start that is not ok by failing the version, and it
+wrote that over the cancel's `cancelled`. It is now held to `training`.
+
+**Tests:** `mlCancelWhileStarting.test.ts` runs the real `startTrainingJob`, `startPrediction`, the two
+cancels and `createAndTrainVersion` against an in-memory table:
+
+- a cancel during either start stays cancelled, and the sandbox is stopped;
+- an uninterrupted start takes its sandbox;
+- a prediction whose write fails stops its sandbox;
+- a version cancelled during its start stays cancelled;
+- a version whose workers could not start at all is failed.
+
+R79's pin moved to the new line.
+
+- **Mutation harness:** 9 mutants caught, and the control survived.
+
+**The after**, hot-deployed, with the same two tabs:
+
+- **v7, first build:** cancelled while Docker spent 21 s creating the container. The worker was stopped
+  at once and removed. The toast said nothing trained, and the job read **cancelled**, but v7 read
+  **failed** (above).
+- **v8, rebuilt:** the same. The job read cancelled, and **v8 cancelled**, with no Promote.
+
+**Not driven:** the prediction start. It is the same write, fixed in the same way and covered by the test.
+
+**Fixtures:** on `threshold_probe`, v6 (the before's resurrected candidate), v7 (failed, from the first
+after) and v8 (cancelled) are kept. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R307: a run cancelled while it was starting, which ran anyway and succeeded
+
+**Severity: high (a cancel that is not one, and data written after it), sweep 10.** This is the round
+that named the sweep. A census of every status write in `src`, and whether each is held to the status it
+read, put the ETL runs first. A run is inserted `queued`, and starting its sandbox takes seconds.
+Measured on this host: creating the container took 4.2 to 5.2 s and starting it 3.4 to 21.5 s.
+
+The Runs tab shows Cancel on a queued run. `cancelEtlRun` read the run, found no session, wrote
+`cancelled` and stopped nothing. Then `startRunSandbox` finished starting and wrote `status: "running"`
+and the session, filtered on the id alone, over the cancel. The run went on, and finalize, which is held
+to the live statuses, accepted its result.
+
+`cancelEtlRun`'s own write had the same hole in the other direction:
+
+- it was not held to the status it had read, so a run that finished in between became "cancelled";
+- it stopped the session it had read, so a start that landed in between was left running.
+
+**The before**, on R306's build, `r299_stderr` in two tabs. One pressed Run now. The other opened Runs
+1.5 s later and pressed Cancel on the queued run, at 05:00:50.8, while Docker was creating the container.
+
+- **The list:** "Cancelled".
+- **Docker:** the container was started at 05:00:55.
+- **A fresh read of the list:** **Succeeded**, 1 s.
+
+**The fix:**
+
+- **The start** takes the sandbox only while the run is still `queued`, with `.eq("status", "queued")`
+  and `.select("id")`. When its write lands on nothing, it stops the sandbox it just started. It answers
+  "The run was cancelled while its sandbox was starting, so the sandbox was stopped and nothing ran."
+- **The cancel** lands only on a live run, `.in("status", ["queued", "running", "retrying"])`. A cancel
+  that lands on nothing answers "That run is not running." It stops the session the row holds as the
+  cancel lands.
+
+**Tests:** `etlCancelWhileStarting.test.ts` runs the real `startEtlRun` and `cancelEtlRun` against an
+in-memory table that returns snapshots, with the start's and the cancel's moments in the test's hands:
+
+- a cancel during the start stays cancelled, and the sandbox is stopped;
+- an uninterrupted start takes its sandbox;
+- a start that lands between the cancel's read and its write is stopped by the cancel;
+- a run that finished in between stays succeeded.
+
+R78's two pins moved to the new lines.
+
+- **Mutation harness:** 6 mutants caught, and the control survived. The first try had one survivor, which
+  was two faults in the fake: its reads returned live rows, and its start still wrote after the race. Both
+  were fixed in the fake.
+
+**The after**, hot-deployed, with the same two tabs. Cancel was pressed at 05:19:01.2. Docker took 21.5 s
+to start the container.
+
+- **Run now's toast:** "The run was cancelled while its sandbox was starting, so the sandbox was stopped
+  and nothing ran."
+- **The sandbox:** stopped and removed. A second teardown met R302's "removal already in progress" and
+  waited for it.
+- **The run:** a fresh read 50 s later still said **Cancelled**, with no runtime.
+
+**The sweep's list** is in the queue, ordered from the census. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R306: why Stop on a kernel takes 7 to 34 seconds (the host; no change)
+
+**Severity: none found in the app.** R302 queued it: the Running kernels panel's Stop spun 14 to 24 s, and
+the Docker proxy showed `POST /stop?t=5` held 14 to 19.5 s with a 5 s grace. The app's teardown was a
+graceful stop, then a forced DELETE.
+
+**Where the time goes**, from Docker's own event stream (`docker events`, on the daemon's clock) and the
+socket proxy's timings, one kernel per Stop on the build after R305:
+
+| Stop                       | Request | Signal → container dead | Dead → removed |
+| -------------------------- | ------- | ----------------------- | -------------- |
+| graceful (current)         | 19.1 s  | SIGTERM, 9.5 s          | 5.0 s          |
+| graceful                   | 6.8 s   | SIGTERM, 3.2 s          | 2.5 s          |
+| graceful                   | 9.7 s   | SIGTERM, 4.8 s          | 2.8 s          |
+| forced DELETE only (trial) | 9.8 s   | SIGKILL, 4.2 s          | 3.8 s          |
+| forced DELETE only (trial) | 34.0 s  | SIGKILL, 9.0 s          | 5.8 s          |
+
+- **From the command line,** with no app involved, `docker stop -t 5` on a kernel took 20.8 s, and
+  `docker rm -f` 13.8 s.
+- **In the 34 s trial,** the proxy accepted the DELETE at 03:35:49.7 and answered after 33.3 s. Docker
+  sent the kill at 03:36:08, 18.5 s after the request arrived.
+
+**The trial change.** Nothing in the sandbox uses the 5 s grace. The batch, MCP and scoring runners are
+PID 1 with no SIGTERM handler, and a kernel's state is discarded either way. So `stop()` went straight to
+the forced DELETE. It was tested (one call, no stop first; three mutants caught, the control survived)
+and deployed. The samples above show no gain: SIGKILL took as long to land as SIGTERM, and the variance
+is Docker Desktop's.
+
+The change was taken back out, and the teardown is as R302 left it. Changing behaviour for a speed-up
+that cannot be measured is not a fix.
+
+**What would help** is not in this repository: a Docker host with more headroom than this WSL VM, or
+Kubernetes, where the same teardown is a pod delete.
+
+**A correction to R302's guess.** R302 noted that both slow stops had been on kernels still "starting".
+That status is written only by the notebook page's poll, and the page was left before the poll finished.
+So "starting" did not mean the kernel was still booting.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R305: three tests that failed the gate on time, and passed alone
+
+**Severity: low (false reds in the gate), test infrastructure.** R291's shape again. On 2026-10-06 four
+full gates out of eight went red on a timeout and never on an assertion, and each of these passed alone:
+
+| Test                                          | Gates failed | Timed out at       | Alone, before |
+| --------------------------------------------- | ------------ | ------------------ | ------------- |
+| `connectedIntegrations`, "merges both stores" | 3            | 20 s               | 1.85 s        |
+| `aiAnalyst`, the branded PDF                  | 2            | 20 s               | 0.88 s        |
+| `sheetsSamples`, Sales performance 2026       | 2            | 60 s (took 83.7 s) | about 3 s     |
+
+The gate for R253's drive failed on the first alone, with nothing else running. So it was not only
+the concurrent load that earlier gates were blamed on.
+
+**The first two paid a start-up cost inside a 20-second test.**
+
+- `connectedIntegrations` transforms BiModelSelect's whole module graph on its first fresh import, against
+  0.15 s for every later one.
+- The PDF test imports the PDF builder and pdf-lib cold.
+
+Each import now sits in a `beforeAll` with its own 120 s allowance, so each test times only itself. Alone,
+"merges both stores" now takes 0.29 s, and the PDF test 0.40 s.
+
+**The third is computation.** The test reads a real workbook and computes it, so no hook can take the
+cost, and its stated allowance moved from 60 s to 180 s.
+
+**What was not changed:** R237's four forks. The per-test timeout stays 20 s for everything else.
+
+No mutation harness. The failure depends on load and cannot be made to happen on demand, so the timings
+are the evidence. The gate after this change was green.
+
+### 2026-10-06 — R253's drive: a node-level secret deleted mid-run, in the UI
+
+R253 fixed it from the code and queued the drive: deleting one secret a pipeline uses, while it runs, used
+to write the logs with every other secret in clear. This is that drive, on the build after R304. It is a
+check, and it found nothing to fix.
+
+**The fixtures:**
+
+- **Secrets:** `R253_A` and `R253_B`, test values.
+- **The pipeline:** `r253_drive`, a visual pipeline. Its Custom Python source prints target A's token from
+  `ETL_N2_AUTH_TOKEN`, then prints it again every 8 s for 72 s, and returns one row.
+- **Its two HTTP API targets** are on `echo-target.local`, one with `R253_A` as its bearer token secret,
+  the other with `R253_B`.
+
+**Driven:**
+
+- **The live log:** Run now, then Runs → Logs. It showed `[etl] installing 3 package(s)` and
+  `r253 printed token=***`, so R292's scrub in the sandbox masked it at the source.
+- **The deletion:** `R253_B` was deleted from Secrets at 02:35:42, while the run slept.
+- **The ticks:** the live log had reached `r253 tick 2 token=***`, the last tick before the deletion, and
+  stayed there. Ticks 3 to 8 never appeared. Each partial log after the deletion could not be scrubbed
+  with the run's secrets, so it was skipped (R253).
+- **The finish:** the final output read "[withheld: a secret this pipeline uses changed while it ran, so
+  this output could not be checked for secrets]". So did the attempt's error and the run list's line. The
+  run failed after 3m 19s, one attempt, and its sandbox was removed.
+- **No leak:** neither test value was anywhere on the page, or in the app's log for the run.
+
+Two layers held: the sandbox masks what it was handed (R292), and the server withholds what it cannot
+check (R253).
+
+**Fixtures kept:** `R253_A` and the pipeline `r253_drive` with its failed run. `R253_B` is gone by design.
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R304: a query typed in the Workbench and never run, replaced by one click
+
+**Severity: medium (typed work lost without a word, and no way back), sweep 8.** The queue held it as a
+design question: the Data SQL Workbench is a scratch console, with no Save, and a query is kept once it
+runs, in Recent queries. Three one-click actions replace the editor's text:
+
+- a table in the database explorer, with `SELECT * FROM … LIMIT 50;`;
+- a pick from Recent queries;
+- **"Run … in the Workbench"** on the Catalog, which also runs it.
+
+The page keeps the Workbench mounted "so … editor state survive[s] switching", yet the Catalog's ▶
+replaced that state. The editor is a controlled textarea, so Ctrl+Z cannot bring back text the page set.
+
+**The before**, on R303's build, one typed query per path:
+
+- **Typed** `SELECT region, SUM(revenue) AS r304_typed …`, then clicked `analytics.fct_region_revenue`
+  in the Lakehouse explorer. The editor read the table's query, with no toast. Ctrl+Z three times
+  changed nothing, and `r304_typed` was nowhere on the page.
+- **Typed** `SELECT 304 AS r304_second_typed`, then picked a query from Recent queries. Replaced, with
+  no toast.
+- **Typed** `SELECT 304 AS r304_third_typed`, then switched to the Catalog and pressed ▶ on `r300_nul`.
+  Replaced and run, with no toast.
+
+**The fix** is one door for the three. `replaceSql` puts the text in the editor. When that would lose a
+query, it shows "The query you had not run was replaced. It never ran, so it is not in Recent queries."
+with **Undo**, which puts the old text back.
+
+- **The rule** is `losesUnrunQuery` (`src/lib/sqlDraft.ts`). The editor holds text, and it is neither
+  the query last run nor the text the page last put there, nor the text coming in.
+- **A run** marks its query kept, since it goes into Recent queries, failed or not.
+
+The first idea was to insert at the cursor instead of replacing. It would make a mess of a query, and
+it would change what the one click is for.
+
+**Tests:** `sqlDraftReplace.test.ts` checks the rule. It also checks the page: the only `setSql` calls
+left are typing, Format, `replaceSql` itself and its Undo; the three paths go through it; the loss is
+judged before what is kept moves; and a run keeps its query.
+
+- **Mutation harness:** 10 mutants caught, and the control survived. The first gate hit three known
+  phantom timeouts (the PDF build, `connectedIntegrations`, a sample workbook), which passed alone; the
+  rerun was green.
+
+**The after**, hot-deployed. The same query was typed once, and each path was followed by **Undo**:
+
+- **The table:** the toast with Undo; Undo put `r304_typed` back.
+- **A pick from Recent queries:** the same.
+- **The Catalog's ▶ on `analytics.fct_region_revenue`:** the same. Its query had run.
+- **Run Query on the typed query, then the table:** the query was in Recent queries, and the table
+  replaced it with no toast.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — Smoke of the real images after R301 to R303
+
+**The app image.** `9a335932d5f7` was built from `c90bf3e4` with `docker compose build agentswarms` and
+started with `docker compose up -d`. It was healthy after about 21 s: eight workers listening, eight
+schedulers started, and nothing in the log matching "error" or "warn".
+
+**The runtime image.** `agentswarms/notebook-runtime` (`c36a97397cd9`) is R299's rebuild. Nothing under
+`docker/` has changed since.
+
+**Markers.** Each is in its own chunk of the image's `dist`:
+
+- R301: the NUL-safe fetch, in `nulSafeFetch` on the server and in the client's `index` chunk;
+- R302: "another removal was already in progress", in `docker.server`;
+- R303: "did not say which version", in `saveVersion`; the MCP builder's chunk sends the `overwrite`
+  flag.
+
+The invented control is absent.
+
+**The Iceberg publish.** `analytics.fct_region_revenue` → `local_rest`, `r181`, `smoke_9a335932d5f7` gave
+"Published 4 row(s) to r181.smoke_9a335932d5f7". The catalog's own metadata shows `region, orders,
+revenue` and one `append` snapshot: **4 records in 1 file**.
+
+**R302 on the real images.** A kernel for "R301 probe" was stopped from Running kernels with the stop
+request sent twice at once:
+
+- **The proxy:** one DELETE answered 204, the other 409, and the 409's teardown inspected until 404.
+- **The result:** the container was gone. Both replies were 200, after 13.7 s, and the toast said
+  "Kernel stopped". There was no line in the app's log.
+
+**For R302's queued item.** On this kernel, which was "ready", Docker held `POST …/stop?t=5` for 6.3 and
+6.4 s, and the removing DELETE for 6.4 s. The 14 s and 19.5 s stops in R302 were both on kernels still
+"starting".
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R303: a tab opened before a deploy saved over everyone, and its save was taken for "Overwrite with mine"
+
+**Severity: high (silent loss of saved work), sweep 9.** This explains R290's one unexplained run.
+Five editors write over the stored row only on the version they read: the BI report (R284), the SQL
+model (R285), the ETL pipeline (R287), the workflow (R289) and the MCP server's source (R290). In all
+five, a save that left the version out was "Overwrite with mine", and was written blind. A page opened
+before those rounds were deployed sends no version. So does a page whose version was never read. Its
+every save was taken for a deliberate overwrite.
+
+R290's first after-drive was exactly that. Tab B had been opened on R289's build and was never
+reloaded after the hot deploy. Its Backspaces went through unrefused, and tab A's two autosaved lines
+were gone.
+
+**The before**, on R302's build, MCP builder, "r214 before" in two tabs:
+
+- **Tab B** had a page `fetch` wrapper that renamed the fingerprint's key, which the server's schema
+  drops. That sends what a page from before R290 sends.
+- **A** added `# r303 A`, which autosaved. B, reloaded, showed it.
+- **A** added `# r303 A2`, which autosaved. Nothing unsaved.
+- **B**, still holding the source from before A2, added `# r303 B`. The reply was "ok", with nothing
+  unsaved and no refusal.
+- **A, reloaded:** `# r303 A` and `# r303 B`. **A's `# r303 A2` was gone**, and neither tab said a word.
+
+The first try, with the wrapper's pattern not matching the seroval body, sent the fingerprint. The
+guard refused B: "Changed elsewhere, not saved". So the gap is only the missing version.
+
+**The fix** is `src/lib/saveVersion.ts`, `unversionedSave(what, { version, overwrite })`.
+
+- **The five saves** take `overwrite: z.literal(true)`. An update to an existing row that carries
+  neither its version nor that flag is refused before any table is read or written. The message: "This
+  save did not say which version of the … it was editing, so it could have undone a save made since.
+  Nothing was saved. The page was most likely opened before the app was updated: copy your changes,
+  reload the page, and save again."
+- **A new row** has no version to send, and goes through.
+- **The MCP builder's settings** (keep warm, timeout, secrets, origins, name) write without a
+  fingerprint as before. Only the source or packages need one.
+- **The five pages** send `{ overwrite: true }` for "Overwrite with mine", and their version
+  otherwise. The ETL check moved to the top of the save, so a refused save does no work first.
+
+**Tests:** `unversionedSave.test.ts` runs the five real handlers against a Supabase stub that records
+every table touched:
+
+- refused with neither, and no table touched;
+- through with the version, and through with `overwrite`;
+- a new report, pipeline or model through;
+- MCP settings saved without a fingerprint;
+- MCP packages alone refused;
+- an MCP overwrite writing the source but not the flag.
+
+The five R284–R290 pin tests now read the new page lines. So does R280's autosave pin, which matched
+the save call with `[^)]*` until the new parentheses broke it. It now matches the call's braces, and still
+fails when the catch is changed. The first gate failed on that pin and on two known phantom timeouts
+(the PDF build and a sample workbook), which passed alone; the rerun was green.
+
+- **Mutation harness:** 16 mutants caught, and the control survived.
+
+**The after**, hot-deployed:
+
+- **The same tab B**, still on the old bundle with the fingerprint renamed. A added `# r303 A3`, which
+  autosaved. B added `# r303 B2`, and the toast gave the message above; still "Unsaved changes".
+- **A reloaded:** `# r303 A3` still there.
+- **Both tabs on the new bundle.** A added `# r303 A4`. B's save sent its fingerprint (`id,
+source_code, requirements, expected_source_fingerprint`) and was refused as stale, with the chip.
+- **B's "Overwrite with mine"** sent `id, source_code, requirements, overwrite`, and was saved.
+- **Cleanup:** the test lines were removed, back to the original 22 lines. The save sent the
+  fingerprint, and the reply was "ok".
+- **An ordinary save elsewhere:** the BI report "r214 after", header band `R303`, then Save. The
+  request carried `expectedUpdatedAt`, and the toast said "Saved". The band was then put back to
+  empty.
+
+**What it costs:** a tab opened before this deploy keeps its ordinary saves, which send their version.
+Its "Overwrite with mine" is refused with the message above, until the page is reloaded.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R302: two teardowns of one sandbox, and a container "left on the host" that was gone
+
+**Severity: low (a false alarm in the operator's log, which also hid the real ones), the runtime.**
+R292's log had it. Two teardowns of one sandbox can overlap: Stop pressed twice, or a batch's result
+arriving while a refresh tears it down (R295). Docker answers the second DELETE 409, "removal of
+container ... is already in progress". `stop()` reported that as `removed: false`. Measured: two
+`docker rm -f` at once on a probe container, and the second says exactly that, then the container is
+gone a moment later.
+
+The app then logged "was not removed ... it is still on the host, still holding its CPU and memory",
+or "it will stay on this host until somebody removes it by hand". An operator told that looks for a
+container that is not there. And a true line of that kind reads the same as the false ones.
+
+**The before**, on R301's build:
+
+- **The kernel:** "R301 probe" was started by running a cell.
+- **The double Stop:** Developer workspace → Running kernels → Stop, with the page's own stop request
+  sent twice at once by a `fetch` wrapper.
+- **Both replies:** 200 `{"ok":true}`, after 17.8 s.
+- **The proxy:** one DELETE answered 204 and the other 409.
+- **The container:** gone.
+- **The app's log:** `session c7e79735… is being recorded as stopped but its sandbox nb-c7e79735… was
+not removed: docker DELETE answered 409: {"message":"removal of container nb-c7e79735… is already in
+progress"}`.
+
+**The fix** is in `stop()` (`notebookRuntime/docker.server.ts`). A 409 whose body says a removal is
+already in progress is the container being taken off, not a refusal. That teardown inspects the
+container every 250 ms until Docker answers 404, and reports `removed: true`. If it is still there
+after `NOTEBOOK_TEARDOWN_WAIT_MS` (10 s), it says so, and says why. Any other 409 or 500 is still a
+refusal.
+
+**Tests:** `dockerRemovalInProgress.test.ts` stubs the Docker API: removed once the removal in
+progress finishes; still there after the wait, with the reason; and a 500 still refused. The first
+two failed before the fix.
+
+- **Mutation harness:** 4 mutants caught, and the control survived.
+
+**The after**, on the new build, with the same steps:
+
+- **The wrapper had been installed twice**, so four Stop requests went at once.
+- **The proxy:** four `POST …/stop` 204. One DELETE answered 204 and three 409. The three inspected
+  every 250 ms (28 answers of 200) until 404, 3.6 s after the DELETE.
+- **The replies:** all four 200. The toast said "Kernel stopped".
+- **The app's log:** no line.
+
+**Queued:** Docker held `POST …/stop?t=5` for 14 s and 19.5 s on the two runs, so Stop spins about
+20 s. The grace period is 5 s.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R301: a NUL character in an editor's text could never be saved
+
+**Severity: medium (an edit that can never be saved, over an invisible character), every save in the
+app.** R279 found it and R300 re-queued it. Postgres refuses U+0000 in `text` and `jsonb` with
+"unsupported Unicode escape sequence". The character is invisible in an input, so the message cannot be
+acted on, and about 40 save paths showed it raw.
+
+**The before**, on R300's build, with the character set into the field as R279 did:
+
+- **A notebook title**, a browser-client write, through a new notebook `b27312c4…`. The toast said "Save
+  failed: unsupported Unicode escape sequence", and the page stayed "Unsaved changes".
+- **A BI report's header band**, a server-function write through the admin client, on "r214 after". Save
+  answered "unsupported Unicode escape sequence".
+
+**The fix, at the owner's choice: the generated clients were edited.**
+
+- **`src/integrations/supabase/nulSafeFetch.ts`** is the fetch every Supabase client now uses. A POST,
+  PATCH or PUT to `/rest/v1/` whose JSON body holds the character is parsed, cleaned at any depth (keys
+  too) and sent. Everything else goes through untouched: reads, auth, storage, and a body that is not
+  JSON. The literal text `\u0000`, which is not a NUL, survives.
+- **The two generated clients** (`client.ts`, `client.server.ts`) set it as their `global.fetch`, with a
+  header saying the edit was deliberate.
+- **The 49 other clients**, the user-scoped ones and the knowledge-base ingest routes that store fetched
+  web content, were wrapped by a codemod on the TypeScript syntax tree. It touches only `createClient`
+  imported from supabase-js; the app's Valkey `createClient` is left alone. One more,
+  `modelRegistry.functions.ts`, comes through a dynamic import and was wrapped by hand.
+- **The codemod's first run broke two files.** In `chat.ts` and `audit.functions.ts` a client sits above
+  a later import, and inserting the import at a position taken before the edits put it inside a string.
+  Their only changes were the codemod's, so they were restored from HEAD, and the import became one more
+  edit applied from the end.
+
+**Tests:** `nulSafeFetch.test.ts` checks the fetch against a stubbed `fetch`, and walks the syntax tree of
+every file in `src` to hold each supabase-js `createClient` to it. CONTRIBUTING says the same.
+
+- **Mutation harness:** 8 mutants caught, and the control survived. **Full suite:** 634 files passed.
+
+**The after:**
+
+- **The same notebook title** said "Saved", and after a reload read `R301 probe`.
+- **The same report header** said "Saved", and after a reload read `R301band`. It was then put back to
+  empty.
+
+**Fixture:** the notebook `R301 probe` is kept. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — Smoke of the real images after R296 to R300
+
+**The app image.** `7725c7187e5d` was built from `2258fabd` with `docker compose build agentswarms` and
+started with `docker compose up -d`. It came up healthy: eight workers listening, eight schedulers started,
+and nothing in the log matching "error" or "warn".
+
+**The runtime image.** `agentswarms/notebook-runtime` (`c36a97397cd9`) is R299's rebuild, and nothing
+under `docker/` has changed since. Its `batch_runner.py` hashes the same as the committed one
+(`e8111623…`).
+
+**Markers.** Each is in its own chunk of the image's `dist`:
+
+- R296: "This report could not be loaded";
+- R297: "Could not check who you are just now", in `callerLookup.server`;
+- R300: "NUL characters removed from" in the data-sql chunk, and `nulCellsCleaned` in `ingest.server`;
+- R298: the skills chunk now calls `getSession()`, with no `auth.getUser(` call left in it.
+
+The invented control is absent.
+
+**R298's first marker was wrong.** It was an absence across every browser chunk: no `auth.getUser(`
+anywhere. The search found two:
+
+- supabase-js's own warning text ("Use supabase.auth.getUser() instead…"), a string, not a call;
+- the tracer, which R297 left with a `// caller-lookup:` comment, because a failed check there only skips
+  tracing.
+
+The marker was narrowed to the skills chunk.
+
+**The Iceberg publish.** `analytics.fct_region_revenue` → `local_rest`, `r181`, `smoke_7725c7187e5d` gave
+"Published 4 row(s)". The catalog's own metadata shows `region, orders, revenue` and one `append`
+snapshot: **4 records in 1 file**.
+
+**R299 on the real images.** A run of `r299_stderr` logged the printed line, the `logging` line, the
+stderr line and the `UserWarning`, in order.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R300: one NUL character in a CSV and nothing was imported
+
+**Severity: medium (a whole import refused over an invisible byte, with a message that says nothing),
+data uploads.** R279's note had it as an editor problem. The upload is where it bites: rows and column
+definitions are stored as `jsonb`, Postgres cannot store U+0000 in `jsonb`, and it refuses the whole
+write over one. Legacy exports and fixed-width dumps pad with it.
+
+**The before**, on R299's build. Data Catalog → Workbench → Upload data, given a three-row CSV (built in the
+page and handed to the file input), with `pad\0ded` in one cell. The toast said only "unsupported Unicode
+escape sequence", the dialog stayed, and no dataset was created.
+
+**The fix.** `cleanRow` (`src/lib/datasetParse.ts`) removes the character from every text value and column
+name, and the ingest sink applies it **as each row arrives**, before the type sample, the inferred columns
+and coercion read it. It counts the cells it changed. The upload route returns `nulCellsCleaned`, and the
+dialog adds "NUL characters removed from N cells (they cannot be stored)".
+
+**The drive caught the first version.** That version cleaned in `coerceRow`, and the same upload failed
+again with the same message. A text column with few values keeps every distinct value in its definition,
+and `inferColumns` takes those from the raw rows **before** coercion; the definition is `jsonb` too. The
+test now shows inference over the raw rows carrying the NUL, and over the cleaned rows not.
+
+**Tests:** `uploadNulCells.test.ts`. **Mutation harness:** 6 mutants caught, and the control survived.
+
+**The after:** the same file gave "Dataset created: r300_nul, 3 rows · 2 columns · CSV · NUL characters
+removed from 1 cell (they cannot be stored)". `SELECT * FROM r300_nul` returned `1 clean`, `2 padded`,
+`3 end`.
+
+**Still open, re-queued:** the same character in an **editor's** text, R279's original case. The one
+universal place to strip it is in files marked generated, so it is a choice for the owner. The fixture
+`r300_nul` is kept. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-06 — R299: a run's logging and warnings never reached its logs
+
+**Severity: medium (a run's own diagnostics lost for good), ETL and every batch sandbox.** R292 queued it.
+The batch runner captured `sys.stdout` alone. Python's `logging` writes to stderr by default, and so do
+warnings and every library that reports through them. So those lines went to the container's log. The
+result callback removes that container once the run reports (R94), so they were lost for good.
+
+**The before**, on R298's build. A code pipeline, `r299_stderr`, printed one line and then wrote one
+each through `logging.info`, `sys.stderr.write` and `warnings.warn`. The run succeeded, and its logs read
+only `r299 from print`.
+
+**The fix.** `batch_runner.py` points `sys.stderr` at the same buffer as `sys.stdout`, so the order is
+kept and R292's scrub covers both. It hands both streams back before posting. On an error it hands them
+back before writing its scrubbed exit traceback, which belongs in the container's log.
+
+**Tests.** The R292 runner harness gained a check that both streams were handed back, and two tests:
+
+- logging, stderr and warnings reach the posted logs, and a secret logged through `logging` is scrubbed;
+- an error run's exit traceback goes to the real stderr.
+
+**Mutation harness:** 3 mutants caught, and the control survived. The runtime image was rebuilt
+(`c36a97397cd9`), and its runner hashes the same as the committed one.
+
+**The after,** the same pipeline again: `r299 from print`, `INFO:root:r299 from logging`, `r299 from
+stderr`, then `<notebook>:51: UserWarning: r299 from warnings`.
+
+**Fixture:** `r299_stderr` is kept. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R298: the browser said "Not signed in" when one request failed
+
+**Severity: medium (a refused save; an action that did nothing; a shared dataset read as empty), five
+browser paths.** R297 queued it. Browser code asked the auth server who was signed in (`getUser`, a round
+trip) and read any failure as "nobody". The browser already holds the session it signs every request with,
+and the server checks that token on each request.
+
+**The before**, on R297's build. A page-side wrapper failed the browser's `GET /auth/v1/user` and nothing
+else:
+
+- **Skills, "Duplicate to my skills".** Nothing happened: no toast, still "My skills (0)".
+- **Skills, a new skill, Save.** The toast said **"Not signed in"**, the dialog stayed open, and nothing
+  was saved.
+- **Read from the code, not driven:**
+  - **The SQL engine.** It decides by the caller's id which tables are shared with them. With a null id,
+    a dataset shared with the caller was read as their own, which RLS no longer serves, so it registered
+    empty.
+  - **The dashboard.** Its spend and greeting lost the user.
+  - **An approval node.** It said "Not signed in".
+
+**The fix.** `src/lib/sessionUser.ts` reads the user from the stored session, with no round trip. All five
+places use it, and Duplicate now says "Not signed in" when there really is no session, instead of returning
+in silence. The R297 sweep's browser exemptions are gone, so a `getUser` anywhere in `src` must say which
+kind of "no" it got.
+
+**Tests:** `sessionUserLookup.test.ts` checks that the session is read without asking the auth server, and
+pins the five places and the toast. The full suite passed, 632 files.
+
+- **Mutation harness:** 4 mutants caught, and the control survived.
+
+**The after**, with the same failure armed:
+
+- **Duplicate** made no auth request. It said "Copied to your skills", and the tab showed "My skills (1)".
+- **Save** made no auth request. It said "Skill saved", the dialog closed, and the tab showed "My skills
+  (2)".
+- **Unarmed:** the dashboard greeted "Welcome back, Rohan" with its spend card, and the Workbench ran a
+  query against the local tables.
+
+**Fixtures:** the two skills are kept ("R298 probe" and a copy of the first sample). Rows in [UI test
+results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R297: "you are not signed in" when it was the check that failed
+
+**Severity: medium (a false refusal everywhere; one ungoverned chat turn), every server function and API
+route.** R295 queued it. Each place that resolves the caller asked the auth server whose token it was
+handed, and read **any** error from that question as a refusal. A network blip, a rate limit or an auth
+outage told a signed-in person "Unauthorized", "Not signed in" or "Invalid session". R295's drive saw
+one such preview while the session was good for another forty minutes, and the docgen routes had once
+reported a misconfigured URL the same way.
+
+**Agent Chat had the sharper shape.** `getUserIdFromRequest` returned `null` for anything. A `null` user
+skips the IAM model rules and the budget cap, while the user-scoped client, built from the same good
+token, still served the turn. So a failed check ran that turn ungoverned. Requests with no token, or a
+refused one, were and are refused: "Authentication required for external providers", and 401.
+
+**The before** is code-level, because a real auth outage cannot be forced from the UI:
+
+- The real `biReportGet`, given a `AuthRetryableFetchError` from the lookup, answered "Not signed in".
+- The new sweep listed **71** server-side lookups that took any error as a refusal.
+
+**The fix.** `src/utils/callerLookup.server.ts` sorts the error using supabase-js's own classes:
+
+- **A refusal** is no error, or an auth error with a refusal status (400, 401, 403, 404, 422). That covers
+  `AuthApiError`, a gone session, and a JWT that would not read. The site keeps its message, with 401.
+- **Everything else** is a check that failed: a retryable fetch error, a 429, a 5xx, an unknown reply.
+  The answer is "Could not check who you are just now (…). Nothing was done; try again in a moment.",
+  with 503.
+
+**How the sites were changed:**
+
+- **40 server-function files**, rewritten by a script. Each passes its message through `callerFailure`.
+- **About 20 API routes,** by hand. They answer `callerFailureStatus`.
+- **Three helpers that answered user-or-null** (Agent Chat, A2A, and the notebook runtime's
+  `resolvePythonCaller`) now return `{ checkFailed }`. The compiler made all six of
+  `resolvePythonCaller`'s callers handle it, one more than the grep had found.
+- **The `requireSupabaseAuth` middleware's `getClaims`** goes through the same helper.
+- **The vector audit** takes its actor from that middleware's context, instead of asking again.
+
+**The drive found a defect in the first version.** It counted only `AuthApiError` as a refusal. Sent a
+junk token, `getClaims` fails locally with `AuthInvalidJwtError` ("Invalid JWT structure", status 400),
+and warehouse schema, python-chat and A2A answered 503. The rule became "any auth error with a refusal
+status", and those three answer 401 with their old messages again. Two lines then turned out redundant
+and were removed: the retryable-fetch exclusion and the session-missing special case. Mutants on each
+survived as equivalents.
+
+**Tests.** `callerLookupFailure.test.ts` covers:
+
+- the helper, against supabase-js's real error classes;
+- the real `biReportGet`, both ways;
+- a sweep of every server-side `auth.getUser` and `auth.getClaims`. Each must pass its **message**
+  through `callerFailure`, not only its status, or carry a `// caller-lookup:` comment saying why it need
+  not. Five browser files are exempt by name and queued.
+- pins on the 503s of the three user-or-null helpers.
+
+Three older pins asserted the old 401 lines and were updated: two in `apiRouteAuthz`, one in
+`ingestOwnership`.
+
+**Mutation harness:** 11 mutants caught, and the control survived. Three earlier survivors were real gaps
+(`checkFailed` untested, and the sweep accepting a status without the message) and were closed before
+this count.
+
+**The after,** on the deployed build:
+
+- **A junk token** to nine routes (notebook runtime, KB sources, docgen, upload, warehouse schema,
+  python-chat, A2A, object-store query, chat) got the same 401 and message as before.
+- **Signed in,** ETL, Secrets, Lakehouse (11 schemas, 63 tables), Sheets and Workflows loaded with no
+  sign-in complaint, and Agent Chat answered "READY".
+
+**Queued:** the browser's own `supabase.auth.getUser()` in five places. Rows in [UI test
+results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R296: a report that could not be loaded said "Report not found", or nothing
+
+**Severity: low (a false "not found", and a page with no way forward; nothing is written), BI reports.**
+R284 queued it. There were two shapes of one statement:
+
+- **`biReportGet` dropped its read's error.** A read that failed answered "Report not found" for a report
+  that is there.
+- **The page never caught a call that failed outright.** This was driven on the running build: a
+  page-side wrapper made the browser's request for "r214 after" fail, and only that request. The page
+  stayed a skeleton for good, with `Uncaught (in promise) TypeError: Failed to fetch` in the console, no
+  message and no way to retry.
+
+**The fix:**
+
+- **The server.** `biReportGet` now answers a failed read with "This report could not be read: <reason>".
+  It answers `{ missing: true, error: "Report not found" }` only when the read answered with no row.
+- **The page.** It catches a rejected call. Anything other than a missing report gets an alert, "This
+  report could not be loaded: …", with **Try again**, which loads it again. "Report not found." stays for
+  a report that is missing.
+
+**Tests:** `biReportLoadFailure.test.ts` runs the real server function with the framework's builder and the
+admin client faked, and pins the page.
+
+- **Mutation harness:** 5 mutants caught, and the control survived.
+- **The first gate failed** on R125's `tokenReloadSweep` pin. It anchors on the load's call line, which
+  lost its `const` here. The marker moved with it, and what that pin guards still holds: the load does
+  not follow the token, and Try again's `loadNonce` is not a token.
+
+**The after**, on the deployed build:
+
+- **The same failing request** gave "This report could not be loaded: Failed to fetch. The report itself
+  is unchanged." with Try again.
+- **With the failure lifted,** Try again loaded "r214 after".
+- **A made-up report id** still says "Report not found.".
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — Smoke of the real images after R292 to R295
+
+**The app image.** `fb08ddc179a9` was built from `52e466e1` with `docker compose build agentswarms` and
+started with `docker compose up -d`. It came up healthy: eight workers listening, eight schedulers started,
+and nothing in the log matching "error" or "warn".
+
+**The runtime image.** `agentswarms/notebook-runtime` (`44bd23870644`) was rebuilt in R292, and nothing
+under `docker/` or `services/` has changed since. Its `batch_runner.py` hashes the same as the committed one
+(`9291df20…`). That was checked, because the image was built before R292's commit.
+
+**Markers.** Each round's marker is in its own chunk of the image's `dist`:
+
+- R292: the prelude's `_agentswarms_scrub`;
+- R293: the upsert's `onConflict:"agent_id"`;
+- R294: "not enforced yet";
+- R295: the guarded `.eq("status", row.status).select("*").maybeSingle()`, matched as a pattern, since the
+  round adds no message.
+
+The invented control is absent, and the chunk filter says "absent" for R294's text in a server chunk.
+
+**The Iceberg publish** first failed. `analytics.fct_region_revenue` → `local_rest`, `r181`,
+`smoke_fb08ddc179a9` came back with "Failed to commit Iceberg transaction: Request returned HTTP 500".
+
+- The cause was in the standalone dev catalog. `aswarm-iceberg-rest` keeps its state in SQLite on a named
+  volume and had been up 29 hours. Its log had `SQLITE_BUSY: database is locked` on the commit, while reads
+  were answered.
+- The app reported the 500 correctly, in the toast, and left the dialog open.
+- After `docker restart aswarm-iceberg-rest`, which keeps the volume, the same publish toasted "Published
+  4 row(s) to r181.smoke_fb08ddc179a9".
+- The catalog's own metadata shows columns `region, orders, revenue` and one `append` snapshot: **4
+  records in 1 file**.
+
+**R292 on the real images:** a node preview of `r292_preview` showed `printed token=***` and
+`RuntimeError: raised token=***`.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R295: a poll that read "running" wrote over the stored result
+
+**Severity: medium (a finished preview shown as failing with no reason; any batch session's result can
+be lost), the runtime.** R292 found it. The first node preview after a deploy read only "Preview failed".
+The app's log had `refreshSession` "ended as error" while the result callback's teardown was already
+removing the container (409, "removal ... already in progress").
+
+**What happened:**
+
+- The preview's poller read the session as "running".
+- The sandbox posted its result, and the callback stored it and removed the container.
+- `refreshSession`, still holding the row it had read, asked the orchestrator. It heard "gone" (or
+  "exited") and wrote "stopped" (or "error" with the exit message and the container's empty log) over the
+  stored row.
+- It then handed the poller that guess, not the stored row. "stopped" with no error is exactly what the
+  preview shows as "Preview failed".
+
+**The before.** It could not be forced from the UI. Seven more previews in this round came back complete,
+except one auth blip, which is queued separately. So the proof is the real `refreshSession` in
+`sessionRefreshStale.test.ts`, against an in-memory table that honours the filters, with the orchestrator
+faked:
+
+- **The sandbox already gone:** the stored `error` became `stopped`.
+- **The sandbox exited:** the sandbox's own `RuntimeError: raised token=***` became "exited with code 1".
+
+The two cases where the row had not moved on passed before and after.
+
+**The fix.** The update is filtered on the status it was decided from, `.eq("status", row.status)`,
+and returns the row it wrote. When nothing was written, the row has moved on, and the caller gets the
+row as stored. The teardown still runs first, so a terminal row never stands over a live container
+(R93).
+
+**Tests:** R80's pin on the old destructuring was updated.
+
+- **Mutation harness:** 4 mutants caught against a verified-green baseline, and the control survived.
+  The first run let one through: dropping `.eq("id")` passed, because the fake table held one row. A
+  bystander session in the same status now has to stay untouched.
+
+**The after**, on the deployed build:
+
+- Two previews showed the full scrubbed output.
+- **Interactive kernels**, which go through the same refresh from starting to ready, were driven three
+  times.
+  - **First:** it reached "Kernel ready", and the gateway created the kernel. The browser's connect timed
+    out before the gateway's "ready".
+  - **Second:** a new session printed `1` in 271 ms.
+  - **Third,** in another notebook: its container sat in "Created" for about 25 s, then the cell
+    printed its statistics in 746 ms.
+  - The first timeout reads as this host's slow container start on the rebuilt image, not the refresh:
+    every session reached ready and its endpoint was found by the gateway.
+
+**Found on the way, and queued:** a failed auth lookup reads as "Unauthorized". Rows in [UI test
+results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R294: the per-agent spend limits were a control that did nothing
+
+**Severity: high (a guardrail shown as working, which is not), Budgets.** R293 found it. The Budgets page's
+Agent-Specific Limits card read "Cap daily spend per agent and optionally auto-disable on limit reached".
+`agent_limits` is read by that page and its loader and by nothing else: no guard, no worker, no trigger in
+any migration. It was invisible because setting a limit works perfectly; only keeping it does not.
+
+**The before**, on R293's build:
+
+- "R293 budget probe 3" was set to a daily limit of $0 with auto-disable on. A reload showed both
+  stored.
+- Two messages in Agent Chat were both answered. Traces & Logs shows them at 19:30:14 ($0.000036) and
+  19:30:28 ($0.000046), the second after the agent's spend for the day had passed $0.
+- The Budgets page still showed the agent Active.
+
+**What could be fixed here.** Enforcement needs a spend figure per agent per day.
+`budget_spend_since` filters by user, by credential scope or by a member list, never by agent. A
+client-side sum would be the capped-page sum that R39 removed. That leaves a migration, which is the
+user's to apply, so it is queued.
+
+**What this round changed:**
+
+- **The card says what it does.** "A daily spend figure per agent, and whether to switch the agent off
+  when it is reached", followed by an amber "Stored, but **not enforced yet**: an agent past its daily
+  figure keeps running and is never switched off. The monthly cap above is the limit that can refuse
+  calls."
+- **The in-app Budgets doc** carries the same warning.
+- **The test ties the sentence to the code rather than pinning it.** `agentLimitsDisclosure.test.ts`
+  walks `src` and `supabase/migrations` for anything that names `agent_limits`, outside the generated
+  types, the page, its loader, the docs and the table's own migration. While there is nothing, the page
+  and the doc must carry the warning. The day something appears, they must not.
+
+**Mutation harness:** 4 mutants caught, and the control survived. One mutant adds a comment naming
+`agent_limits` to `budgetGuard.server.ts`, and the test then asks for the warning to go.
+
+**The after**, on the deployed build: the card shows the amber line under the title, and
+`/docs/budgets` shows the warning. Probe 3 is kept with its $0 limit, as the fixture for whoever enforces
+it. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R293: Budgets stored a cap typed as 2500 as $25
+
+**Severity: high (a spend cap stored as something other than what was typed, under "Saved"), Budgets.**
+This closes the Budgets note carried by sweeps 8 and 9. The page wrote every change as its own request, all of them in
+flight together. A page-side logger was added for the drive, recording only each write's body and the
+order its reply came back.
+
+**The before**, on R292's build:
+
+- **The monthly cap.** The keys 2, 5, 0, 0 sent PATCHes of 2, 25, 250 and 2500. The replies came back
+  2, 2500, 250, 25. The field said 2500 and the status said Saved. After a reload: **$25.00**.
+- **An agent with no limit row.** This used a new agent, "R293 budget probe 2". The keys 2 and 5 sent an
+  insert of 2. The field then snapped back to the default 10 while that insert was in flight, so the
+  second key made it 105, and a second insert was sent. That one came back 409, `duplicate key value
+violates unique constraint "agent_limits_agent_id_key"`. **$2** was stored, under a toast saying "The
+  value shown is what is saved".
+- **The rest, read from the code and not driven:**
+  - a failed write put back the value from before _its own_ keystroke, over the newer ones on screen;
+  - every limit write spread a `limits` captured at render, so it could drop another agent's edit;
+  - an emptied field wrote `Number("")`, which is 0, and `budgetGuard` reads a cap of 0 or less as no
+    cap at all.
+
+**The fix:** one writer per row (`src/lib/latestWrite.ts`).
+
+- **One write at a time.** The writer keeps at most one write in flight. Edits made meanwhile are merged
+  into the next write, so the last edit is always the last write.
+- **Undo only what nothing newer writes.** Each outcome comes with the patch still waiting. A failure is
+  undone, to the stored value (the rows last read or written, not the screen), only in the fields
+  nothing newer is about to write.
+- **One statement for an agent's limit.** It is an upsert on `agent_id`, so no second insert can
+  happen. The new value is shown at once, whether or not the agent has a row yet.
+- **An amount field keeps what is typed.** An emptied field shows empty and writes nothing. Leaving it
+  puts the value back.
+
+**Tests:** `budgetWriteOrder.test.ts` holds the writer's replies and hands them out in any order, and it
+pins the page. R66's pins in `budgetSaveStatus.test.ts` asserted the old "put back the value before"
+and were updated.
+
+- **Mutation harness:** 12 mutants caught against a verified-green baseline, and the control survived.
+
+**The after**, on the deployed build:
+
+- **The same agent case.** A new agent, "R293 budget probe 3", with the keys 2 and 5. The field said 25
+  at once. One upsert of 2 came back 201, then one upsert of 25 came back 200, and it started only after
+  the first had landed. After a reload: 25.
+- **The cap.** The keys 2, 5, 0, 0 sent two PATCHes: 2, then 2500 once the first had landed. After a
+  reload: 2500.
+- **An emptied cap field** sent no write and showed the field empty. Tab put back 2500, and a reload
+  showed 2500.
+
+**Found on the way, and queued:** the Agent-Specific Limits enforce nothing. `agent_limits` is read by
+this page and its loader only, so the daily limit and "auto-disable on limit reached" are stored and
+never applied. The in-app Budgets doc now says so.
+
+**Fixtures:** the cap is back to $20 and RAG eval's limit to $10. The three probe agents (`R293 budget
+probe`, `2` and `3`) are kept. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R292: a secret replaced mid-run was stored in clear; a preview was never scrubbed
+
+**Severity: high (a secret shown in clear), ETL and every batch sandbox.** This closes R253's open note.
+The platform scrubbed a run's output against the values that were current when the output **arrived**,
+in `appendPartialLogs` and `finalizeEtlRun`.
+
+**The before**, driven on the running build:
+
+- **A secret replaced mid-run.** A code pipeline printed a `{{secret:R292_SECRET}}` binding and slept
+  for 45 s. While it slept, the secret was replaced from Secrets → Replace value. The live log had shown
+  `token=***`. The stored log read `token=r292-before-value-AAAA` and
+  `done token=r292-before-value-AAAA`, in clear.
+- **A secret deleted mid-run** leaks the same way. A pipeline-level binding that no longer resolves is
+  dropped, so its value leaves the scrub list. R253 had queued this.
+- **A node preview, worse.** A preview's error and logs are shown from its session row, and nothing
+  scrubbed them. A Custom Python source that printed and then raised the secret showed
+  `printed token=r292-before-value-BBBB` and `RuntimeError: raised token=r292-before-value-BBBB` in the
+  Data preview dialog. That is the secret's **current** value, with no rotation needed.
+
+**The fix is in the sandbox,** which is the one place that knows which values the run was handed:
+
+- `etlEnvFor` and `etlPreviewEnvFor` now return `scrub`, the values they put in the run's env. The
+  sandbox learns nothing new from it.
+- The prelude keeps those values on `sys._agentswarms_scrub` for the run's lifetime.
+- `batch_runner.py` scrubs every post with them: the live logs, the final logs and the error.
+- It also scrubs the traceback it writes to stderr on the way out. That used to be a bare `raise`, which
+  printed it raw into the container's log. The platform reads that log when a result post is lost. The
+  exit status is still 1.
+
+Two smaller defects in the same statement, fixed in both scrubbers:
+
+- **Values were scrubbed in list order.** A value containing a shorter one was left in pieces
+  (`***-AAAA`). Both scrubbers now take the longest value first.
+- **Logs were cut before they were scrubbed.** A value straddling the cut left its end behind. The
+  runner cut the live log, and the platform cut the live log and the final log, before scrubbing. All
+  three now scrub first, then cut.
+
+**The tests** (`etlSandboxScrub.test.ts`) run the real prelude and the real runner under the local
+Python, with httpx replaced by a fake that serves the bundle and records every post.
+
+- **Mutation harness:** 15 mutants caught against a verified-green baseline, and the control survived.
+- **Deploy:** the runtime image `agentswarms/notebook-runtime` was rebuilt, not only the app.
+
+**Still open:** stderr output (the `logging` module's default) is queued.
+
+**The gate.** The first full gate timed out in two files this round did not touch:
+`connectedIntegrations` (27 s against a 20 s limit) and `sheetsSamples` (76 s against 60 s). Alone,
+they took 1.9 s and 2.6 s. Nothing else was running, and the rerun was green.
+
+**The after**, on the rebuilt runtime image and the hot-deployed app:
+
+- **The same run.** The secret's value was `r292-before-value-BBBB` when the run started, and it was
+  replaced with `r292-after-value-CCCC` 15 s in. The run succeeded in 48 s, and the stored log reads
+  `token=***` and `done token=***`.
+- **The same preview.** It showed `printed token=***` and `RuntimeError: raised token=***`. The traceback
+  cites the new runner's line numbers.
+
+**A separate race, now queued.** The first preview after the deploy showed only "Preview failed". The
+app's log has one line for it: `refreshSession` "ended as error" while the result callback's teardown
+was already removing the container (409, "removal ... already in progress"). The preview poller's
+refresh works from the row it read, which still said "running". Its update is not conditional on that
+status, so it can write over the terminal row the callback has just finished. The next preview showed
+the full output.
+
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — Smoke of the real image after R282 to R291
+
+Image `0371e1da8fd0`, built from `44fee017` with `docker compose build agentswarms` and started with
+`docker compose up -d`; healthy, every worker listening and its scheduler started, and nothing in the log
+matching "error" or "warn". Nothing under `docker/` or `services/`, the Dockerfile or the compose file
+changed since the last image, so the notebook runtime image is still current (`git diff --stat`). Nine
+rounds' runtime strings are in the image's `dist` and the invented control is not; R291 changed a test
+only. R285 and R286 share their refusal message, so each is checked inside its own server chunk, and the
+chunk filter was checked first to say "absent" for three chunks that do not hold the string. An Iceberg
+publish of `analytics.fct_region_revenue` to `local_rest`, `r181`, `smoke_0371e1da8fd0` wrote 4 records
+in 1 file, read back from the catalog's own metadata; the toast had expired before it was read. Sweep 9's
+editor list closed with R290. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R291: a gate failed three times on one test's start-up cost
+
+**Severity: low (a false red in the gate), test infrastructure.** `tests/unit/nl2sqlEval.test.ts` timed out
+at 20 s on its first case, "count-rows", in the full gate after R271, R282 and R290 — each time passing
+alone, each time costing a full rerun. Timed alone, "count-rows" took 916 ms against 12–105 ms for every
+other case: it was the one paying for parsing the sample CSVs and starting the native engine, and under a
+625-file parallel run that one-off cost is what crossed 20 s.
+
+The cost now sits in a `beforeAll` that runs the first question once, with its own 120 s allowance, so
+each case times only its own query: alone, "count-rows" now takes 118 ms, the same as its neighbours.
+No mutation harness: the failure is load-dependent and cannot be made to happen on demand, so the timing
+is the evidence. No UI to drive. The other phantom timeouts seen this session (`etlSparkCodegen` once,
+`sheetsSamples` once) were not examined here; each passed alone.
+
+### 2026-10-05 — R290: two tabs on one MCP server's source, an autosave undoing the other's
+
+**Severity: high (silent loss of saved work), sweep 9.** The MCP builder autosaves the source and packages
+1.2 s after the last edit, over whatever is stored. Driven on R289's build with "r214 before" in two
+tabs: A added `# r290 A` and it autosaved; B, opened before, added `# r290 B` and it autosaved. Reloaded,
+the source had only B's line — A's saved line gone, neither tab saying a word.
+
+Deploys, the idle reaper and tool approval write this row, so a fingerprint again, of just what the editor
+saves (`mcpSourceDefinition`, `src/lib/mcpSource.ts`). The editor already keeps the source it read or last
+saved (R280's `savedAs`), so it fingerprints that and sends it with each save; `mcpAppSave`, when given a
+fingerprint, reads the row, refuses with `{ stale: true }` when the stored source no longer matches, and
+updates only on the `updated_at` it read. The fingerprint is never written into the row. Refused, the
+editor stops autosaving, shows "Changed elsewhere, not saved" with **Reload** and **Overwrite with mine**,
+and a link asks through R279's hook with the reason.
+
+The drive found a gap in the first version: `saveNow` began with `if (!unsaved) return null`, so an editor
+typed back to exactly what it opened — while the store held someone else's version — pressed **Overwrite
+with mine** and nothing was written. Overwrite now writes whenever it is asked. Nine mutants caught against
+a verified-green baseline (that one among them), control survived; R280's three pins moved to the new
+lines.
+
+Driven on R290 hot-deployed. **One run is unexplained** (explained in R303: tab B was still running
+R289's bundle, which sends no fingerprint, and a save without one was written blind): in the first
+after-drive, B's 9 Backspaces
+removed its old line and its tab then showed nothing unsaved and no refusal, and the store ended at the
+original 29 lines — A's two autosaved lines gone, and no record of which request did it. It did not
+recur. With every save request and reply logged in both tabs, the same sequence went as designed: A's
+autosaves "ok"; B, holding the older source, typed and was refused — the reply `stale`, "This MCP server's
+source was changed in another tab or session after this page read it", the chip, still "Unsaved changes";
+a tab loaded from a version since replaced was refused likewise. Then the fixed case: B refused, typed
+back to exactly what it opened (nothing unsaved, chip still up), **Overwrite with mine** wrote it — A, by
+then stale, was refused in turn, its **Reload** showed B's version, and removing the test lines left the
+source at its original 29 lines. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R289: two tabs on one workflow, a Save undoing the other's rename
+
+**Severity: high (silent loss of saved work), sweep 9.** `workflowSave` updated the whole workflow over
+whatever was stored. Driven on R288's build with `r184_badge` in two tabs: A renamed it "r184_badge A289"
+and saved ("Saved"); B, opened before, set the timeout to 721 minutes in Settings and saved ("Saved").
+Reloaded, it was "r184_badge" again — A's saved rename gone.
+
+Every writer of `workflows` was read first. Runs write `last_run_*`, the scheduler's claim writes
+`next_run_at`, the trigger token its hash — none touches `updated_at`, and the table has no trigger, so
+only the save moves it and it is the version, as on BI reports (R284). The save takes
+`expectedUpdatedAt`, updates only where it matches, and returns the new one; when nothing matched it
+tells a workflow that moved on (stale) from one that is gone. A test holds `run.server.ts` to never
+writing `updated_at`, so a later change cannot quietly turn every run into a "changed elsewhere". The
+page keeps the version, says "Changed elsewhere, not saved" beside Save with **Reload** (it re-runs the
+load) and **Overwrite with mine**. Nine mutants caught against a verified-green baseline, control
+survived — among them a run that writes `updated_at`.
+
+Driven on R289 hot-deployed, both tabs reloaded: A's two renames saved in turn. B's timeout of 720 was
+refused — "This workflow was changed in another tab or session after this page read it", the chip, still
+"Unsaved changes" (a first Save click landed while the Settings dialog was closing and did nothing; the
+second was refused). The store, read in A: "r184_badge A289b". B's **Overwrite with mine** saved its
+version (the old name, 720 minutes — the workflow as it began); A, then stale, was refused in turn and
+its **Reload** showed "r184_badge" and 720. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R288: two tabs on one swarm, a Save undoing the other's rename
+
+**Severity: high (silent loss of saved work), sweep 9.** The canvas saves name, nodes and edges with a
+direct update over whatever is stored. Driven on R287's build with "R109 chat echo" (two nodes) in two
+tabs: A renamed it "R109 chat echo A288" and saved ("Swarm saved"); B, opened before, added an Approval
+node and saved ("Swarm saved"). Reloaded, the canvas had B's three nodes and the old name — A's saved
+rename gone.
+
+Publishing and deploys write other columns of this row, so `updated_at` is not the version. There is no
+server function to put the check in — the page writes the row itself — so the page does it:
+`swarmStoredForm` (in `src/lib/swarmVersions.ts`) is canonical JSON of the stored name, nodes and edges,
+recorded by every path that opens or creates a row (`applySwarmRow`, the first swarm, a new one, the one
+created after a delete, a first save). Save reads the stored row, refuses when its form differs from the
+one recorded — unless overwriting — and updates only on the `updated_at` it read, then records what came
+back. The toolbar shows "Changed elsewhere, not saved" with **Reload** and **Overwrite with mine**. The
+Save button was `onClick={handleSave}`, which would have handed the click event to the new `overwrite`
+parameter; it calls `handleSave()` now. Eight mutants caught against a verified-green baseline, control
+survived.
+
+Driven on R288 hot-deployed, both tabs reloaded: A's two renames saved in turn. B deleted the extra
+Approval node (selected, Backspace) and saved — refused: "This swarm was changed in another tab or session
+after this page read it", the toolbar chip, still "Unsaved changes". The store, read in A: "R109 chat echo
+A288b" with three nodes — B's write refused, not made. B's **Overwrite with mine** saved its version (the
+old name, two nodes — the swarm as it began); A, then stale, was refused in turn, and its **Reload**
+showed "R109 chat echo" with two nodes. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R287: two tabs on one ETL pipeline, a Save undoing the other's rename
+
+**Severity: high (silent loss of saved work), sweep 9.** `saveEtlPipeline` updated the whole pipeline over
+whatever was stored. Driven on R286's build with `r214_after` in two tabs: A renamed it "r214_after A287"
+and saved ("Saved"); B, opened before, set the timeout to 31 minutes on Settings and saved ("Saved"). The
+pipeline list then read "r214_after" — A's saved rename gone.
+
+Runs write `last_run_*` and the schedule writes `next_run_at` on this row, so R285's guard again rather
+than `updated_at`. `etlPipelineDefinition` (`src/lib/etlDefinition.ts`) projects the fields the save writes
+and leaves out run state, the next run, the trigger token and the timestamps. `getEtlPipeline` hands the
+editor its fingerprint; the save, which already read the row to re-arm the clock, now reads all of it,
+returns `{ stale: true }` when the fingerprint no longer matches, updates only on the `updated_at` it read
+and returns the fingerprint of the row as written — read back rather than computed from the payload,
+because `alerts` is written only when sent. The editor keeps the fingerprint, shows the banner with
+**Reload** (which also clears its dirty flag) and **Overwrite with mine**, and **Run now**, which saves
+first, does not run after a refused save (read, not driven). Its Save button was `onClick={save}`, which would have handed the
+click event to the new `overwrite` parameter; it calls `save()` now. The create dialog shares the server
+function and narrows the new result type. Ten mutants caught against a verified-green baseline, control
+survived.
+
+Driven on R287 hot-deployed, both tabs reloaded: A's rename saved, then a timeout of 32 on the fingerprint
+the first save returned — accepted. B's timeout of 30 was refused with the reason and the banner; the
+list then read "r214_after A287". A reopened that version; B's **Overwrite with mine** saved B's version
+(name "r214_after", timeout 30 — the pipeline as it began); A's next rename was refused, and its
+**Reload** showed "r214_after" and 30 with Save disabled. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R286: two tabs on one semantic model, a Save undoing the other's
+
+**Severity: high (silent loss of saved work), sweep 9.** `semanticUpsertModel` updated the whole
+definition over whatever was stored. Driven on R285's build with `stg_revenue` in two tabs: A set the
+description to "r286 A" and saved ("Saved"); B, opened before, set the label to "stg_revenue B286" and
+saved ("Saved"). Reopened, the model had B's label and no description — A's saved description gone.
+
+Certification writes `status`, `certified_by` and `certified_at` on this row, and a trigger drops an edited
+model back to draft, so `updated_at` is not the version. R285's guard carries over: `semanticModelDefinition`
+projects the fields the upsert writes — status and ownership left out — and the list hands each model out
+with its fingerprint. The upsert now reads the stored row, refuses with `{ stale: true }` when its
+fingerprint no longer matches the one the page sent, updates only on the `updated_at` it read, and returns
+the fingerprint of what it wrote. The page sends the fingerprint of the row it opened (`draftRow`), keeps
+the new one after a save, and shows the banner with **Reload** (the fresh list, the model reopened) and
+**Overwrite with mine**. The Save button was `onClick={save}`, which would have handed its click event to
+the new `overwrite` parameter as a truthy value — it now calls `save()`. Nine mutants caught against a
+verified-green baseline, control survived.
+
+Driven on R286 hot-deployed, both tabs reloaded: A saved "r286 A", then "r286 A2", the second on the
+fingerprint the first returned — accepted. B's label was refused: "This model was changed in another tab
+or session after this page read it" and the banner; the store, read in A, held "r286 A2" and the label
+B had not written. B's **Overwrite with mine** saved (label "stg_revenue", no description — the model as
+it began); A, now the stale one, was refused in turn, and its **Reload** showed B's version. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R285: a SQL model's Save undoing another tab's, and the editor's own Pause
+
+**Severity: high (silent loss of saved work, and a paused schedule silently resumed), sweep 9.**
+`sqlModelSave` wrote the whole definition over whatever was stored. Driven on R284's build with
+`r178_after` (`SELECT 1782 AS id`) in two tabs: A changed the SQL to `… -- A285` and saved ("Saved
+r178_after"); B, opened before, set the description to "r285 B" and saved ("Saved r178_after"). Reopened,
+the model had B's description and the old SQL — A's saved SQL gone. The same tab found the same family
+on its own: **Pause** wrote `is_active: false` but left the open draft's `is_active` true, so clearing the
+description and pressing **Save** resumed the model; the button read **Pause** again and nothing said so.
+
+R284's guard does not carry over: builds write this row's run columns and move `updated_at`. So the save
+now compares the definition itself. `src/lib/definitionFingerprint.ts` gives a SHA-256 of canonical JSON
+(keys sorted at every depth, so a `jsonb` round trip that reorders a test's keys reads the same), and
+`sqlModelDefinition` projects exactly the fields the save writes, with its defaults. The list hands each
+model out with that fingerprint; the save, which already reads every model before writing, refuses one
+whose stored definition no longer matches the fingerprint the page sent, and then updates only on the
+`updated_at` it read — so the read, the check and the write are one step, with no migration. A write in
+that instant (a build finishing) leaves nothing to update and the save says to save again. The save
+returns the fingerprint of what it wrote. The page sends its fingerprint, keeps the new one, shows a
+banner with **Reload** (in the page: the fresh list, the model reopened) and **Overwrite with mine**;
+**Pause** and **Resume** now carry the new setting into the open draft, its saved record and its
+fingerprint, leaving other unsaved edits alone. A redundant `undefined` check in the canonical JSON — which
+`JSON.stringify` already leaves out — was dropped before the harness could only fail to kill it. Ten
+mutants caught against a verified-green baseline, control survived; R276's two pins moved to the new
+lines.
+
+Driven on R285 hot-deployed, both tabs reloaded: A saved the SQL, then the description "r285 A2" — the
+second save on the fingerprint the first returned, accepted, so a stored row and the save that wrote it
+fingerprint alike. B's description was refused: "This model was changed in another tab or session after
+this page read it" and the banner; the store, read in A, held both of A's edits. B's **Reload** showed A's
+version with no banner. Then in B: **Pause** ("Paused r178_after"), the SQL and description put back,
+**Save** — accepted, no banner, and the button still **Resume**: the pause kept. **Resume**, and the model
+is as it began: `SELECT 1782 AS id`, no description, active. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R284: two tabs on one BI report, a Save undoing the other's blocks
+
+**Severity: high (silent loss of saved work), sweep 9.** `biReportSave` updated the whole report — page,
+bands, blocks — over whatever was stored. Driven on R283's build with the report "r214 after" (empty,
+margin 40) in two tabs: A added a Heading and saved ("Saved"); B, loaded before that, set the margin to 41
+and saved ("Saved"). Reloaded, A's report had margin 41 and "No blocks yet": the Heading A had saved was
+gone, and neither tab had said a word.
+
+Before choosing the guard, every writer of `bi_reports` was read: the save is the only one, and it sets
+`updated_at` itself (the table has no trigger), so `updated_at` is a sound version here. The save now
+takes `expectedUpdatedAt`, updates only where it matches, and returns the new `updated_at`. When nothing
+matched it looks again: a report that still exists moved on since the page read it — stale; one that
+does not is "Report not found", as before. The designer keeps the version it read and the one each save
+returns; refused, it says "This report was changed in another tab or session after this page read it"
+and shows a banner with **Reload** (which skips R278's tab question) and **Overwrite with mine** (a save
+without the version, chosen knowingly). Nine mutants caught against a verified-green baseline, control
+survived; R278's two pins on the save and the blocker moved to the new lines.
+
+Reading the other tables in the survey for the same guard showed it does not carry over:
+`mcp_apps`, `sql_models`, `etl_pipelines`, `workflows`, `swarms` and `semantic_models` all get writes from
+runs, deploys or certification that move `updated_at` with nobody editing. The queue now says so, and
+names the guard those need instead.
+
+Driven on R284 hot-deployed, both tabs reloaded: A's Heading saved; B's margin change was refused — the
+toast, the banner, "Unsaved changes", the tab guarded — and the store, read in A, held A's Heading at
+margin 41. B's **Overwrite with mine** saved and cleared its banner; A, now the stale one, added a second
+Heading and was refused in turn; its **Reload** reloaded with no question and showed B's version: no
+blocks, margin 40 — the report as it began. One stray pair of clicks went to a third tab of the pane
+(Agent Builder, not opened here) before the batch named its tab; nothing changed there — nine agents,
+no dialog. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R283: two tabs on one notebook, the later save undoing the earlier
+
+**Severity: high (silent loss of saved work), opens sweep 9.** The Python notebook saved its whole
+document — title and cells — with a plain update, over whatever was stored. Driven on R282's build, with
+"r213 double run" open in two tabs: tab A appended " A283" to the title and showed "Saved"; tab B, still
+holding the old title, added `# r283 B` to a cell and saved. Tab A went on saying "r213 double run A283"
+and "Saved"; reloaded, it read "r213 double run" with B's line — A's saved title gone, without a word to
+either tab.
+
+The notebooks table's trigger already moves `updated_at` on every write, so it serves as the version with
+no migration. Every other writer of the row was read first: the editor itself and the Git restore, which
+reloads the page after it. A save now updates with `.eq("updated_at", version)` and `.select("updated_at")`
+and takes the version it gets back; no row back means another tab or session saved since this page read
+it. Then the page latches: autosave stops, the toast says "Save failed: this notebook was changed in
+another tab or session after this page read it", a banner offers **Reload** (which skips the tab's own
+question), and a link asks through R279's hook with that reason. The page's own saves run through a
+queue, so two of them in flight cannot take each other for someone else's. `src/lib/guardedSave.ts`
+holds the reply reader and the queue for the rest of the sweep; the queue's `tail.then(run, run)` already
+runs on after a rejection, so a `.catch` that only a surviving mutant could exercise was dropped. Nine
+mutants caught against a verified-green baseline, control survived; R279's two pins on the save and the
+autosave guard were updated to the new lines.
+
+Driven on R283 hot-deployed, both tabs reloaded: A's title edit saved as usual (the guard passes its own
+version); B then removed its line — "Save failed: this notebook was changed in another tab or session
+after this page read it", the banner, "Unsaved changes", the tab guarded. The store, read in A: "r213
+double run A283" with `# r283 B` still there — B's write was refused, not made. B's Dashboard link asked
+"Leave without saving "r213 double run"? The latest changes could not be saved: this notebook was
+changed in another tab or session after this page read it. Leaving drops them." — **Cancel** stayed;
+**Reload** reloaded with no question and showed A's version. Two cleanup edits in B then saved in turn
+(one tab's saves do not trip each other), and the notebook is back to "r213 double run". Sweep 9's survey
+is in the queue. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R282: a profile form that could save blanks over the profile
+
+**Severity: moderate — lost edits, and, from reading, a stored profile wiped by one click.** The last
+form of the sweep-8 survey. The Account page's profile (names, role, designation, organization, bio)
+saves with **Save profile** and kept no record of what was saved. Driven on the smoke image
+(`aa3ce2c9db22`): "r282 bio" typed into the empty bio — no note, a dispatched `beforeunload` not
+blocked, and the sidebar Dashboard link left with no question; reopened, the bio was empty.
+
+Reading the load found the worse fault, sweep 7's shape: `loadProfile` kept `data` and dropped `error`,
+so a read that **failed** was taken for "no profile yet". The form then opened with every field blank
+and the email as the display name, and **Save profile** upserts every field — writing those blanks
+over the stored names, role, organization and bio — and the avatar, since the payload carries
+`avatar_url` too. Not driven: a failed read cannot be caused from the
+page.
+
+Now a failed read shows "Your profile could not be read: …" with **Try again**, and no form. The page
+records the form's fields as loaded and as each save stored them (the avatar saves on its own and is
+not part of it); after a save the form shows the stored values, and an edit typed while the save was
+out stays on screen, unsaved. An "Unsaved changes" note sits beside Save, and a link or the tab asks
+"Discard the changes to your profile?" — except the way out after deleting the account. Ten mutants
+caught against a verified-green baseline, control survived.
+
+Driven on R282 hot-deployed, without saving (this is the account's real profile): untouched, no note
+and not blocked; "r282 bio" typed, the note and blocked, the Dashboard link asked "Discard the changes
+to your profile? They are not saved. Leaving the page drops them." — **Cancel** kept it; deleted back to
+empty, the note went and nothing was blocked; typed again, **Discard changes** left, and the bio
+reopened empty. The save path is pinned by the tests rather than driven, so as not to rewrite the
+account's display name. **This closes the sweep-8 survey.** Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — Smoke of the real image after R271 to R281
+
+Image `aa3ce2c9db22`, built from `73fd4b78` with `docker compose build agentswarms` and started with
+`docker compose up -d`; healthy, every worker listening, and a log with nothing but its listening lines.
+Nothing under `docker/` or `services/`, the Dockerfile or the compose file changed since the last image,
+so the notebook runtime image is still current (`git diff --stat`). Ten rounds' runtime strings are in
+the image's `dist` and the invented control is not; R272 changed a dependency array and has no string to
+find. The instrument was tried on the hot-deployed container first and needed two corrections: R274's
+first pick was a class name other pages share, and R277's strings are all also R276's, so R277's is
+checked inside the Semantic Layer's own chunk — and that chunk filter was itself checked to say "absent"
+for a chunk without the string. An Iceberg publish of `analytics.fct_region_revenue` to `local_rest`,
+`r181`, `smoke_aa3ce2c9db22` wrote 4 records in 1 file, read back from the catalog's own metadata. On the
+sweep-8 survey: Prompts edits in a dialog and Data SQL has no Save for its SQL, both struck; a wider grep
+added one more form to drive, the Account page's profile. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R281: a dashboard edit, dropped after "Save failed"
+
+**Severity: moderate (lost work), sweep 8.** A BI dashboard saves 700 ms after an edit and had no guard at
+all. Driven on R280's build, in "r214 widget after": a text block added — the badge said "Saving" and a
+dispatched `beforeunload` was not blocked. That window is narrow in practice: a reload keeps the old page
+running until the new one arrives, and twice (the pane's navigate, then a reload from the page 200 ms
+after the click) the save still landed, so the window's loss was not reproduced; a closed tab ends the
+page at once. The deterministic loss is after a failed save: a text block holding a NUL character, which
+Postgres refuses — "Save failed: unsupported Unicode escape sequence", the tab not blocked, and the
+sidebar Dashboard link left with no question; reopened, the block was gone. The save state could not
+carry a guard either: the filters' immediate save sets "Saved" while a pages save still waits on its
+timer (from reading).
+
+Now the page keeps what a save still owes — the pages the debounced save will write, and filters whose
+save has not come back — cleared only by the save that wrote exactly them, so a failed save stays owed. A
+load (a History restore included) clears it and drops a waiting save, so an owed save can never be
+written over a restore. The badge does not say Saved while anything is owed. Leaving goes through R279's
+`useSaveBeforeLeave`: a link writes what is owed and asks only if that fails, and the tab asks while
+anything is owed. Eight mutants caught against a verified-green baseline, control survived.
+
+Driven on R281 hot-deployed: untouched, "Saved" and not blocked; a text block added, blocked at 100 ms
+("Saving"), not blocked once "Saved". The NUL block: "Save failed", blocked, and the Dashboard link asked
+"Leave without saving "r214 widget after"? The latest changes could not be saved: unsupported Unicode
+escape sequence. Leaving drops them." — **Cancel** stayed; removing the block saved and cleared it. A
+block added and the Dashboard link clicked 100 ms later left with no question, and the block was there on
+reopening. The four test blocks were removed; the dashboard is back to its one chart. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R280: an MCP app's source, not saved when typed back to how it loaded
+
+**Severity: moderate (lost work, and a deploy of the wrong source), sweep 8.** The MCP builder saves the
+source and packages list 1.2 s after the last edit. Its "nothing changed" test compared the editor with
+the app as **loaded**, which no save updated; its dirty flag was a bare boolean that any returning save
+cleared; and its timer was cleared on unmount. Driven on R279's build, in the app "r214 before": a line
+`# r280a` added and the Dashboard link clicked at once — no question, gone on reopening; `# r280b` added
+and left to save, then deleted — the header said nothing, and on reopening `# r280b` was back, because
+deleting it returned the editor to the loaded text and so was never sent. From reading, not driven: an
+edit typed while a save was out had its dirty flag cleared by that save's return and was skipped by the
+next timer; a failed save cleared it too, so the next background reload put the server's text over the
+editor; Deploy flushed, and on a failed save deployed the old source anyway; and a save the server's
+input check refused rejected rather than returning `{ ok: false }`, leaving "Saving…" up for good.
+
+Now the page records the source and packages as loaded or as each save sent them, once the reply has no
+error, and a background reload adopts the server's text only when nothing is unsaved (a version restore
+always does). "Unsaved changes" means the editor differs from that record. A refused save is caught,
+counted out and reported in words — `saveFailureText` turns the validator's JSON into "field: reason" —
+and the shared `useSaveBeforeLeave` from R279 saves on a link and asks only if that fails. Deploy saves
+first and stops if it cannot: "Not deployed: the source could not be saved (…)". Thirteen mutants caught
+against a verified-green baseline, control survived.
+
+Driven on R280 hot-deployed: untouched, no note and not blocked; the leftover `# r280b` deleted, the note
+showed and it saved; `# r280c` added, saved, deleted — the note showed, it saved, and reopening found 29
+lines, as loaded; `# r280d` added and the link clicked at once — blocked meanwhile, saved and left with no
+question, there on reopening, then deleted. A real refusal: a 20,020-character packages list (inserted as
+a paste, `execCommand('insertText')`, since the pane has no clipboard) — "requirements: Too big: expected
+string to have <=20000 characters", still "Unsaved changes"; **Deploy** said "Not deployed: the source
+could not be saved (requirements: Too big: …)." and the app stayed "Not deployed"; the Dashboard link
+asked "Leave without saving "r214 before"? The latest changes could not be saved: requirements: Too big: …
+Leaving drops them." — **Cancel** stayed; the list cleared, it saved. The app is back as it was: 29
+lines, no packages, not deployed. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R279: a notebook edit, dropped by a link taken before the autosave
+
+**Severity: moderate (lost work), sweep 8.** The Python notebook saves 1.2 s after the last edit, on a
+timer its effect clears when the page unmounts. So a link inside that 1.2 s dropped the edit, a closed
+tab did the same, and so did leaving after a save that failed — whose state was "Unsaved changes" with
+nothing stopping the leave. The header's state was also set by whichever save returned last, so an older
+save could say "Saved" over a newer edit (from reading; not driven). Driven on R278's build: " r279" typed after the title of
+"r213 double run" and the sidebar Dashboard link clicked at once — no question, and the notebook
+reopened as "r213 double run"; typed and left alone, it said "Unsaved changes", a dispatched
+`beforeunload` was not blocked, and 3 s later it was saved (then typed back).
+
+Now the page records the notebook as loaded and as each save sent it, only once the reply has no error;
+"Unsaved changes" means the editor differs from that record. A new shared hook, `useSaveBeforeLeave`,
+saves on a link and asks only if that save fails — "Leave without saving "…"? The latest changes could
+not be saved: <reason>. Leaving drops them." — and lets the tab ask while anything is unsaved, except
+during a version restore's own reload. Ten mutants caught against a verified-green baseline (a link
+leaving without saving, a save that throws or fails letting it go, the tab asking during a restore, the
+load or a failed save mis-recorded, the autosave running with nothing unsaved, the page not guarded, the
+restore not marked, the label off the record), control survived.
+
+Driven on R279 hot-deployed: untouched, "Saved" and not blocked; " r279" typed, "Unsaved changes" and
+blocked, the Dashboard link saved and left with no question, and the notebook reopened as "r213 double
+run r279". For a real failed save, a NUL character in the title, which Postgres refuses: "Save failed:
+unsupported Unicode escape sequence", then the Dashboard link asked "Leave without saving "r213 double
+run r279"? The latest changes could not be saved: unsupported Unicode escape sequence. Leaving drops
+them." — **Cancel** stayed with the edit; the title corrected, it saved. NUL again, **Leave anyway**
+left, and the notebook reopened as last saved. The title is back to "r213 double run". Reading the MCP
+builder and the BI dashboard for the same hole put both on the queue, with what each one does
+differently. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R278: a BI report's unsaved blocks, left behind by "← BI"
+
+**Severity: moderate (lost work), sweep 8.** The survey's last open question was whether a BI report
+saves as it goes. It does not: the designer holds blocks, page settings, header and footer in the page
+until Save, and kept no record of what was saved. Driven on R277's build: in report "r214 after", a
+Heading block added, then "← BI" — on `/bi` at once with no question, and the report reopened with
+"No blocks yet". A link or a closed tab did the same.
+
+Now the load and every successful save record the report as sent (an edit made while a save is in
+flight stays unsaved), "← BI", any other link and the tab ask by the report's saved name through the
+router's `useBlocker`, and an "Unsaved changes" note sits beside Save. "← BI" is a route link, so the
+one blocker covers it. Five mutants caught against a verified-green baseline (the load or a save not
+recorded, the blocker on with nothing unsaved, the tab not asking, no note), control survived.
+
+Driven on R278 hot-deployed: untouched, no note, not blocked, and "← BI" left freely; a Heading added,
+the note showed, blocked, and "← BI" asked "Discard the changes to "r214 after"? They are not saved.
+Leaving the report drops them." — **Cancel** kept it; the sidebar Dashboard link asked the same and
+**Discard changes** left, the report reopening with "No blocks yet". The margin changed 40 → 41 showed
+the note, **Save** cleared it, "← BI" then left freely, and 41 was there on reopening; set back to 40
+and saved. That closes the sweep's first survey list; the queue names a second. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R277: a semantic model's draft, replaced by the next model clicked
+
+**Severity: moderate (lost work), sweep 8.** The Semantic Layer page keeps the open model as a draft and,
+like the SQL models editor, kept no record of what was saved. Driven on R276's build: `stg_revenue`'s
+dimension renamed `region_EDITED`, then a click on "Revenue" — replaced at once; back on `stg_revenue`,
+"region" again. New model, a link and a closed tab did the same. (The survey's
+`SemanticLayerEditor.tsx` turned out to be a dialog, where closing is the discard; the page is
+`semantics.tsx`.)
+
+Now every place that opens a model — a click in the list, a restore, a lakehouse table opened from
+elsewhere — opens it as the saved state, a save records what it sent, and another model, New model, a
+link or the tab asks first, by the model's saved name. Values a Validate samples into the draft count as
+unsaved, which is right: only the next Save keeps them. Six mutants caught against a verified-green
+baseline (opening a draft or a save not recorded, a model opened behind the record, another model or
+New model not asking, the blocker on with nothing unsaved), control survived.
+
+Driven on R277 hot-deployed: untouched, not blocked and switching free; edited, blocked, and "Revenue"
+asked "Discard the changes to "stg_revenue"? They are not saved. Opening another model replaces them." —
+**Cancel** kept it; **New model** asked "…Starting a new model replaces them." and **Discard changes**
+opened an empty model, which itself left freely and showed `stg_revenue` as saved; the Dashboard link
+asked "…Leaving the page drops them." and Discard left. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R276: a SQL model's draft, dropped by Close, by another model, by New
+
+**Severity: moderate (lost work), sweep 8.** The SQL models editor holds a draft and kept no record of
+what was saved, so nothing could tell an edit was pending. Driven on R275's build with the fixture
+models: `r178_after`'s SQL given " -- EDITED", then a click on `r178_target` — replaced at once; back on
+`r178_after`, the edit was gone. The same edit and **Close**: the editor shut, and reopened without it.
+New model, a link and a closed tab did the same.
+
+Now the editor records the draft as it was opened or saved (a new model's empty draft counts as saved
+until something is typed), and asks before Close, another model, New model, a link or the tab replaces
+it, naming the model by its saved name — or "Discard the new model?" for one never saved. Clicking the
+model already open no longer reloads it over the edits. **The first build asked "It is not saved. Opening
+another model replaces them."** — caught in the drive: a model's changes are "they", a new model "it",
+and the body now follows the title. Six mutants caught against a verified-green baseline (opening a
+draft or a save not recorded, another model or Close not asking, the blocker on with nothing unsaved,
+a model's changes called "it"), control survived.
+
+Driven on R276 hot-deployed: untouched, `beforeunload` let through and switching free; `r178_target`
+edited, blocked, and the switch asked "Discard the changes to "r178_target"? They are not saved. Opening
+another model replaces them." — **Cancel** kept it; **Close** asked "…Closing the editor drops them."
+and **Discard changes** closed it, the model reopening as saved; an untouched New model left freely; a
+new one named `r276_never` asked "Discard the new model? It is not saved. Opening another model replaces
+it.", and Discard left no such model. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R275: a pipeline editor that knew its edits were unsaved, and let them go
+
+**Severity: moderate (lost work), sweep 8's first named round.** R268–R270 found the same shape twice
+(the workflow editor, the swarm canvas), so it is a sweep now: an editor with a Save, and edits left
+behind without a question. A survey of full-page editors with a Save and no guard put the ETL pipeline
+editor first. It already knew: its `dirty` flag is accurate (Save is off on opening, on after an edit),
+and **Run now** saves first. But "← Pipelines" called `onBack` straight away, and neither a link nor a
+closed tab was guarded. Driven on R274's build: `r227_stream` renamed, Save on, "← Pipelines" — the
+list, at once, the edit gone.
+
+Now the back button asks itself (it is the editor's state, not a route, so no router blocker sees it),
+and `useBlocker` covers links and the tab while — only while — something is unsaved, naming the
+pipeline by its saved name. Five mutants caught against a verified-green baseline (the back button
+not asking, the blocker on with nothing unsaved, no tab question, asking with nothing unsaved, the saved
+name not recorded on load), control survived.
+
+Driven on R275 hot-deployed, `r227_stream`: opened and left untouched, Back left at once and
+`beforeunload` was let through; renamed, `beforeunload` was blocked and Back asked "Discard the changes
+to "r227_stream"? They are not saved. Going back to the list drops them." — **Cancel** kept the edit; the
+Dashboard link asked "…Leaving the pipeline drops them.", **Discard changes** left, and the list still
+reads "r227_stream". Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R274: a Rebuild button that could only ever be refused
+
+**Severity: low (a control that cannot succeed).** From the queue. A materialized view whose table Sheets
+holds kept its **Rebuild** button, and the server refuses every rebuild of it (R128). Driven on R273's
+build with the fixture `r126_held.later_view` (held by "LaterView" in "R126 held table"): the button was
+live, titled only "Last rebuilt 9/26/2026…", and pressing it answered "Rebuild failed:
+r126_held.later_view holds the rows of the sheet "LaterView" …" — the refusal was right, the offer was
+not.
+
+Now Rebuild is off while the table is held, and says why before it is pressed: "Held by Sheets: only
+Sheets changes r126_held.later_view, so it is not rebuilt here. Delete the sheet "LaterView" in Sheets,
+and it can be." The reason sits on a wrapper: a disabled button takes no pointer, so a title on the
+button itself would never show — one of the mutants. Three mutants caught against a verified-green
+baseline (Rebuild left on, the reason not keyed on the hold, the reason on the disabled button); the
+first run let the second survive, because the test looked only for the reason's text, which a dead
+branch still held; it now pins the condition. Control survived.
+
+Driven on R274 hot-deployed: `later_view`'s Rebuild is disabled with that reason; an ordinary view,
+`analytics.r185_mv`, keeps its Rebuild ("Last rebuilt 9/30/2026…") and **Rebuild** answered "Rebuilt —
+1 row(s) in 1928 ms". Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R273: "Its cells go with it", said of a sheet that has none
+
+**Severity: low (a confirmation that misstates what a delete does).** From the queue. Every sheet's
+delete confirmation said "Its cells go with it. Formulas elsewhere that refer to it will show #REF!." A
+table sheet has no cells: its rows are read from the lakehouse, which keeps them, and when Sheets held
+the table — rows uploaded or imported into it — deleting the sheet releases it, so the Lakehouse may
+change it again (`owned.server`: ownership is read from the sheets themselves). Neither was said.
+
+`deleteSheetMessage` (in `sheetTabs.ts`) now says what goes, by the sheet's kind and source: a grid
+sheet's cells, as before; a lakehouse table sheet's "the lakehouse table schema.table stays", plus
+"Sheets stops holding the table, so it can be changed from the Lakehouse again" when it was an upload
+or a warehouse import; a pivot's sheet it sums up; a query's tables. Which error a formula shows once
+its table sheet is gone depends on how it names the table (a bare unknown name is `#NAME?`; the
+column-reference case was not checked), so the message says "will show an error" rather than name one. Five mutants caught against a verified-green baseline (a table sheet told
+its cells go, a catalog table called held, an upload not, a pivot not naming its sheet, the editor's old
+sentence), control survived.
+
+Driven, each dialog opened and **cancelled** — nothing was deleted: on R272's build the "Query" table
+sheet of "R200 table rounding" read "Its cells go with it"; on R273 hot-deployed it reads "Only the sheet
+goes: the lakehouse tables it reads stay…", "HeldRows" in "R126 held table" (uploaded from
+`held_rows.csv`) reads "…the lakehouse table r126_held.held_rows stays. Sheets stops holding the table,
+so it can be changed from the Lakehouse again…", and a grid sheet's is unchanged. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+Also struck: "Editing a sheet as a pivot releases what it held" — the server has refused it since
+R129-R130.
+
+### 2026-10-05 — R272: a what-if that kept the catalog from before it loaded
+
+**Severity: low (a false refusal, timing-dependent).** From the queue. `runScenarioAt`, the AI Analyst's
+what-if, reads `catalog` to find the step's semantic model and its parameters, but its `useCallback`
+did not list `catalog` — and listed four values it never reads (`scoreRowsFn`, `forecastFn`, `scorable`,
+`allModels`). The catalog loads after several requests on mount; the callback is rebuilt only when the
+thread and the rest change. So a thread whose last change came before the catalog landed kept the
+EMPTY catalog: `catalog.find` found no model, `buildScenario` was handed no parameters, and a what-if
+that varied an assumption was refused, "Nothing changed — a scenario has to vary an assumption or a
+filter value." The dependency list is now exactly what the body reads; it was the page's only
+`react-hooks/exhaustive-deps` warning.
+
+**Not driven.** The account has no analysis step on a governed model with parameters (its threads are
+SQL steps), and making one needs a semantic model with parameters and paid model calls. The test reads
+the callback's source — the dependency list against the names its body uses — as the repo's other
+wiring tests do. Two mutants caught (`catalog` left out again; an unused value listed again), control
+survived.
+
+Of the repo's other twelve `exhaustive-deps` "missing dependency" warnings, two were read and are not
+stale values: the approval inbox's realtime handler calls `amIApprover`, which reads the current user
+and a ref, and the swarm node inspector prunes servers once on open. The rest were not examined.
+
+Also struck from the queue: "A cost under $0.00005 shows as $0.0000" — stale since R202, which put
+every per-call cost through `formatUsd` and kept spend totals in whole cents on purpose.
+
+### 2026-10-05 — R271: a kernel that kept its first token, and a Stop that said "stopped" when it was not
+
+**Severity: moderate (a leaked container per failure, and a page that said otherwise).** From the
+queue's R125 sweep. A notebook kernel lives longer than the render that starts it, and both notebook
+pages gave it `() => session?.access_token` — the session of THAT render. The Lakehouse's Spark poll did
+the same with `token`. Driven on image `75718acff78c` with a recorder on `fetch` (it kept a fingerprint
+of each Authorization header, never the token): the kernel started under token `5a54e7eb`, the session
+was made to refresh (to `21d060e5`), and **Stop sent `5a54e7eb`**. That token still worked — it expires
+an hour after it was issued — so the stop went through; after that hour it fails.
+
+And when it fails, nobody heard. `ServerRuntime.stop()` caught the failure, dropped it, and reported
+"stopped". Driven with the stop request refused once: the page read **"Kernel stopped"**, no word, and the
+container **kept running** — "Running kernels" later listed it as ready. Three such stops in this round
+filled the account's three kernel slots, and the next start was refused: "You already have 3 live
+runtime sessions (the per-user limit)." That is the bug's real cost: a few silent failures lock the user
+out of kernels until the reaper's idle TTL.
+
+Now both notebook pages and the Spark poll read the token through `useTokenRef` when they call.
+`stop()` resolves to why the server's stop failed, and reports it through `onStatus` as an "error" —
+"Could not stop the kernel (Failed to fetch). The server stops it once it has been idle for a while." —
+which the page shows as its kernel error and its pill. **The first version still said "Kernel stopped"**:
+the drive showed the websocket's own close, a moment after `stop()`, reporting "stopped" over the error.
+`stop()` now raises a `stopping` flag the close handler respects (pending runs are still failed), found
+by the drive and pinned with a fake socket that closes as a browser's does.
+
+Eight mutants caught against a verified-green baseline (the failure swallowed, stop always null, either
+notebook or the Spark poll capturing the token, the close overruling stop(), the flag not raised, a
+failed stop reported as stopped), control survived. The first gate failed on an older test that pinned
+the poll's exact line with `token` (`lakehouseSparkQuery.test.ts`); it now pins `tokenRef.current`. A
+20 s timeout in `nl2sqlEval` in the same run passed alone (101 tests) and again in the rerun.
+
+Driven on R271 hot-deployed: a kernel started under one token and stopped after a refresh **sent the new
+one**; a refused stop showed "Kernel error" and "Could not stop the kernel (Failed to fetch)…". The
+orphaned kernels the round made — three, then two more — were stopped from **Running kernels**; none is
+left. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — Smoke of the real image after R256 to R270
+
+Image `75718acff78c`, built from `a6fb565a` with `docker compose build agentswarms` and started with
+`docker compose up -d`; healthy, every worker listening, and a log with no error or warning. Nothing
+under `docker/` or `services/`, the Dockerfile or the compose file changed since the last image, so the
+notebook runtime image is still current (`git diff --stat`). All fifteen rounds' runtime strings are in
+the image's `dist` and the invented control is not; the instrument was checked on the hot-deployed
+container first, where it caught its own fault — R261's first pick was a string inside a `/** */`
+comment, which the build strips — and three rounds that add no message (R260, R266, R267) are matched
+by a function name the server bundle keeps. An Iceberg publish of `analytics.fct_region_revenue` wrote
+4 records in 1 file, read back from the catalog's own metadata. And the queue's Sheets half of "an
+in-app link drops unsaved work" was driven and is not a defect: struck. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R270: a swarm canvas that warned on everything, and lost edits to Fullscreen
+
+**Severity: moderate (lost work, and a warning trained to be ignored).** Queued by R269 as "Swarms guards
+the tab but not a link". Driving it found three faults, each confirmed on R269's build:
+
+- **The tab guard fired on every swarm.** The canvas set `dirtyRef` from an effect on `[nodes, edges,
+swarmName]`, and the load itself sets the nodes — so a swarm opened and not touched was "unsaved", and
+  a `beforeunload` dispatched on it was blocked. Closing any canvas asked "Leave site?".
+- **Fullscreen reloaded the swarm.** It was a second render tree, so switching unmounted the canvas and
+  opened the swarm afresh from the database: "R109 chat echo EDITED" came back as "R109 chat echo",
+  without a word.
+- **Gallery and the sidebar left without asking**, the edit gone.
+
+Now `canvasForm` (in `swarmVersions.ts`, on the same `serializeGraph` the versions use) writes what Save
+would — the name, the graph without React Flow's UI state or a run's, position included, keys in a
+fixed order — and the canvas records it when a swarm or a template opens and when a save lands (what that
+save sent). **Unsaved changes** shows beside Save while the canvas differs. The router's `useBlocker`
+asks before a link or Gallery leaves, by the saved name, and gives a closing tab the browser's question,
+only while something is unsaved; the hand-written `beforeunload` is gone. Fullscreen is the same tree
+with a different frame. Two handlers in the page, `handleNewSwarm` and `handleLoadTemplate`, are never
+called; left as they are.
+
+Nine mutants caught against a verified-green baseline (the name left out of the form, key order counting,
+React Flow's or a run's state counting, a load or a save not recorded, the blocker on with nothing
+unsaved, no tab question, Fullscreen a second tree again), control survived.
+
+Driven on R270 hot-deployed, on the R109 chat echo fixture: opened, clicked, a node selected and the swarm
+**run** — no note, and `beforeunload` let through; an edit showed the note; Fullscreen and back kept the
+edit, the note and the run's output; Gallery asked, **Cancel** kept everything; the Dashboard link asked,
+**Discard changes** left, and the swarm reopened as saved. A rename **saved** ("Swarm saved", the note
+gone, the name kept on reload), and was saved back. A template opened with no note. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R269: unsaved workflow edits lost to a link or a closed tab
+
+**Severity: moderate (lost work), the half R268 queued.** With "Unsaved changes" showing, the sidebar's
+Dashboard link left the Workflows page at once on R268's build, and the edit went with it; closing or
+reloading the tab did the same. The page now registers the router's `useBlocker` while — and only while
+— something is unsaved: a link asks the question a pick asks ("Discard the changes to "r184_badge"? …
+Leaving this page drops them."), and the blocker's `enableBeforeUnload` gives a closing or reloading
+tab the browser's own question. Swarms and Sheets guard the tab with a hand-written `beforeunload`;
+neither guards an in-app link, which is the next place to look.
+
+Four mutants caught against a verified-green baseline (no tab-close question, the blocker on with
+nothing unsaved, a discard that blocks and a cancel that leaves, no blocker), control survived — all
+against the source, as R268's are.
+
+Driven on R269 hot-deployed. With nothing unsaved the link left at once (no false question). With an
+edit, the link asked; **Cancel** kept the page, the edit and its note; **Discard changes** left for the
+Dashboard. The tab-close half was checked in the page, because the browser pane's own navigation does
+not raise the native prompt: a `beforeunload` event dispatched on the page was let through when nothing
+was unsaved and blocked (`defaultPrevented`) with the edit pending. **One drive did not ask**: the first,
+on the first load after the container restarted, where the edit was not read back before the click.
+The same sequence asked in four repeats, including the full original order, so the likeliest reading
+is that the typing landed before the page hydrated and nothing was unsaved — not confirmed. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-05 — R268: unsaved steps replaced without a word, and a delete that emptied the wrong editor
+
+**Severity: moderate (lost work, silently).** The workflow editor kept no record of what was saved, so
+nothing could tell it an edit was pending. Driven on R267's build: with "r184_badge" renamed and not
+saved, clicking another workflow in the list loaded it at once, and going back showed the old name —
+the edit gone, no question asked. Creating a workflow did the same. And reading `removeWorkflow` found
+worse: it deleted whichever row's bin was pressed but **always emptied the editor**, so deleting a
+throwaway workflow while editing r184_badge threw r184_badge's unsaved edits away, and the list's
+reload then opened the first workflow in it.
+
+Now `savedForm` (in `lib/workflows.ts`) writes what Save would send as one string — settings, steps,
+arrows, parameters, not the trigger token, which saves itself — and the editor records it when a
+workflow loads and when a save lands (what that save sent, so an edit made while it was in flight stays
+unsaved). The difference shows as **Unsaved changes** beside Save, with a note that Run now runs the
+saved version. Picking or creating another workflow asks first through the app's own dialog, by the
+name the workflow is saved under (the first version quoted the half-edited name; caught in the drive
+and changed); deleting only empties the editor when the open workflow is the one deleted. Leaving the
+page by a link or closing the tab does not ask yet — queued.
+
+Eleven mutants caught against a verified-green baseline (the steps left out of `savedForm`, the token
+counted, a graph without params unlike one with none, the list or create not asking, a cancel ignored,
+asking with nothing unsaved, any delete emptying the editor, a save not recorded, the edited name in the
+question), control survived. The page has no component tests; the wiring is pinned by reading the
+source, as R246's guard is, and the behaviour by the drive.
+
+Driven on R268 hot-deployed: no note on load; a rename showed the note and **Save** cleared it; with
+r184_badge edited, clicking R96 asked "Discard the changes to "r184_badge"?" and Cancel kept the edit;
+a create asked the same and Cancel made nothing; deleting the throwaway workflow kept r184_badge and its
+edit; deleting the typed text cleared the note; Discard changes opened R96 and left r184_badge as saved.
+The throwaway workflow was created and deleted in the round. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R267: Insert cells that always pushed the column down, and two rows already done
+
+**Severity: low (a default that does the larger thing).** Insert cells… and Delete cells… always
+started on Shift cells down (or up), whatever was selected, so a column of five cells inserted with
+Enter pushed everything below it in those columns down, where a tall selection is a block to make
+room for sideways. Microsoft's page for Range.Insert says that without a direction Excel "decides
+based on the shape of the range"; the dialog now does too, through `defaultShift` beside the shift
+itself: sideways (right, or left on delete) for a selection taller than it is wide, up or down
+otherwise, one cell and a square included. Which way a tall selection goes is not stated on that
+page; sideways is the reading the queue row recorded and the one that matches a single cell
+starting on down. The dialog's own initial state read `options[mode === "insert" ? 1 : 1]` — a
+condition with no effect — and now takes the choice it is given.
+
+Five mutants caught against a verified-green baseline (a square counted as tall, insert always down,
+delete given insert's choices, the dialog ignoring what it is given, the editor giving the old fixed
+choice), control survived.
+
+**And two queue rows were already done.** "Frozen panes are stored but not drawn yet" has been wrong
+since R151 drew them, and "Defined names are kept at Excel's value, not computed (no name manager
+yet)" since R148 computed them and Data → Names listed them. Struck, with the rounds that closed them.
+
+Driven in the fixture workbook: B8:B12 selected, Insert cells… started on **Shift cells down** on
+R266's build and on **Shift cells right** on R267 hot-deployed; Enter then moved a marker from C10 to
+D10. A wide B14:D14 still started on Shift cells down. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R266: a pointed spill fixed to the size it had that day
+
+**Severity: low (a formula that silently stops following its data).** While typing a formula,
+dragging across a spilled array inserted a plain range: `=SUM(` then a drag over `=SEQUENCE(3)`'s
+three cells wrote `=SUM(G1:G3)`. Excel writes the spill's own reference, `G1#`, so the formula follows
+the array — confirmed by two independent references (Ablebits, XelPlus: "highlight the A1:D10 range
+and Excel will automatically replace [it] with an A1# Spill Range reference"); Microsoft's operator
+page does not describe it. Driven: with the array grown to four values, the pointed `=SUM(G1:G3)` still
+read **6**, missing the fourth.
+
+Now `pointedReference` (in `selection.ts`, beside the other point-mode rule) writes `A1#` when the drag
+covers exactly the array spilled from its top-left cell — dragged in any direction — and a plain range
+for part of a spill, more than it, or a spill that is blocked: the engine keeps an array's size only
+once it has spilled, so a `#SPILL!` anchor or a one-value array has no `A1#` to write. Writing the
+mutants found the function's own single-cell branch redundant (`rangeA1` already writes one cell as
+`A1`) and no test of a drag matching the spill's rows but not its columns; the branch was removed and
+the test added. Five mutants caught against a verified-green baseline (never `#`, columns or rows not
+compared, the spill looked up at the drag's start instead of its top-left, the grid writing the plain
+range again), control survived.
+
+**And R258's open answer was settled.** PERCENTRANK.EXC with a significance of 1 was left unpinned for
+want of Excel's own answer. Excel's page gives `PERCENTRANK.EXC(A2:A10,5.43,1)` as **0.3** — truncated,
+as the default three digits are (0.381) — which is what the engine already answered. Pinned.
+
+Driven in the fixture workbook. Before, on R265's build: the drag wrote `=SUM(G1:G3)`. After, on R266
+hot-deployed: the same drag over four values wrote `=SUM(G1#)` (10), and with the array grown to five it
+read **15** while the old formula beside it stayed at 6; a drag over part of the spill still wrote
+`=SUM(G1:G2)`. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R265: VDB, and a branch of the algorithm nothing could reach
+
+**Severity: low (Excel parity).** VDB — depreciation over a span of periods by declining balance,
+switching to straight line — was #NAME?: formula.js does not have it. Written in the engine on the
+algorithm LibreOffice uses for Excel's VDB, and checked against what can be worked out rather than
+remembered. While no switch happens, the declining balance from period s to e is
+cost · ((1 − r)^s − (1 − r)^e), r = factor / life; a part period takes its share of that period; a
+whole life depreciates to the salvage value at any factor; and the pieces of a life split at a part
+period add back to cost − salvage, before and after the switch. Microsoft's six examples (1.32, 40.00,
+480.00, 396.31, 311.81, 315.00) all come out of those closed forms; the switch is checked by hand
+(factor 1: 240, 216, then (2400 − 240 − 216 − 300) / 8 = 205.50 a year).
+
+**The mutation run found dead code.** The span helper scaled its last period by a fraction, as
+LibreOffice's does — but every caller passes whole periods (part periods are taken off around it), so
+a mutant there could only survive. Removed. The run also showed `no_switch` with part periods had no
+test; one was added (0.5 · 360 + 306 + 0.5 · 260.10 = 616.05, switching or not).
+
+Nine mutants caught against a verified-green baseline (never switching, no_switch ignored, a factor
+of 1.5 by default, either part period not taken off, declining below salvage, a span past the life,
+either no_switch part period counted whole), control survived. The argument rules — #NUM! for a
+negative number, a factor of 0, a salvage above the cost — follow Excel's page ("all arguments except
+no_switch must be positive") and LibreOffice; the salvage rule is not on Excel's page and is queued
+with the other unconfirmed edges.
+
+Driven in the fixture workbook: three VDB formulas #NAME? on R264's build, **396.3060533**, **205.5**
+and **315** on R265 hot-deployed. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R264: the complex family finished, and the library under it replaced
+
+**Severity: moderate (wrong answers, two of them silent).** The queue's last complex-number row:
+IMSQRT, whose formula.js answer for −4 was −2i, and the fourteen transcendental functions (IMEXP,
+IMLN, IMLOG10, IMLOG2, IMSIN … IMCSCH). A probe checked those fourteen by identity at 3+4i and all
+matched, so they went in through R260's wrapper, with IMSQRT written in the engine. The square root is
+computed as C's `csqrt` computes it, not in polar form: polar leaves cos(π/2)'s 1.2E-16 in the real
+part of `2i`.
+
+**The mutation run found the probe was too narrow.** A mutant survived because no test reached the
+wrapper's number-answer path, and closing that gap meant probing formula.js with plain numbers and
+zero, then reading its source. The library was unsound across the whole family:
+
+- **A number argument threw.** Its parser calls `.substring` on the argument, so `IMSUB(5,2)`,
+  `IMPOWER(2,2)`, `IMCONJUGATE(2)`, `IMEXP(0)` — and IMSUB over two cells holding numbers — were all
+  #VALUE!. It also misread a part written with an exponent, as Excel writes a small or large one:
+  `"1E-07"`, `"3E-5i"`, `"1.5E-07-2i"` were #NUM!.
+- **IMPRODUCT never opened a range.** Over "3+4i", 5 and a blank it answered `3+4i`; in a workbook,
+  `=IMPRODUCT({"3+4i",5})` showed `3+4i` and **spilled the 5 into the next cell**.
+- **The negative real axis was at −π.** Excel's angles run over (−π, π]; `IMARGUMENT("-1")` was
+  −3.14159…, and that one fault is why IMSQRT("−4") was −2i and `IMPOWER("-8",1/3)` was
+  1 − 1.732i, the wrong cube root.
+- **IMLN, IMLOG10 and IMLOG2 took the angle as atan(y/x)**, wrong whenever the real part is negative:
+  `IMLN("-1")` was 0, where it is πi. The probe's single point, 3+4i, sat in the half-plane where
+  atan(y/x) happens to be right.
+- At zero, IMTAN threw where the answer is 0, and IMCSC, IMCOT and IMCSCH threw where a pole is #NUM!;
+  `IMREAL("1")` answered the text "1".
+
+So all twenty-five functions are written in the engine on R260's parser and writer: complex arguments
+are read in one place (a number, or Excel's text; TRUE/FALSE #VALUE! and other text #NUM!, as Excel's
+pages state), angles come from atan2, a division by zero or an overflow is #NUM!, and IMPOWER keeps
+Excel's polar form, so R260's `-46+9.00000000000001i` is unchanged. A blank single argument counts as
+0 and IMSUM/IMPRODUCT pass over blank cells, as SUM and PRODUCT do; Excel's own answer for a blank is
+unconfirmed and queued. The eight complex functions Excel 2013 added carry `_xlfn.` in a download.
+
+Twelve of the new tests fail on the formula.js family, and one more (`IMREAL("1E-07")`) on the exponent
+alone. Eleven mutants caught against a verified-green baseline (a number refused; IMSQRT's lower sign
+and its polar residue; atan(y/x); −π; a blank multiplied as 0; a range not opened; an overflow written
+as text; zero to a positive power refused; a `j` dropped; a missing `_xlfn.`), control survived.
+
+Driven in the fixture workbook, before on R263's build and after on R264 hot-deployed: `IMSUB(5,2)`
+#VALUE! → `3`, `IMPRODUCT({"3+4i",5})` `3+4i` with a stray `5` beside it → `15+20i`, `IMARGUMENT("-1")`
+−3.141592654 → 3.141592654, `IMPOWER("-8",1/3)` 1−1.732…i → 1+1.732…i. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R263: sixty-seven handlers given their own sentence, and two spinners that never stopped
+
+**Severity: moderate.** R245's debt: 67 handlers across 32 files that report a server function's
+`ok: false` and say nothing when it **rejects** — a `finally` with no `catch`. R245's net turned their
+silence into "That did not finish", which is better than nothing and cannot say what failed. Each now
+names its action through one helper, `reportFailure(action, error)` beside the net: "Could not save the
+feature view", "Could not revoke the key", "Could not publish the swarm", with the real message under
+it, and a cancel still quiet. The ratchet that held the count at 67 now holds it at **0**: a new handler
+of that shape fails the gate.
+
+**Two of them were worse than silent.** A handler that shows a _loading_ toast before its call must
+replace that toast on failure, or it spins for ever:
+
+- **Deploy a model** showed "Starting the endpoint and loading the model…" _inside_ its `try`, where a
+  catch cannot see it. Moved above the `try`; the failure replaces it.
+- **Admin → IAM → Re-encrypt to current key** had **no try at all**, so the sweep — which looks for a
+  `finally` — never counted it. A rejected request left "Re-encrypting stored credentials…" spinning and
+  `busy` set: the button stayed disabled under a spinner until the page was reloaded. Driven: still
+  spinning after 26 seconds, with only the net's generic toast to say anything had happened.
+
+Writing the 67 was scripted from a list of the handlers and what each awaits, with every phrase written
+by hand, and the script asserted each `try` was where the sweep said and was followed by `finally`.
+Its own first guess was wrong once: it gave `stop()` the loading toast of the `deploy()` above it, which
+the typecheck caught. And R245's own test file turned out to import `node:fs` **twice** — a syntax error
+the transpiler forgave — removed here.
+
+Three mutants caught against a verified-green baseline (one handler silent again, a cancel reported,
+the deploy's spinner left running), control survived.
+
+Driven: the re-encrypt request refused in the browser left its spinner and a disabled button for good
+before; after, "Could not re-encrypt the stored credentials" replaced the spinner and the button came
+back. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R262: fifty distributions, three wrong answers in the library, and a test that passed by coincidence
+
+**Severity: moderate (Excel parity), and a lesson about the checks themselves.** The last big batch from
+the Sheets functions row: the probability distributions and their inverses, fifty-three names of which
+three were registered. Every one was checked against something computed rather than remembered — a
+closed form (EXPON.DIST is 1 − e^(−λx); a chi-square with 2 df is an exponential; a gamma with shape 1
+too), an identity (BETA.DIST(x,1,1) = x; F.DIST(1,2,2) = ½; LOGNORM.DIST at e^μ is ½), counting
+(HYPGEOM, NEGBINOM), or a **round trip** for the inverses (CHISQ.INV(CHISQ.DIST(3)) = 3 …). Three of
+formula.js's answers failed:
+
+- **GAMMA** was off in the ninth significant digit — GAMMA(0.5) was 1.7724538559 where the answer is
+  √π, 1.7724538509 — which shows at a cell's default width. Its GAMMALN is right, so GAMMA is
+  exp(GAMMALN) with the reflection formula for negatives.
+- **LOGNORMDIST**, the pre-2010 name, answered the **density** (0.186) where Excel's old function is
+  cumulative (0.645).
+- **TINV**, the pre-2010 two-tailed inverse, answered **−0**.
+
+The reason for the last two runs deeper than three functions: **formula.js's flattened legacy names
+are its modern functions under an old spelling.** Its FDIST is F.DIST (left tail), its TINV is T.INV
+(one tail), its BETADIST takes BETA.DIST's arguments. Excel's old FDIST is the right tail and its
+BETADIST takes bounds where the new one takes a flag. So no old Excel name may be resolved through the
+library; each is a SAME_AS onto the modern function with the same arguments, or is written.
+
+**And a test passed by coincidence.** BETADIST went in through the library at first, and its check —
+BETADIST(2,8,10,1,3) against BETA.DIST(0.5,8,10,TRUE) — **passed**: x = 2 sits exactly in the middle of
+[1,3], so the misread arguments landed on the same 0.5. A non-symmetric x (2.5) fails it. It is
+written now, and the test carries both, with the reason.
+
+The lookup itself changed: `fromLibrary` resolves the **exact Excel name first** (CHISQ.DIST, T.INV.2T,
+BINOM.INV and CONFIDENCE.NORM exist in formula.js only under their dotted names), then the flattened
+one. Measured across all 179 names registered before this round, where both exist they are the same
+function, so nothing that worked changed — and all 65 Sheets test files agree. The download prefix test
+then named thirty of these as newer than Excel 2007; they carry `_xlfn.` now.
+
+The new test fails twenty-four of twenty-four on the old code; six mutants caught against a
+verified-green baseline (flattened-only lookup, BETADIST's flag, LOGNORMDIST's density, GAMMA's ninth
+digit, the reflection's sign, TINV's alias), control survived.
+
+Driven in a workbook: `CHISQ.DIST(3,2,TRUE)` and `BETADIST(2.5,8,10,1,3)` read #NAME? before, and
+0.7768698399 and 0.9968992209 after — where formula.js's BETADIST would have shown 0.0402. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R261: a standard deviation of nothing, and it was 0
+
+**Severity: moderate — two wrong numbers, not just wrong codes.** The Sheets queue's row said "a list
+with no numbers is an error, not always Excel's code", naming GEOMEAN. A probe of twenty statistics
+over an empty range, a text cell and a single value found worse than codes:
+
+- **STDEV.S and VAR.S of no numbers were 0**, while one number gave #NUM!. Excel gives #DIV/0! for
+  both: a sample spread needs two values. A 0 standard deviation is read as "these never vary";
+  nobody questions it.
+- **HARMEAN(0) was 0.** Excel's page: any data point of 0 or less is #NUM!.
+
+And the codes: SKEW below three values and KURT below four were #NUM! (Excel: #DIV/0!, both pages say
+so in those words); STDEV.P and VAR.P of nothing #NUM! (#DIV/0!); LARGE, SMALL, PERCENTILE and
+QUARTILE of an empty list #VALUE! (each page: #NUM!); GEOMEAN of nothing #VALUE! (#NUM!); MODE of
+nothing #VALUE! (#N/A). VARP and VARA — VAR.P and VARA under their old and A-function names — were not
+registered at all.
+
+A guard per function, keyed by the count each needs and the code its page states, wraps the library
+before the old names are copied, so STDEV, VAR, MODE, PERCENTILE and QUARTILE get it too. Two codes
+were **left as they were**: HARMEAN of an empty list and DEVSQ's, which I could not confirm. The tests
+fail eight of eight on the old code; six mutants caught against a verified-green baseline, control
+survived.
+
+Driven in a workbook: `HARMEAN(0)` and `STDEV.S` over three empty cells both read **0** before, and
+#NUM! and #DIV/0! after. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R260: complex numbers, right sums written the wrong way
+
+**Severity: low-to-moderate (Excel parity).** The third batch from the Sheets functions row. Probed
+first: formula.js gets exact complex arithmetic right — IMSUM, IMSUB, IMPRODUCT, IMDIV (Excel's own
+example: (5+12i)(10+24i) = −238+240i), IMABS and the parts all matched hand-worked answers — but not
+the text Excel writes them in, and in a spreadsheet the text **is** the value:
+
+- given `"1+2j"` and `"3+4j"`, IMSUM and IMPRODUCT answered with an `i` (`-5+10i` where Excel writes
+  `-5+10j`), while IMSUB and IMCONJUGATE kept the `j` — inconsistent within the library itself;
+- a mix of `i` and `j`, which Excel refuses with #VALUE!, was added up;
+- numbers came out to sixteen or seventeen digits (`0.3333333333333333`,
+  `-45.99999999999999+9.000000000000007i`) where Excel writes any number as text to fifteen
+  significant digits — `0.333333333333333`, `-46+9.00000000000001i`;
+- a zero answer came back as the **number** 0, where Excel's IMSUB always answers text.
+
+So the library computes and the engine writes: the suffix comes from the arguments, a mix is #VALUE!,
+a zero part is dropped, a unit coefficient is `i` alone, and the parts go through the same
+fifteen-digit `numberText` every other number-as-text uses. The tests fail seven of eight on the old
+code (the eighth documents what was left out), and five mutants were caught against a verified-green
+baseline, control survived.
+
+**Left out, on purpose:** IMSQRT, because formula.js gives the square root of −4 as **−2i** where the
+principal root is 2i; and IMLN, IMEXP and the trigonometric functions, whose answers carry
+floating-point residue that has not been checked against Excel's.
+
+Driven in a workbook: `IMSUM("1+2j","3+4j")` and `IMDIV("1","3")` read #NAME? before, and `4+6j`
+and `0.333333333333333` after. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R259: formula.js's DSUM added up every row, whatever the criteria said
+
+**Severity: moderate (Excel parity — but a wrong total, not a #NAME?, had they been registered).**
+The second batch from the Sheets functions row. Probed first, as R258 taught: formula.js's database
+functions do not read a criteria range as Excel does. On Microsoft's own tree example its DSUM of the
+apple trees' profit was **502.8 — every tree's** — instead of 225, and that was true whichever way the
+table was handed over (row-major threw or gave 0; column-major ignored the criteria); DCOUNT,
+DAVERAGE, DPRODUCT and the spreads were wrong the same way and DGET answered #NUM! for a single
+match. Registering them would have replaced a #NAME? with a plausible, wrong number.
+
+So all twelve are written in the engine, to Excel's rules for a criteria range: its first row names
+fields (any case); each row under it is an alternative (OR); a row's non-blank cells must all hold
+(AND); a blank cell is no condition; bare text is _begins with_ and `=text` exact; DGET is #VALUE!
+for no match and #NUM! for several. Every expected answer in `sheetsDatabaseFunctions.test.ts` is
+worked out by hand from the six rows of the table, the arithmetic written beside it. The tests fail
+ten of ten on the old code; six mutants caught against a verified-green baseline (begins-with, OR
+across rows, a blank criterion, DGET's two errors, sample against population, case in labels),
+control survived.
+
+**Not done, and said so in the docs:** a criteria column whose label is not a field of the table.
+Excel reads that as a _computed_ criterion (a formula); this engine matches nothing there rather than
+guess.
+
+### 2026-10-04 — R258: twenty-three Excel functions that were #NAME?, and one that would have been #NUM! for ever
+
+**Severity: moderate (Excel parity).** The Sheets queue's longest-standing row: "formula.js functions
+not registered … each needs checking against Excel's examples first". This is the first batch, and
+the "check first" was the point of it.
+
+Every expected answer is either recomputed from first principles inside the test or taken from the
+worked examples on Microsoft's function pages, so no check rests on a remembered decimal: BINOM.DIST
+is C(10,6)/2^10; a t-distribution with one degree of freedom is the Cauchy distribution, so
+T.DIST(60,1,TRUE) is ½ + atan(60)/π; its density at 8 with 3 df is the closed form; PERCENTRANK is
+"below over n − 1", **truncated** to three digits (5 of 9 is 0.555, not 0.556) as Excel's own example
+shows.
+
+**The check caught one before it shipped.** formula.js's T.DIST answers **#NUM! for every input**,
+including inputs with closed-form answers. Registering it from the library — the way the rest of this
+batch went in — would have turned a #NAME? into a #NUM! that looks like the user's mistake. Its
+legacy TDIST is right, so T.DIST, T.DIST.RT and T.DIST.2T are built on it, with the density through
+log-gamma. And one answer was left **unpinned** on purpose: PERCENTRANK.EXC with a significance of 1,
+where formula.js truncates to 0.3 and I am not certain whether Excel's page says 0.3 or 0.4. That case
+waits for Excel.
+
+**And an older test caught the export.** The moment ten of these were registered,
+`sheetsFilePrefixes.test.ts` failed: functions newer than Excel 2007 must go into a download as
+`_xlfn.BINOM.DIST`, or Excel itself shows #NAME? on open. They are in the export's prefix list now,
+held to XlsxWriter's list as before.
+
+Registered: AVERAGEA, MAXA, MINA, TRIMMEAN, MMULT, QUARTILE.EXC, PERCENTRANK (.INC, .EXC), BINOM.DIST
+(and BINOMDIST), TDIST, T.DIST, T.DIST.RT, T.DIST.2T, BITAND, BITOR, BITXOR, BITLSHIFT, BITRSHIFT,
+COMPLEX, TYPE, ERROR.TYPE. The new test fails 36 of 36 on the old code.
+
+Driven in a workbook: `T.DIST(60,1,TRUE)`, `BITAND(13,25)` and `PERCENTRANK(…,4)` read #NAME?
+before and 0.994695, 9 and 0.555 after. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+Still open from the row: the database functions (DSUM…), the other distributions, complex
+arithmetic (IMSUM, IMABS…), and VDB, which formula.js does not have.
+
+### 2026-10-04 — R257: "Duration 0ms" for a run that lasted twelve hours
+
+**Severity: low, but the two pages contradicted each other about the same run.** Open since R179: a
+run parked twelve hours on an approval and then cancelled read **"12h 19m"** on Recent runs and
+**"Duration: 0ms"** on its own Observability page. Both numbers were true. Only one was a duration:
+the run page put `total_latency_ms` — the sum of its steps' latencies — under the label "Duration",
+and the run list headed the same figure "Latency". A run that waits on a person can take hours and
+work for none of them, so those are two numbers, answering different questions: how long it took,
+and how long it worked.
+
+The run page now shows **Elapsed** (start to finish, "not finished" or "still running" otherwise)
+beside **Step time**, and the list's column is **Step time**, with a title saying what it adds up.
+Recent runs keeps its figure, which was right. The tests fail six for six on the old code.
+
+Driven on the fixture run `c4ff22a3` ("Approval durability check (schedule)", cancelled in R179):
+before, "DURATION: 0ms" on the run page beside "12h 19m" on Recent runs; after, "ELAPSED: 12h 19m ·
+STEP TIME: 0ms", and a run that worked reads "ELAPSED: 15s · STEP TIME: 13746ms". Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R256: "MCP server not found", about a server that was there
+
+**Severity: low.** The last unread name in the sweep-6 notes. `ownedApp` starts twelve MCP Builder
+actions — deploy, stop, delete, save, approve tools — and dropped its read's error, so a failed read
+answered every one of them "MCP server not found". Restoring a version did the same with "Version
+not found". Both refused, which was right; both said why wrongly, which sends the reader looking for
+a deletion that never happened. Both say "could not read" now, and a ratchet holds the file at zero
+reads that drop their error. The test fails on the old code and passes on the new.
+
+The same note named two other places as "not yet read". Both had been fixed since — `refreshPublished`
+by R189, the playground's trace poll by R191 — and the note had never been updated. A queue that
+says something is open when it is not costs the next round a reading; the rows say so now.
+
+### 2026-10-04 — Smoke of the real image after R245 to R255
+
+Image `021b027c5acc` from `13d720fe`. All ten rounds' runtime strings are in the shipped `dist` and
+an invented control is not; an Iceberg publish wrote 4 records in 1 file, read back from the
+catalog's own metadata; R246's workbook and R247's keys are as the rounds left them; the log is
+clean. The first marker search reported every round **absent** — Git Bash had rewritten the
+container path — and the known-present markers are what made that a broken instrument rather than
+a broken image. Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R255: a workflow step failed, and its work started twice, on a failed status read
+
+**Severity: moderate-to-high.** The last sweep-7 row: "workflow steps fail and re-run". `pollNode`
+asks each subsystem whether the work a step started has finished, and answered every failed read —
+pipeline runs, SQL model builds, ML jobs, notebook runs, sub-workflows, approvals — with `gone()`:
+"the run it started is no longer there". The step finished **failed**. The workflow's retry then
+started its target again while the first was still running, so a pipeline loaded the same rows
+twice; and a pending approval read as gone, failing a run that was waiting on a person.
+
+A status that could not be read is "not settled yet" now; the next poll asks again, and the run's
+own timeout is the backstop, as it already was for a detached step. A row that really is gone still
+fails the step. Twelve tests drive the real poller, two per kind. Three mutants caught against a
+verified-green baseline, control survived — including the check cut from a single case.
+
+**This closes the sweep-7 list** that R234 started: every row in it is fixed, and every fix is one
+statement — a read that failed is not a fact about the thing it was reading.
+
+### 2026-10-04 — R253: ETL started from the beginning, failed while running, and logged secrets in clear
+
+**Severity: high.** Two sweep-7 rows, plus one the round turned up that is worse than either.
+
+- **Cursors** (`resolveRunEnv`). An incremental source reads from the cursor in
+  `etl_pipeline_state`. The read dropped its error, so a failed read was no cursor and every
+  incremental source re-read from the beginning, appending everything again to targets that
+  already held it. The run now refuses to start and goes through the retry ladder.
+- **Live runs** (`reconcileOrphanedEtlRuns`). A session that could not be read was "the run's
+  sandbox session no longer exists", and a run still working was finalized as failed — then
+  retried, so a second run started beside the first. It is left alone now and looked at again on
+  the next pass.
+- **Secrets in the logs** (`appendPartialLogs`, `finalizeEtlRun`). Both scrub logs with the secret
+  values `resolveRunEnv` returns, and both answered a failure to get them with "scrub what we
+  can" — which was nothing. `resolveRunEnv` fails not only on a blip but whenever **one secret the
+  pipeline uses is deleted while it runs** ("the secret … is not set for this account"), so deleting
+  one secret wrote the live log, and then stored the final log and the error, with every _other_
+  secret in clear: connection URLs with passwords, API tokens. A partial log that cannot be
+  scrubbed is skipped now, and final output that cannot be scrubbed is withheld with a sentence
+  saying why. A run whose pipeline cannot be read is not finalized on a guess; the reconciler does
+  it from the session later.
+
+The tests pin the order of each check against the code that acts on it; `resolveRunEnv` reaches
+egress, catalog and warehouse code, so a behavioural harness would be mostly mocks. Five mutants
+caught against a verified-green baseline, control survived.
+
+**Not driven in the UI yet — and unlike the rest of this sweep, it can be.** The secrets leak needs
+no failed read: a _visual_ pipeline whose nodes carry two node-level secrets (an HTTP target's
+`auth_secret`, say), a Custom Python step that prints one and sleeps, and the other secret deleted
+from Settings while it runs. Pipeline-level bindings will not do, because those are dropped rather
+than fatal. That drive is queued below; it was not run here because a sandbox run beside the gate
+is the known cause of phantom test timeouts.
+
+**One limit, stated rather than fixed.** A pipeline-level binding (`KEY={{secret:NAME}}`) whose
+secret is deleted mid-run is _dropped_, not fatal, so it does not trip the withholding — and its
+own value is then unknown to the scrubber. Deleting a secret from the app does not revoke it at the
+provider, so that value can still be live. Scrubbing it would mean keeping secret values after
+their deletion, which is its own problem; the honest fix is a scrub list captured at run start, and
+that is queued rather than half-done here.
+
+### 2026-10-04 — R254: "leave it blank to keep the saved key", and the key was erased
+
+**Severity: high.** From the sweep-7 "writes on a blip" row: "saved secrets wiped on edit". A blank
+secret field means "keep the stored one", and that promise is kept by merging with the row the save
+reads first. Both saves dropped that read's error.
+
+- **`saveIntegrationForUser`**: with nothing read, there was nothing to merge with. The save fell
+  through to an insert, the unique index refused it, and the `23505` retry **updated the saved row
+  with a config merged with nothing** — blanks where its secrets were. An edit that only renamed an
+  LLM provider erased its API key, and the next model call through it failed with no idea why.
+- **`gitSaveConfig`**: an omitted token keeps `existing.token_enc`. A failed read kept `null`, and
+  the upsert erased the stored token on an edit that only changed the branch.
+
+The `23505` retry was wrong on its own too, with no failed read: it merged with the row it had
+failed to find, not with the row it was about to overwrite, so losing a save race also cost the
+winner's secrets. It merges with the winner's config now. Both reads refuse the save when they
+fail, and say what the refusal saved.
+
+On a type with no singleton fallback — a notification channel — the same failed read did something
+different and quieter: the save inserted a **second channel** beside the real one, with no webhook.
+
+Six tests drive the real save with the real merge (encryption stubbed): the baseline keeps the key,
+each read failing on its own writes nothing, both failing writes nothing, and a lost insert race
+keeps the winner's key — that last one fails on the old code with no failure injected. Four mutants
+caught against a verified-green baseline, control survived. The first run had two survivors, and
+both were test gaps: the "unreadable" test failed both reads at once, so each check hid behind the
+other.
+
+### 2026-10-04 — R252: years of audit trail deleted on a failed settings read
+
+**Severity: high, and irreversible.** From the sweep-7 "destructive on a blip" row: "the audit purge
+uses default retention". `purgeAuditEvents` read `iam_settings` and dropped the error, so a failed
+read was "no settings": both windows fell back to their defaults, 365 days for ordinary events and
+the 183-day provenance floor. An operator who keeps seven years of audit trail for a regulator, or
+ten years of AI-Act documentation, had every row past those defaults deleted by one blip.
+
+The purge does archive rows to stdout as NDJSON before deleting them, but that only helps where
+something is shipping stdout; PROVENANCE.md's own promise is that the platform will not "destroy
+evidence as a side effect of a setting that never mentioned it", and this was exactly that.
+
+A purge whose window could not be read now deletes nothing and waits for the next interval. A
+deployment that has never set the windows still gets the defaults. Three tests drive the real
+function: the operator's seven-year window, a failed read (no deletes, where there were two), and no
+row at all.
+
+Not proved in the UI: it needs a server-side read to fail, and the purge runs on its own interval.
+
+### 2026-10-04 — R251: production traffic answered by a version nobody promoted
+
+**Severity: high.** The sweep-7 ML row named two places — "an unpromoted version answering
+production" and "a scheduled retrain auto-promoting" — and they are one statement: a production
+version that could not be read was taken for **no production version**.
+
+- **`pickVersion`** reads the production version, and dropped the read's error. A failed read fell
+  through to the rule for a model with _no_ production version — the newest ready one — so a single
+  blip and live prediction traffic, over the API and the batch endpoint, was answered by a version
+  that had never been promoted: possibly worse, possibly trained on different data, and nothing in
+  the response said so.
+- **The retrain judge** read the incumbent the same way. `beatsProduction` treats "no incumbent" as
+  "nothing to beat", so a retrain was promoted over a production version it never compared against,
+  and the schedule was stamped as judged, so nothing ever looked again.
+
+A model **with** a production version is now answered by it or not at all: a failed read throws,
+and so does a pointer to a row that is not there — that cannot be a deletion, because the pointer is
+`ON DELETE SET NULL`, so it is refused rather than guessed at. Both predict routes answer it with a
+503, and the scheduled batch records it as the run's error. The judge skips a candidate whose
+incumbent it could not read and leaves the schedule untouched, so the next sweep judges it properly.
+A model with no production version still gets the newest ready one, as ML.md says.
+
+Five mutants caught against a verified-green baseline, control survived.
+
+Not proved in the UI: each needs a server-side read to fail, and nothing deletes versions, so there
+is no other way to reach the fall-through.
+
+### 2026-10-04 — R250: the operator's "the cap must hold" honoured on one read out of seven
+
+**Severity: moderate-to-high, for the deployments that asked for it.** The sweep-7 queue said
+"budget caps fall back to no cap". Reading the guard found that this is the **documented default**,
+on purpose: a governance feature should not be the reason a legitimate call breaks. That is a
+product decision and it stands. The defect is the switch beside it. `BUDGET_FAIL_CLOSED` is how an
+operator says the cap must hold when a figure cannot be established, and it was honoured on exactly
+one read — month-to-date spend. Every other figure the verdict depends on answered "allowed" when
+its read failed, whatever the switch said:
+
+| Read                                    | What a failure used to mean                                  |
+| --------------------------------------- | ------------------------------------------------------------ |
+| the personal cap                        | "no cap"                                                     |
+| a credential's cap, a team's cap        | "no cap"                                                     |
+| which teams the caller is in            | "in no teams"                                                |
+| a team's members                        | `groupSpend([])`, which is **$0** — "the team spent nothing" |
+| anything that threw, in either function | "allowed"                                                    |
+
+The fourth row is this file's own rule — its comments say "null means the figure could not be
+established — not that the team spent nothing" — broken one layer up.
+
+And the refusals that did fire on an unknown figure said "You have reached your monthly AI budget
+($5.00)" about a spend nobody had read. An `unknown` flag now travels with the verdict, and the
+message says the budget could not be checked and that this deployment refuses calls it cannot
+check.
+
+Every unknown goes through `unknownStatus` / `unknownAt`, both of which read the switch, and a
+verdict built on an unknown is not cached — the spend path already refused to remember a blip for a
+minute, and now every path does. Without the switch, behaviour is unchanged: the tests drive every
+read failing in both modes, and the default still lets the call through each time.
+
+`budgetRefusalContract.test.ts` and `budgetSpend.test.ts` pinned the old fail-closed branches by
+their text; they now pin each scope's unknown branch calling a helper, and each helper reading the
+switch.
+
+Seven mutants caught against a verified-green baseline, control survived. One of them exists
+because the first version of the new tests asked every question as a fresh user, so a guessed
+verdict sitting in the minute-long cache was invisible; a test now asks twice as the same user,
+across the read recovering.
+
+Not proved in the UI: each needs a server-side read to fail, and the switch is an environment
+variable on the server.
+
+### 2026-10-04 — R249: kernels opened to everyone, and every MCP server stopped, on one failed read
+
+**Severity: high.** Two sweep-7 rows turned out to be one statement in one module. "Notebook runtime
+limits fall back to the permissive defaults" and "the MCP reaper stops every published server" are
+both a read of runtime state that failed being taken as a fact about that state.
+
+- **`getRuntimeSettings`** falls back field by field when the row is absent, which is right for a
+  fresh install. A read that failed looked the same. `require_grant ?? false` then switched off the
+  grant check, and wherever `NOTEBOOK_RUNTIME_ENABLED` keeps the runtime on (the documented
+  force-enable path), `canUseRuntime` answered **true for every user**: anyone could start a server
+  kernel on a deployment that requires a grant. The idle TTL fell back to 30 minutes too, and the
+  reaper applied it to live kernels an operator had given 240.
+- **`idleServiceSessions`** has the rule "no `mcp_apps` row means the app was deleted out from under
+  its container: reap it". A failed `mcp_apps` read made that true of **every** app at once, and each
+  published MCP server was stopped, `keep_warm` ones included.
+- **`ensurePlatformEgress`** wrapped its read in a `catch` meant for "no settings row yet", but
+  supabase-js returns a failed read rather than throwing it, so the catch never saw one. The list
+  came back empty and the proxy file was **rewritten** without the operator's hosts, cutting running
+  notebooks off from them until the next save.
+
+`NOTEBOOK_RUNTIME_ENABLED` is not set on this deployment, so here a failed read disabled the runtime
+rather than opening it. The grant bypass is real for the deployments that use the documented switch.
+
+Fixed at the reads: `getRuntimeSettings` throws (every caller already handles it: session start
+refuses, the reaper's two callers catch), a failed `mcp_apps` read reaps none, and egress leaves the
+file alone. A fresh install with no row still gets every default.
+
+The reaper's three _session_ reads were already safe, by accident: a failed read is `data: null`,
+which reads as an empty list, which reaps nothing. They keep their errors now and say so in the log,
+but that is a warning, not a fix — and the mutation run agrees. Five mutants caught against a
+verified-green baseline, control survived, and one survived as **equivalent**: deleting the
+`return []` after a failed sessions read changes nothing, because the empty list it falls through to
+returns `[]` on the next line. That was confirmed by applying it and typechecking, not argued.
+
+Not proved in the UI: each needs a server-side read to fail. The tests drive `canUseRuntime` with
+the force-enable variable set against a failing read, and pin the reaper's and the egress file's
+order of checks.
+
+### 2026-10-04 — R248: a deprovisioning that removed no one and answered 200
+
+**Severity: high.** From the sweep-7 queue: "SCIM group deprovisioning removes no one when the
+members cannot be read, and answers 200". True, and the same mistake was made eight more times in
+the same file.
+
+A PUT or PATCH on a group works out who to remove as `before.filter(m => !after.includes(m))`, and
+`before` came from `membersOf`, which dropped its read error. A failed read made `before` empty, so
+the removal set was empty: the identity provider was told the user had left the group, and every
+grant and model rule the group carries stayed with them. Deprovisioning is the one SCIM call whose
+whole purpose is to take access away, so failing open there is the worst direction available.
+
+**Every answer this file gives is acted on.** The sweep found nine reads that dropped their errors,
+each turning "could not read" into a false statement to the IdP:
+
+| Read                                             | What a failure used to say                                                  |
+| ------------------------------------------------ | --------------------------------------------------------------------------- |
+| a group's members                                | "this group is empty" — so a removal removed no one                         |
+| a group's row                                    | 404 "No group"                                                              |
+| a user's account                                 | 404 "No user" — so a deactivation (`active: false`) left the account active |
+| a member's account                               | 400 "is not a user", blaming the IdP                                        |
+| a user's groups, a user's profile                | "in no groups", "no name", on every User response                           |
+| the provisioning token                           | 401 "Invalid or revoked" — which some IdPs answer by disabling the app      |
+| a profile before a write, a name clash on create | "none", followed by a write that then failed                                |
+
+All nine go through one `unreadable()` now: a 503, which Okta and Entra retry. One subtlety the
+fix had to respect: GoTrue reports a genuinely missing user **as** an error, with status 404, so the
+user lookups split on `error.status`, not on whether there was an error. A ratchet holds the file at
+zero reads that drop their error.
+
+Eight mutants caught against a verified-green baseline, control survived. Two of the nine checks —
+the profile read before a write and the name-clash read — are held only by the ratchet on their
+destructuring; both were followed by a write that failed loudly, so they were the least harmful.
+
+**Not proved in the UI.** Every one of these needs a server-side read to fail, which the browser
+cannot cause (the same limit as R236's SCIM half), and the regression half is an IdP pushing over a
+bearer token rather than a page. The tests drive the real handlers against a database that fails one
+read at a time.
+
+### 2026-10-04 — R247: a key restricted to one agent, saved as able to call all of them
+
+**Severity: high.** The sweep-7 queue listed "an AI Gateway key saved with no agent restriction
+when the owner's agents cannot be read". Reading it found the failed read was only one way in.
+
+A key's agent list and semantic-model list are allow-lists where **empty means everything** — the
+create dialog says so: "None ticked = every agent you own". The server filtered what was asked for
+down to what the owner may name and stored the result. So any list that filtered down to nothing
+was stored as "all":
+
+- the agents read failing, because `const { data: own } = …` dropped its `error`, and a failed read
+  filters every agent out;
+- **an agent deleted while the dialog was open**, with no failure anywhere;
+- a semantic model whose share was withdrawn — on create, and on **edit**, where the same filter ran.
+
+**Driven, not argued.** A fixture agent, "R247 doomed agent". The create dialog opened with only it
+ticked; the agent deleted from a second tab; Create pressed. The page said **"Key created"** and the
+key list read **"Agents: all"**. That key was revoked at once and was never used. Nothing failed:
+the rule did exactly what it was written to do.
+
+**The statement, not the symptom.** Narrowing was never the danger; widening was, and it only takes
+the _last_ permitted id to go. But "some of what you picked was quietly left off" is its own wrong
+answer about a security boundary, so `honorAllowList` (`utils/gateway/allowList.ts`) refuses
+whenever anything picked cannot be honoured, says how many, and gives the true reason — the
+widening one only when it is true. Both lists go through it on create, and the semantic-model list
+on edit. The agents read keeps its error now.
+
+`gatewayMetrics.test.ts` pinned the old filter by name ("Named models are filtered against what the
+owner may read"); its assertions now pin the check, and say why.
+
+Six mutants caught against a verified-green baseline, control survived. The semantic-model widening
+was not driven separately: it is the same function, and withdrawing a share needs a second account.
+
+**Proved in the UI after the fix.** The same drive — one agent ticked, deleted from another tab,
+Create — was refused with "…so nothing was saved: with none left, the key would have reached every
+agent you have", the dialog stayed open and no key was written; with a real agent ticked instead
+the key was created as "Agents: Predictive Analyst". Every key made was revoked unused. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+### 2026-10-04 — R246: two guards that count first and write second
+
+**Severity: high.** The queue's Sheets list carried a one-line row from the first rounds:
+"`sheetsDeleteTab` counts, then deletes, so two concurrent deletes can leave a workbook with
+none." It is true, it is worse than it sounds, and it is not alone.
+
+The shape:
+
+```ts
+const { count } = await sb.from(T).select("id", { count: "exact", head: true })…;
+if ((count ?? 0) <= 1) return { ok: false, error: "…keeps at least one…" };
+await sb.from(T).delete().eq("id", id);
+```
+
+The count and the delete are two round trips. Two requests that arrive together both read 2, both
+pass the guard, and both delete. Sweeping for it found **two** instances, and the second is the
+one that matters: `iamRevokeSuperadmin`. Two demotions at the same moment leave a deployment with
+**no superadmin at all**, and granting the role is itself superadmin-gated, so there is nobody
+left who can make one. Unless `ADMIN_EMAIL` is set and the bootstrap promotion runs again, that
+is permanent. The same function also dropped the count's own `error`, so an unreadable
+`user_roles` reported "Cannot demote the last superadmin" as a fact about the data.
+
+**Driven, not argued.** Two browser tabs, each holding the real confirmation dialog over a
+different sheet of a two-sheet workbook, both confirms fired from the page at the same
+millisecond (`1791109545000`, read back from both tabs). The workbook was left with no sheets —
+and it will not open again. The editor's `if (!engine || !tabId || !activeTab)` renders
+"Opening…" forever, and every control that could add a sheet back, including the `+`, is below
+that return. So the queue's row understated it: not "a workbook with none", but a workbook that
+is permanently unopenable, with no path back from the UI.
+
+**The fix is an order, not a lock.** There is no transaction to reach for — these run over
+PostgREST, a statement per request. But a count taken BEFORE the write describes a past the write
+may have changed, while a count taken AFTER it describes the present. So `lastOneGuard` writes
+first, then looks, and puts the row back if looking says it was the one that emptied the table.
+That is only safe because both rows carry their own data — a sheet tab's cells are its own `grid`
+column, a superadmin role is the pair `(user_id, role)` — so the row read before the delete
+restores it whole. A table whose children cascade would need a different answer, and the module
+says so.
+
+It does **not** hold the invariant at every instant: between the second delete and the restore
+the table is briefly empty. Settling at zero was the unrecoverable failure; passing through zero
+is survivable — and only honestly so because of the other half of this round. A workbook with no
+sheets now says it has none and offers to add one, which also recovers any workbook already
+broken this way. `sheetsAddTab` was already happy to add the first sheet to an empty workbook;
+nothing could reach it.
+
+Eight mutants caught against a verified-green baseline, control survived. The ratchet in
+`lastOneGuardWiring.test.ts` holds the count-then-decide shape at **zero**, and two of the
+mutants exist because the first version of that test would have let them through: making the
+empty-workbook branch unreachable left every string it renders in place, and restoring a sheet as
+a husk left `.select("*")` standing. Both are pinned on the thing itself now — the condition, and
+`insert(row)`.
+
+**An earlier round's ratchet caught this one.** The first version read the superadmin's role row
+inside `iamRevokeSuperadmin`, and R236's test — no caller reads `user_roles` for the superadmin role
+privately — failed the gate. That read raised its error, so it was not R236's defect; but the
+answer was to honour the ratchet rather than loosen it. The read now lives in `iam.server.ts` as
+`readSuperadminRoleRow`, beside `isProtectedAccount`, and the ratchet is untouched.
+
+**Proved in the UI, both halves.** On the fixed build the same race, fired at one millisecond from
+two tabs, was refused in both tabs and both sheets came back with their cells; the workbook the
+"before" run had broken opened on "This workbook has no sheets" and recovered through Add a sheet.
+Rows in [UI test results](./UI_TEST_RESULTS.md).
+
+**Proved for sheets, argued for IAM.** The superadmin race needs two superadmins to demote and
+this deployment has one account; it is the same blocker as R225, R235 and R239, and it is the
+same statement, on the same helper, with the same tests.
+
+### 2026-10-04 — R245: sixty-eight buttons that can fail in complete silence
+
+**Severity: high, by breadth.** The queue's open operations row said the publish toast "shows the
+HTTP 500 but not the lock". Reading the handler to fix the message found something worse underneath
+it:
+
+```ts
+try { const r = await publishFn(…); if (!r.ok) return toast.error(r.error); … }
+finally { setBusy(false); }
+```
+
+A `finally` with no `catch`. A server function that RESOLVES with `ok: false` is reported; one that
+REJECTS stops the spinner, leaves the dialog open and says **nothing**. That is what "No toast" in
+the 2026-10-01 run meant, over a publish the catalog had refused — the round that saw it wrote the
+symptom down and moved on.
+
+**It is a family.** Sweeping for handlers that toast `ok: false` inside a `try` with no `catch` —
+code that plainly intends to report failure and still drops half of it — found **68**, across ML
+panels, IAM, SQL models, the gateway, Sheets version history, swarm deploy and more. A first sweep
+for "try/finally with no catch" found 136, but most of those have a caller that handles rejection;
+narrowing to handlers that already toast one failure mode is what makes the number mean something.
+
+**Fixed in three parts.** The publish button gets a real catch, because a write into someone else's
+catalog is where silence is least affordable: the reader cannot tell "it did not happen" from "it
+happened and the dialog is slow". Its message keeps the engine's own words and adds what that
+shape of failure usually means — modelled on the ETL sandbox's socket-proxy message, which earlier
+the same day diagnosed a real failure correctly and whose remedy worked first time. It does **not**
+claim the SQLite lock as fact: the lock is in the catalog's log, not in the client's error, so it
+says where to confirm it. And `installSilentFailureNet` is the floor under the other 67 — a window
+`unhandledrejection` listener that says "That did not finish" with the real message, firing only
+for rejections nothing else handled, so a handler with its own catch is unaffected.
+
+The ratchet records 67 as a **debt, not a budget**: it may only go down, and each handler that
+earns its own sentence beats the net.
+
+Nine mutants caught against a verified-green baseline, control survived. Two survived the first run
+and both were real test gaps rather than equivalent mutants:
+
+- Deleting the `AbortError` **name** check survived, because both of my abort cases also had
+  "aborted" in their message. Browsers word that differently — "signal is aborted without reason",
+  or a DOMException with no message — so the name is the only reliable half, and the test now has a
+  case that exercises it alone.
+- Deleting the sentence that says the catalog **accepted the request and refused the write**
+  survived, because the assertions checked only the two docker commands. A remedy with nothing to
+  explain it is a ritual; the diagnosis is now pinned too.
+
+**Proved in the UI, on the deployed build.** The net is a window `unhandledrejection` listener, so
+the honest way to drive it is a rejection nothing handles — exactly what the other 67 handlers
+produce. On `348f313c`, hot-deployed: a rejection reading "Failed to commit Iceberg transaction:
+HTTP 500" raised **"That did not finish"** with the engine's own sentence, where before it raised
+nothing; an `AbortError` whose message says nothing about aborting stayed **silent**; the same
+rejection twice produced **one** toast. The quiet case was driven on purpose — a net that reports
+every cancellation is as wrong as one that reports nothing. Rows in
+[UI test results](./UI_TEST_RESULTS.md).
+
+**Still not proved:** the publish button's own catch. Reaching it needs the bundled catalog to hold
+its SQLite lock, which earlier rounds hit by polling the catalog during a publish, and staging that
+reliably is a round of its own. Its message is a pure function with tests, its wiring is pinned by
+reading the dialog, and the 2026-10-01 run already recorded the symptom it removes.
+
+### 2026-10-04 — Smoke of the real image after R237 to R244
+
+No new defect in what was driven, on the second attempt. The image built from `048ee9c3` failed its
+own smoke — the notification bell emptied its panel before the confirmation was answered, which is
+R244 — so the fix was made, re-gated, rebuilt, and `91b65bf26c64` (from `3fd9bc99`) is what was
+driven: the bell keeps its thirty rows through a Cancel, the Sheets tiles say a sample is already
+yours and opening it reopens the one you have, the kept freshness monitor reports the unreadable
+value by name **on its schedule**, an Iceberg publish lands 4 records in 1 file as the catalog's own
+metadata reports it, and an ETL run through the sandbox gateway loads its 108 rows. No errors or
+warnings in the log, no staging left in the bucket. Full table in `docs/UI_TEST_RESULTS.md`.
+
+One thing the smoke found that is not a defect and is worth keeping anyway: the ETL run's first
+attempt failed while the image build was still running, and the message named the two endpoints it
+had tried, offered the right cause ("the Docker daemon is busy (a build or pull in progress?)") and
+gave the exact remedy. The remedy worked. That path had never had a round written about it.
+
+### 2026-10-04 — R244: the question came one line too late, in R242's own fix
+
+**Severity: moderate. Introduced by the previous round, and found by smoking the image it shipped
+in.** R242 gave the notification bell's "Clear all" a confirmation. The handler already updated the
+screen first and restored on failure, so the question landed below the optimism:
+
+```ts
+const before = items;
+setItems([]);                              // the panel empties here
+if (!(await confirmAsk({…}))) return;      // …and the question comes after
+```
+
+Cancel therefore returned without restoring. Driving the real image: the panel showed **"No
+notifications"** and the bell's badge went blank, while a reload brought back **"(30 unread)"**.
+Nothing was deleted — the data was never at risk — the screen simply said something that was not
+true, which is exactly R70's rule ("an optimistic switch is a promise about the database") broken by
+the fix for it.
+
+**9,209 tests passed over that change.** Every one of them asks WHETHER a control confirms; none
+asked WHEN. `tests/unit/askBeforeOptimism.test.ts` asks when, over the four handlers that both ask
+and update a list, and the mutant that puts the question back below the flip is caught.
+
+Two things about that test are worth keeping:
+
+- Its first version was **defeated by this very fix's comment**. The comment explaining the bug
+  quotes `setItems([])`, the search found that line, and the test reported the flip as happening
+  before the question written above it. It strips comments now: a test about order must read code,
+  not prose about code. A mutant removing the stripper is caught.
+- It pins the other half of R70 at the same time — the restore on failure, and the sentence saying
+  the rows are still there — because a guard that only checks the new half invites the old one to
+  rot.
+
+**The wider point.** R242 widened a sweep that enforced "every delete asks", and the widening was
+right. But the rule it enforces is only half of one: a delete must ask, _and_ nothing may be shown
+as done before the reader has agreed. The sweep had no opinion about order, so a conforming fix
+could introduce this. Six mutants, five caught, control survived.
+
+This is the second time in two days that the image smoke caught something a green gate did not —
+R232 found dead code the bundler had already dropped. A gate reads the source; an image is what
+someone actually opens.
+
+### 2026-10-04 — R243: opening a sample twice, and a test that passed by being broken
+
+**Severity: low.** From the Sheets round's own leftovers: "Opening a sample twice makes two
+workbooks with the same name. The tile could say that one is already open." It did exactly that —
+the tile imported on every click, so the gallery ended up with two rows carrying the same name, the
+same art and nothing to tell them apart. The way to get there is ordinary: open a sample, look at
+it, come back later and click it again.
+
+Fixed by asking rather than refusing, because a second copy is a real thing to want — the first has
+been written in and a clean one is wanted beside it. Declining **opens the one you already have**
+instead of doing nothing, since a confirm whose cancel is a dead end teaches the reader to click
+through it. The tile says so before the click, which is what the queue asked for, and the match is
+scoped to `role === "owner"`: a workbook _shared_ with you under the same name is not yours to
+reopen, and sending someone into another person's copy would be worse than the duplicate.
+
+**The part worth keeping is how the mutation run failed.** The first harness said six of seven
+mutants caught, with one survivor: a bare `return;` in front of the import, which made the guard a
+refusal — my test had asserted the import _text_ was present rather than that the function reaches
+it, which is the same weakness R234 and R235 each turned up. So I added a reachability assertion
+counting the early returns before the import.
+
+The next run reported the **control** caught, which voids a run. The assertion's regex had been
+written through a shell heredoc, which swallowed the backslash and left a literal **backspace byte**
+in the file: `/\x08return;/` instead of `/\breturn;/`. It matched nothing, the count was always
+zero, the file always failed — and so every mutant came back "caught", including the ones that
+genuinely were. Six true results and one false one are indistinguishable in that output.
+
+That is the whole reason the control mutant exists, and it is the second time this log has recorded
+it earning its place. A green baseline is not a formality: a test that cannot pass makes a mutation
+run say exactly what you hoped to hear.
+
+Six mutants caught against a verified-green baseline, control survived.
+
+### 2026-10-03 — R242: the guard against one-click deletes only looked at half the product
+
+**Severity: moderate, and the shape is the point.** `tests/unit/destructiveActionsAsk.test.ts`
+exists because finding unguarded deletes one at a time did not work. Its own header says so: a
+guard was written for the knowledge base, and the source delete _right next to it_ still went on
+one click. The answer was to enforce the rule over a whole directory instead of per feature.
+
+The directory was `src/routes/_authenticated` — **pages only**. A delete is just as destructive
+from a dialog in `src/components`, and twelve of them were there, never swept.
+
+The one that found it: **the swarm chat dialog deleted a whole transcript on the first click**, from
+a hover-revealed trash icon sitting one row from the chat you are in. Agent Chat's identical control
+was fixed in R72, and the comment written above it then applies word for word here — the row carries
+every prompt and every answer, and `swarm_chats` has no undo, no trash and no export on the way out.
+Two paths to one action, one guarded and one not, which is R67's shape.
+
+**What the widened sweep found**, and what each got:
+
+- **Now ask:** the swarm chat transcript, an agent version (its swarm sibling already asked through
+  an AlertDialog), a scheduled analysis, a BI alert, a BI schedule, a swarm schedule, and clearing
+  every notification.
+- **Exempt, each with a reason the test proves against the code:** three guarded by an
+  `AlertDialogAction` at the call site (swarm gallery, API-key revoke, swarm version), one that is
+  not a delete the reader performs (emptying a budget cap clears the ceiling, and the row delete IS
+  that save), one compensating rollback (R192's `withdrawSource`), and one row inside a container
+  whose own deletion asks (an agent memory item, the same reasoning the existing `deleteMessage`
+  exemption uses).
+
+Five of those deletes also gained the failure sentence the rest of the product uses — what is still
+true when the delete did not happen ("It is still here", "It is still scheduled and will still
+run"), instead of a bare "Could not delete chat".
+
+**The test interrogated me, and it was right to.** Its exemption list is capped, with a comment
+asking whether the newest entry "is really an exception or just an inconvenience". At twelve
+exemptions it went red. One of mine rested on "they are only notices" rather than on structure, so
+that control now asks instead, and the cap moved to eleven with the reason written down: the list
+grew because the SWEEP grew, and every entry left is one of three structural shapes.
+
+**And the fix nearly reproduced the bug.** The floor test counted swept files in total, and the
+pages directory alone holds 47 of them — more than any whole-sweep floor would notice — so a sweep
+narrowed back to pages would have passed while checking none of the 245 component files. The floor
+is now pinned per root, and a mutant that narrows the sweep is caught.
+
+Six mutants caught, control survived. The seventh — removing the exemption cap — survives on
+purpose and is labelled: a cap on judgement cannot defend itself, it only forces the question.
+
+### 2026-10-03 — R241: "never ran", about a pipeline that ran for 56 minutes
+
+**Severity: moderate.** Two writers stamp a pipeline's last run — the success path and the failure
+path — and both return early when the run was cancelled, correctly, because a cancel is not a
+failure. Nothing else stamped it. So a cancel left the pipeline's summary untouched, and a pipeline
+whose only runs were cancelled read **"last run: —"** and **"never ran"** on the ETL list.
+
+**The list already contradicted itself on real data, before anything was staged for this round.**
+`r227_stream` read "never ran" beside **"runtime 7d: 56m 36s"** and a row of four run dots, while
+`r229_spark` beside it read "never ran" with "no runs yet" and no runtime. The page distinguishes
+the two cases everywhere except in the sentence. Opening `r227_stream`'s Runs tab showed four runs,
+**every one Cancelled**, which had loaded 1, 0, 1 and 5 rows over 56 minutes.
+
+The giveaway that this was an omission rather than a decision: `RUN_STATUS_STYLE` in `etl.tsx` has
+carried a **`cancelled`** style the whole time. The chip was built to show this state and was never
+given one.
+
+**Fixed** by stamping the pipeline when a run is cancelled, best-effort and after the run's own
+record is written — the order R78 established, since the run is cancelled by the `etl_runs` write
+and the summary is a derived convenience. A failed stamp warns in the house phrasing the other two
+stamps use and does **not** report the cancel as failed: the run is stopped by then, and answering
+`ok: false` would send the operator back to cancel something already stopped.
+
+One consequence had to be chosen rather than inherited. `lastRunDrift`'s doc said it compares
+against "the run behind its `last_run_status`", which was true only while the status could come
+from nothing but a finished run. A cancelled run may have run nothing at all, so the two came apart.
+The query stays on succeeded-or-failed runs and the sentence now says so: the chip answers "is the
+result you are looking at from today's program?", and a cancelled run produced no result to ask
+about.
+
+Seven mutants, seven caught, control survived — including stamping a status the list has no style
+for, and the drift starting to count cancelled runs as results. An existing ratchet counted the
+stamp writes and went red at two-of-three, which is exactly what it was for; it now counts three,
+and the new stamp uses the same wording as the other two.
+
+**Proved in the UI.** Before: the self-contradiction above, on the owner's own pipelines. After:
+cancelling a queued run of `r227_gateway` left the card reading **Cancelled** with the cancel's own
+timestamp, where before it would have kept showing the previous run's. `r227_gateway` was then run
+once more to restore it to Succeeded, since the image smokes use it.
+
+Worth recording for whoever reads the before-shot: driving this round changed `r227_stream`'s card.
+Two runs of it succeeded while I was trying to catch a cancel in flight, so it now reads "Succeeded"
+and no longer shows the contradiction. The four cancelled runs are still in its Runs tab.
+
+### 2026-10-03 — R240: `isolate: false` measured, and refused
+
+R237 left one lead: `collect` was 207 s against `tests` 431 s, so a third of the suite's work is
+importing modules again in every fork. The queued instruction was to **measure** whether
+`isolate: false` is safe for a suite that mocks modules per file, rather than guess. Measured:
+
+|                    | wall time | result                                                              |
+| ------------------ | --------- | ------------------------------------------------------------------- |
+| isolated (current) | ~210 s    | all 9,199 pass                                                      |
+| `--no-isolate`     | **91 s**  | **44 failures across 14 files**, and 77 tests skipped instead of 40 |
+
+So the prize is real — 2.4× — and it is not available. With one module registry per fork, a
+`vi.mock` from one file reaches the next, and what broke is the part of the suite that matters most:
+
+- `iamPolicyReadFailure > requireSuperadmin, when the role read fails` (R53)
+- `lakehousePolicyFailClosed > a policy that cannot be read is not 'no policy'` (R223)
+- `etlLakehouseGuard > a shared table under its owner's policy is refused to a target` (R225)
+- `icebergMountReadOnly > refuses CREATE TABLE in the mount's schema`
+- `cronPassFailures > fails with the reason instead of running nothing`
+
+Every one of them is a fail-closed guard. **The direction of the leak is the argument, not the
+count.** Forty-four red tests would be a morning's work to chase; the reason not to is that the same
+mechanism can make one of these guards PASS when it should fail, and nothing in a green run would
+say so. This log is a list of defects that were invisible until someone looked — a test suite whose
+security guards depend on file ordering is the same bug one level up.
+
+**Not adopted, and the item closes.** The 20 s timeout stays tight, `maxForks` stays at half the
+cores, and the residual flake stays at roughly one timeout in four full runs, which is visible,
+re-runnable and honest. If the suite's import cost is worth attacking later, the option that does
+not trade correctness is structural — the three heavy files (`catalogGzipDataset` 48 s,
+`etlSqlStep` 42 s, `etlEmptyTick` 41 s) in their own vitest project with `singleFork`, so they stop
+holding a worker each while the rest queues. That is a bigger change than this round wanted, and it
+is worth doing only if someone can show the import cost actually hurts.
+
+### 2026-10-03 — R239: the last two copies of the access rule, and an empty table that meant nothing of the kind
+
+**Severity: low for exposure, moderate for truthfulness.** R235 fixed the two copies of the
+grant-reading pair that failed OPEN and recorded the other two as failing closed — "so this is a
+message problem, not a hole". This is that message problem, and folding all four onto one reader.
+
+**`bi.functions`** guarded its grants read and not the membership read beside it. A failure of that
+one produced no applicable grant, which the code answered with **"This dashboard is not shared with
+you"** — a definite sentence about a question that was never asked. A viewer reading it goes and
+asks for access they already have, and the owner finds nothing wrong.
+
+**`sharedDatasets.server`** dropped both errors, and its catch turns anything thrown into
+`{ columns: [], rows: [] }`. So a blip showed the viewer a table with **no rows** — pixel-identical
+to the screen they would see if the owner had shared nothing with them. Nothing was exposed. But
+"there is nothing here" and "nothing could be read" are different sentences, and the reader is the
+only one who can act on the difference.
+
+Both now call `readApplicableGrants`, so the rule the enforcement file warned about — _"Four private
+copies of one access rule is what let the snapshot path fail open for months"_ — is one function.
+`bi.functions` returns `ok: false` naming what could not be read, and keeps "not shared with you"
+for a read that **succeeded** and found nothing. `restrictSharedDataset` re-raises a failed grant
+read past its fail-closed catch, exactly as the attribute refusal has been re-raised since it was
+added, and still swallows anything it cannot name: an error with no name is not a reason to show
+rows.
+
+The ratchet distinguishes the two things a file can do with these tables. No enforcement surface may
+read `iam_group_members` — a viewer's groups are only ever needed to decide what applies to them, so
+reading them is deciding access with a copy of the rule. `bi.functions` is deliberately exempt from
+the stricter half: it is the owner's sharing surface and legitimately lists, inserts and deletes
+grants. What it must not do is judge a viewer with its own copy.
+
+Six mutants, six caught, control survived. The ones worth keeping: a re-raise whose pattern matches
+nothing (so it never fires), and dropping the fail-closed default for unnamed errors.
+
+Two of the existing `sharedDatasets` tests asserted the OLD contract — "returns NOTHING when the
+grants lookup fails" — and were rewritten rather than deleted, because the distinction they now draw
+is the finding: a read that REPORTED its failure reaches the viewer, while something unexpected
+blowing up still fails closed. The test double grew a `failOn` beside its `throwOn` to tell those
+apart, which is the difference the product now draws too.
+
+**Not proved in the UI:** the same blocker as R235 — the grantee side needs a second account.
+
+### 2026-10-03 — R238: a freshness monitor on a text column, blaming the data
+
+**Severity: moderate.** The queue's last sweep-6 row was "choosing 'Pick a column…' snaps back to
+the first timestamp column. Minor." It is real and it is minor — an effect refills the column
+whenever it is empty, so that option does nothing. What it sits next to is not minor.
+
+**Switching the monitor KIND did not clear the column.** `region`, picked for a null-rate check,
+survived a switch to Freshness. The freshness picker lists only timestamp columns, so the select's
+value matched no option and it displayed **"Pick a column…"** — the form said nothing was chosen
+while holding `region`. Saving was accepted, because `validateMonitorConfig` checks that a column is
+NAMED, not what it is. The monitor then ran `max(region)`, got `EMEA`, could not parse it as a date,
+and `ageMinutes` returned null — which `evaluateMonitor` reported as:
+
+> The table has no rows, or the timestamp column is empty.
+
+A sentence the run cannot support. `analytics.revenue_facts` has 836 rows and `region` is 0% null —
+and the **same page** says so, in two other monitors on the same table, three rows below. An
+operator reading that alert goes and looks at data that is fine.
+
+**Both halves are fixed.** `evaluateMonitor` has the `latest` value the runner measured, so it can
+tell the two cases apart and now does: a value that is present but unreadable says so and quotes it
+(truncated at 60 characters), and only a genuinely absent value keeps the old sentence. The form
+drops a column the new kind cannot offer, so the auto-pick fills a valid one — and the snap-back
+row from the queue goes with it, since the placeholder is now reachable only where it means
+something.
+
+The message half matters more than the form half: it covers monitors that already exist, rows
+edited by hand, and warehouse sources where the column types are not known. The form half only
+closes the door this particular monitor came through.
+
+**Proved in the UI both ways**, on one monitor across a rebuild. Pre-fix bundle: Null rate →
+`region` → switch to Freshness → the picker reads "Pick a column…" → Create → the monitor alerts
+with the sentence above. Fix deployed, the same monitor re-run: **"The newest value in this column
+is not a date or time: EMEA. Freshness needs a timestamp column."** Driving the same steps on the
+fixed build now clears `region` and fills `placed_at · DATE`. Seven mutants, seven caught, control
+survived.
+
+Left behind on purpose: the monitor **R238 freshness on a text column**, still alerting, as the
+evidence. It is deliberately broken and safe to delete.
+
+### 2026-10-03 — R237: the gate was wrong every other run, and the instrument is what every round rests on
+
+**Severity: high, and not in the product.** `npm run check` failed roughly every other run with
+**"Test timed out in 20000ms"** — always a timeout, never an assertion — and the file passed in a
+couple of seconds when run alone. It cost four re-runs in one day.
+
+**Twice I wrote this up wrong, and both wrong versions are the finding.** First as "those two heavy
+test files compete for the pool", naming `aiAnalyst` and `sheetsSamples`. The next failure was
+`docsFactCheck`, which only reads source files and has never been slow — so it was not those two
+files. Then as "it only happens when something heavy runs beside it", which my own notes had said
+for weeks. So the run was repeated with **nothing else running at all**, and it still failed: seven
+tests across four files, `nl2sqlEval` among them, which had never failed before. Both explanations
+had survived because nobody had run the cheap experiment that could refute them.
+
+**Measured** on 8 cores with ~6 GB free, nothing else running:
+
+| forks                   | wall time | result                           |
+| ----------------------- | --------- | -------------------------------- |
+| default (7 = cores − 1) | 326 s     | **7 failures** across 4 files    |
+| 4                       | 220 s     | 576 files, 9,181 tests, all pass |
+| 4 (repeat)              | 208 s     | all pass                         |
+
+Halving the parallelism made the suite **green and a third faster**. That is the part worth
+remembering: this was never a speed-for-determinism trade. Each fork carries its own module graph;
+three files (`catalogGzipDataset` 48 s, `etlSqlStep` 42 s, `etlEmptyTick` 41 s) hold workers for
+most of a minute while everything queues behind them; and the contention that creates costs more
+than the extra workers win. The 20-second per-test timeout was never the problem — it was the
+messenger — so it stays.
+
+**Fixed** in `vitest.config.ts`: `maxForks` is half the cores, floored at one, which on a two-core
+CI runner is 1 — the same as vitest's default there, never more. The numbers above are in the
+comment, because the obvious optimisation is to raise it and the measurement says that makes the
+suite slower and wrong. `tests/unit/testRunnerParallelism.test.ts` is the ratchet; five mutants,
+five caught, control survived, including raising it back to the default and switching the pool
+(which silently drops the cap).
+
+A gate that is wrong half the time is worse than a slow one. Every entry above this line is only as
+good as a green gate read from the shell, and the risk was never the lost minutes — it is the day
+someone re-runs a genuine failure until it passes.
+
+**Corrected the same day, two gates later.** "Fixed" was too strong. A later full run still timed
+one test out — `nl2sqlEval > count-rows` — so the change is a large improvement and not a cure:
+seven failures became zero, zero, zero and then one. The residual is worth stating precisely,
+because the next person will meet it: that file's 101 tests take **8 seconds in total** when run
+alone, about 70 ms each, so a test killed at 20 s was starved by roughly 285×. No per-test budget
+can tell that apart from a hang, which is exactly why the timeout must NOT be raised to cover it —
+`tests/unit/testRunnerParallelism.test.ts` holds that line deliberately, and it argued against me
+when I reached for it.
+
+The number that points at the rest of the problem is in the same run's summary: **`collect`
+207 s** against `tests` 431 s. A third of the suite's work is importing modules, repeatedly, in
+every fork. That is the next thing to measure — whether `isolate: false` is safe for a suite that
+mocks modules per file, or whether the heavy engine tests should share one fork — and it is on the
+queue rather than guessed at here.
+
+### 2026-10-03 — Smoke of the real image after R234, R235 and R236
+
+No new defect in what was driven. Image `74b4c134725e`, built from `5fd5f316` and started as a real
+container: Admin → IAM renders with its superadmin badge and every request 200; a paused bar race
+survived a Refresh that demonstrably re-ran the query; a guarded agent refused its blocked pattern
+with 422 and, once deleted, the identical request was refused with `agent_not_found`; an Iceberg
+publish landed 4 records in 1 file as the catalog's own metadata reports it; and an ETL run through
+the sandbox gateway loaded its 108 rows in 34 s. One error line in the log, which is the guardrail
+refusal. No staging left in the bucket.
+
+Two of the three rounds in this batch could not be driven here at all, and the reason is the same
+one: this instance has a single account. R235 is about what a grantee sees, and there is no grantee;
+R236's refusal path needs an account to ban or delete that is not the one signed in. Noting it here
+rather than in the round's own entry, because it is a standing limit of this deployment and not a
+fact about those two rounds — a second account would unblock R225, R235 and R236's happy path
+together. Full table in `docs/UI_TEST_RESULTS.md`.
+
+Method note worth keeping: the dist greps now include a deliberately invented string as a negative
+control. "The code is in the image" means nothing from a grep that would have matched anything.
+
+### 2026-10-03 — R236: the superadmin protection answered "not protected" when it could not tell
+
+**Severity: high.** Three places ask "is this account a superadmin?" immediately before doing
+something destructive, and each asked it with its own `const { data: role } = await …`, dropping
+the error:
+
+- **SCIM** (`utils/scim.server.ts`, `assertNotProtected`) — the guard whose own file header says
+  _"One rule runs through all of it: SCIM may never remove the last way in."_ A failed read answered
+  "not a superadmin", and SCIM deactivated or **deleted** the account that administers the instance,
+  on the word of an identity provider, unattended, with nobody watching a screen.
+- **Admin → IAM ban**, and **Admin → IAM delete** (`utils/iam.functions.ts`) — "Demote this
+  superadmin before deleting them" skipped, and `auth.admin.deleteUser` called.
+
+`isBootstrapAdmin` had the same hole one level down: it dropped the error from its account lookup,
+so a failed lookup left the email empty, which is not the bootstrap address, and the bootstrap admin
+came back unprotected too. Both halves of the protection failed open on the same kind of blip, which
+is exactly why neither covered for the other.
+
+This is the fourth round of this class, and the pattern is now unmistakable: `requireSuperadmin`, in
+the same file, has been guarded since R53, with the reasoning spelled out directly above it — _"A
+failed read is not 'no role'"_. The guard was written once and the other callers were left asking
+the question themselves.
+
+**Fixed** with `isProtectedAccount` in `utils/iam.server.ts`: one guarded read of the role, the
+bootstrap check behind it, and a throw when either cannot be established. SCIM answers **503** and
+does neither thing; ban and delete return `ok: false` naming what could not be checked. The
+protection is only absent when something actually said so.
+
+Seven mutants, seven caught, control survived — including one that catches the throw and proceeds,
+which is the exact regression this round exists to prevent. The tests assert the effect, not the
+return value: `auth.admin.deleteUser` is a spy, and the refusal cases end with "nothing was
+deleted". One test deliberately deletes an ordinary account to prove the guard refuses the
+unreadable case **without** refusing the normal one — a protection that blocks everything is an
+outage with a tidier message.
+
+Worth recording: the first version of these tests passed for the wrong reason. `isBootstrapAdmin`
+returns early when `ADMIN_EMAIL` is unset, which it is under vitest, so the account-lookup half was
+never reached and the test resolved `false` instead of throwing. The file now sets the variable and
+says why.
+
+**Not proved in the UI:** inducing a failed role read needs fault injection the UI has no way to
+cause, and the normal-path refusal cannot be driven on this instance without a second superadmin —
+the only account to try it on is the one signed in, which "You cannot delete yourself" stops first.
+Admin → IAM was loaded after the change to confirm the surface still works.
+
+### 2026-10-03 — R235: a grantee kept the access and lost the restrictions
+
+**Severity: high.** Enforcing a share takes two reads — the viewer's group memberships, and the
+grants on the resource. Four surfaces did those two reads privately, and the enforcement file says
+what that habit costs, in a comment written after an earlier incident: _"Four private copies of one
+access rule is what let the snapshot path fail open for months."_ R53 guarded the two copies in
+`iam.server`. Two of the others were still open.
+
+**BI direct query** (`routes/api/bi.direct-query.ts`) dropped both errors. An empty grant list is
+not a refusal there: `mergeGrantRowFilters([])` returns `null` and `intersectColumnMasks([])`
+returns `[]`, so the viewer's **live warehouse query** ran with no row filter and no column mask —
+every row and every column the owner can see. The access check above it is an RPC whose failure
+reads as `null`, so access itself fails closed; the viewer was legitimately through the door, and
+only the limits that make that access safe disappeared.
+
+**The semantic layer** (`utils/semantic/policy.server.ts`) had already guarded its grants read, with
+a comment saying exactly why. The membership read beside it was not guarded, and it carries just as
+much: a restriction granted to a GROUP yields no applicable grant when the membership list cannot
+be read, and this function's own contract reads "no applicable grant" as "no share-level
+restriction exists".
+
+The other two copies were checked rather than assumed. `bi.functions` guards its grants read and
+answers "This dashboard is not shared with you" when the list is empty, and `sharedDatasets` returns
+an empty dataset: both fail CLOSED, so neither exposes anything. They are on the queue for their
+message — a failed read answered as "not shared with you" is the milder half of this class — not
+for a hole.
+
+**Fixed** by giving the two reads one guarded home, `readApplicableGrants` in `utils/iam.server.ts`,
+beside `resolveGrantedResourceIds`, which has done it correctly since R53. Either read failing
+throws; BI direct query answers **503** and does not run the query; the semantic layer lets the
+throw reach the caller, which already treats it as "refuse". Access and restriction now fail closed
+together or not at all.
+
+Seven mutants, seven caught, control survived. One is worth recording: a mutant that set the grants
+to `[]` in the catch and left an unreachable `return json(503)` further down **survived** the first
+version of the test, which asserted that a 503 appeared somewhere nearby. The assertion now pins the
+catch block itself — that the refusal is its first act, and that nothing downgrades the grants on
+the way past. A test that looks for a string in a neighbourhood is not testing control flow.
+
+**Not proved in the UI, and why.** The grantee side needs a second account, which is the same
+blocker recorded for R225; the owner side cannot show it, because the whole block is inside
+`if (!isOwner)`. What did run: `semanticTrust`'s differential test, which compiles a grantee's query
+against the real engine and asserts it returns different numbers from the owner's, still passes, as
+do the other 105 tests over these paths.
+
+### 2026-10-03 — Smoke of the real image after R232, R233 and R234
+
+No new defect in what was driven. Image `d39419dc1c93`, built from `c6592999` and started as a real
+container: a paused bar race survived a dashboard Refresh that demonstrably re-ran the query (the
+widget's stamp went "1h ago" → "just now"); a guarded agent refused its blocked pattern with 422
+and, once deleted, the identical request was refused with `agent_not_found` instead of being
+answered; an Iceberg publish landed 4 records in 1 file, confirmed against the catalog's own
+metadata rather than the toast; and an ETL run through the sandbox gateway loaded its 108 rows in
+41 s. The app's log carried one error line, which is the guardrail refusal itself. No staging was
+left in the bucket. Full table in `docs/UI_TEST_RESULTS.md`.
+
+Worth recording for the next image check: `_lakehouse_con` is absent from the shipped `dist`
+entirely, which is R232 visible in the artefact rather than in a test.
+
+### 2026-10-03 — R234: a chat turn ran without the guardrails its agent was carrying
+
+**Severity: high.** `/api/chat` loads the agent row for the trace label, the built-in tool
+toggles, the per-tool allow-lists (MCP servers, SQL tables, ML models, n8n workflows) **and the
+guardrails**. It read that row with `const { data: a } = await …`, dropping the error, under a
+comment saying the trace label is non-critical.
+
+That comment was true once. It stopped being true when the allow-lists and the guardrails moved
+onto the same read, and the handling never followed — the classic shape this sweep is looking for:
+not a wrong calculation, a sentence that outlived its data. A read that failed left every default
+standing, and both defaults are the permissive end:
+
+- `enabledToolsFromToggles({})` returns `undefined`, which its own doc comment says callers treat
+  as "the registry's default set" — so an agent restricted to two tools got the lot.
+- `parseGuardrails(undefined)` returns `DEFAULT_GUARDRAILS`, where input filtering, output
+  filtering, PII, profanity, content safety, citation checking and the hallucination heuristic are
+  **all off** and every pattern list is empty.
+
+The turn then ran and looked entirely normal. Nothing in the UI, the trace or the logs said the
+agent had been reduced to an unguarded assistant.
+
+**Proved in the UI.** A real agent, `R234 guardrail probe`, with input filtering on and the
+pattern `r234-forbidden-token` blocked. Sending that phrase returned **422, "Input was blocked by
+a prompt-injection guardrail."** The agent was then deleted in a second tab and the identical
+message sent again from the chat page that still held its id: **200, and the model answered.** The
+delete dialog's own words are "Sites embedding this agent and API calls that reference it will
+stop working" — they did not stop; they carried on without the guardrails the agent was deleted
+with. Both runs are in `docs/UI_TEST_RESULTS.md`.
+
+**Fixed** by making the configuration something a turn either has or refuses on. The decision is
+`agentConfigRefusal` in `src/utils/agents/agentConfigGate.ts`, deliberately outside a 2,000-line
+route handler, because that is where this kind of thing goes back to sleep. A failed read, a
+client that could not be built and a read that threw all answer **503 `agent_unreadable`**; a row
+that is simply not there answers **404 `agent_not_found`**, which is a different sentence and
+makes the delete dialog's promise true. After the fix the same deleted-agent request returns
+`{"error":"agent_not_found", …}` on the wire, and a live agent's guardrail still fires.
+
+Two things worth keeping in mind for the next one of these. `failedRead` normalises a thrown cause
+with `||` and not `??`: a client that throws `""` or `0` would otherwise produce a read whose
+error is falsy, which is this very defect in miniature, and a mutant proved the test caught it.
+And the same file's sibling, `embed.chat.ts`, had three reads of the same shape — the embed's own
+agent, its swarm, and a node's linked agent. The first two already refused, but with the sentence
+"The embedded agent no longer exists", which a failed read cannot support and which an owner would
+act on by rebuilding something that was never gone; those now answer 503 with a message that says
+what actually happened. The third failed open exactly like the chat route, silently dropping the
+knowledge base the embed is meant to cite along with the guardrails its publisher set.
+
+Eleven mutants, eleven caught, control survived.
+
+### 2026-10-03 — R233: a bar race restarted, and un-paused itself, on any dashboard re-render
+
+**Severity: moderate.** `BarRace` (`src/components/bi/BiChartParts.tsx`) built its frames in a
+`useMemo` over the `rows` prop and reset its playback in an effect keyed on that frames array:
+
+```ts
+useEffect(() => {
+  setIdx(0);
+  setPlaying(true);
+}, [frames]);
+```
+
+A dashboard hands its widgets a new `rows` array on every render — changing a filter, a poll, a
+refresh after a write, a session refresh near expiry. Each one produced a new array, so the memo
+rebuilt, so the effect fired: the race jumped back to its first frame for no reason the viewer
+could see, and a race they had **paused** started playing again. The pause is the whole point of
+the control; a chart that overrides it is worse than one without it.
+
+The advance timer had the same key, which is a second symptom with a different shape: its deps
+were `[playing, idx, frames, frameMs]`, so each re-render cleared the pending timeout and started
+a new one. A dashboard re-rendering faster than `frameMs` (1100 ms by default) left the race
+frozen on its first frame while the button said it was playing.
+
+The fix states what the position actually means. `idx` is an index into the frame list, so it
+stays valid exactly as long as that list does — not as long as the array object does. Playback
+moved to `useRacePlayback` (`src/lib/racePlayback.ts`), keyed on the frames' own labels, and the
+timer keyed on the frame count. The same series arriving again changes nothing; a re-aggregation
+that rewrites the numbers under the same periods holds its place; a genuinely different series
+starts from the beginning, playing.
+
+Proved in the UI both ways, because "it stayed put" is only evidence if the same steps moved it
+before: the pre-fix bundle was built and deployed to the container first, and a race paused on 2014
+was **playing again, at 2017** after a plain dashboard Refresh. With the fix, the same Refresh took
+the widget's stamp from "5m ago" to "just now" — the rows did re-arrive — and left the race paused
+on the same frame. Table in `docs/UI_TEST_RESULTS.md`.
+
+This is the fourth of this family after R215, R218 and R219, and the first where the state reset
+was not a form: `tests/unit/useRacePlayback.test.ts` runs the hook under the same minimal React
+stand-in, extended with `useState`, `useMemo` and effect cleanups so a timer can be driven. Five
+mutants caught, control survived.
+
+### 2026-10-03 — R232: `lakehouseAttachFn` deleted
+
+Not a defect in behaviour, so no severity: the removal of a function that builds a DuckLake attach
+out of engine credentials. It was how a sandbox used to reach the lakehouse, and after R227 moved
+ETL to the gateway, R230 the Spark lakehouse target and R231 ML, nothing in `src` called it. Found
+by checking which of R231's code a real image carried — `_lakehouse_con` was absent from
+`/app/dist` entirely, because the bundler had already dropped it.
+
+The two tests that still named it called it themselves, which is why the suite never noticed: a
+test that invokes dead code keeps it alive and proves nothing about the product. One had no
+subject any more and went with it; the other now pins the **absence** across every generated
+program (ETL, Spark, ML, Spark query), so reaching for an attach again fails there rather than
+putting a credential back in a sandbox. The DuckDB extension bake stays, because a notebook may
+use `duckdb` with `httpfs` or `postgres` and that is the user's own code.
+
+### 2026-10-03 — Smoke of the real image after R231
+
+No new defect in what was driven. Image `036a0cb5b128`, built from `c7b1405e` and started as a
+real container: a training job reported "read 836 row(s), sampled to 250" and produced v9 on 200
+rows, its artifact landing through the presigned PUT; a batch prediction with that version wrote
+242 rows, all of the one region asked for and all scored; an Iceberg publish landed 4 records the
+catalog's own metadata confirms; and an ETL run through the gateway still loads its 108. No errors
+or warnings, and no staging left in the bucket. Full table in `docs/UI_TEST_RESULTS.md`.
+
+**Found by the image, not by the tests: `lakehouseAttachFn` is dead code.** Checking which of the
+round's code the container carried showed `_lakehouse_con` absent from `/app/dist` entirely — the
+bundler had dropped it, because after R230 moved the Spark lakehouse target to the gateway and
+R231 moved ML, nothing in `src` calls it any more. Only two tests still reference it. It is a
+function that builds a DuckLake attach from engine credentials, which is exactly the kind of thing
+that gets picked up again by someone adding a feature, so it is on the queue to delete rather than
+left lying around.
+
+### 2026-10-03 — ML training, prediction and scoring, with no lakehouse credential
+
+Tests: `tests/unit/mlLakeManifest.test.ts` (10: the SELECT a run reads, sampling against refusing,
+a worker's slice, an assemble step's artifacts, a prediction's read/write/model) and the gateway's
+bounded reads and artifact rules in `tests/unit/sandboxLake.test.ts` (28 in all, real DuckDB). The
+mutation run caught 14 of 14, and the control survived.
+
+#### R231 · S1 · ML sandboxes held the lakehouse's catalog and storage credentials
+
+**Found** as the last of the owner's scoped-credentials decision. ETL lost its credentials in
+R227 and the Spark cluster in R230, but a training job, a prediction and a warm scorer still
+received `ETL_LAKEHOUSE_CATALOG` and the object store's key and secret: they read their source
+over an engine connection, wrote their scored rows the same way, and moved model artifacts with
+an fsspec client built from those keys. A model's own code is generated, but anything else in the
+image ran with the same environment.
+
+**The fix.** The app does all of it (`src/utils/ml/lakeManifest.ts` over sandboxLake.server):
+
+- the source SELECT is built server-side, which puts a prep step's own SQL through the SQL
+  editor's checks for the first time;
+- the app counts, samples (repeatable reservoir, so a re-run reads the same rows) and refuses —
+  a forecast's series over the limit is refused rather than sampled, and so is a prediction batch
+  — all over the rows the OWNER may see;
+- a data-parallel worker's hashed share is part of the SELECT the app declares for it;
+- scored rows are staged and loaded like any other target;
+- artifacts travel through a new `lake_artifact` call: one URL, one declared key, one method,
+  asked for when it is needed because a training job can outlive a URL minted at its start.
+
+`_lakehouse_con` and `_s3fs` are gone from the ML program entirely.
+
+**Driven after** (hot deploy), on `revenue_facts plan classifier`:
+
+- **Train new version** with the row limit set to 100: v8 trained, random_forest, F1 100%, and
+  its own note reads **"Trained on a 100-row sample of 836 rows."** — the app counted 836, sampled
+  100, and said so;
+- the v8 artifact is in the lake bucket, ~55 KB, written through the presigned PUT;
+- **Batch prediction** with v8, `analytics.revenue_facts where region = 'APAC'` →
+  `analytics.r231_pred`: succeeded, 242 rows in 13 s;
+- the table: 242 rows, 1 distinct region, that region `APAC`, and all 242 scored — so the WHERE
+  was applied by the app and every row got a prediction;
+- the **Audit Log** shows the app doing the work, attributed to the owner:
+  `ml.train.start` → `lakehouse.sandbox_read analytics.revenue_facts 100 rows` →
+  `ml.train.succeeded`, then `ml.predict_query` →
+  `lakehouse.sandbox_read analytics.revenue_facts 242 rows` →
+  `lakehouse.sandbox_commit analytics.r231_pred`;
+- no errors or warnings in the app log, and the bucket held no staging prefix afterwards.
+
+**A test that got stronger rather than re-anchored.** `mlReasonCodes` checks that every
+underscore-prefixed call in the ML program has a definition — it was written after a patch script
+added calls whose definitions never reached the file. It carried an allow-list of names that come
+from the prelude, which would have grown with this change. It now takes the definitions from the
+prelude's own source as well, and asserts that all three ML bundles prepend it: a bundle that
+forgot `lakeGatewayFn()` fails there instead of with a NameError inside somebody's batch.
+
+### 2026-10-03 — Smoke of the real image after R225 to R230
+
+No new defect. Image `4c02cc12cc32` was built from `be1407c7` with `docker compose build
+agentswarms` and started with `docker compose up -d agentswarms`, and the six rounds since the
+last image build were driven on it: R225's node guard refuses an unshared schema by name, R226's
+table-function refusal holds for a write, R227's sandbox reports no lake-related variables at
+all, R230's Spark sandbox reports a scoped session credential and no catalog, the loaded table
+matches its source exactly, and an Iceberg publish lands 4 records the catalog's own metadata
+confirms. The app logged no errors or warnings throughout. Full table in
+`docs/UI_TEST_RESULTS.md`.
+
+Two things this confirmed that earlier rounds had left open:
+
+- the **session sweep** really does take a dead session's staging. R230 noted leftovers and
+  reasoned they were the sweep's business; the bucket now holds one prefix with one `_SUCCESS`
+  marker, the older ones having been swept, including the failed run's parts.
+- the **runtime image** did not need rebuilding, checked rather than assumed: nothing under
+  `docker/notebook-runtime` has changed since the last image build, and the generated program is
+  served by the app, so an app-only build is the whole change.
+
+### 2026-10-03 — The Spark cluster's credentials, scoped to one run
+
+Tests: `tests/unit/stsScopedCredentials.test.ts` (7: the policy's prefixes, actions and bounded
+listing, the plan's file prefixes, the required-vs-fallback switch), plus the gateway's
+cluster-written loads and the Spark codegen's session-token handling in
+`tests/unit/sandboxLake.test.ts` and `tests/unit/sparkCredentialScope.test.ts`. The mutation runs
+caught 14 of 14 and 1 of 1, and the controls survived.
+
+#### R230 · S1 · The Spark cluster held the lakehouse's own credentials
+
+**Found** as the second half of the owner's decision. A sandbox has held no lakehouse credential
+since R227, but the Spark cluster still had the lake's permanent keys and, for an ETL lakehouse
+target, the catalog's connection string as well: its executors write object storage themselves,
+so there is no app in the middle the way there is for a sandbox.
+
+**The fix.** The cluster gets a credential the STORE limits, minted per run through STS
+AssumeRole with a session policy (`src/utils/lakehouse/sts.server.ts`):
+
+- an ETL lakehouse target may write, read back and delete under that run's own staging prefix and
+  nothing else; the app loads the batch the sandbox names and deletes what it loaded;
+- a Spark lakehouse query may read the directories of the files its governed plan resolved;
+- listing is bounded to the same prefixes, and nothing is granted on the bucket itself.
+
+Neither path carries the catalog any more. The ETL target's load moved to the gateway, which also
+removed the staging cleanup the sandbox used to do with the lake's keys, and with it the s3fs and
+DuckDB the Spark half needed for the lake: a lakehouse-only pipeline now asks for the same
+packages on either engine.
+
+A store without STS keeps the engine's credentials and says so once per process;
+`LAKEHOUSE_STS_REQUIRED=true` makes it a refusal. The policy is enforced by the store, which was
+checked against this deployment's MinIO before any of this was written (R227's note: a session
+scoped to one prefix read inside it, 200, and was refused outside it, 403).
+
+**Driven after** (hot deploy), `r227_gateway` on the **Spark engine**, `analytics.bi_demo_sales`
+→ `analytics.r227_out`:
+
+- Succeeded, 41 s, 108 rows → 1 target;
+- the Custom Python probe inside the sandbox listed its lake-related variables as
+  `ETL_LAKEHOUSE_S3_ENDPOINT, _KEY_ID, _SECRET, _SESSION_TOKEN, _URL_STYLE, _USE_SSL, STAGE_URL`
+  — **no `ETL_LAKEHOUSE_CATALOG`**, and a session token, so the credential was a scoped one;
+  its undeclared read, stage and commit were refused by name as before;
+- `r227_out` against the source: 108 rows, 0 extra, 0 missing;
+- that check itself ran **on the Spark cluster** (the result carried the spark badge), so the
+  query path's scoped read credential is in the same proof;
+- in the bucket, the run's staged Parquet was gone after the load; Spark's own `_SUCCESS` marker
+  stays until the session sweep takes the prefix, and the earlier FAILED run's parts stay too,
+  which is what a failed commit should leave.
+
+**Found driving it, twice.**
+
+- **Every Spark lakehouse run refused to start, silently.** Minting needs the session whose prefix
+  it scopes to, and `resolveRunEnv` is also called with no session: once to fail a start fast, and
+  again on every log read to collect the values the output must not carry. The unguarded mint made
+  the first throw — "Run now" did nothing — and would have made the second issue a credential per
+  log read, one the sandbox never held, so it would have scrubbed nothing. Both are now guarded on
+  the session, and a test pins it.
+- **"A load is 1 to 256 staged parts."** The route rebuilt each load field by field and left
+  `prefix` out, so a cluster-written load — which names its batch rather than its files — fell
+  into the numbered-parts path and asked for zero of them. The unit tests called the gateway
+  directly and never saw the route. Pinned now.
+
+**Also fixed.** A staged file that could not be deleted after its load was swallowed by a bare
+`catch`, so a bucket could grow by every run with nothing to read about why. It warns now, which
+is how the two surviving `_SUCCESS` markers above were confirmed to be the sweep's business
+rather than a failure.
+
+### 2026-10-02 — Storage credentials on the shared Spark cluster
+
+Tests: `tests/unit/sparkCredentialScope.test.ts` (5 tests: every S3A option set in a compiled
+Spark pipeline and a compiled Spark lakehouse query builds its own client; a SQL step's scope,
+allowed and refused, and refused at compile). The mutation run caught 6 of 6, and the control
+survived.
+
+#### R229 · S1 · The shared Spark cluster served a call with whichever storage credentials it saw first
+
+**Found** designing scoped credentials for Spark. Generated Spark code passes storage credentials
+per read and per write as Hadoop options, so that no key sits in the cluster's shared
+configuration. Hadoop caches one S3A client per bucket per JVM, keyed without the credentials,
+and the cached client keeps the ones that built it.
+
+**Proof (live cluster, `spark-connect` 4.2.0)**, a Spark Connect client reading the lake's
+`analytics/r227_out` files:
+
+1. with the lake's keys: read, 540 rows;
+2. then with keys that do not exist: **read, 540 rows**;
+3. wrong keys with `fs.s3a.impl.disable.cache=true` on the call: refused, AccessDenied;
+4. the lake's keys with the same flag: read, 540 rows.
+
+So any later call on the cluster to a bucket some earlier call had opened was served with the
+earlier call's keys: a user's storage connection with the lake's, or with another user's.
+
+**The fix.** Every S3A option set the generated code passes (`_lake_s3_options` and `_s3_options`
+in Spark pipelines, `_s3` in Spark lakehouse queries) sets `fs.s3a.impl.disable.cache`, so each
+call is served with its own keys. A SQL step on Spark, which runs on the same cluster, is one
+SELECT over its input `t`: a file read in place of a table and any statement are refused at save
+and at compile (`sparkSqlScopeRefusal`). Restart Spark Connect once after upgrading so no client
+cached before the fix survives.
+
+**Driven after** (hot deploy, Spark Connect restarted): a lakehouse query on the Spark cluster
+from the Lakehouse page answered 108 rows, 3 regions; right after it, the same wrong keys against
+the same bucket were **refused**. `r227_gateway` on the Spark engine succeeded with 108 rows. Its
+probe step reported the `ETL_LAKEHOUSE_*` variables present on that engine, as the status table
+in `docs/SANDBOX_LAKEHOUSE_ACCESS.md` says, and the gateway refusals held.
+
+### 2026-10-02 — An ETL sandbox with no lakehouse credential
+
+Tests: `tests/unit/sandboxLake.test.ts` (15 tests, real DuckDB: a governed read staged as Parquet
+and read back, a grantee's read through the owner's policy, the preview cap, stage URLs, append,
+merge and replace commits with cursors, all-or-nothing rollback, a keyless merge refused, the
+staging sweep, the session channel's pins), `tests/unit/etlLakeManifest.test.ts` (4 tests), and
+the ETL compiler tests updated to the new program. The mutation run caught 13 of 13, and the
+control survived.
+
+#### R227 · S1 · An ETL sandbox held the engine's catalog and storage credentials
+
+**Found** as the owner's decision after R225: every check the server makes before a run bounds
+what the generated code asks for, but the sandbox received `ETL_LAKEHOUSE_CATALOG` and the
+object store's key and secret, and code in the sandbox (a Custom Python node, any library) runs
+with the same environment. With them it could read every table's metadata and files.
+
+**The fix.** The app does the lakehouse work (`src/utils/lakehouse/sandboxLake.server.ts`, design
+in `docs/SANDBOX_LAKEHOUSE_ACCESS.md`). The sandbox asks over its session channel for a declared
+read (run as the owner through `governSelect`, the SQL editor's checks and policies, staged as
+Parquet behind a presigned GET), a stage (presigned PUTs under its own prefix) and a commit (the
+app loads the staged rows, and the run's cursors, in one transaction). What a run may ask for is
+pinned on its session when it fetches its environment (`src/utils/etl/lakeManifest.ts`), and every
+call is served from the pin. Reads of a shared table under a policy now work through the policy;
+R225's refusal of them is lifted, and writing one stays refused.
+
+Before writing a design, the object store was probed: this deployment's MinIO issues short-lived
+credentials limited to one prefix (HEAD inside the prefix 200, outside 403, the engine key 200 on
+both). The catalog cannot be scoped the same way, which is why the sandbox gets no catalog access
+at all rather than a narrower one.
+
+**Driven** (hot deploy), on a new pipeline `r227_gateway`, `analytics.bi_demo_sales` → Lakehouse
+table `analytics.r227_out`:
+
+- **Code** shows `_lake_call`, `_lake_read('…')` and `_lake_stage(…)`, and no catalog string;
+- node **Preview data**: 50 of 108 sampled rows, with the column types as before;
+- **Run now**, Replace: Succeeded, 108 rows; `r227_out` has 108 rows and an EXCEPT both ways
+  against the source is 0 and 0;
+- Append: 216 rows over 108 keys; Merge on `month, region`: 108 rows over 108 keys, 0 missing;
+- a Custom Python node between them printed, from inside the sandbox, **"lake-related env names:
+  none"**, and its calls for an undeclared read, an undeclared stage and an undeclared target's
+  commit were each refused by name; the run still loaded its 108 rows;
+- the lake bucket held no `_sandbox_staging/` prefix after the runs.
+
+A second pipeline `r227_stream`, Streamed rows (push) → `analytics.r227_stream` (append),
+continuous, exactly-once:
+
+- batch 1 (3 rows) and batch 2 (2 rows) loaded over 13 ticks, then the run was cancelled;
+- batch 3 (1 row) was pushed and the pipeline started again: its log read **"exactly-once:
+  resumed 1 cursor(s) committed with the last load"**, and it loaded 1 row;
+- `r227_stream`: 6 rows, 6 distinct ids 1–6, notes `batch-1,batch-2,batch-3`.
+
+**Not driven:** the grantee side of a policed read, which needs a second account; the tests hold
+it with real DuckDB (a reader's staged rows are filtered and masked).
+
+**Found driving it: a commit every poll.** Cancelling a continuous run does not stop the
+pipeline, so the schedule sweep restarted `r227_stream` and it ran 69 quiet ticks. Each tick
+called the commit with nothing in it, and the Audit Log filled with blank
+`lakehouse.sandbox_commit` events, one every five seconds. A tick now commits only when it loaded
+rows or moved a position, and the app answers an empty commit without opening the engine or
+writing an event. After the fix, a continuous run of 14 ticks with one pushed row wrote exactly one
+`lakehouse.sandbox_commit → analytics.r227_stream`. The reads and commits also show in the Audit
+Log as `lakehouse.sandbox_read` (with the row count) and `lakehouse.sandbox_commit` (with the
+tables), attributed to the pipeline's owner.
+
+Docker Desktop stopped during the round (the engine's VM went down under the gate and a running
+sandbox); it was restarted with `docker desktop restart`, and the run queued across the restart
+failed with "The run never acquired a sandbox session" until the stale continuous run was
+cancelled. Neither was the gateway.
+
+#### R228 · S1 · A merge whose rows had lost their key column emptied the target table
+
+**Found** writing the gateway's commit test. A lakehouse merge deleted the incoming keys and then
+inserted: `DELETE FROM t WHERE (id) IN (SELECT id FROM _src)`. When the frame no longer had the key
+column (a Select columns or Rename step upstream), `id` inside the subquery bound to the target's
+own column, the subquery became correlated, and the DELETE matched every row. The table was
+emptied and the keyless rows inserted, and the run reported success.
+
+**Proof.** Real DuckDB in the test: the statement as the sandbox ran it, against a source with no
+`id` column, leaves 0 of 2 rows.
+
+**The fix.** The gateway's merge qualifies the incoming keys (`_in."id"`), so a missing key fails
+to bind, and checks the staged rows' columns first: "Target "…": the rows to merge have no "id"
+column, which its primary key needs — nothing was loaded". The Spark engine's lakehouse target
+still runs the bare statement until it moves to the gateway.
+
+### 2026-10-02 — A table function inside a write statement
+
+Tests: `tests/unit/lakehouseWriteTableFunctions.test.ts` (4 tests: the table-function list read
+from a real DuckDB in memory with the engine's own query, every write shape scanned with the real
+`calledNames`, and the runner's order). The mutation run caught 5 of 5, and the control survived.
+
+#### R226 · S0 · The SQL editor ran a table function when it sat inside a write
+
+**Found** while designing the sandbox gateway, whose commits run through the engine: the write
+branch of `runLakehouseStatement` imports `writeSubSelect` and never calls it. A SELECT's table
+functions are found in DuckDB's own parse (`json_serialize_sql`) and refused. DuckDB will not
+serialize a write, so a write's reads were checked by `tableRefs`, a text scan that sees only
+`schema.table` names. A table function in a CREATE TABLE … AS, an INSERT … SELECT, or any
+subquery of a write ran with the engine's own access: its files on disk and the lake's storage
+credential, past every grant and policy.
+
+**Proof (before, hot deploy of R225).** In the SQL editor, owner's account, own schema:
+
+- `SELECT * FROM read_text('/etc/hostname')` → **"read_text() is not available here — query
+  lakehouse tables, or use a lake view for raw files"**;
+- `CREATE TABLE analytics.r226_probe AS SELECT filename, content FROM read_text('/etc/hostname')`
+  → **1 row(s), Count 1**;
+- `SELECT filename, content FROM analytics.r226_probe` → `/etc/hostname`, `24798c87e4c5`: the app
+  container's own host name.
+
+The probe table was dropped. Nothing else was read.
+
+**The fix.** `assertNoTableFunctions` runs last in the write branch, before anything executes and
+after the refusals that need no engine (the first gate caught it ahead of the Iceberg mount's own
+refusal, which a test pins). `calledNames` lists every
+name the statement calls (bare, double-quoted or dotted, outside comments and string literals),
+and each is compared with every table function the engine lists in `duckdb_functions()`, so a
+function an extension adds is covered the day it loads. It fails closed: a failed read of the list
+is not cached and is not "none", and a table that shares a table function's name is refused too.
+Materialized views and SQL models were not affected: both run their SELECT through the AST check
+before building.
+
+**Driven after** (hot deploy of R226): the same CREATE TABLE … AS read answered **"read_text() is
+not available here — query lakehouse tables, or use a lake view for raw files"**, the SELECT's
+message. Ordinary writes still run: `CREATE TABLE analytics.r226_after AS SELECT upper('ok') AS
+note, 1 AS n` and `INSERT INTO analytics.r226_after SELECT 'gen', range FROM range(2, 5)` left 4
+rows (`OK,gen,gen,gen`). The table was dropped.
+
+### 2026-10-02 — An ETL pipeline's lakehouse nodes, checked by their schema field only
+
+Tests: `tests/unit/etlLakehouseGuard.test.ts` (7 tests, real DuckDB in memory parsing the
+queries with the SQL editor's table walk, the owners' policies stubbed). The mutation run caught
+4 of 4, and the control survived.
+
+#### R225 · S1 · A pipeline's lakehouse source read any schema, and shared tables past their policy
+
+**Found** by the lakehouse policy survey, re-run after R224's report was cut off. A pipeline's
+lakehouse nodes run in a sandbox, and before a run or a node preview the server checked one
+thing: that each node's own `schema` field named a schema the pipeline's owner could reach. So:
+
+- a source in **query mode** ran its SQL as written. A node naming the owner's own schema could
+  query a schema nobody had shared with them;
+- a **shared table** with a row filter or column masks set by its owner was read whole. The
+  policy is applied by the lakehouse engine's query rewrite, which the sandbox does not run;
+- a **target** could write a shared table that the lakehouse keeps read-only for everyone but its
+  owner once a policy covers it.
+
+**Proof.** The grantee side needs a second account. The tests hold it with real DuckDB parsing
+each query: `SELECT * FROM private.salaries` from a node whose schema is `mine` is refused with
+`No access to schema "private"`; `read_parquet('s3://…')` is refused; a table-mode source, a
+query and a target over a shared table with a policy are each refused; the owner's own read and a
+shared table with no policy pass.
+
+**The fix.** `lakehouseNodesRefusal` (`src/utils/lakehouse/pipelineGuard.server.ts`) runs before
+the sandbox is given the catalog's credentials:
+
+- every schema a source query reads goes through `assertSchemasAllowed`, as the SQL editor's do;
+- the tables each node reads or writes are collected, and a table in a schema another user owns
+  that carries that owner's policy is refused, with a message saying where the policy does hold;
+- the run and the node preview both throw the refusal before `ETL_LAKEHOUSE_CATALOG` is set.
+
+**Still open.** The sandbox holds engine-level catalog and storage credentials, so code that a
+node does not declare (custom Python) is bounded by those credentials, not by these checks. The
+owner chose scoped per-run credentials as the fix; that is the next piece of work.
+
+### 2026-10-02 — A reader's SUMMARIZE, and the policy that was never loaded
+
+Tests: `tests/unit/lakehouseSummarizePolicy.test.ts` (6 tests, real DuckDB in memory: the table
+walk, the policy rewrite run over a SUMMARIZE, and what comes back). The mutation run caught 3 of
+3, and the control survived.
+
+#### R224 · S1 · A reader's SUMMARIZE ran past the owner's row filter and column masks
+
+**Found** by a survey of every path that reads a lakehouse table for someone who does not own
+it (after R223). Before a reader's statement runs, the lakehouse names the tables it reads and
+loads their owners' policies. `selectReferencedTables` named none for any statement whose first
+word was DESCRIBE, SUMMARIZE or SHOW. For DESCRIBE and SHOW that is right: they return a shape,
+not rows. SUMMARIZE returns min, max, approximate distinct count, average, quartiles and a count
+for every column, so for a reader:
+
+- no policy was loaded;
+- the statement ran as written, over the rows the filter hides;
+- a masked text column's min and max were two real values.
+
+DuckDB parses SUMMARIZE as a SELECT whose `SHOW_REF` holds the table, so the walk the function
+uses finds it; only the first-word shortcut skipped it.
+
+**Proof.** The grantee side needs a second account, which these rounds do not create. Real DuckDB
+holds it (`analytics`-shaped table, a filter `region = 'EMEA'` and a mask on `email`):
+
+- `SUMMARIZE sales.orders` as written gives email min `ana@example.com`, max `cy@example.com`,
+  count 3;
+- through the rewrite, which the fix now reaches, it gives min and max NULL and count 1.
+
+The UI shows the root cause from the owner's side. On the R223 deploy, Lakehouse → **Spark
+cluster** → `SUMMARIZE analytics.r211_double` answered **"This statement reads no lakehouse table
+(schema.table), so there is nothing for Spark to do"**. That is the same function telling Spark
+the statement reads nothing that told the policy layer so. On the lakehouse engine, the owner's
+SUMMARIZE showed the `note` column's min and max as real text, what a masked column would have
+shown a reader.
+
+**The fix.**
+
+- SUMMARIZE names its tables like any SELECT; only DESCRIBE and SHOW skip the walk.
+- A statement that a policy covers, but whose rewrite replaced nothing, is refused instead of run
+  as written.
+- Spark refuses DESCRIBE, SUMMARIZE and SHOW by name ("SUMMARIZE is the lakehouse engine's; Spark
+  SQL has no such statement — run it here"), where SUMMARIZE used to fall into "reads no table".
+
+**Driven after** (hot deploy of R224): the owner's SUMMARIZE on the lakehouse engine returned
+its 2 rows as before. On Spark it read "SUMMARIZE is the lakehouse engine's; Spark SQL has no
+such statement — run it here." The engine picker was set back to Lakehouse engine.
+
+**The survey's report was cut off.** Its first named finding, "ETL pipelines, including run and
+node preview", came without detail, and the agent then stopped on an API error. The queue
+records that the survey is to run again.
+
+### 2026-10-02 — A shared table's policy, left behind on the way out
+
+Tests: `tests/unit/lakehousePolicyFailClosed.test.ts` (10 tests: the real policy loaders against a
+client whose reads fail one table at a time, and the real publish guard).
+`tests/unit/lakehouseAccessCheck.test.ts` now finds Iceberg's schema check in the guard. The
+mutation run caught 4 of 4, and the control survived.
+
+#### R223 · S1 · Iceberg publish copied a shared table past its owner's policy; a failed policy read ran queries unfiltered
+
+**Found** by a triage of the 298 single-row reads, and the list reads, that keep `data` and drop
+`error` (sweep 7, after R222). Two holes in one guard:
+
+- **Iceberg publish.** A schema shared with a reader is read by them through the owner's row
+  filter and column masks: the editor rewrites their SELECT, a write that reads a policed foreign
+  table is refused, and Spark refuses one. `icebergPublish` checked only that the reader could see
+  the schema (`accessibleSchemas`), then copied the raw table with `INSERT ... SELECT` into a
+  catalog the reader owns. Every row, every column unmasked, readable from then on by anything
+  that speaks Iceberg.
+- **The policy reads.** `loadPolicies`, `loadTagPolicies` and `lakehouseAssetTags` (five reads)
+  kept `data` and dropped `error`, and `data ?? []` made a failed read "no policy". Every caller
+  then ran unpoliced: the editor's rewrite, the refusal of a write that copies a policed table, an
+  UPDATE or DELETE by a grantee, Spark, and the Delta Sharing snapshot handed to an external
+  recipient.
+
+**Proof.** This deployment has one account, and these rounds do not create accounts, so the
+grantee side cannot be driven in the UI. The tests hold the defect half, against the real
+functions:
+
+- with the policy table's read refused, the old loader returned an empty map, where it now throws;
+- a reader of a shared schema whose table has a policy got no refusal, where now the guard refuses
+  them, and the handler asks it before anything is copied.
+
+The UI holds the regression half: the owner still publishes their own table whole.
+
+**The fix.**
+
+- **`rowsOf`** (`policies.server.ts`) throws on a failed read, so a policy that cannot be read is
+  an error and every caller fails closed.
+- **`icebergPublishRefusal`** (`src/utils/lakehouse/publishGuard.server.ts`): the owner publishes
+  whole; a reader is refused a table under a policy ("…has a security policy set by its owner,
+  which an Iceberg copy cannot carry — only the owner can publish it."), and so is a reader whose
+  policy cannot be read.
+
+**Driven after** (hot deploy of R223): Lakehouse → `analytics.r211_double` → Publish to Iceberg →
+`local_rest`, namespace `r181`, table `r223_owner_publish` → "Published 4 row(s) to
+r181.r223_owner_publish". The first attempt failed in the catalog with SQLITE_BUSY, the dev
+catalog's known lock (memory: restart `aswarm-iceberg-rest`); it went through after the restart.
+
+**Also from the triage, queued:** agent chat taking a failed agent read for "every tool, no
+guardrails"; BI direct query and the semantic layer's share policy losing grant filters on a
+failed group read; SCIM and Admin → IAM skipping the superadmin protection; budget caps; and
+others. The queue's sweep 7 lists them.
+
+### 2026-10-02 — One failed poll, and a running Spark query is called cancelled
+
+Tests: `tests/unit/sparkQueryPoll.test.ts` (10 tests: the server's read against a failing
+client, and the editor's wait driven with scripted replies). The mutation run caught 5 of 5, and
+the control survived.
+
+#### R222 · S2 · A failed read stopped the editor watching a Spark query that went on to finish
+
+**Found** picking up sweep 3's leftovers ("a cause named that the evidence cannot support"). The
+Lakehouse editor runs a Spark query by polling its row every two seconds. It took a `null` reply
+for "The query is gone — it may have been cancelled elsewhere." But:
+
+- a cancelled query keeps its row, with status `cancelled`, which the loop already handles;
+- nothing deletes these rows;
+- `loadOwned` dropped the read's `error`, so a failed read answered `null` too.
+
+So the message's cause was never true. Its only real trigger, a failed read in a run of minutes,
+stopped the editor watching a query that was still running. Cancel used the same read, and
+answered "not cancelled" for a query it never looked at.
+
+In the UI (hot deploy of R221): Lakehouse → engine **Spark cluster** →
+`SELECT n, count(*) AS c FROM analytics.r211_double GROUP BY n ORDER BY n`, Run. One poll's id
+was rewritten in flight to a random UUID, so the server's own lookup found nothing: the same
+`null` a failed read produced. After the 4th poll the editor stopped polling and showed **"The
+query is gone — it may have been cancelled elsewhere."** History then listed the query as
+**3 rows · 20253 ms**: it had finished.
+
+(A first, unforged run had taken 342 s, most of it a cold sandbox and schema inference. It also
+finished.)
+
+**The fix.**
+
+- **Server:** `loadOwned` throws on a failed read. The editor's poll and Cancel see an error, not
+  an absent query. The sandbox's source route answers it with 503, not an absent query's 404.
+- **Editor:** the wait is `pollSparkQuery` (`src/lib/sparkPoll.ts`). A failed poll is retried.
+  After five in a row it stops and says the query "may still be running; History shows it when it
+  ends". A truly absent query reads "The server has no record of this query.", with no cause.
+
+**Driven after** (hot deploy of R222):
+
+- **Polls 3 and 4 failed** (rejected in flight as "Failed to fetch"): the editor kept polling and
+  showed **3 row(s)**, with n 1 → 2, 2 → 1, 3 → 1.
+- **Poll 3 forged to a missing id:** "The server has no record of this query."
+
+### 2026-10-02 — AI docs, and the owner and tags being typed are gone
+
+Tests: `tests/unit/catalogAssetSheetEdits.test.ts` (2 tests). The mutation run caught 1 of 1, and
+the control survived.
+
+#### R221 · S2 · AI docs in the catalog asset drawer cleared unsaved owner, status and tags
+
+**Found** by the same survey as R220. The asset drawer fills its form (owner, status, tags,
+column tags, description) in an effect keyed on the `asset` prop. **AI docs** writes the
+description and columns, then calls `onSaved` with them, and the catalog gives `selected` a new
+object for the patch. So the effect ran again and put the saved values over everything typed but
+not saved. A Save and a restore replace the object the same way.
+
+In the UI (hot deploy of R220): Data Catalog → re-crawl the Lakehouse catalog source →
+`analytics.r211_double` (R211's fixture). Owner `r221 owner` and tag `r221-tag` were typed and
+not saved, then AI docs pressed. "Documentation generated" — and owner and tags read **empty**.
+Only the generated description was in the form.
+
+**The fix.** The form is filled when a different asset opens: the effect is keyed on `asset?.id`.
+AI docs still sets the description itself, and the patch still updates the list.
+
+**Driven after** (hot deploy of R221): the same steps kept **`r221 owner`** and **`r221-tag`**
+through "Documentation generated". **Save** → "Saved"; after a page reload, the list shows the
+tag and the drawer the owner, tag and description.
+
+**Cost.** Two AI docs calls on the dialog's default model (Server default).
+
+### 2026-10-02 — A session refresh, and the knowledge base embeds with the default model again
+
+Tests: `tests/unit/userObjectKeySweep.test.ts` (4 tests: the knowledge page's fix, and a ratchet
+over hooks keyed on the user object). `tests/unit/tokenReloadSweep.test.ts` (R125's negative
+sample now has a body, so it can fail). `tests/unit/kbEmbedProbe.test.ts` found the provider
+picker by the flag this round renamed; it is anchored on the provider itself now (a mutant that
+drops the probe reset is caught). The mutation runs caught 5 of 5 and 1 of 1, and the controls
+survived.
+
+#### R220 · S2 · A session refresh replaced the embedding model the user had picked
+
+**Found** by a survey of every effect that copies a prop or a load into state the user edits
+(sweep 6, after R219). `useAuth()` hands out a new `user` object on every auth event, a refresh
+included, and thirteen hooks were keyed on it. One of them, on **Knowledge Bases**, reloads
+the connected providers into a new `Set`. That runs the embedding default again, and the default
+stands back only once a _provider_ has been picked, not a model.
+
+In the UI (image `6a12aae557e9`): R192 add-source → RAG Settings → Embedding, provider OpenRouter
+untouched, and the model changed to `openai/text-embedding-3-large`. After a forced session
+refresh the model read **`openai/text-embedding-3-small`**.
+
+The model is page state that every upload, re-index and new knowledge base uses. So about an hour
+into a session, documents would be embedded with a model the user had replaced. Their vectors sit
+in the same 1536-wide space as the others, so nothing fails; retrieval just compares unlike
+vectors.
+
+**The fix.**
+
+- The providers reload when the user's **id** changes (`[userId]`), not their object.
+- Picking a model also marks the choice as the user's (`embedChoiceTouched`, renamed from
+  `embedProviderTouched`), so the default never replaces it.
+
+**The guard.** `tests/unit/userObjectKeySweep.test.ts` is R125's ratchet for the user object.
+The twelve other hooks keyed on it were read; each re-reads a list, a profile or a status (the
+budget page saves each field as it is typed). Building it showed that R125's own negative
+sample, `useCallback(() => x, [tokenRef, signedIn])`, had no `}` before its list, so the pattern
+could never match it and the test could not fail. It and the new file's samples now have bodies.
+The mutation run loosens both name matchers to prove those samples now bite.
+
+**Driven after** (hot deploy of R220): the same pick held through a forced refresh, and **Add
+Document** reads "embedded with OpenAI text-embedding-3-large (→1536d) — via OpenRouter".
+Nothing was uploaded.
+
+### 2026-10-02 — A session refresh, a deck's choices and a connector's edit undone
+
+Tests: `tests/unit/useResetOnOpen.test.ts` (6 tests; its list of dialogs filled on open gains
+both). The mutation runs caught 1 of 1 each, and their controls survived.
+
+#### R218 · S3 · Export to PowerPoint re-ticked a widget the user had unticked
+
+**Found** in R217's survey. The deck dialog ticks every exportable visual in an effect keyed on
+`[open, exportable]`. `exportable` is a memo over the `pages` prop, and the dashboard passes
+`pages={pages.map(…)}`, a new array on every render. In the UI, on the Salesforce dashboard (image
+`51931edc73b7`):
+
+- untick **Win Rate**, click into Instructions and type, and wait 40 s: it stays unticked. Clicks
+  and typing in the dialog do not re-render the dashboard.
+- force a session refresh: **Win Rate is ticked again**. The Instructions text, which that
+  effect does not set, survives.
+
+A refresh comes about hourly, and when a tab regains focus near expiry. A deck exported after
+one includes visuals the user had taken out.
+
+#### R219 · S2 · Editing a knowledge-base connector: a session refresh undid the edit
+
+**Found** in the same survey. The connector wizard fills its form in an effect keyed on
+`[open, editing]`, and the knowledge page passes `editing={{ id, kind, label, … }}` inline. No
+connector existed, so one was made for the round: a **Website** connector `r219 web` on
+`https://example.com`, at most 1 page, saved without syncing ("Source connected"). Then **Edit
+connection**, the label changed to `r219 web edited`, and a forced session refresh: the label
+read **`r219 web`** again. The same refill sets the settings, schedule and access scope back,
+and empties the credential fields, so a token being pasted into a Notion or Drive connector
+would vanish.
+
+**The fix.** Both dialogs fill their form through R215's `useResetOnOpen`, once, when they
+open, from that render's props.
+
+**Driven after** (hot deploy of R218 and R219):
+
+- **Deck:** untick Win Rate, refresh: **still unticked**. Reopening starts from every visual
+  again, as designed.
+- **Connector:** `r219 web edited`, refresh: **held**. Save → "Source updated", and the Sources
+  list reads `r219 web edited`.
+
+**Sweep 6's list is done.** Every `}, [open, …]);` effect was read with its call site. Six take
+props that hold still (state, a memo, a Map entry) or load a list once. R217, R218 and R219
+fixed the three that refilled a form from something that changes while the dialog is open.
+
+### 2026-10-02 — A session refresh, and the groups being shared untick themselves
+
+Tests: `tests/unit/tokenReloadSweep.test.ts` (32 tests: two dialogs join R125's fixed list, its
+matcher now knows `accessToken`, and one more hook is reviewed). The mutation run caught 4 of 4,
+and the control survived.
+
+#### R217 · S2 · A session refresh put the saved share groups back over the ones being ticked
+
+**Found** opening sweep 6, "a form that resets under the user". R125 swept every hook keyed on
+the session token, which changes on each refresh (about hourly, and when a tab regains focus
+near expiry). Its matcher took `token` and `access_token`. Listing every dependency with a token
+in its name found three spelled `accessToken`, which it never saw:
+
+- the BI dashboard's **Publish & share** load;
+- the AI Analyst's **Share this analyst** load;
+- the model registry picker's (it loads once, so it is only reviewed).
+
+Both share dialogs reload the groups and the saved shares when the token changes, and put the
+saved set over the ticks, which are kept until **Save**. In the UI, the session refresh was
+forced as in R120: `expires_at` five seconds out, then `visibilitychange`.
+
+- **Salesforce dashboard → Publish & share:** tick `sheets-share-test`, unsaved, then the refresh.
+  The box was **unticked** again, and "Save group access" would have written the old set.
+- **AI Analyst → Lakehouse analyst → Share this analyst:** the same, **unticked**.
+
+So a group being given access is quietly left out; and one being removed keeps access, because its
+tick comes back.
+
+**The fix.** Both loads read the token through `useTokenRef` and are keyed on `signedIn`, as R125
+did for twenty-two others. `tests/unit/tokenReloadSweep.test.ts` matches `accessToken` too, so
+its ratchet now counts that spelling.
+
+**Driven after** (hot deploy of R217):
+
+- **Analyst:** tick, refresh: **still ticked**; closed without saving.
+- **Dashboard:** tick, refresh, still ticked; **Save group access** → "Group access updated";
+  reopened → ticked.
+- **Restore:** then unticked, saved ("Group access updated"), reopened → unticked. The dashboard's
+  sharing is as it was.
+
+**Also driven, not yet fixed:** the dashboard's **Export to PowerPoint** dialog re-ticked an
+unticked widget ("Win Rate") after the same refresh, because it takes `pages={pages.map(…)}`. It
+is the queue's next item.
+
+### 2026-10-02 — A double Enter to the analyst, two analyses, two threads
+
+Tests: `tests/unit/singleFlight.test.ts` (the guarded list gains the analyst's ask). The mutation
+run caught 2 of 2, and the control survived.
+
+#### R216 · S2 · A double Enter ran the AI Analyst twice and saved two threads
+
+**Found** last in sweep 5's queue. The analyst's input, Ask and starter chips are disabled while
+`busy`. `askQuestion` set `busy` only after `await resolveScope()`, and checked a `busy` read from
+the render that called it. For a warehouse analyst, `resolveScope` fetches the warehouse schema
+the first time on a page, which is long enough for a second Enter to submit the form again.
+
+In the UI: Lakehouse analyst (gpt-4o-mini, the built-in Lakehouse connection), fresh page, New
+analysis, `r216 before: how many rows are in analytics.fct_region_revenue?`, Enter twice. The page
+sent:
+
+- **two** `/api/warehouse/schema` calls;
+- **two** `/api/warehouse/query` calls;
+- **two** inserts into `ai_analyst_threads`.
+
+The thread picker then listed the question **twice**: two analyses paid for, two threads saved.
+(The picker also holds an older thread, "Which 10 orders in analytics.revenue_facts…", three
+times; it predates this round and was not traced.)
+
+**The fix.** `askQuestion` is wrapped in R211's `useSingleFlight`. The flag is set at the call,
+before the schema fetch, and Enter, Ask and the starter chips all reach it.
+
+**Driven after** (hot deploy of R216): the same steps for `r216 after: …` sent **one** schema
+call, **one** query and **one** thread insert, and the picker lists `r216 after` once.
+
+**Sweep 5 is closed.** Every keyboard path its survey listed now shares its button's guard:
+R211 to R216 put sixteen handlers on `tests/unit/singleFlight.test.ts`'s list.
+
+### 2026-10-01 — A click in a dialog, and the form fills itself again
+
+Tests: `tests/unit/useResetOnOpen.test.ts` (4 tests: the hook under a minimal stand-in for
+React's effect dependencies, and the dialog's use of it). The singleFlight list gains the
+dialog's Enter path. The mutation run caught 5 of 5, and the control survived.
+
+#### R215 · S2 · Add metric to dashboard refilled its form on every click inside it
+
+**Found** while driving R214. On **Semantic Layer → SaaS Sales model → Query**, run a query and
+press **Add to dashboard**. On the real image `0ed734402123`:
+
+- Type `r214 metric` as the title, then click the dialog's description text. The title read
+  **"SaaS Sales model"** again, and the BI project list was fetched again: one refetch per click.
+- Click the BI project select to choose **＋ New BI project…**. The form refilled under the
+  click, and the select's elements were replaced as the browser tool reached them ("ref is
+  stale"). The project snapped back to the first in the list.
+
+So a custom title, a chart type or a new project could not be set reliably, and the Enter path
+R214 guards elsewhere could not even be reached here.
+
+**Why.** The dialog filled its form in an effect keyed on `[open, userId, payload]`. The
+Semantic Layer builds `payload={…}` inline, so every render of the page handed the dialog a new
+object, and the effect ran again. A click inside the dialog re-rendered the page; what in the
+page re-renders on such a click was not traced, because the dialog has to hold its form whatever
+its parent does.
+
+**The fix.**
+
+- **`useResetOnOpen(open, reset)`** (`src/hooks/use-reset-on-open.ts`) runs `reset` when `open`
+  turns true and at no other time. It reads the `reset` of that render, so the form is filled
+  from the props the dialog opened with.
+- The dialog fills its form through it.
+- Its `submit` is wrapped in `useSingleFlight`, which closes R214's Enter gap for this dialog.
+
+**Driven after** (hot deploy of R215):
+
+- Typed `r215 metric`, then clicked the description twice: the title held, and the dashboards
+  were fetched **once** since opening.
+- A wrong project pick ("Reconciled titles") held too. Then End + Enter picked ＋ New BI
+  project…, which held.
+- `r215 metric after` and Enter twice: **one** toast, and one project `r215 metric after` with
+  1 widget, titled **r215 metric** (`d385a565…`).
+
+**The class.** Many dialogs fill their form in an effect keyed on `open` and on props. The
+queue's sweep 6 lists the ones whose extra dependency could be an inline object.
+
+### 2026-10-01 — A double Enter in a name field, two of everything
+
+Tests: `tests/unit/singleFlight.test.ts` (22 tests; the guarded list gains nine handlers, and one
+test pins the MCP builder's `finally`). The mutation run caught 11 of 11, and the control
+survived.
+
+#### R214 · S2 · Nine create dialogs made two of what they name for a double Enter
+
+**Found** fourth in sweep 5's queue. Each dialog's create button is disabled while it saves.
+Enter in the name field called the same handler with no check, and the name clears only after
+the save. Driven on the real image `0ed734402123` (R213), name `r214 before` and Enter twice:
+
+| Surface                                                         | What came back                                                                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Sheets → New workbook                                           | **Two** workbooks (`c5a31d30…`, `89258bfb…`)                                                                    |
+| BI → New BI project                                             | **Two** "Empty dashboard" cards                                                                                 |
+| BI → New folder (no guard on Add either)                        | **Two** folder rows                                                                                             |
+| BI → Manage workspaces                                          | **Two** workspaces, "Workspace created" twice                                                                   |
+| BI → Reports → New report                                       | **Two** reports                                                                                                 |
+| MCP Builder → New server                                        | **Two** servers (`02a6d942…`, `9890ce5c…`)                                                                      |
+| Workbench → BI agent answer → Add to dashboard → New BI project | **Two** projects `r214 widget before`, "Added to …" twice                                                       |
+| ETL → New pipeline (`r214_before_toast`)                        | One pipeline, and the toast **duplicate key value violates unique constraint "etl_pipelines_user_id_name_key"** |
+| Evaluations → New dataset (`r214 before toast`)                 | One dataset, and the toast **duplicate key value violates unique constraint "eval_datasets_user_id_name_key"**  |
+
+The MCP builder's create also set `creating`, awaited, and cleared it after, with no `try`: a call
+that threw left the button disabled until a reload.
+
+**The fix.** Every one of the nine handlers is wrapped in R211's `useSingleFlight`, so the
+button and the key share one guard. The MCP builder's create clears `creating` in a `finally`
+and toasts a thrown error.
+
+**Driven after** (hot deploy of R214), name `r214 after` and Enter twice:
+
+- **One** workbook, BI project, folder, workspace ("Workspace created" once), report and MCP
+  server.
+- **One** `r214 widget after` project ("Added to …" once).
+- ETL and Evaluations: one each, and **no** toast.
+
+**Moved out.** The Semantic Layer's Add metric to dashboard has the same Enter path, but its
+form resets on every click inside the dialog (the queue's next item), so its "before" could not
+be driven. Its guard ships with that fix.
+
+**Cost.** The BI agent answers came from Gemini Flash models on the configured Google provider:
+two answers, after the free OpenRouter models were rate-limited and Gemini 3.1 Flash Lite
+returned 503.
+
+### 2026-10-01 — A double Shift+Enter, a cell run twice
+
+Tests: `tests/unit/singleFlight.test.ts` (12 tests: `sharedFlight`, and the guarded list gains the
+Workbench and the notebook) and `tests/unit/cellRunKey.test.ts` (4 tests, driving CodeMirror's
+own keymap dispatch). The mutation run caught 11 of 11, and the control survived.
+
+#### R213 · S2 · A notebook cell ran twice for a double Shift+Enter, and a Workbench query twice for a double Ctrl+Enter
+
+**Found** third in sweep 5's queue. Reading the notebook's run path found three faults where the
+queue listed one.
+
+- **A cell ran twice.** The cell's run button is `disabled` while it runs, and Shift+Enter called
+  the same `runCell` with no check. In the fixture notebook `r213 double run`, cell 6 holds
+  `n = globals().get("n", 0) + 1; print(n)`. With the kernel ready after one run (output 1), a
+  double Shift+Enter printed **2 and then 3**, 59 ms apart: two executions on the kernel.
+- **A run during the kernel start failed.** `ensureKernel` stored the runtime before `start()`
+  had connected, so a second call took it and ran on it, and it answered **"Server runtime not
+  connected"** at once. A double Shift+Enter on a fresh page showed that error in the cell while
+  the first run was still starting the kernel. When a start failed, the cell showed "The server
+  runtime is unavailable." rather than the start's reason, because `runCell` read
+  `runtimeError` from the render before the start.
+- **Every Shift+Enter added a blank line.** CodeMirror's standard keymap binds Shift-Enter to
+  "insert a newline", and it handles the key in the editor before the event reaches the wrapper
+  `div` that ran the cell. After the rounds above, the cell had grown from 2 lines to 7, and
+  autosave had kept them.
+
+The Workbench had the first fault: Run Query is `disabled={running}`, and Ctrl+Enter called
+`handleRun()` with no check. Its queries are read-only, so a double press costs a second query, a
+second Recent queries row and a second audit row. A quick query (`SELECT 213`, about 30 ms) is
+over before the second key, so it proves nothing either way. With
+`SELECT sum(i % 7) … FROM range(200000000)` (about 2.5 s) on the R212 build, a double Ctrl+Enter
+left **two** Recent queries rows, 4099 ms and 6641 ms: the second waited behind the first in the
+browser's one DuckDB worker.
+
+**The fix.**
+
+- **`sharedFlight` / `useSharedFlight`** (`src/lib/singleFlight.ts`): one run per key. A call for
+  a key already in flight joins that run and gets its result. Cells are keyed by id, so one
+  cell's run never holds up another's, and Run all reaching a cell already running waits for it.
+- **`runCell` and `ensureKernel`** are both shared flights. `ensureKernel` returns the start's
+  reason on failure, and `runCell` shows that reason.
+- **`cellRunKey`** (`src/lib/cellRunKey.ts`) binds Shift-Enter in the editor's own keymap at
+  `Prec.highest`, so the run is the binding that handles the key, and no line is inserted.
+- **The Workbench's `handleRun`** is wrapped in R211's `useSingleFlight`.
+
+**Driven after** (hot deploy of R213):
+
+- **Notebook, fresh page:** a double Shift+Enter gave no error, and one run printed **1**.
+- **Notebook, kernel ready:** a double Shift+Enter printed **2** (one run). A later single
+  Shift+Enter printed **3**, so the guard releases. The source stayed at 2 lines throughout.
+- **Workbench:** the slow query with a double Ctrl+Enter left **one** row, on two separate
+  deploys of the fix: 2474 ms, then 3829 ms.
+
+The R212 build was restored from a stash only to take that Workbench "before", then R213 was
+rebuilt and deployed again.
+
+### 2026-10-01 — A double Enter, two live SCIM tokens, one secret shown
+
+Tests: `tests/unit/singleFlight.test.ts` (6 tests; the list of guarded keyboard paths gains the
+mint). The mutation run caught 2 of 2, and the control survived.
+
+#### R212 · S2 · A double Enter in the SCIM token label minted two live tokens
+
+**Found** second in sweep 5's queue. On **IAM → SSO → Provisioning (SCIM)** the Mint token button
+is `disabled={busy}`, and Enter in the label field called the same `mint()` with no check. The label
+is cleared only after the server answers, so both calls sent it. In the UI, with the label
+`r212 before` and Enter twice:
+
+- the table listed **two** live tokens labelled `r212 before`, both "never" used, 0 requests;
+- the "copy it now" banner showed **one** secret, the second.
+
+The first token is a live provisioning credential whose secret no one ever saw. Both rows look the
+same, so an admin who revokes "the extra one" has even odds of revoking the token the identity
+provider holds, and provisioning stops.
+
+**The fix.** `mint` is wrapped in R211's `useSingleFlight`, so the button and the key share one
+guard, and a second Enter while the first mint is in flight does nothing. A later mint, for
+rotation under the same label, still works; the guard releases when the call settles.
+
+**Driven after** (hot deploy of R212): the label `r212 after` and Enter twice listed **one** token
+`r212 after`, one banner, and the label field cleared. All three fixture tokens were then revoked
+from the same tab (no one holds their secrets); the rows are kept, and the card reads
+"3 revoked tokens".
+
+### 2026-10-01 — One INSERT, Ctrl+Enter twice, two rows
+
+Tests: `tests/unit/singleFlight.test.ts` (5 tests: the guard, and the list of surveyed keyboard
+paths it now covers). The mutation run caught 5 of 5, and the control survived.
+
+#### R211 · S1 · The Lakehouse editor ran a statement twice for a double Ctrl+Enter
+
+**Found** opening sweep 5, "a guard only the button honours". R207's double Enter in the swarm
+Versions dialog was a class, so a survey read every keyboard path into a write or a costly action
+(`tests/unit/singleFlight.test.ts` names the queue's list). It found fourteen where the key
+skipped the button's in-flight guard, and none that submitted a state the button refuses. This is
+the worst.
+
+The Lakehouse editor's Run is `disabled={running}`, and Ctrl+Enter in the editor called the same
+`run()` with no check. `run()` runs any statement, so a double key writes twice. In the UI, with a
+fixture table `analytics.r211_double` (kept):
+
+- `INSERT INTO analytics.r211_double VALUES (1, …)`, then Ctrl+Enter twice;
+- `SELECT count(*)` read **2**.
+
+The ask bar's Enter called `generate()` the same way past `disabled={generating}`: an LLM call
+twice.
+
+**The fix.** `src/lib/singleFlight.ts`:
+
+- **`singleFlight(fn)`** runs `fn` once at a time. Its flag is set at the call, not in React state,
+  so two key events in one tick cannot both pass it. It is released when the run settles, failed
+  or not.
+- **`useSingleFlight`** wraps a component's handler and always calls the latest one.
+
+The editor's `run` and `generate` are both wrapped, so the button and the key share one guard.
+
+**Driven after** (hot deploy of R211): the same INSERT for n = 2 with Ctrl+Enter twice answered
+Count 1, and `SELECT n, count(*) … GROUP BY n` read **1 → 2 rows (before), 2 → 1 row (after)**.
+
+### 2026-10-01 — count(\*) 6000 beside "9,994 rows"
+
+Tests: `tests/unit/queryGate.test.ts` (5 tests: a table filled in batches and read mid-load, a
+failed load, the engine's wiring). The mutation run caught 6 of 6, and the control survived.
+
+#### R210 · S2 · A browser query read a table half filled, or called a loading table missing
+
+**Found** smoking the real image `5330adc25b2f` (R209). The Workbench's first
+`SELECT count(*) FROM saas_sales` answered **6000**, while the explorer beside it said
+**9,994 rows**, and the same query a minute later 9994.
+
+- **The cause.** `materialise` fills a table 500 rows at a time with an await between batches, so
+  6000 is 12 of the 20. Nothing kept a query from running in between, and it read the rows
+  inserted so far without a word.
+- **Earlier still.** On a fresh load, run at once, the same query said **"Catalog Error: Table
+  with name saas_sales does not exist!"** while the rows were being fetched.
+- **Who was exposed.** Every browser query: the Workbench, local BI charts, data prep, the BI
+  agent, document generation.
+
+The race is the old engine's as much as the new one's; the smoke happened to land in it.
+
+**The fix.**
+
+- **`src/lib/queryGate.ts`.** A load holds queries until it settles, failed or not, and a query
+  waits for every load held when it starts.
+- **`browserDuckdb.ts`.** `registerBrowserTables` holds its load, and `runBrowserSql` waits
+  before it queries.
+- **`sqlEngine.ts`.** `hydrateFromSupabase` holds the whole hydration, the row fetches before any
+  table exists included.
+
+**Driven after** (hot deploy of R210): on two fresh loads, the same query run at once showed
+"Starting the SQL engine…" and answered **9994** after 6.4 s and 6.9 s. It did not say the table
+was missing, and it did not answer part of it.
+
+**Seen in the same smoke, not this code.** The real image's first Publish to Iceberg failed:
+"Failed to commit Iceberg transaction: Request returned HTTP 500". The catalog's log said
+`SQLITE_BUSY: database is locked`, and a retry under a new name failed the same way. The catalog
+(`aswarm-iceberg-rest`, a JDBC catalog on SQLite) held a lock in its own process since some time
+after the 11:48 publish; no journal was left on disk. A restart of that container released it, and
+the next publish committed. The toast surfaced the 500 but not the lock, which the catalog's
+response does not carry.
+
+### 2026-10-01 — One query, DATE in the browser and TIMESTAMP on the server
+
+Tests: `tests/unit/duckdbEnginesParity.test.ts` (12 tests: the browser's wasm build, run under
+Node, beside the server's `@duckdb/node-api`). Against the old build it fails 3 of 12: the minor
+version, and `date_trunc` on a TIMESTAMP and on a DATE. The 9 that agree on both builds are the
+control.
+
+#### R209 · S2 · The Workbench's two engines were different DuckDB versions
+
+**Found** as R197's leftover. On the Workbench, `SELECT typeof(date_trunc('month', TIMESTAMP
+'2026-01-15 10:00:00')), date_trunc(…), version()` answered:
+
+- on "Local (in-browser)": **DATE · 2026-01-01 · v1.4.3**;
+- on "Lakehouse": **TIMESTAMP · 2026-01-01 00:00:00 · v1.5.5**.
+
+The browser ran `@duckdb/duckdb-wasm` 1.32.0, which bundles DuckDB 1.4.3; the server ran
+`@duckdb/node-api` 1.5.5. The type a column comes back as decides how the charts read it (R197):
+a DATE's text is a label, a TIMESTAMP's a time. So the same monthly query drew labels from one
+engine and a time axis from the other, and the in-app docs said so as a known difference.
+
+**The fix.** `@duckdb/duckdb-wasm` 1.33.1-dev57.0, the build npm's `latest` tag names, published
+2026-06-22. It bundles DuckDB **1.5.4**: probed in a scratch install before the project took it,
+beside `next` (1.33.1-dev65.0, DuckDB 1.5.6, newer than the server). Its worker and wasm file
+names, its Arrow (^17) and its API are the old ones', so the app's imports are unchanged. It adds
+`qs` and its helpers as dependencies. The test runs the wasm build the browser loads, in its Node
+form, beside the server's, and holds them to one minor version and to the same result types
+across date, interval, division, rounding, aggregate and strftime expressions.
+
+**Driven after** (hot deploy of R209):
+
+- **Local now answers** **TIMESTAMP · 2026-01-01 00:00:00 · v1.5.4**, with time zone UTC
+  (R195), TIMESTAMPTZ `2026-09-30 22:30:00+00` and DATE `2026-09-30` (R197) as before.
+- **The BI builder on Local,** `date_trunc('month', strptime("Order Date", '%m/%d/%Y'))` against
+  `count(*)` over `saas_sales`, drew a time axis (2022-07 … 2025-12), as the server's does. R197
+  recorded the old engine's labels, `2022-01-01, 2022-02-01, 2022-03-01`.
+
+### 2026-10-01 — "1 file added" for a file search could not find
+
+Tests: `tests/unit/kbSourceAndIndex.test.ts` (6 tests), and `kbAddSourceWrites.test.ts`, whose
+slice ended at the old toast. The mutation run caught 9 of 9, and the control survived.
+
+#### R208 · S2 · Add Source said nothing of a failed index, and an uploaded file read as a manual paste
+
+**Found** in R192's leftovers. In the kept knowledge base "R192 add-source":
+
+- **The labels.** Its uploaded `r192-*.txt` sources read **"MANUAL · Manual paste"** and their
+  documents carried a **"Manual"** badge. An uploaded text file is stored as kind `manual`, the
+  only kind the table's check allows for text, and the page named every `manual` source a paste.
+- **The silent index.** `r208-one.txt`, added with the browser's fault injector failing the embed
+  call, was announced **"1 file added"**. The dialog called the embed step and looked at nothing
+  it returned: a thrown call went to the console, and a skipped one (no embedding key) went
+  nowhere. The document sat "Pending embedding", found by keyword only.
+
+**The fix.**
+
+- **`src/lib/kbIndexNote.ts indexNote`** turns the embed step's outcome into a sentence: a failure
+  with its reason, a skip for want of a key, or warnings. The dialog toasts "… added, not fully
+  indexed" with it, on the File and Manual paths alike.
+- **`src/lib/kbSourceLabel.ts`** names a `manual` source with an upload's filename in its config a
+  **File** and an "Uploaded file". A real paste, which records no filename, stays "Manual paste".
+  No migration.
+
+**Driven after** (hot deploy of R208):
+
+- **The labels.** Every uploaded `.txt` read **"FILE · Uploaded file"**, and its document **File**.
+- **The embed failing.** `r208-two.txt` was announced **"1 file added, not fully indexed · Not
+  indexed yet: Failed to fetch. Re-index retries; until then it is found by keyword only."**
+- **The embed working.** `r208-three.txt` was "1 file added", "Indexed · 1 chunk".
+
+### 2026-10-01 — One name, two versions; one click, no version
+
+Tests: `tests/unit/swarmVersionGuards.test.ts` (4 tests, by source as R190's). The mutation run
+caught 5 of 5, and the control survived.
+
+#### R207 · S2 · The swarm Versions dialog saved twice on a double Enter and deleted without asking
+
+**Found** in R190's survey and queued as read in the source, not yet driven. Driven on the canvas
+of "R109 chat echo" with the browser's fault injector answering the version insert and delete
+itself, so nothing was written or removed:
+
+- **"R207 double enter" and two Enters** sent **two inserts, 16 ms apart**. Enter called _Save
+  version_ past the button's `disabled={saving}`, and the second key lands before React
+  re-renders.
+- **The trash icon** sent its DELETE on the first click, with no confirm, and the list read "No
+  versions yet". Beside it, Restore asks first, and so does the component library's delete. A
+  deleted snapshot cannot be got back.
+- **A failed delete** said "Could not delete version" without the reason.
+
+**The fix** (`SwarmVersionsDialog.tsx`):
+
+- A ref, set before the first await and cleared after it, lets one save through at a time.
+- The trash opens "Delete “<label>”? This snapshot (n nodes) is removed for good and cannot be
+  restored afterwards. The canvas is not changed.", with Cancel and Delete.
+- A failed delete gives its reason.
+
+**Driven after** (hot deploy of R207, the same injector): two Enters sent **one** insert. The
+trash opened the confirm with no request sent; Cancel left the version; Delete sent one DELETE.
+The real "Autosave 1:00:42 AM" version is still in the database, since every delete was answered
+in the browser.
+
+### 2026-10-01 — Agent Chat with no conversation and no word why
+
+Tests: `tests/unit/chatConversationStart.test.ts` (4 tests, by source as R191's). The mutation run
+caught 6 of 6, and the control survived.
+
+#### R206 · S2 · A first conversation that could not be saved left the page unusable and silent
+
+**Found** from the queue ("the first conversation's auto-insert, whose error is dropped (worth a
+round: does the page stay usable?)"). It does not.
+
+- **Agent Chat makes a conversation** for an agent you have not chatted with. It read the
+  insert's data and dropped its error.
+- **New Chat** read `error` and never looked at it.
+- **Without a conversation** the message box and Send are disabled (`!activeConvo`).
+
+Driven on the real image `a4f99b7a55be` with the browser's fault injector (the agent's
+conversations read as `[]`, the insert answering 500):
+
+- no toast and no conversation;
+- the message box disabled under **"Ask a question, share a task, or try a starter below."**;
+- New Chat made a second failing insert and changed nothing.
+
+**The fix** (`playground.tsx`): both inserts look at their error. A failure keeps its reason, toasts
+"Could not start a conversation" or "Could not start a new chat", and the empty chat says "A
+conversation could not be started, so there is nowhere to write yet: <reason>." with **Try
+again**, which runs New Chat. A success clears it.
+
+**Driven after** (hot deploy of R206):
+
+- **The same injection.** The toast and the centre gave the reason, with Try again; New Chat
+  toasted its own.
+- **With the injector cleared,** Try again made one "New Chat" conversation (kept), made it active,
+  enabled the message box, and the starters came back.
+
+### 2026-10-01 — The year of an empty cell was 1899
+
+Tests: `tests/unit/sheets1900Dates.test.ts` (5 tests: the serials both ways, the grid's formulas,
+a table sheet's SQL both ways). The mutation run caught 9 of 9, and the control survived.
+
+#### R205 · S1 · Serials before 1900-03-01 counted from the wrong day, and DATEDIF from formula.js's
+
+**Found** as the last grid items R198's probe queued. In the workbook "R205 1900 dates" (kept):
+
+| Formula                                       | Grid             | Excel      |
+| --------------------------------------------- | ---------------- | ---------- |
+| `YEAR`, `MONTH`, `DAY` of a blank             | **1899, 12, 30** | 1900, 1, 0 |
+| `TEXT(1,"yyyy-mm-dd")`                        | **1899-12-31**   | 1900-01-01 |
+| `DATE(1900,3,1)-DATE(1900,2,28)`              | **1**            | 2          |
+| `DATEDIF(DATE(1900,2,28),DATE(1900,3,1),"d")` | **0**            | 2          |
+
+- **Serials.** Every serial counted days from 1899-12-30, which is Excel's count only from
+  1900-03-01 (serial 61). Before that, Excel counts 1900-01-01 as 1 and keeps Lotus 1-2-3's
+  1900-02-29 as 60, and a blank, serial 0, is 1900-01-00.
+- **DATEDIF** went to formula.js, which turns serials into dates and back by two rules that
+  disagree around that day. Its 1900-03-01 to 03-02 was 2 days, in UTC as well as UTC+4.
+
+**The fix.**
+
+- **`values.ts dateSerial` and `serialParts`** count Excel's way below 61: 1 to 59 are 1900-01-01
+  to 02-28, 60 is 02-29, 0 is 1900-01-00, and the weekday runs on from serial 1 (a Sunday, by
+  Excel's count). From 61 nothing changes.
+- **DATEDIF in days** is the difference of the serials, with #NUM! for a start after the end. Its
+  calendar units still go to formula.js.
+- **A table sheet's SQL** counts a date and reads a serial with the same one-day step before
+  1900-03-01.
+
+**Driven after** (hot deploy of R205): row 1 read **1900, 1, 0**, 1900-01-01, **1900-01-01**, 1,
+the difference as serial **2**, and DATEDIF **2**. Row 2: `TEXT(60,"yyyy-mm-dd")` **1900-02-29**,
+`DAYS` across it **2**, and DATEDIF from 03-01 to 03-02 **1**.
+
+### 2026-10-01 — "Not configured" on a lakehouse that works
+
+Tests: `tests/unit/prepSaveAs.test.ts` (4 tests). The mutation run caught 8 of 8, and the control
+survived.
+
+#### R204 · S1 · Data Prep's Save as said "not configured" while loading and after a failed read
+
+**Found** in Phase D's survey ("a cause named that the evidence cannot support") and queued for a
+BI round. Driven in BI → Data preparation with the browser's fault injector on the
+lakehouse-tables server call (`_serverFn/0d66356b…`):
+
+- **Held 20 s.** The palette's lakehouse list was a skeleton. The _Save as_ select was disabled
+  and titled **"The lakehouse is not configured on this deployment"**, on a deployment whose
+  lakehouse lists 58 tables.
+- **Failed.** The palette said **"Could not list lakehouse tables."**: the `.catch(() =>
+setLake("error"))` dropped the reason, and nothing could read the list again (the reload button
+  reloaded local datasets only). _Save as_ still said "not configured".
+
+**The fix.** `src/lib/prepSaveAs.ts saveAsHint` titles the select by what is known:
+
+- loading: "Checking the lakehouse…";
+- a failed read: "The lakehouse tables could not be read: <reason>. A local dataset can still be
+  saved.";
+- "not configured" only when the server says so.
+
+The tab keeps the error's message and shows it in the palette with **Try again**, and the reload
+button reads the lakehouse list again too.
+
+**Driven after** (hot deploy of R204):
+
+- **Held 15 s.** "Checking the lakehouse…", then enabled with its usual title when the call
+  returned.
+- **Failed.** A first injection answered 500 with a hand-made body, which is not the server
+  function's wire format, so the client failed reading `schemas` and that is what the palette
+  quoted. The realistic failure, the request itself failing, read "Could not list lakehouse
+  tables: Failed to fetch" with Try again, and the same reason in the title.
+- **Try again**, with the injector cleared, listed the 58 tables and enabled _Save as_.
+
+### 2026-10-01 — A finished chart that would not add, and nothing saying why
+
+Tests: `tests/unit/biBuilderReady.test.ts` (6 tests), and `tests/journey/semanticToDashboard.test.ts`,
+whose guard pinned the old inline condition and now pins the `metricBlocker` wiring. The
+mutation run caught 9 of 9, and the control survived.
+
+#### R203 · S1 · "Add to dashboard" stayed disabled for a missing title, silently
+
+**Found** in R196 and queued. Driven again in the BI project "R196 dates":
+
+- Build a chart, then a query `SELECT * FROM (VALUES ('North', 12), ('South', 7)) v(region,
+orders)`, then Run (2 rows · 2 cols).
+- The columns were chosen and the bar chart was drawn in the pane, but **Add to dashboard** stayed
+  disabled, with no title attribute and no text.
+- The one thing missing was the widget title. Its empty box showed its placeholder, "Revenue by
+  month", in grey, which reads as a title already given.
+
+**The fix.** `src/lib/biBuilderReady.ts` names the first thing missing, in the order the pane is
+filled:
+
+- a query to write, then to run;
+- the columns to chart (or, for an ontology, the map);
+- the title.
+
+A governed metric goes model, metrics, Preview, title. The pane disables the button on that same
+answer and shows it beneath, and the placeholder reads "e.g. Revenue by month".
+
+**Driven after** (hot deploy of R203): the empty pane said "Write a query or pick tables, then
+Run it."; with the query typed, "Run the query to see its rows."; with the chart drawn, "Give the
+widget a title."; with "Orders by region" typed, the button was enabled and the line gone. The
+pane was closed without adding, so the kept project is unchanged.
+
+### 2026-10-01 — A paid call at "~$0.0000" beside "~$0 means no known price"
+
+Tests: `tests/unit/usdFormat.test.ts` (4 tests: the format, and a survey of `src` that fails on a
+cost written with 3 to 8 places). The mutation run caught 10 of 10, and the control survived.
+
+#### R202 · S2 · A cost under half a hundredth of a cent read as zero, and each page wrote cost its own way
+
+**Found** from the queue's Phase E item, "Prompt Compare rounds cost to four places".
+
+- **Prompt Compare.** On the real image, Gemini 2.5 Flash against GPT-5 Mini on "Reply with the
+  single word OK." showed Flash's call (7 tokens in, 1 out) as **~$0.0000**. The page's own note
+  says "older models without a known price show ~$0", so a priced model read as an unpriced one.
+- **Traces.** The same call read **$0.0000**, the same as the `openrouter/free` rows that cost
+  nothing, and so did its detail.
+- **The other pages.** About 25 places wrote cost: most with `toFixed(4)`, the playground's trace
+  with `toFixed(6)`, Evaluations with "$0" for zero, and the spend panel with "$0.00".
+- **Analytics.** The charts rounded their data to 4 places, so a model's sub-cent total was drawn
+  as 0.
+
+Reading the stored row directly to prove the cost was non-zero would have meant taking the
+session token and API key out of the page, and the session's classifier refused that. The
+evidence is from the UI alone: the paid model's call against the free ones, and the same call
+on a second surface after the fix.
+
+**The fix.** `src/lib/usd.ts formatUsd` is the one format:
+
+- No figure is "—" and zero is "$0.00".
+- From $1, two grouped decimals; from a cent, four.
+- Under a cent, two significant digits without a trailing zero.
+- `~` marks an estimate.
+
+Every per-call and per-row cost goes through it: Prompt Compare, Traces (row and detail), the
+playground's trace, swarm runs, Team Spend, the audit log, run observability, the dashboard, the
+knowledge base's OCR toast, the lakehouse's AI-functions title, Evaluations, the spend panel and
+the integration test's message. Analytics keeps the true figures and formats them in the
+tooltip. Budgets and totals keep whole cents.
+
+**Driven after** (hot deploy of R202):
+
+- **Prompt Compare.** The same prompt read Flash **~$0.0000046** and Mini **~$0.00016**.
+- **Traces.** Those calls read **$0.000005** and **$0.00016**, the earlier Flash calls
+  **$0.000005**, and the free model's rows **$0.00**.
+- **The trailing zero.** A first cut wrote the stored 0.000005 as "$0.0000050", so trailing
+  zeros under a cent are now trimmed.
+
+**Left, for the queue:** the database keeps six places (`NUMERIC(10,6)`), so that call is stored
+as $0.000005, about 9% over its $0.0000046. A total over many such calls carries the rounding.
+Changing it is a migration.
+
+### 2026-10-01 — 12,345,678,901 shown as "1.234567890e+1"
+
+Tests: `tests/unit/sheetsBigNumbers.test.ts` (9 tests: Excel's answers, and the table's CEILING,
+FLOOR and TEXT held to the grid over about 1,400 values), `sheetsGridTableParity.test.ts` (its
+QUEUED rows emptied), `sheetsGridExcelText.test.ts` (one pin corrected). The mutation run caught
+10 of 10, and the control survived.
+
+#### R201 · S2 · Numbers at the edge of 15 digits: one shown as about 12, quotients a hair off, formats past 15 digits
+
+**Found** following R200's QUEUED rows, in workbook "R201 big numbers" (kept): a grid row and a
+table sheet over a lakehouse query with the same values.
+
+|                                   | Grid            | Table                  | Excel                  |
+| --------------------------------- | --------------- | ---------------------- | ---------------------- |
+| 12345678901.005 in General        | **####**        | **1.234567890e+1**     | 12345678901            |
+| `CEILING(0.0000000001,1)`         | **0**           | **0**                  | 1                      |
+| `CEILING(5.0000000001,1)`         | **5**           | **5**                  | 6                      |
+| `CEILING(12345678901.005,1)`      | **12345678901** | 12345678902            | 12345678902            |
+| `TEXT(1.5E+21,"0")`               | **1**           | 1500000000000000000000 | 1500000000000000000000 |
+| `TEXT(12345678901234567,"#,##0")` | **…234,568**    | **…234,568**           | 12,345,678,901,234,600 |
+
+- **The worst is the first.** General used `toPrecision(10)`, which writes an exponent of its own
+  for eleven whole digits ("1.234567890e+10"). The trailing-zero trim then cut the exponent's last
+  digit, so the table showed a number of twelve billion as about 12. The grid measured the long
+  string, found it too wide and showed ####. 1.5E-07 showed as "1.500000000e-7".
+- **CEILING and FLOOR.** The grid snapped a quotient within 1e-9 × itself of a whole number, which
+  at 1.2e10 is a band of about 12. The table rounded the quotient to 9 places, which loses a tenth
+  of a billionth.
+- **Formats.** The grid's number format wrote `toFixed`, which from 1E+21 is exponent text that
+  "0" read as 1; below that it writes the binary's own digits past the 15th, as the table's
+  `format()` did.
+- **A test helper.** The parity test's `shown()` rounded to 9 places and made the table's right
+  12345678902 read as 12345678902.000002. It now shows 15 digits.
+
+**The fix.**
+
+- **General** (`values.ts`) takes 11 digits from 1E+10 and goes to scientific notation whenever
+  toPrecision would, with a two-digit exponent.
+- **Number formats** (`format.ts excelFixed`) past 15 digits write the 15 and then zeros.
+- **CEILING, FLOOR and the .MATH forms** read the quotient at 15 digits: `functions.ts quotient15`
+  in the grid, and `compile.ts quotient15Sql` in a table. The SQL takes R200's fast path: only a
+  quotient within its 15th digit of a whole number is read from its digits.
+- **A table's TEXT** past 15 digits writes the 15 digits and zeros, with thousands separators
+  through HUGEINT.
+
+**Driven after** (hot deploy of R201): the grid row read **1, 6, 1.4, 12345678902,
+1500000000000000000000, 12,345,678,901,234,600**, and G1 and H1 (12345678901.005 and twice it)
+read **12345678901** and **24691357802** where they had shown ####. The table read amount
+**12345678901**, ceil_tiny **1**, ceil_five **6**, text_long **12,345,678,901,234,600**.
+
+**Checked and left alone.** MROUND(1.3, 0.2), Microsoft's own example, is 1.4 in both engines.
+
+### 2026-10-01 — ROUND(1.005, 2) is 1 in a table and 1.01 in the grid beside it
+
+Tests: `tests/unit/sheetsExcelRounding.test.ts` (13 tests: Excel's answers, and the compiled SQL
+against the grid's TypeScript over about 2,100 values), and `sheetsGridTableParity.test.ts` (new
+rows and formulas). The mutation run caught 19 of 19, and the control survived.
+
+#### R200 · S2 · A table sheet rounded the binary and wrote 17 digits, where the grid and Excel do neither
+
+**Found** by R199's second probe, which added the rows 0.01+0.075, 1.005 and "o'neil 2-way" to
+the grid-vs-table parity test. In the UI, workbook "R200 table rounding" (kept): a grid sheet and
+a table sheet (a lakehouse query) hold the same values and formulas.
+
+| Formula                  | Table sheet             | Grid         | Excel        |
+| ------------------------ | ----------------------- | ------------ | ------------ |
+| `ROUND(1.005,2)`         | **1**                   | 1.01         | 1.01         |
+| `TEXT(1.005,"0.00")`     | **1.00**                | 1.01         | 1.01         |
+| 0.01+0.075 `&""`         | **0.08499999999999999** | 0.085        | 0.085        |
+| `TRUNC(0.29,2)`          | **0.28**                | **0.28**     | 0.29         |
+| `PROPER("o'neil 2-way")` | **O'neil 2-way**        | O'Neil 2-Way | O'Neil 2-Way |
+
+- **The table.** DuckDB's `round()` rounds the stored binary, a number became text with
+  DuckDB's 17 digits, and PROPER split at spaces only.
+- **The grid.** It had its own error. TRUNC cut the binary (0.29 × 100 is 28.999999999999996).
+  ROUND guarded float noise with an absolute 1e-9 after scaling, which rounds 2.674999999999 up
+  to 2.68 and is smaller than a large amount's binary error.
+
+**The fix.** One rule in both engines, Excel's: take the 15 significant digits, shift them by d
+places as decimal text (which is exact), round, and shift back.
+
+- **The grid.** `format.ts excelRound` serves ROUND, ROUNDUP, ROUNDDOWN, TRUNC (now ROUNDDOWN, as
+  in Excel) and every number format.
+- **The table.** `compile.ts excelRoundSql` does the same steps in SQL, `numberTextSql` writes a
+  number as the grid's `numberText` does, and PROPER splits the text into runs of letters and of
+  anything else.
+- **The sweep.** It holds the SQL to the TypeScript over about 2,100 values: decimals ending in
+  5, sums, tiny and huge numbers, and d from −3 to 5.
+
+**Three first cuts were wrong, and the tests caught each:**
+
+1. **The lambda's name.** It was `p`, the same name the column SQL gives its row. `p.d` read the
+   row's column, and `TRY` turned the error into a blank.
+2. **Speed.** Writing every row as text cost 18 times `round()` over a million rows. Now most
+   rows take plain arithmetic: when the scaled value is clear of the half by more than any
+   15-digit or binary error could move it, plain rounding gives the same answer. Only rows on
+   the edge are worked out from their digits.
+3. **Subqueries.** A lambda that read its argument directly broke a whole-column total
+   (`/SUM([rate])`): DuckDB refuses a subquery inside a lambda. Short arguments are now written
+   out, and long ones are bound once.
+
+Measured over a million rows (DuckDB 1.5.5):
+
+|                      | ROUND(x,2)            | Number in text                                            |
+| -------------------- | --------------------- | --------------------------------------------------------- |
+| Random doubles       | 75 ms (`round()` 67)  | 846 ms (17 digits each, all worked out from their digits) |
+| Three-place decimals | 209 ms (`round()` 64) | 216 ms (cast 79)                                          |
+
+**Driven after** (hot deploy of R200): the table read round2 **1.01**, text2 **1.01**, joined
+**0.085**, trunc2 **0.29** and proper **O'Neil 2-Way**, the same as the grid, whose F1
+`=TRUNC(0.29,2)` now reads **0.29**. A new column `=ROUND([@price]*[@rate]/SUM([rate]),2)`, over
+a whole-column total, reads 1.01.
+
+**Found beside it, for R201** (numbers past 15 digits): the parity test lists these rows as
+QUEUED.
+
+- **CEILING.** The grid snaps a quotient within 1e-9 × itself of a whole number, so
+  `CEILING(12345678901.005, 1)` is …901 there, where Excel gives …902. The table gives
+  12345678902.000002.
+- **Large numbers in a format.** A grid number format past 1E+21 writes toFixed's exponent text:
+  `TEXT(1.5E+21,"0")` gives "1". The table writes every binary digit, where Excel stops at 15.
+
+### 2026-10-01 — 2.67 from TEXT, 2.68 from ROUND, in the same row
+
+Tests: `tests/unit/sheetsGridExcelText.test.ts` (5 tests). The mutation run caught 7 of 7, and the
+control survived.
+
+#### R199 · S2 · The grid's number formats rounded the binary, not the number Excel shows
+
+**Found** by R198's probe, among the grid's own differences from Excel. In the UI, workbook
+"R199 grid text" (kept), row 1:
+
+| Cell | Formula                      | Grid              | Excel         |
+| ---- | ---------------------------- | ----------------- | ------------- |
+| A1   | 2.675                        | 2.675             | 2.675         |
+| B1   | `=TEXT(A1,"0.00")`           | **2.67**          | 2.68          |
+| C1   | `=ROUND(A1,2)`               | 2.68              | 2.68          |
+| D1   | `=PROPER("ÉCOLE normale")`   | **éCole Normale** | École Normale |
+| E1   | `=TEXT(A5,"0.00")`, A5 blank | **(empty)**       | 0.00          |
+
+The grid disagreed with itself in B1 and C1.
+
+- **Rounding.** 2.675 is stored as 2.67499999999999982…. ROUND already guarded against float noise,
+  but the number formatter, which TEXT and every formatted cell use, called `toFixed` on the
+  stored binary.
+- **PROPER.** A letter was `[a-z]`, so "É" counted as a word break.
+- **TEXT of a blank.** The blank went to the formatter as nothing, not as 0.
+
+**The fix:**
+
+- **`excelFixed`** (`lib/sheets/format.ts`) rounds the 15 significant digits Excel keeps. It scales
+  their decimal text by a power of ten, which is exact, so `0.01+0.075` (0.08499999999999999 in
+  binary, 0.085 to Excel) formats as 0.09. Every number format with decimals goes through it.
+- **PROPER** treats any letter, in any script (`\p{L}`), as a letter. As before, a letter whose
+  capital is two letters (`ß`, `ﬁ`) stays as it is. The first cut turned a word-initial "ß" into
+  "SS", which the old `[a-z]` never did, so that was kept.
+- **TEXT** reads a blank as 0.
+
+**Driven after** (hot deploy of R199): B1 2.68, D1 École Normale, E1 0.00. A1 formatted
+**Number** (`#,##0.00`) shows 2.68. F1 `=0.01+0.075` shows 0.085, and `=TEXT(F1,"0.00")` 0.09.
+`=PROPER("ß straße ÑANDÚ")` is "ß Straße Ñandú".
+
+**What a second probe found, for R200.** It was run with new parity rows (0.01+0.075, 1.005,
+"o'neil 2-way", "ÉCOLE normale"). The table sheet's compiled SQL differs from the grid and from
+Excel on four formulas:
+
+- A number in text is `0.08499999999999999` (LEN 19), where the grid and Excel give 0.085.
+- `ROUND(1.005,2)` is 1, where the grid and Excel give 1.01.
+- `TEXT(1.005,"0.00")` is 1.00, where the grid and Excel give 1.01.
+- PROPER splits on spaces only, so `o'neil 2-way` is `O'neil 2-way`, where the grid and Excel give
+  `O'Neil 2-Way`.
+
+### 2026-10-01 — "bob: 0" in a table sheet, "bob: " in the grid beside it
+
+Tests: `tests/unit/sheetsGridTableParity.test.ts` (42 tests, grid engine against the compiled SQL on
+DuckDB), with `sheetsSqlCompile.test.ts`. The mutation run caught 8 of 8, and the control
+survived.
+
+#### R198 · S2 · A table sheet's calculated column read a blank as 0 outside arithmetic
+
+**Found** as sweep 4's grid-vs-table item. A grid sheet evaluates a formula in the browser's
+engine; a table sheet compiles the same Excel to DuckDB SQL (`lib/sheets/sql/compile.ts`). A
+probe ran 75 formulas over the same seven rows both ways. Most of what differs is documented (a
+table column has no error values; text in a database is never blank), but these were not:
+
+- **A blank number was "0" in text.** `CONCAT(blank, blank)` gave "0", `[@n]&""` gave "0", and
+  `LEN(blank)` gave 1. The docs already promised a blank "counts as 0 in arithmetic and as "" in
+  text".
+- **MIN, MAX and AVERAGE counted a blank reference as 0.** `AVERAGE([@n], 1)` was 0.5 and
+  `MIN([@n], 1)` was 0, where Excel and the grid ignore the empty reference and give 1 and 1.
+- **`MROUND(-2.5, 0.5)` gave −2.5,** where Excel gives #NUM! for signs that differ.
+
+**In the UI,** workbook "R198 blanks" (kept): a table sheet over a lakehouse query with bob's
+amount blank, and a grid sheet holding the same values and formulas. The table read
+`bob: 0 | 0.5`; the grid read `bob:  | 1`.
+
+**The fix** (`lib/sheets/sql/compile.ts`):
+
+- **Text.** A bare number column that is NULL reads as "" in `toText`.
+- **MIN, MAX, AVERAGE.** Over a row's values they take `referencedNumber`: a reference to a blank,
+  text or TRUE/FALSE is NULL and skipped. MIN and MAX of nothing are 0. An AVERAGE of nothing is
+  blank, which stands in for #DIV/0! under the table rule.
+- **MROUND** with differing signs gives NaN, which a table cell shows as `#NUM!` through the shared
+  formatter, as it already did for a negative to a fractional power.
+
+**A first cut turned NaN into a blank as well.** In the UI, the table sheet already showed NaN as
+`#NUM!`, which is right, so that part was reverted. One existing expectation that pinned the blank
+as "0" changed, with a comment.
+
+**Driven after** (hot deploy of R198): the table read `bob:  | 1 | #NUM!`, the same as the grid. A
+new column `=MROUND(-[@amount],0.5)` read `#NUM!` for alice and 0 for bob. All 57 Sheets test files
+(775 tests) pass.
+
+**Grid-side differences the probe found, for R199:**
+
+- `PROPER("ÉCOLE")` gives "éCole".
+- `TEXT(2.675, "0.00")` gives "2.67" where Excel gives 2.68.
+- `TEXT(blank, "0.00")` gives "" where Excel gives 0.00.
+- `YEAR(blank)` gives 1899 where Excel gives 1900.
+
+### 2026-10-01 — `1640995200000` in the Workbench, text on the server
+
+Tests: `tests/unit/engineTemporalText.test.ts` (8 tests). The mutation run caught 11 of 11, and
+the control survived.
+
+#### R197 · S1 · The browser engine wrote dates as epoch milliseconds
+
+**Found** as R196's queued item, on the real image `cad98aaa39f9`:
+
+- **The grid.** Arrow hands DATE and TIMESTAMP to JavaScript as epoch milliseconds, and the browser
+  engine passed them on. On "Local (in-browser)", the Workbench grid for
+  `date_trunc('month', strptime("Order Date", '%m/%d/%Y'))` and its day read
+  `1640995200000 | 1641254400000`; the server engine writes `2022-01-01 00:00:00` and `2022-01-04`.
+  A CSV export writes whatever the grid holds.
+- **The charts.** The auto axis relabels only numbers, so one query shape was labelled two ways. A
+  builder preview over the local `saas_sales` read "2022-01-01, 2022-02-01, 2022-03-01", while the
+  lakehouse tile from R196 read "2026-02-01 00:00:00, 2026-03-01 00:00:00".
+
+**The fix** (`lib/duckdbValues.ts`, `lib/browserDuckdb.ts`, `lib/biChartMath.ts`):
+
+- **`arrowTemporalKind`** tells a DATE, TIMESTAMP and TIMESTAMPTZ field apart by Arrow type id, with
+  the type's name as a fallback.
+- **`formatTemporal`** writes the value the way the server engine does: `2022-01-04`,
+  `2026-09-30 22:30:00.25`, `2026-09-30 22:30:00+00`. `runBrowserSql` uses both.
+- **`hasRawDateValues`** now counts the engines' TIMESTAMP text, a date with a time down to the
+  second, as raw, so the auto axis labels it like an epoch.
+
+**A first cut went too far.** It counted a bare `2026-01-05` as raw as well, and an existing test
+failed. That test pins the rule that a bare day may be a `strftime` label someone chose, and text
+cannot tell it from a DATE. The rule stands, with a test and a mutant for it.
+
+**Seen while driving it:** the browser engine is DuckDB **1.4.3** and the server's **1.5.5**.
+`date_trunc('month', <TIMESTAMP>)` returns a DATE in the browser and a TIMESTAMP on the server,
+so over a long span the server's axis relabels and the browser's does not. Queued.
+
+**Driven after** (hot deploy of R197):
+
+- **The grid** read `2022-01-01 | 2022-01-04 | 16`, and a probe gave `2026-09-30 22:30:00.25 |
+2026-09-30 22:30:00+00 | 2026-09-30`.
+- **The lakehouse tile** at AUTO read "2026-01-01, 2026-02-01, 2026-03-01". The browser preview read
+  "2022-01-01, 2022-02-01, 2022-03-01", as before.
+
+### 2026-10-01 — January charted as December, east of UTC
+
+Tests: `tests/unit/chartDateUtc.test.ts` (6 tests; runs at `Asia/Dubai`). The mutation run caught
+7 of 7, and the control survived.
+
+#### R196 · S2 · A server-run tile moved every month back one for a viewer at UTC+4
+
+**Found** following R195's leftover, the two value formats:
+
+- **The two forms.** The browser engine hands a TIMESTAMP to the chart as an epoch number, and the
+  server engine as text, `2026-01-01 00:00:00`. `parseDateValue` passed that text to
+  `new Date`, which reads a date-time with no offset as the viewer's local time. At UTC+4 that is
+  20:00 UTC the day before.
+- **The unit probe** (`TZ=Asia/Dubai`): `"2022-01-01 00:00:00"` bucketed to month `2021-12`, while
+  `"2022-01-01"`, `"…+00"` and the epoch all gave `2022-01`.
+- **In the UI.** A new fixture BI project, "R196 dates" (kept), got a line chart on the lakehouse:
+  `SELECT date_trunc('month', CAST(placed_on AS TIMESTAMP)) AS month, count(*) AS orders FROM
+analytics.stg_revenue GROUP BY 1 ORDER BY 1`. At DATE GRAIN month it labelled the three months
+  **2025-12, 2026-01, 2026-02**. The Lakehouse page's answer to the same SQL: 2026-01-01 272,
+  2026-02-01 273, 2026-03-01 291.
+- **The scope.** Every month moved back one, for every viewer east of UTC, on every tile a server
+  computes (lakehouse tiles live, and any tile after a scheduled refresh). The same tile run in the
+  browser was right. The generated lakehouse dashboards were not affected, because their values
+  carry an offset or are dates.
+
+**The fix** (`lib/biChartMath.ts`): `parseDateValue` reads text without an offset as UTC
+wall-clock time, the zone the engines run in since R195. It leaves alone what `new Date` already
+reads as UTC (`2026`, `2026-01`, `2026-01-01`) and anything carrying Z, ±hh[[:]mm], GMT or UTC.
+A written date such as `11/9/2024` now names that calendar day for every viewer. The 37 BI,
+chart, report and date test files (622 tests) pass at UTC+4.
+
+**Driven after** (hot deploy of R196): the same chart at month grain read **2026-01, 2026-02,
+2026-03**, and at day grain 2026-01-01, 2026-02-01, 2026-03-01. It was added to the project as
+"Orders by month (naive TIMESTAMP, R196)". Seen in passing: _Add to dashboard_ stays disabled until
+the chart has a title, and nothing says so.
+
+### 2026-10-01 — One query, two engines, two days
+
+Tests: `tests/unit/engineTimeZone.test.ts` (4 tests). The mutation run caught 5 of 5, and the
+control survived.
+
+#### R195 · S2 · "today" was tomorrow in the Workbench and today on a schedule
+
+**Found** as sweep 4's second round. Local datasets run on DuckDB in two places: in the browser
+(WebAssembly) for the Workbench and Ask AI, and on the server for scheduled refreshes, prep flows,
+the semantic runner and the agents' `sql_query`. The Data Catalog Workbench offers both engines in
+one editor. At 01:40 in a UTC+4 browser (21:40 UTC), one query:
+
+```sql
+SELECT current_setting('TimeZone') AS tz, current_date AS today,
+       CAST(TIMESTAMPTZ '2026-09-30 22:30:00+00' AS DATE) AS order_day, DATE '2026-09-30' AS plain_date
+```
+
+- "Local (in-browser)": `Etc/GMT-4 | 1790812800000 | 1790812800000 | 1790726400000`, that is,
+  today and the order's day both **2026-10-01**.
+- "Lakehouse · AgentSwarms": `Etc/UTC | 2026-09-30 | 2026-09-30 | 2026-09-30`.
+
+The browser engine takes the viewer's zone (ICU reads it from the browser), and the server engines
+take the container's. A "today" or "orders per day" tile therefore counted different rows in the
+Workbench than in its scheduled refresh. An agent answering from the same data named a different day
+from the one the person had just seen.
+
+**The fix** (`lib/duckdbValues.ts`, `lib/browserDuckdb.ts`, `utils/data/duckdb.server.ts`,
+`utils/lakehouse/core.server.ts`):
+
+- **One constant,** `ENGINE_TIME_ZONE = "UTC"`.
+- **The browser engine** sets it on its connection before it reports ready.
+- **The local-dataset engine** sets it globally before its configuration is locked.
+- **The lakehouse engine** sets it globally when the instance starts.
+
+The server's two engines were already UTC, but only because their container was: an operator who
+set `TZ` would have split them again. None of these settings is fatal, since an engine without ICU
+has no zone setting and runs in UTC anyway. The test runs the local-dataset engine with `TZ` set
+to `Asia/Dubai` before it starts.
+
+**Driven after** (hot deploy of R195). The same editor and a similar query gave
+`UTC | 1790726400000 | 1790726400000 | 2026-09-30 22:30` in the browser and
+`UTC | 2026-09-30 | 2026-09-30 | 2026-09-30 22:30` on the lakehouse. The lakehouse now reports
+`UTC` rather than `Etc/UTC`, which shows the explicit pin is live. The days agree.
+
+**What is still different,** for R196: the browser writes a DATE as epoch milliseconds
+(`1790726400000`) where the server writes `2026-09-30`. The two formats reach the charts
+differently: V8 reads the server's naive `2026-09-30 22:30:00` as local time, and the browser's
+epoch as UTC.
+
+### 2026-10-01 — Prompt Compare: "Est. cost —" while the server sent the cost
+
+Tests: `tests/unit/promptCompareCost.test.ts` (4 tests), with `tests/unit/chatStream.test.ts`. The
+mutation run caught 6 of 6, and the control survived.
+
+#### R194 · S2 · The page built to compare cost showed none, beside Traces showing it
+
+**Found** smoke-testing the real image `6b8a7e784718` (R191–R193). This is the first round of sweep 4,
+"two surfaces, two answers":
+
+- **The run.** Prompt Compare ran Gemini 2.5 Flash against GPT-5 Mini ("Reply with the single
+  word OK.") and showed "Est. cost — / —" and "Tokens ~1 / ~1". The footnote under it says "Cost
+  and token counts come from the server".
+- **Traces for the same calls:** gpt-5-mini 13/55 tokens, $0.0001; gemini-2.5-flash 7/1, $0.0000.
+- **The raw bodies,** tee'd in the browser, each arrived as one chunk ending `data: [DONE]` and then
+  the platform's `event: cost`: Flash `{"costUsd":0.0000046,"tokensIn":7,"tokensOut":1}`, Mini
+  `{"costUsd":0.00012325,"tokensIn":13,"tokensOut":60}`, about 27 times Flash. The one comparison
+  the page exists to make was blank.
+- **The cause.** The page had its own copy of the stream reader, and it did `break` at `[DONE]`.
+  Nothing read the rest of the buffer after the loop. The playground had fixed the same bug in its
+  own reader, with a comment ("Do NOT stop reading here…"), and every other reader in `src` does
+  `continue` there; this copy never got the fix.
+
+**The fix** (`lib/chatStream.ts`, `routes/_authenticated/prompt-compare.tsx`):
+
+- **One reader.** Prompt Compare reads the stream with `readChatStream`, the one the swarm executor
+  uses, which gains an optional `delta` callback so the page can show the text as it streams.
+- **A test over every reader in `src`.** None may `break` at `[DONE]`. A `return` from a per-line
+  `consumeLine` skips the line and is allowed.
+
+**Driven after** (hot deploy of R194): the same run showed "Est. cost ~$0.0000 / ~$0.0001" and
+"Tokens 7/1 / 13/55". That is what the streamed cost events carried, and the Traces rows agree
+(13/55, $0.0001; 7/1, $0.0000). R27's ranking was re-checked on the same image with a third panel
+refused: "(ranking excludes 1 did not answer)", and the failed panel's 0.1s was not crowned.
+
+### 2026-10-01 — "AI credits exhausted" for a budget cap
+
+Tests: `tests/unit/chatFailure.test.ts` (6 tests). The mutation run caught 8 of 8, and the control
+survived.
+
+#### R193 · S2 · The platform's refusals, blamed on the provider
+
+**Found** as Phase D's first item, the survey for sweep 3 ("a cause named that the evidence
+cannot support"). The survey searched the app's own strings for asserted causes ("may have",
+"because the", "is not configured", "no API key"); R191's "The request may have failed before the
+trace row was written" was already one. The playground's chat failure handling was the next:
+
+- **Every 402 was "AI credits exhausted".** The chat route answers 402 `budget_exceeded` itself
+  when a monthly cap is reached (`ENFORCE_BUDGET_CAP`), before any provider is called. The
+  playground showed "AI credits exhausted · This model can't be used right now because the AI
+  credits are exhausted. Pick another model and we'll continue this chat with full context." It
+  offered five models, every one of which the same cap refuses. The route's own sentence ("You
+  have reached your monthly AI budget ($5.00). (spent $5.12 of $5.00 this month.)") appeared
+  nowhere.
+- **Every other failure was prefixed with the provider's name.** The route's 403
+  `model_not_allowed` read "openrouter: Your administrator has not allowed
+  openrouter/openai/gpt-4o-mini for your account…", putting the administrator's rule in the
+  provider's mouth.
+
+The cap is opt-in through `.env`, and it was not switched on. So the route's exact bodies were
+answered from the browser, on "Sample · SQL Reviewer" in R191's fixture conversation, on the hot
+deploy of R192. What was under test is how the client reads a real response shape; the route's
+side is covered by its own tests.
+
+**The fix** (`lib/chatFailure.ts`, `routes/_authenticated/playground.tsx`):
+
+- **`classifyChatFailure`** reads the parsed body. The route marks its own refusals with a code
+  in `error` and the sentence in `message`: `budget_exceeded`, `model_not_allowed` and
+  `conversation_too_large` are "platform". An upstream provider's failure carries only its
+  sentence in `error`, and it still classifies by status and wording as before.
+- **The playground** opens the fallback picker only for a provider's rate limit or credits. It
+  names the provider only in front of the provider's own errors, so a platform refusal is shown
+  as the route wrote it.
+
+**Driven after:**
+
+- **The budget body:** no dialog, and the toast "You have reached your monthly AI budget ($5.00).
+  (spent $5.12 of $5.00 this month.)".
+- **The model-rule body:** the toast "Your administrator has not allowed
+  openrouter/openai/gpt-4o-mini …", with no provider name in front.
+- **The control,** the route's upstream shape for a provider's 402 (`{error: "AI credits
+exhausted for this provider."}`): the picker, "AI credits exhausted", as before.
+
+### 2026-10-01 — "2 files added", and a source reading "ok · 0 docs"
+
+Tests: `tests/unit/kbAddSourceWrites.test.ts` (7 tests). The mutation run caught 14 of 14, and
+the control survived.
+
+#### R192 · S2 · A file that was not added, counted as added and listed as ok
+
+**Found** as Phase C's last item, the add-source dialog from the write survey, on the hot deploy
+of R191:
+
+- **The File tab** writes a `kb_sources` row and then a `knowledge_documents` row per file. It
+  dropped the document insert's error, and it toasted the number of files dropped in, not the
+  number that landed. The setup was a fixture base, "R192 add-source" (kept), and two small .txt
+  files, `r192-alpha.txt` and `r192-beta.txt`, with only the first document insert refused from
+  the browser.
+- **What came back:** "2 files added" and the dialog closed. The tabs read Documents (1) and
+  Sources (2), and the Sources list showed "r192-alpha.txt · ok · 0 docs". A source said its file
+  was there, and the file itself was gone from the dialog, so trying again meant finding it again.
+  The Manual tab left the same orphan when its document insert failed.
+- **The list, seen in passing.** With the base list's read held for six seconds, the page said
+  "No knowledge bases yet." beside _New Knowledge Base_ until the read landed. The error state
+  was handled already (R76); loading was not.
+
+**The fix** (`components/knowledge/AddSourceDialog.tsx`, `routes/_authenticated/knowledge.tsx`):
+
+- **The document insert** keeps its error. A file whose document did not land takes its source back
+  (`withdrawSource`); if that delete fails too, the source is set to `status = 'error'` with the
+  reason.
+- **The dialog counts what landed.** "1 of 2 files added", or "The file was not added" / "None of
+  the N files were added", names each file that did not land with its reason, and keeps those
+  files listed and the dialog open. The lists refresh either way.
+- **The base list** has a loaded flag and uses `listState`, so until the read lands it says
+  "Loading your knowledge bases…".
+
+**The first after-drive found a fault in the fix.** With both the document insert and the
+withdraw refused, the toast read "The file was added": the ternary had lost its "not". The lists
+were not refreshed when nothing landed, so the source now marked as an error only showed after a
+reload. Both were fixed, and a test and two mutants were added.
+
+**Driven after:**
+
+- **The list:** "Loading your knowledge bases…", then the bases.
+- **Two files, one refused:** "1 of 2 files added · Not added, still listed here to try again:
+  r192-gamma.txt: R192 injected: …". The dialog stayed open with gamma alone, and Sources rose by
+  one. Add source again gave "1 file added", and gamma, delta and beta each have 1 doc.
+- **Document and withdraw both refused:** Sources showed "r192-zeta.txt · error · 0 docs · The
+  document was not saved: …" at once.
+- **Source insert refused:** "The file was not added · Not added, still listed here to try again:
+  r192-zeta.txt: …", with no new row.
+
+### 2026-09-30 — "Trace not recorded" for a trace that was recorded
+
+Tests: `tests/unit/playgroundReads.test.ts` (5 tests). The mutation run caught 11 of 11, and the
+control survived.
+
+#### R191 · S2 · The inspector blamed the request for a read that failed in the browser
+
+**Found** as Phase C's next item, the client read survey's playground batch, driven on the real
+image `c9e16c0b2b3b` with the reads refused from the browser:
+
+- **The Trace tab** polls `execution_traces` for the last message's trace, eight times, 750 ms
+  apart, and dropped every error. "Sample · SQL Reviewer" (`openai/gpt-4o-mini`) was sent "Reply
+  with the single word OK." in a new chat, with the read refused. It answered "OK". After eight
+  refused reads the tab said "Trace not recorded · The request may have failed before the trace
+  row was written." The Traces page listed the trace at the top: "Sep 30 23:15:34 · Sample · SQL
+  Reviewer · openai/gpt-4o-mini · 4.1s · 100/1 · ok". The one page built to show what really
+  happened blamed the server for a failure in the browser.
+- **The agent list.** The page was reached client-side with the read refused. The selector opened
+  with no options under a pulsing "Pick an agent to begin"; the middle said "Select an agent to
+  start · Choose an agent from the top bar". A normal load lists nine agents.
+
+**The fix** (`routes/_authenticated/playground.tsx`):
+
+- **The trace poll** keeps the last read's error. When it ends without a row after an error, the
+  tab says "Trace not read · The trace could not be read, so this says nothing about whether it
+  was recorded: …" with _Try again_. "Trace not recorded" is left for polls that read the table
+  and found nothing.
+- **The agent read** keeps its error and fills the list only from a read that worked. The bar shows
+  an error mark in place of the pick hint. The middle says "Your agents could not be read · So
+  there is nothing to pick yet: …" with _Try again_, which reads them again.
+- **Where Try again sits.** The first after-drive put "Agents not read · Try again" in the bar,
+  and with the inspector open it ran under the inspector's toggle. The bar is about 330 px wide
+  there, and the picker takes 170 of it. The mark stayed in the bar and Try again moved to the
+  middle.
+
+**Driven after** (hot deploy of R191):
+
+- **Agents:** refused, the mark and "Your agents could not be read … Try again"; lifted, Try
+  again gave "Chat with Sample · Graph RAG Explorer (Acme Corp)".
+- **Trace:** the same prompt in the same chat, with the read refused, gave "Trace not read …
+  R191 injected: the GET did not reach the database · Try again". Lifted, Try again gave the trace:
+  success, 2136 ms, $0.000018, 116 in / 1 out.
+
+### 2026-09-30 — A restore promised as undoable, done without its undo
+
+Tests: `tests/unit/swarmVersionWrites.test.ts` (5 tests). The mutation run caught 10 of 10, and
+the control survived.
+
+#### R190 · S2 · "Your current graph is saved as a snapshot first", when it was not
+
+**Found** in R189's round, on the same dialog. `snapshotSwarmVersion` swallowed its insert error
+("versioning is best-effort; never block a save"). That is right for the autosave on Save, its
+first caller, and wrong for the other two. Driven on the hot deploy of R189, on "Approval
+durability check", with the `swarm_versions` insert refused from the browser:
+
+- **Save version**, named "R190 refused capture": the toast said "Version saved", the name was
+  cleared, and the list still held only the Initial version.
+- **Restore.** The canvas had a Set Variable node added (6 nodes, unsaved). _Restore_ on the
+  Initial version opened a confirm: 'The canvas will be replaced with this snapshot (5 nodes). Your
+  current graph is saved as a snapshot first, so you can restore back.' Confirmed with the insert
+  refused, it gave "Version restored — hit Save to keep it." and 5 nodes. Reopened with the refusal
+  lifted, the history had no _Before restore_ version. The 6-node graph was gone, and pressing
+  Save, as the toast asks, would have made that permanent.
+
+**The fix** (`lib/swarmVersions.ts`, `components/swarms/SwarmVersionsDialog.tsx`,
+`routes/_authenticated/swarms.tsx`):
+
+- **`snapshotSwarmVersion`** resolves to the insert's error message, or null. It prunes only after
+  a version landed. The autosave still ignores the result.
+- **Save version** shows "The version was not saved" with the error, and keeps the name for another
+  try.
+- **Restore** does nothing when the snapshot of the current graph did not land: "Nothing was
+  restored · Your current graph could not be saved as a version first, so the restore could not be
+  undone: …". The handler returns whether it restored, and the dialog stays open when it did not.
+
+**Driven after:**
+
+- **Save version:** under the refusal, "The version was not saved · R190 injected: the POST did not
+  reach the database", with the name still in the field. Lifted and renamed, "R190 capture after
+  retry" landed ("Version saved"; kept).
+- **Restore:** with the node added and the insert refused, "Nothing was restored …"; the canvas kept
+  its 6 nodes and the dialog stayed open. Lifted, the restore went through (5 nodes, dialog closed).
+  The history then opened on "Before restore 10:46:35 PM · pre-restore · 6 nodes" (kept).
+
+### 2026-09-30 — "Draft ahead" gone after a Publish, and three lists that read as empty
+
+Tests: `tests/unit/swarmCanvasReads.test.ts` (7 tests). The mutation run caught 15 of 15, and the
+control survived.
+
+#### R189 · S2 · The one warning that deployed runs lag the canvas, gone after a failed re-read
+
+**Found** as Phase C's third item, the rest of the client read survey's swarms batch: four reads
+on the canvas and its dialogs dropped their errors. Driven on the hot deploy of R188, with each
+read refused from the browser:
+
+- **The published snapshot.** After a Publish the canvas re-reads what is live, to compare it with
+  the canvas for the _Draft ahead_ badge on the toolbar's Deploy button. On "R109 chat echo" (2
+  nodes, no keys or schedules), Publish with that re-read refused: the toast said "Published —
+  deployed runs now use this version", the snapshot went to null, and a node added afterwards (3
+  against 2) drew no badge. The control, reloaded and the same node added: "Draft ahead · The
+  canvas has changes that deployed runs are not using yet". Until a reload, every later edit was
+  shown as live.
+- **My components**, in the palette and in the Component library. Neither said anything when the
+  read failed. So that the empty state would prove something, a component was authored first ("R189
+  fixture first 100 chars", kept). Then the component was saved as v2 with the read refused: the
+  save went through ('Saved "R189 fixture first 100 chars" (v2)'). The library then read "No
+  components yet. Author one and it shows up in the palette.", the palette "None yet — author a
+  reusable node.", and the component's palette button was gone.
+- **The version history.** On "Approval durability check", which normally lists "Initial version ·
+  autosave · 5 nodes": "No versions yet — Save the swarm or capture one above."
+
+The snapshot is the one with teeth. The badge exists because a canvas edit does not reach API and
+scheduled callers until it is published, and a failed read switched the badge off while the canvas
+went on changing.
+
+**The fix** (`routes/_authenticated/swarms.tsx`, `components/swarms/ComponentLibraryDialog.tsx`,
+`components/swarms/SwarmVersionsDialog.tsx`):
+
+- **The snapshot re-read** keeps its error. The snapshot stays unknown: keeping the old one would
+  call a canvas that was just published "ahead". The Deploy button says _Live not checked_, with
+  the error in its title, and opening another swarm clears it. In the UI that path is only Import
+  or deleting the open swarm; the gallery reloads the page.
+- **The component and version reads** keep their errors. Each list says "… could not be read, so
+  this list says nothing about them: …" in place of its empty state, and shows no stale items
+  under it.
+- **The palette** reads its components once, so its message has _Try again_.
+
+**Driven after:**
+
+- **Versions:** "The versions could not be read, so this list says nothing about them: R189
+  injected: the GET did not reach the database"; lifted and reopened, the Initial version.
+- **Components:** saved as v3 under the refusal, both lists named the error; lifted, the palette's
+  Try again brought the component back, and the reopened library listed it at v3.
+- **Snapshot:** a refused Publish gave "Live not checked", and it stayed that way with the extra
+  node added. Lifted, a second Publish gave "Draft ahead" for the 3-node canvas against the saved 2.
+
+**Left for R190**, from the same dialog: _Save version_ toasts "Version saved" whether or not the
+insert landed, since `snapshotSwarmVersion` swallows its error for the autosave's sake. And
+_Restore_, promised as undoable ("your current graph is saved first"), replaces the canvas even
+when that safety snapshot failed.
+
+### 2026-09-30 — A live swarm read "Not deployed", with Add schedule on
+
+Tests: `tests/unit/swarmDeployReads.test.ts` (5 tests). The mutation run caught 10 of 10, and the
+control survived.
+
+#### R188 · S2 · "No schedules yet.", beside a form that adds the schedule again
+
+**Found** as Phase C's third item, the client read survey's swarms batch, starting with the
+deploy dialog: it reads the swarm's API keys, its schedules and its own row (the published
+snapshot), and dropped all three errors. Driven on the real image `498ec3b7ec48`, on "Approval
+durability check" (published, pinned 9/23/2026, 1:37:47 AM; schedules "R95 heartbeat", "R92
+one-run probe", "R91 park probe (after)" and more):
+
+- The dialog normally: "Published · pinned 9/23/2026, 1:37:47 AM"; the Schedules tab lists them.
+- The schedules read refused from the browser, the dialog reopened: "Not deployed · No API keys or
+  schedules yet."; the Schedules tab "No schedules yet." with Add enabled.
+
+Two things are wrong at once. The state is computed from `keys.length > 0 || schedules.length >
+0`, so any list that failed to load made a live, pinned swarm read "Not deployed". And the
+schedules list invites the one action that does damage: a schedule added again runs the swarm a
+second time on every tick, each run paying for its models.
+
+**The fix** (`components/swarms/SwarmDeployDialog.tsx`, `lib/swarmPublish.ts`). Each read keeps
+its error, and a list whose read failed is shown empty only behind its error. The deployment state
+gains `unknown`, "Deployment not read · What this swarm has deployed could not be read, so this
+panel says nothing about it.", used whenever any of the three reads failed. The keys and schedules
+say "… could not be read, so this list says nothing about them: …" in place of "No … yet.", and
+Add is off while the schedules are unread, saying why.
+
+**Driven after.** The same refusal: "Deployment not read"; the Schedules tab "The schedules could
+not be read, so this list says nothing about them: R188 injected: the GET did not reach the
+database. Adding one is off until they can be: an existing schedule would run the swarm twice.",
+Add disabled. Lifted and reopened: "Published · pinned 9/23/2026, 1:37:47 AM".
+
+### 2026-09-30 — A node restricted to one table, shown as having no tables at all
+
+Tests: `tests/unit/nodeInspectorReads.test.ts` (5 tests). The mutation run caught 13 of 13, and
+the control survived.
+
+#### R187 · S2 · "No tables yet. Upload a CSV", over a node that may only see `ecom_returns`
+
+**Found** as Phase C's second item, the client read survey's "swarm node inspector (4)". The
+inspector reads the caller's connected providers, tables, semantic models, ML models and MCP
+servers once, when it opens, six reads in one effect, and dropped every error. Driven on the hot
+deploy of R186, on "Embed E2E Mini Swarm", nothing saved: the Researcher node's SQL Query tool
+on, `ecom_returns` ticked, "Node will only see 1 selected table."; the inspector closed and
+reopened with the tables read refused from the browser → "Allowed tables (optional) · No tables
+yet. Upload a CSV in Data & SQL Agents." The node's restriction was gone from view, and the page
+invited a first upload to an account with a whole catalogue of tables. A refused providers read
+would have marked every connected provider "(not connected)".
+
+**The fix** (`components/swarms/NodeInspector.tsx`). Each read keeps its error, by list. A picker
+whose list was not read says "<Your tables> could not be read, so this list says nothing about
+them: <error>." ahead of its empty-account invitation, and "The node keeps its selection: …" for
+whatever the node has chosen. The MCP selection is still pruned only from a list that was read.
+With the providers unread, no provider is marked "(not connected)", and a line under the picker
+says why.
+
+**Driven after.** The same drive: "Your tables could not be read, so this list says nothing about
+them: R187 injected: the GET did not reach the database. The node keeps its selection:
+ecom_returns."; with the providers read refused too, "Your connected providers could not be
+read, so none is marked as not connected: …". A first build ran the error into the next sentence
+("…the database The node keeps…"); the error now ends as a sentence.
+
+### 2026-09-30 — Evaluations: five reads that failed into absence, two deletes that failed in silence
+
+Tests: `tests/unit/evalReadsWrites.test.ts` (8 tests). The mutation run caught 14 of 14, and the
+control survived.
+
+#### R186 · S2 · "running · 0/2 · Executing cases…", with nothing executing
+
+**Found** as Phase C's first item: evaluations' five error-less reads (the client read survey) and
+two deletes (the write survey). Driven on the hot deploy of R185, on a dataset made for it, "r186
+evals" (two cases, `hello one` and `hello two`), run against "R109 chat echo" with the
+"Contains expected text" evaluator, so no model was called ($0). Each PostgREST call was refused
+from the browser with a 500 carrying "R186 injected: the <METHOD> did not reach the database":
+
+- The run's results read: "Progress 2/2 · Pass rate 100% … No results.", no error.
+- The dataset's case read: "r186 evals · 0 cases", New eval run disabled, beside a runs list
+  saying "r186 evals · 2/2".
+- A case delete, confirmed: nothing said, "2 cases", the case still listed.
+- The dataset delete, confirmed: nothing said, the dataset still listed.
+- The driver's case read as a second run started: "running · 0/2 · Run remaining 2 · Executing
+  cases…", and nothing executed.
+- The baseline's results read under Compare against: "vs baseline: 0 improved · 0 regressed · 0
+  unchanged", both cases `only_b` ("— → pass 1.00"): a comparison against nothing.
+
+**The fix** (`routes/_authenticated/evaluations.tsx`). The case read keeps its error: the count
+reads "cases not read", the list is empty under "The cases could not be read, so this list says
+nothing about them: …" with Try again. The results read does the same in place of "No results.".
+The driver stops before building its queue when either of its reads fails, with "The run could
+not carry on · Its cases could not be read: …", and "Executing cases…" now shows only while the
+driver runs; a running run with no driver says "No case is executing now. Run remaining carries
+on." The baseline read draws no comparison when it fails, and says "The baseline's results could
+not be read: …" beside the picker. Both deletes say so when refused, and the dataset delete stops
+there. The page already had a `compareError` for the list of comparable runs (module 28); the
+baseline's own state is `baselineError`.
+
+**Driven after.** Each refusal again: the error text in place of "No results."; the baseline
+error and no comparison; "cases not read" with Try again, which, the fault lifted, brought back
+"2 cases"; "The case was not deleted · R186 injected: …" with the case kept; "\"r186 evals\" was
+not deleted · …" with the dataset kept; a third run's driver: the toast and "No case is executing
+now", then Run remaining → 2/2, 100%.
+
+### 2026-09-30 — A failed materialized-view rebuild, told only to a hovering mouse
+
+Tests: `tests/unit/matviewBadgeFailed.test.ts` (6 tests). The mutation run caught 11 of 11, and
+the control survived.
+
+#### R185 · S3 · "materialized", over rows whose source was gone
+
+**Found** as Phase B's third item, left open by R101 at S3. Driven on the hot deploy of R184, in
+the Lakehouse:
+
+- Query: `CREATE TABLE analytics.r185_base AS SELECT 185 AS id, 'base row' AS note` → `Count 1`.
+- `SELECT * FROM analytics.r185_base` → Save as view → `analytics` / `r185_mv` / manual → "Built
+  analytics.r185_mv — 1 row(s)".
+- `ALTER TABLE analytics.r185_base RENAME TO r185_base_moved`; the `r185_mv` tab → Rebuild → the
+  toast "Rebuild failed: Catalog Error: Table with name r185_base does not exist!", gone in
+  seconds; the badge still `materialized`, its hover title "Last rebuild failed: …".
+- Reloaded and reopened: `analytics.r185_mv · 1 row(s) · … · materialized · Rebuild`, and no word
+  of a failure anywhere on the tab.
+
+The rebuild keeps the previous rows on purpose, and the server's comment gives the reason:
+"stale data a user can see and diagnose beats no data at all". Nobody could see it, and a
+scheduled rebuild has no toast at all.
+
+**The fix** (`lib/matviewBadge.ts`, `lakehouse.tsx`). One function decides what the badge says.
+A rebuild whose last status is `error` reads "last rebuild failed", in the destructive colour,
+beside a line with the error's first line as a sentence and the time of the rebuild the rows are
+from (`last_refreshed_at`, which a failure leaves alone), or that the view has never been built.
+The whole error stays in the hover title.
+
+**Driven after.** The tab: `last rebuild failed` · "Catalog Error: Table with name r185_base does
+not exist! These rows are from the rebuild of 9/30/2026, 7:52:16 PM."; the base renamed back,
+Rebuild → "Rebuilt — 1 row(s) in 3497 ms", the badge `materialized`, no failure text.
+
+### 2026-09-30 — A workflow's "succeeded" over a step that could no longer succeed
+
+Tests: `tests/unit/workflowBadgeDrift.test.ts` (9 tests). The mutation run caught 13 of 13, and
+the control survived; a first run left one mutant alive, a filter on undefined keys that
+JSON.stringify already makes, and the filter was removed as dead code.
+
+#### R184 · S2 · succeeded, for `SELECT * FROM analytics.r184_no_such_table`
+
+**Found** as Phase B's second item, sweep item 2's workflow saves. Driven on the hot deploy of
+R183:
+
+- Workflows → New workflow `r184_badge` → SQL statement step `SELECT 184 AS r184` → Save
+  ("Saved") → Run now: the list reads `r184_badge · manual · less than a minute ago · succeeded`.
+- The statement → `SELECT * FROM analytics.r184_no_such_table` → Save; reloaded, the step holds
+  that statement and the list still reads `succeeded`.
+
+A save writes the graph and none of the run stamps, so the status described a graph that no
+longer existed, and here one that could not succeed.
+
+**The fix** (`lib/workflowDrift.ts`, `workflows.functions.ts` `workflowsList`,
+`workflows.tsx`). Each run pins its graph on `workflow_runs.graph`. The list reads each
+workflow's latest run, the one its status is about (a run writes "running" when it starts and
+its outcome when it ends), and compares the graphs as a run executes them: a step's position
+and label left out, and a parameter's description, with steps, arrows and parameters in one
+order and every object's keys sorted, since Postgres stores `jsonb` in its own key order. When
+they differ, the row says "changed since this run" under the name. With no run, or a read that
+failed, it says nothing.
+
+**Driven after.** The row marked; Run now → `failed` (the missing table), unmarked; the step
+dragged up the canvas and saved, its new position stored → still unmarked; the statement set
+back to `SELECT 184 AS r184` → "changed since this run" over `failed`. The two other workflows
+stayed unmarked throughout.
+
+### 2026-09-30 — An ETL pipeline's "Succeeded" over a definition that never ran
+
+Tests: `tests/unit/etlChipDrift.test.ts` (11 tests), on the real compiler and the real
+reconciliation sample. The mutation run caught 11 of 11, and the control survived.
+
+#### R183 · S2 · Succeeded, for a table the pipeline had never written
+
+**Found** as Phase B's first item, sweep item 2 (a badge that outlives what it vouched for), next
+in line after R101. Driven on the real image `8651672bd6c6`:
+
+- ETL Pipelines → New pipeline → `r183_chip` from "Orders ↔ payments reconciliation" → Settings:
+  default destination "MinIO local etl demo" → Save → Run now → the run `Succeeded`, `309 rows →
+2 target(s)`.
+- Build → the "Reconciled" target → Table `orders_reconciled` → `orders_reconciled_r183` →
+  "Saved".
+- ETL Pipelines: `r183_chip · last run 9/30/2026, 7:00:02 PM · 100% · Succeeded`. No run had
+  written `orders_reconciled_r183`.
+
+The save writes the definition and none of the run stamps, and the card showed
+`last_run_status` as though it were about the pipeline on the row. A visual pipeline is also
+recompiled by the current compiler at every run start, so an upgrade changes what runs next
+with no edit at all, and the chip says nothing about that either.
+
+**The fix** (`utils/etl/runDrift.ts`, `etl.functions.ts` `getEtlOverview`, `etl.tsx`). Each
+run already pins the program it ran on `etl_runs.source_code`. The overview reads each
+pipeline's latest finished run, the one that wrote the status, and compares its program with
+the one a run started now would execute: the graph compiled by the current compiler for the
+pipeline's engine, as the run start does, or a code pipeline's own source. When they differ, or
+the graph no longer compiles, the card says "changed since this run" under the chip. With no
+finished run, or a read that failed, it says nothing. The definition is read for this and left
+out of the answer. No migration: R60 needed a trigger because a SQL model's build does not pin
+its SQL, and an ETL run does.
+
+**Also seen.** The first load after the fix marked five older pipelines: `matrix_transforms`,
+`param_probe2`, `revenue_conform`, `kafka orders` and `sample_reconciliation`, last run between
+8/30 and 9/18. None had been edited: the current compiler builds their graphs differently, so
+their next run executes something their chips never checked. The fifteen others, including
+`bi_seed` (9/22) and the 9/18 `*_live` pipelines, compile to what they last ran, which is also
+the evidence the compiler is deterministic.
+
+### 2026-09-30 — An Iceberg replace left the name empty, then empty-handed
+
+Tests: `tests/unit/icebergReplaceInPlace.test.ts` (6 tests) and a rewritten
+`tests/unit/icebergReplaceStaged.test.ts` (R107's cases, now over the swap), with
+`iceberg.test.ts` and `icebergPublishColumns.test.ts` updated. The mutation run caught 22 of 22,
+and the control survived; a first run missed a failed swap that also claimed the table "is as it
+was", and the test now requires that claim to be absent.
+
+#### R182 · S2 · No table for 0.9 s, then an empty one for 1.7 s
+
+**Found** as Phase A's fourth item, queued by R107: "the swap is not atomic". Measured on the hot
+deploy of R181, from the catalog's own log, since a poller loading the table starves the
+development catalog's SQLite writer (R181). Lakehouse → `analytics.stg_revenue` → Publish to
+Iceberg → `local_rest` / `r181` / `swap_target`, Replace it (drop, then create) → "Published 836
+row(s)", and in the catalog:
+
+- 13:54:39.456 `Dropped table: r181.swap_target`
+- 13:54:40.375 `swap_target` committed: created, empty
+- 13:54:42.076 `swap_target` committed: filled
+
+A reader of the catalog found no table for 0.9 s and then an empty one for 1.7 s. A dashboard,
+a Spark job or a mount reading at that moment sees a missing table or zero rows, and nothing
+says the publish was still going.
+
+**The fix** (`utils/lakehouse/iceberg.ts`, `iceberg.server.ts`, the dialog's label). Two paths,
+chosen by the old table's columns as the engine reads them (`DESCRIBE`):
+
+- The same names, order and types as the new data: `BEGIN; DELETE FROM t; INSERT INTO t …;
+COMMIT`. Driven: the catalog logged one commit (14:26:00.608) carrying a delete snapshot and an
+  append snapshot, and no rename or drop. The table's current state went from the old rows to the
+  new ones in that commit. A failed write rolls back and says the table keeps its old rows.
+- Anything else, or no table yet: the new data is staged as before, then `BEGIN; ALTER TABLE IF
+EXISTS t RENAME TO t__replaced_<token>; ALTER TABLE staging RENAME TO t; COMMIT`, and the old
+  table is dropped last. Driven twice: the renames landed 1.46 s apart (14:17:19.107 and
+  20.571) and 0.39 s apart (14:31:32.219 and 32.613). The catalog applies them one after the
+  other, so a reader can miss the table for that moment, but never finds it empty, and the new
+  data is written once instead of twice. The extension accepts both renames in one transaction
+  and checks a clash before sending either (probed). A swap that fails anyway rolls back, renames
+  the old table back if it had moved, removes the staging table, and names where the old table is
+  if it could not be put back.
+
+**Not changed.** The REST catalog has no call that renames two tables at once, so a replace that
+changes the columns keeps a short gap. The old rows of an in-place replace stay in the table's
+history until the catalog expires its snapshots. The label now reads "Replace it (swap the new
+table in)".
+
+### 2026-09-30 — Every publish to Iceberg failed on a freshly built image
+
+Tests: `tests/unit/icebergPublishColumns.test.ts` (6 tests), with `tests/unit/iceberg.test.ts` and
+`tests/unit/icebergReplaceStaged.test.ts` updated to the new statements. The mutation run caught
+13 of 13, and the control survived.
+
+#### R181 · S2 · `Failed to create directory "data"`, on every publish
+
+**Found** while preparing Phase A's fourth item, the replace's swap: the before-drive needed a
+publish, and none worked. On image `817a8048bbf0`, built that afternoon with R178 to R180:
+
+- Lakehouse → `analytics.stg_revenue` (836 rows) → Publish to Iceberg → `local_rest` / `r181` /
+  `swap_target`, Refuse → `IO Error: Failed to create directory "data": Permission denied`. The
+  catalog's log shows one lookup of `r181.swap_target` (404) and nothing else.
+- The same into `local_rest` / `r107` / `r181_probe` → the same error. `r107` was made by this app
+  in R107, where this path published; `r181` had been made over the REST API for a probe. The
+  namespace was not the cause.
+
+DuckDB (`@duckdb/node-api` 1.5.5-r.2) and the code around the publish had not changed since R107
+published successfully on 2026-09-24. The iceberg extension had: an image bakes the build that
+`INSTALL iceberg` fetches when it is built. Probed in the container with that build (45163a28)
+and no storage credentials, so a write aimed at the right place answers S3's 403:
+
+- A fresh connection, attached exactly as the app attaches `local_rest`: `CREATE TABLE … AS
+SELECT 1` → 403 on `s3://iceberg/r181/local_ctas/data/…`, the right place.
+- The same after `LOAD ducklake` (not even attached), after attaching a DuckLake, after `USE
+lake`, after `USE memory`: `Failed to create directory "data"`.
+- `CREATE TABLE … (id INTEGER)` then `INSERT`, with ducklake loaded, attached or in use: 403 on
+  the table's own `s3://` location.
+- `CREATE TABLE … AS … WITH NO DATA` and `… LIMIT 0`: the `data` error again.
+
+This engine loads ducklake at boot and uses it on every connection, so every publish met it.
+
+**The fix** (`utils/lakehouse/iceberg.ts`, `iceberg.server.ts`). A publish reads the source's
+columns in order (`duckdb_columns()`, database `lake`), then creates the table with that column
+list and inserts its rows by name. A replace does the same into its staging table, and again into
+the old name after the drop. Types behave as before: checked on the extension one by one,
+`UTINYINT`, `UBIGINT`, `ENUM` and `INTERVAL` are refused by the explicit create with the same
+"not a valid Iceberg Type", and `HUGEINT`, `MAP`, `TIMESTAMPTZ`, lists, structs, `DECIMAL`,
+`BLOB`, `UUID`, `TIME`, `DATE`, `DOUBLE` and `BOOLEAN` are accepted. A CREATE TABLE AS failed as
+one statement and left nothing behind; this publish is two, so a create whose insert fails drops
+the table it has just made. It can only be its own: a create refuses an existing name, and a
+refused create drops nothing.
+
+**Not changed.** The replace still drops the old table before the copy into its name (R182). The
+drive also met the development catalog's `SQLITE_BUSY`: while a poller loaded the table 4 to 30
+times a second, every commit into a replace's staging table was refused, and the old table stood
+each time. The first attempt left its staging table, `swap_target__publishing_fe36c8e4`, because
+its cleanup met the same lock. With the poller stopped the replace went through. That is the
+fixture's SQLite store; the queue has it.
+
 ### 2026-09-30 — A swarm chat turn saved into the conversation on screen, not its own
 
 Tests: `tests/unit/swarmChatTurnBinding.test.ts` (6 tests). The mutation run caught 15 of 15, and
@@ -119,6 +5730,7 @@ the control survived.
 **Found** as Phase A's third item, left open by R109's entry in the queue: "the aborted turn's save
 follows whichever conversation is selected when it lands". Driven on the hot deploy of R179, in
 Chat on "Embed E2E Mini Swarm" (Researcher → Editor):
+
 - "R180 turn one: name one planet in a single word." → a reply; the list holds one conversation,
   A.
 - In A, "R180 turn two: and one moon?", and New chat a second later. The list then held two
@@ -169,8 +5781,9 @@ reads the resume alone, and still fails when R90's gate is put back. The mutatio
 **Found** as Phase A's second item, left open by R108's entry in the queue. The scheduled
 "Approval durability check" swarm parks a run at its approval node each time it fires. Driven on
 the hot deploy of R178:
+
 - Swarms → Recent runs: rows `Approval durability check (schedule) · Awaiting approval · started
-  12h ago`, and more back to `4d ago`, each with Open, Trace and Review approval, and no Cancel.
+12h ago`, and more back to `4d ago`, each with Open, Trace and Review approval, and no Cancel.
 - The header: "Cancel a running run here; a run waiting for an approval goes on or stops when the
   approval is decided."
 - The bell: `Pending approvals (35)`.
@@ -209,10 +5822,11 @@ when the extension loads. The mutation run caught 15 of 15, and the control surv
 **Found** as Phase A's first item: the case R103's entry in the queue left open. R103 made a new
 or renamed model find its name free when it is saved, and R128 refused a table a sheet holds.
 Nothing stopped a table made at the target after the save. Driven on the image of R177:
+
 - SQL Models → New model `r178_target`, schema `analytics`, stored as Table, `SELECT 178 AS id` →
   Create: "Created r178_target", not built.
 - Lakehouse → `CREATE TABLE analytics.r178_target AS SELECT 'made after the model was saved' AS
-  note` → `Count 1`.
+note` → `Count 1`.
 - The model → Build this and what it reads → "Built 1 model".
 - `SELECT * FROM analytics.r178_target` → `id 178`. The table and its row were gone, and nothing
   on either page said so.
@@ -285,6 +5899,7 @@ mutation run caught 16 of 16, and the control survived.
 **Found** probing the math functions against Excel's rules. Driven in "R176 math before": A1
 `=FLOOR(0.3,0.1)`, A2 `=FLOOR(4.35,0.05)`, A3 `=FLOOR(2.5,-2)`, A4 `=CEILING(2.5,-2)`, A5
 `=GCD(12.5,5)`, A6 `=LCM(4.9,6.2)`, A7 `=DEC2HEX(255)`, A8 `=HEX2BIN("F")`.
+
 - A1 was 0.2 and A2 4.3, where Excel gives 0.3 and 4.35: 0.3 / 0.1 is 2.9999999999999996, and
   FLOOR took the whole number below it. FLOOR.MATH did the same, and a table sheet's FLOOR column,
   compiled to SQL, too.
@@ -315,6 +5930,7 @@ digits, which never happens in the ranges that are written in scientific notatio
 **Found** probing the text functions against Excel's answers. Driven in "R175 text before": A1
 `123456789012`, B1 `1234567.891234`, C1 `'123456789012` (typed as text), D1 `found`; E1
 `=A1&"-"&B1`, E2 `=LEN(A1)`, E3 `=VLOOKUP(A1&"",C1:D1,2,FALSE)`, E4 `=DOLLAR(-1234.567)`.
+
 - E1 was `1.23457E+11-1234567.891` where Excel gives `123456789012-1234567.891234`, E2 11 (Excel
   12), E3 #N/A (Excel `found`), and `=LEN(1/3)` 12 (Excel 17).
 - A formula turned a number into text with the cell's General display, which is narrow on purpose
@@ -342,6 +5958,7 @@ control survived.
 
 **Found** in R173's probe; driven in the same workbooks (C4 `=WEEKDAY(B1,11)`, C5
 `=DAYS360(DATE(2011,1,1),DATE(2011,12,31))`): #NUM! and #NAME?, where Excel gives 1 and 360.
+
 - WEEKDAY knew return types 1 to 3; Excel's 11 to 17 number the week from Monday (11) through
   Sunday (17).
 - DAYS360, the 360-day count that interest and payroll schedules use, did not exist.
@@ -362,6 +5979,7 @@ control survived.
 **Found** probing the date functions against answers worked out by hand. Driven in "R173 dates
 before": A1 `2024-01-12` (a Friday), B1 `2024-01-08` (a Monday); C1 `=NETWORKDAYS(A1,B1)`, C2
 `=NETWORKDAYS(B1,A1)`, C3 `=NETWORKDAYS(DATE(2024,12,31),DATE(2024,1,1))`.
+
 - C1 was -3 where Excel gives -5, and C3 -364 where Excel gives -262; forwards (C2) was right, 5.
   formula.js counts only forwards: given a later start, its count of days is negative, its loop over
   them never runs, and it returns the calendar days between the dates, weekends and holidays
@@ -387,6 +6005,7 @@ Tests: `tests/unit/sheetsFilePrefixes.test.ts` (3 tests), against
 functions Excel stores as `_xlfn.NAME`, for the functions the engine computes. Driven in "R172
 prefixes before": A1 `=NUMBERVALUE("1.234,5",",",".")`, A2 `=ISFORMULA(A1)`, A3
 `=FORMULATEXT(A1)`; File → Download as Excel.
+
 - The file held `NUMBERVALUE(…)`, `ISFORMULA(A1)` and `FORMULATEXT(A1)` bare. Excel reads a bare
   newer name as an unknown function, and a download asks Excel to recalculate on open, so the three
   cells would show #NAME? there, though Sheets showed 1234.5, TRUE and the formula.
@@ -407,6 +6026,7 @@ from `make_xlsxwriter_spillref.py`. The mutation run caught 14 of 14, and the co
 XlsxWriter's list: its ANCHORARRAY is how a file holds Excel 365's `A1#`, and the probe found the
 engine had no `A1#` at all. Driven in "R171 spill before": A1 `=SEQUENCE(3)` (spilling 1, 2, 3);
 C1 `=SUM(A1#)`, C2 `=ROWS(A1#)`, C3 `=XLOOKUP(2,A1#,E1#)`; E1 `=A1#*10`.
+
 - All four were #NAME?, "Unknown error value": the lexer read `#` as the start of an error value.
 - An Excel 365 file that uses `A1#` holds `_xlfn.ANCHORARRAY(A1)`; it came in as `ANCHORARRAY(A1)`,
   an unknown function, and showed only Excel's saved value.
@@ -415,6 +6035,7 @@ C1 `=SUM(A1#)`, C2 `=ROWS(A1#)`, C3 `=XLOOKUP(2,A1#,E1#)`; E1 `=A1#*10`.
 knowing its length, so a workbook built around dynamic arrays leans on it throughout.
 
 **The fix.**
+
 - The lexer gives a `#` straight after a cell a token of its own (`lexer.ts`), so every rewrite that
   moves the cell (copy, fill, insert and delete rows, Insert cells, a sheet rename) keeps it
   untouched. The parser marks the cell `spill`.
@@ -444,6 +6065,7 @@ the control survived.
 (that one was already fixed: it spills 0). The probe gave a range with a blank cell to the functions
 that come from formula.js, and several answered as if the blank were 0. Driven in "R170 stats
 before": A1 1, A2 blank, A3 3, A4 `x`; B1:B3 2, 4, 6.
+
 - `=GEOMEAN(A1:A3)` was 0 (Excel 1.73), `=SMALL(A1:A3,2)` 1 (Excel 3), `=PERCENTILE(A1:A3,0.5)`
   1 (Excel 2).
 - `=NPV(0.1,A1:A3)` was 3.163: it discounted the blank as a period of 0 and the 3 over three
@@ -460,6 +6082,7 @@ range as it stood, blanks as nulls.
 
 **The fix** (`lib/sheets/formula/functions.ts`, `LIBRARY_ARGS`). Each formula.js function that reads
 a range is told how, and its arguments are read before formula.js sees them:
+
 - lists of numbers (SUMSQ, STDEV, VAR, GEOMEAN, HARMEAN, AVEDEV, DEVSQ, KURT, SKEW, MODE, LARGE,
   SMALL, PERCENTILE, QUARTILE, IRR, RANK's list, NPV's values) as SUM reads them: from a reference
   only numbers count; a value typed into the call is coerced;
@@ -488,6 +6111,7 @@ copying loop never runs, so its early return only saves the pass over the cells.
 **Found** from the queue (open since R117), then driven in "R169 insert before", imported from an
 openpyxl file: a header row bold on blue, B2:B3 dollars with a border under B2. Insert 1 row below
 row 2, and type 12.5 in the new B3.
+
 - The new row was plain: 12.5 showed as 12.5 beside $10.00 and $4.00, with no border. Excel's
   default Insert Options format a new row like the one above it.
 - Insert cells (shift down) left the new cell plain in the same way.
@@ -511,6 +6135,7 @@ the control survived.
 
 **Found** in R166's round, then typed in "R168 formats before": A1 2023-03-15, A2 `=A1+30`, A3
 `=A2-A1`, A4 `=A1`; B1 $1,200, B2 $300.50, B3 `=SUM(B1:B2)`, B4 `=B1*2`.
+
 - A2 showed 45030 and A4 45000, where Excel shows 2023-04-14 and 2023-03-15: a formula took no
   format from the cells it read. Only DATE, TODAY and their kin showed as dates.
 - B3 showed 1500.5, where Excel shows it in B1's dollars. (Typed `$1,200` has no cents, so B3 shows
@@ -520,6 +6145,7 @@ A number of days is easy to mistake for a count; the dates were right, only show
 
 **The fix** (`lib/sheets/formulaFormat.ts`, used when a formula is entered). A formula typed into a
 cell with no format of its own takes one from what it reads, as Excel gives one on entry:
+
 - a bare reference takes that cell's (its own format, or the one its formula implies);
 - `+` and `-` take the first formatted operand's; two dates apart are a number of days, and keep
   none;
@@ -541,6 +6167,7 @@ survived.
 (`=SORT()`, MATCH, XLOOKUP, VLOOKUP, the `<` operator) goes character by character, as Excel does:
 A1, A10, A2, A20, A3. In "R167 sort before", keys A10, A2, A1, B1, A20, A3 with their numbers,
 sorted A to Z:
+
 - The ribbon gave A1, A2, A3, A10, A20, B1, and `=SORT(A1:A6)` beside it A1, A10, A2, A20, A3, B1.
 - `=VLOOKUP("A10",A1:B6,2,TRUE)` gave 1, A1's number (should be 10); `VLOOKUP("A3",…)` gave 20
   (should be 3); `=MATCH("A20",A1:A6,1)` gave 2 (A20 was row 5).
@@ -565,6 +6192,7 @@ survived.
 
 **Found.** A probe of 17 typed entries against how Excel reads them, then typed in the UI ("R166
 typed before"):
+
 - **Times stayed text:** 12:30, 9:00 AM, 25:00 were left-aligned text, and `=SUM(A1:A3)` of them
   was 0, without a warning.
 - **Dates with a month's name stayed text:** 15-Mar-2023 and Mar 15, 2023, so `=B1+1` and
@@ -596,6 +6224,7 @@ survived.
 
 **Found.** A probe of the fill handle's series against Excel's AutoFill, then the handle dragged
 in the UI ("R165 fill before"):
+
 - **A date past a month's end was not a date.** Typed 2023-01-30 and filled down, it went on as
   text ending in a number: 2023-01-31, then "2023-01-32", "2023-01-33", "2023-01-34", as text.
   A date in the middle of a month happened to work the same way.
@@ -626,6 +6255,7 @@ plain word as controls.
 **Found** in passing in R163: the fixture's text "£1,234.50" came in as the number 1234.5. Import
 kept a file's text as text only when it was made of digits and `$.,%()-` alone, and let the rest
 through to be read as typed input. A probe of 22 texts, then the fixture ("R164 text before"):
+
 - **£1,234.50, €99 and ¥500 became numbers,** and so did codes such as **1e5 and 2E3** (100000,
   2000). ISTEXT said FALSE for each; COUNT over nine text cells was 5 (Excel: 0), and their SUM
   was over 100,000 (Excel: 0).
@@ -651,6 +6281,7 @@ value, its format, and what Excel shows.
 
 **Found.** A probe of 54 formats against Excel's documented output, then the fixture imported
 ("R163 formats before"):
+
 - **Durations.** `[h]:mm` on 1.5 days showed `:12` where Excel shows 36:00; `[h]:mm:ss` showed
   `:00:00`, `[mm]:ss` `:00`, `[ss]` nothing, and `[h]" hours"` just "hours". The brackets were
   dropped with every other bracket. Excel's own built-in format 46 is `[h]:mm:ss`, so a timesheet
@@ -668,6 +6299,7 @@ value, its format, and what Excel shows.
   (`_("$"* #,##0.00_);…`) as `_($* 1,234.50_)`. Both are among the formats Excel files use most.
 
 **The fix** (`lib/sheets/format.ts`).
+
 - **Durations:** `[h]`, `[m]`, `[s]` (and `[hh]`, `[mm]`, `[ss]`) count whole hours, minutes or
   seconds from zero. `isDateFormat` says no to them, so a duration stays a number wherever a date
   is treated as a date (a saved column, a chart's labels, a query variable).
@@ -696,6 +6328,7 @@ Excel's SINGLE. Fixture: `tests/fixtures/sheets/openpyxl-legacy.xlsx`, from
 expects one value and meets a range, Excel takes the value in the formula's own row, and Excel 365
 shows an `@` there. Sheets read every formula as a dynamic one. Importing the fixture ("R162 legacy
 before"), where Excel shows D2:D4 as 10, 10, 12:
+
 - **`=Price*Qty`, names over whole columns,** showed `#SPILL!` in D2 and D3 and `#VALUE!` in D4. D4
   spilled the whole column's products down to row 8, below the data, where the file has nothing.
   `=B:B*C:C` did the same.
@@ -708,6 +6341,7 @@ before"), where Excel shows D2:D4 as 10, 10, 12:
 SUMPRODUCT, LOOKUP, `=SUM(B2:B4)` and an array formula were already right, and stay so.
 
 **The fix.**
+
 - **`@` in formulas.** The lexer and parser read it, and the evaluator takes one value: from a
   column, the cell in the formula's row; from a row, the one in its column; from a block, the cell
   in both; outside, `#VALUE!`; from an array, its first value. A whole column holds every row.
@@ -742,6 +6376,7 @@ formula's own row, and shows `@` there. The [libxlsxwriter
 documentation](https://libxlsxwriter.github.io/working_with_formulas.html) describes it: written
 plainly, `LEN(A1:A3)` gives one value, and to work on the whole range a formula has to be written
 as an array or a dynamic array formula. A download from Sheets marked nothing.
+
 - **A formula that works over a range went out plain.** In "R161 array formulas", B5
   `=SUM(LEN(A1:A3))` is 14 in Sheets. The file held `<f>SUM(LEN(A1:A3))</f>`, and the workbook
   tells Excel to recalculate when it opens (`fullCalcOnLoad`). Excel then computes
@@ -757,6 +6392,7 @@ as an array or a dynamic array formula. A download from Sheets marked nothing.
 older Excel took one: an operator on a range, or a function of single values given one (the
 evaluator's `onArray`, and `WorkbookEngine.arrayFormula`). A whole column counts as many values
 even when one row is used.
+
 - **The download** writes such a formula, and every one that spills, as an array formula over the
   cells it fills: one cell for `=SUM(LEN(A1:A3))`, D1:D2 for the FILTER.
 - **Excel's mark** (`lib/sheets/xlsxDynamic.ts`) adds `cm="1"` to the cell, and the workbook's
@@ -782,6 +6418,7 @@ control survived. Fixture: `tests/fixtures/sheets/openpyxl-hidden.xlsx`, from
 **Found.** Excel keeps helper sheets hidden, and a macro-built workbook keeps some very hidden.
 The fixture's Summary reads a rate from a hidden sheet (`=C2*Rates!$B$2`) and a key from a very
 hidden one (`=Keys!A1`).
+
 - **The very hidden sheet was dropped.** The import dialog listed Summary and Rates only. In the
   workbook, B7 showed `#REF!` ("No sheet "Keys""), and a download kept `=Keys!A1` with no Keys
   sheet in the file, so Excel shows `#REF!` too.
@@ -792,6 +6429,7 @@ hidden one (`=Keys!A1`).
 
 **The fix.** A grid sheet has a `hiddenSheet` flag, saved with it, and undone with Ctrl+Z like any
 other change to the sheet.
+
 - **Excel files.** A hidden or very hidden sheet comes in hidden, with its cells, so formulas that
   read it compute. A download writes it hidden, and points Excel at the first sheet showing; if
   every sheet were hidden, the first is written showing.
@@ -832,6 +6470,7 @@ their number formats could not be pasted alone. Paste Special is one of Excel's 
 
 **The fix.** **Paste special…** (Ctrl+Alt+V, or the cell's menu), over cells copied in the workbook,
 worked out as cell edits in `lib/sheets/pasteSpecial.ts` and applied as one undo step.
+
 - **What to paste.** All, Formulas, Values, Values and number formats, Formats, or Notes.
 - **Operation.** Add, Subtract, Multiply or Divide a copied number into the target. A formula
   target is wrapped (`=(LEN(B2))+16`) and a blank one counts as 0. Text on either side leaves the
@@ -860,6 +6499,7 @@ only the Audit Log did (a model call on `openrouter/google/gemini-3-flash-previe
 other AI tools (BI) let each person pick from their connected providers.
 
 **The fix.**
+
 - **The picker.** A **Model** row under the panel's title, with the platform's picker
   (BiModelSelect): the person's connected providers and their models, IAM model rules applied.
   **Default · openrouter/google/gemini-3-flash-preview** names the admin's model; it is read
@@ -891,6 +6531,7 @@ needed a column of formulas per piece. Text to Columns is one of Excel's most us
 the queue listed it after R153.
 
 **The fix.** **Data → Text to columns…**, over one column's cells.
+
 - **Split at.** Tab, semicolon, comma, space and any other one character. Treat several in a row
   as one.
 - **Quotes.** Text in double quotes (or single, or none) stays whole; a doubled quote is one quote.
@@ -912,6 +6553,7 @@ survived.
 #### R156 · S2 · A sort left a merged cell behind, joining two other records
 
 **Found, while proving the missing Custom Sort.**
+
 - **The gap.** The Data tab sorted by the active column only, so a list could not be ordered by city
   and then by name. Excel's Data → Sort takes several levels.
 - **The bug.** In "R153 contacts", C2:C3 was merged, then Data → Sort Z to A was pressed on A2. The
@@ -920,6 +6562,7 @@ survived.
 - **Excel.** It refuses ("To do this, all the merged cells need to be the same size").
 
 **The fix.**
+
 - **Data → Sort…**, Excel's Custom Sort. Levels (up to 8), each on a column and A to Z or Z to A.
   Add level takes the next unused column; levels move up and down and are deleted. A column in
   two levels is refused. Headers are guessed, and taken for a filter's range; a filter's range
@@ -942,6 +6585,7 @@ another region, someone who could edit the sheet had to rewrite its SQL. A viewe
 at all.
 
 **The fix.** `{{Name}}` is the value of the workbook name Name.
+
 - **Binding.** The value is bound on the server as a literal: text quoted, with its quotes
   doubled; numbers; TRUE and FALSE; NULL. A name over several cells is a list for IN, and a date
   cell goes as its date. Row Zero's `'{{name}}'` reads the same. The template is checked, bound,
@@ -966,6 +6610,7 @@ Tests: `tests/unit/sheetsQuerySheets.test.ts` (20), 7 of them on DuckDB. The mut
 
 **Found.** Asked whether Sheets does what Row Zero's connected tables do (query a source and fill
 a sheet), a research pass and the UI answered: in part.
+
 - **What was there.** A table sheet could open a lakehouse table, or copy a connection's table or
   query into a new lakehouse table, with a manual Refresh from source.
 - **What was missing.** Add a table sheet's Lakehouse tab listed 54 tables and had no query. The
@@ -975,6 +6620,7 @@ a sheet), a research pass and the UI answered: in part.
   materialized view) before a sheet could show it.
 
 **The fix.** A table sheet's source can be a query: **Lakehouse query** in Add a table sheet.
+
 - **Writing it.** The SQL, the tables you can read (a click puts one in), and Preview (the first
   50 rows).
 - **What it may be.** One SELECT or WITH, checked by the same guard as the local SQL engines, with
@@ -1007,6 +6653,7 @@ UNIQUE shows the distinct rows somewhere else; it does not clean the list. Remov
 of Excel's most used Data tools.
 
 **The fix.** **Data → Remove duplicates…**, over the selection or the data around the active cell.
+
 - **The dialog.** Every column is checked, with Select all and Unselect all. The header box is
   ticked when the first row is all text, and a column is named by its header.
 - **What repeats.** A row repeats when every checked column shows what an earlier row's shows,
@@ -1042,6 +6689,7 @@ download wrote none, and there was no way to write one. A shared budget or repor
 figures in notes.
 
 **The fix.**
+
 - **Reading.** Notes are read from the package directly, whatever its layout: Excel's notes, and
   Excel 365's threaded comments (the replies after the first). The author leads the text, as Excel
   shows it ("Asha:" on its own line). The file library no longer sees the comment parts, so a
@@ -1086,6 +6734,7 @@ element on top at the column-header band was a chart, not the header. Charts are
 body, and so were the column headers; the later one in the page won.
 
 **The fix.**
+
 - **The panes.** The grid draws frozen rows, frozen columns and their corner as sticky panes over
   the body. Each cell is drawn once, in the pane that holds it, and each pane draws its own part of
   the selection, the fill handle, the editor and the overlays: filter buttons, the list button,
@@ -1118,6 +6767,7 @@ reach SO-10200 in row 201: it is not in the page until scrolled to. Excel's Find
 among its most used commands; a workbook of any size had no way to look for a value.
 
 **The fix.** Find and Replace as Excel's:
+
 - **Opening it.** Ctrl+F, Ctrl+H, or Home → Find opens a panel over the grid. The grid stays
   usable while it is open.
 - **Finding.** Find Next and Find Previous go on from the active cell and wrap round. Find All
@@ -1132,6 +6782,7 @@ among its most used commands; a workbook of any size had no way to look for a va
 `lib/sheets/find.ts` has the pattern and the search, and `FindPanel.tsx` the panel.
 
 **Found while driving it:**
+
 - **The list could overflow.** At 715 pixels high, Find All's list ran past the grid, over the
   sheet tabs. The panel now keeps within the grid, and the list scrolls inside it.
 - **The panel forgot the last search.** Closed and opened again, it came back empty, where
@@ -1154,6 +6805,7 @@ with room. On a quiet rerun the mutation run caught 9 of 9, and the control surv
 **Found.** A validation list and a conditional format hold formulas: a list's source
 (`=Sheet2!$A$1:$A$3`) and a rule's formula. Inserting and deleting rows and columns rewrote them.
 Three other changes rewrote only the cells' formulas.
+
 - **A sheet renamed.** B2's list over `Sheet2!$A$1:$A$3` was checked after renaming Sheet2 to
   Regions. `=COUNTA(Sheet2!A1:A3)` beside it followed and kept showing 3. The list said "The list
   is empty.", and typing North, a listed value, was refused: "Not allowed here — Choose one of:".
@@ -1179,14 +6831,14 @@ An Excel model built on names (`=SUM(Revenue)*TaxRate`) imported looking right, 
 changed. Sheets had no names at all.
 
 Tests: `tests/unit/sheetsDefinedNames.test.ts` (37), over the openpyxl fixture
-`tests/fixtures/sheets/openpyxl-names.xlsx` and its generator. The mutation run first caught 24 of
-25. The miss was a test that pinned only part of the server's viewer filter: a mutant that let
+`tests/fixtures/sheets/openpyxl-names.xlsx` and its generator. The mutation run first caught 24 of 25. The miss was a test that pinned only part of the server's viewer filter: a mutant that let
 every name through still matched it. With the whole call pinned, it caught that one too. The
 control survived both runs.
 
 #### R148 · S2 · A workbook's names were dropped on import, and the formulas using them froze
 
 **Found.** A file with six names was imported through the dialog. The names were:
+
 - a range with a comment;
 - a cell;
 - a value;
@@ -1197,6 +6849,7 @@ control survived both runs.
 Nine formulas used them. The dialog did not mention the names. It said 8 formulas were "kept at
 Excel's value" because they use "a function Sheets does not compute", which was not true. On the
 sheet:
+
 - every formula over a name showed Excel's saved answer, with a hover saying it "refers to
   something outside this workbook";
 - changing B2 from 10 to 100 moved `=SUM(B2:B4)` to 150, and left `=SUM(Revenue)` at 60,
@@ -1205,6 +6858,7 @@ sheet:
 Typed, a formula with a name showed `#NAME?`, and there was no way to define a name.
 
 **The fix.**
+
 - **Storage.** Names are the workbook's: `sheet_workbooks.names`. Each version keeps them, and
   restoring a version restores them (migration `20260929000000_sheets_defined_names.sql`).
 - **Computing.**
@@ -1219,6 +6873,7 @@ Typed, a formula with a name showed `#NAME?`, and there was no way to define a n
   - names over several areas.
 
   A formula over a name it keeps computes; one over a name it left out keeps Excel's value.
+
 - **Export.** The download writes the names back, with their comments, the file's sheet names and
   its function prefixes.
 - **The Name box** goes to a name, and names the selection when given a new one, as Excel's does.
@@ -1234,6 +6889,7 @@ Typed, a formula with a name showed `#NAME?`, and there was no way to define a n
   table sheet it leaves out.
 
 Two smaller things came with it:
+
 - **Imported LET formulas kept a saved value they never used.** `computable` did not know LET's own
   names, so the import kept Excel's value for every formula with LET. It knows them now.
 - **The viewer filter's first version was wrong.** It hid a name unless every sheet the name reads
@@ -1253,6 +6909,7 @@ an Excel file, the same formulas show the value Excel last saved; typed, they fa
 
 Sheets now has 240 functions. `tests/unit/sheetsFunctions.test.ts` (14) checks each new one against
 the answer Excel's documentation gives. It also pins two invariants:
+
 - every name listed for formula.js registers;
 - every function the lakehouse computes over a table sheet also exists on a grid.
 
@@ -1267,6 +6924,7 @@ uses either shows the value Excel saved.
 skipped any name formula.js did not export as a function. formula.js exports the legacy statistics
 names as groups: STDEV holds STDEV.S and STDEV.P, and RANK holds RANK.EQ and RANK.AVG. So the
 following were quietly never there:
+
 - STDEV, VAR, PERCENTILE, QUARTILE, RANK, MODE;
 - FORECAST.LINEAR, which formula.js lacks altogether.
 
@@ -1274,6 +6932,7 @@ The lakehouse does compute STDEV, VAR and RANK over a table sheet, so the same f
 table and showed #NAME? on a grid.
 
 **The rest, now there:**
+
 - SUBTOTAL, with Excel's rules:
   - it leaves out rows a filter hides, and with codes 101–111 rows hidden by hand too;
   - it skips cells that are themselves SUBTOTAL formulas;
@@ -1286,6 +6945,7 @@ table and showed #NAME? on a grid.
 
 **Where formula.js was wrong, the function is written here.** formula.js was tried first for each.
 Five of its answers differed from Excel's, and those five are native:
+
 - LOOKUP's array form answered with the value found, not the one beside it.
 - TIME did not wrap past 24 hours.
 - TIMEVALUE could not read "6:30 PM".
@@ -1293,6 +6953,7 @@ Five of its answers differed from Excel's, and those five are native:
 - FREQUENCY answered in a row, where Excel answers in a column.
 
 **The fix.**
+
 - The legacy names are aliases of the functions they became (`SAME_AS`).
 - The engine tells formulas whether a row is hidden, and by what, and whether a cell holds a
   formula.
@@ -1302,14 +6963,14 @@ Five of its answers differed from Excel's, and those five are native:
 **Driven.** Six formulas were typed into the Budget sample's Scenarios sheet before and after the
 deploy. E2:E4 hold 12,000, 15,000 and 9,000.
 
-| Cell | Formula | Before | After (Excel) |
-| --- | --- | --- | --- |
-| K1 | `=STDEV(E2:E4)` | #NAME? | 3,000 |
-| K2 | `=SUBTOTAL(9,E2:E4)` | #NAME? | 36,000 |
-| K3 | `=LET(x,E2,y,E3,x+y)` | #NAME? | 27,000 |
-| K4 | `=TEXTAFTER("a-b-c","-",-1)` | #NAME? | c |
-| K5 | `=INDIRECT("E"&3)` | #NAME? | 15,000 |
-| K6 | `=RANK(E4,E2:E4)` | #NAME? | 3 |
+| Cell | Formula                      | Before | After (Excel) |
+| ---- | ---------------------------- | ------ | ------------- |
+| K1   | `=STDEV(E2:E4)`              | #NAME? | 3,000         |
+| K2   | `=SUBTOTAL(9,E2:E4)`         | #NAME? | 36,000        |
+| K3   | `=LET(x,E2,y,E3,x+y)`        | #NAME? | 27,000        |
+| K4   | `=TEXTAFTER("a-b-c","-",-1)` | #NAME? | c             |
+| K5   | `=INDIRECT("E"&3)`           | #NAME? | 15,000        |
+| K6   | `=RANK(E4,E2:E4)`            | #NAME? | 3             |
 
 The Scenarios filter was then turned on (Ctrl+Shift+L) and "Worst" unticked. K2 went to 27,000, and
 STDEV in K1 stayed 3,000, as Excel's does. Clearing the filter brought K2 back to 36,000.
@@ -1327,10 +6988,12 @@ survived. All 22 Sheets suites pass, and the sample workbooks' figures did not m
 
 `ISBLANK`, `ISNUMBER`, `ISTEXT`, `ISERROR`, `NOT`, the rounding and text functions, and the date
 parts all took an array's first element. So a whole family of idioms gave a number with no error:
+
 - `SUMPRODUCT(--ISNUMBER(SEARCH("an",A1:A5)))` gave 0 where Excel gives 1.
 - `SUMPRODUCT(--ISBLANK(A1:A5))` gave 0 where Excel gives 2.
 
 The one-value argument of functions that take ranges had the same problem:
+
 - `MATCH`, `XMATCH`, `XLOOKUP`, `VLOOKUP` and `HLOOKUP`'s lookup value;
 - the criteria of `COUNTIF(S)`, `SUMIF(S)`, `AVERAGEIF(S)`, `MINIFS` and `MAXIFS`.
 
@@ -1345,6 +7008,7 @@ INDEX's first, TEXTJOIN's, N's.
 
 With a range for its condition, IF answered each element with the FIRST value of the branch it
 chose, not the value in the same place:
+
 - `MAX(IF(A1:A3<>"banana",B1:B3))` gave 10 where Excel gives 30.
 - `TEXTJOIN(",",TRUE,IF(B1:B3>15,A1:A3,""))` gave "apple,apple" where Excel gives "banana,cherry".
 
@@ -1363,7 +7027,8 @@ per reference would make every recalculation slow. What was missing is that the 
 nothing. Each of those blank rows goes through the same arithmetic.
 
 **The fix** (`src/lib/sheets/formula/arrays.ts`):
-- **The tail.** A whole column now carries its blank rest as a *tail*: how many rows, and one line
+
+- **The tail.** A whole column now carries its blank rest as a _tail_: how many rows, and one line
   holding what each of them holds.
 - **Carrying it.** Operators, IF, the lifted functions and INDEX's whole-column slices carry the
   tail along, updating that one line.
@@ -1377,13 +7042,13 @@ nothing. Each of those blank rows goes through the same arithmetic.
 **Driven.** Five formulas were typed in the Budget sample's Scenarios sheet (A2:A4 Base, Best,
 Worst; E2:E4 12,000, 15,000, 9,000):
 
-| Formula | Before | After (Excel) |
-| --- | --- | --- |
-| `=SUMPRODUCT(--ISNUMBER(SEARCH("st",A2:A4)))` (R144) | 0 | 2 |
-| `=MIN(IF(A2:A4<>"Base",E2:E4))` (R145) | 12,000 | 9,000 |
-| `=SUMPRODUCT(--(A:A=""))` (R146) | 1 | 1,048,572 |
-| `=MATCH(TRUE,INDEX(A:A="",0),0)` (R146) | 5 | 5 |
-| `=SUM(COUNTIF(A:A,{"Best","Worst"}))` (R144) | 1 | 2 |
+| Formula                                              | Before | After (Excel) |
+| ---------------------------------------------------- | ------ | ------------- |
+| `=SUMPRODUCT(--ISNUMBER(SEARCH("st",A2:A4)))` (R144) | 0      | 2             |
+| `=MIN(IF(A2:A4<>"Base",E2:E4))` (R145)               | 12,000 | 9,000         |
+| `=SUMPRODUCT(--(A:A=""))` (R146)                     | 1      | 1,048,572     |
+| `=MATCH(TRUE,INDEX(A:A="",0),0)` (R146)              | 5      | 5             |
+| `=SUM(COUNTIF(A:A,{"Best","Worst"}))` (R144)         | 1      | 2             |
 
 The Sales sample's Dashboard read the same figures before and after.
 
@@ -1391,6 +7056,7 @@ The Sales sample's Dashboard read the same figures before and after.
 
 Three sample workbooks now ship in `public/samples/sheets/` and open from **Samples to explore** on
 the Sheets page (see [Sheets → Sample workbooks](./SHEETS.md#sample-workbooks)):
+
 - Sales performance 2026;
 - Project tracker;
 - Budget and cash flow.
@@ -1400,6 +7066,7 @@ and Excel writer (`npm run sheets:samples`), and refuses to write a file in whic
 A sample opens through the same import as any Excel file, so it becomes the person's own workbook.
 
 **How they were checked.** Nothing about a sample was taken from the app itself:
+
 - openpyxl opened each file.
 - Python recomputed 41 figures from the files' own rows: revenue, margin and order counts; totals
   by month, region, category and rep; task counts and hours; the budget model under every scenario.
@@ -1416,21 +7083,23 @@ survived. The layout check (R143) failed on the files as they were before the fi
 The engine reads a whole column (`A:A`) only as far as the sheet is used, which is right for
 SUM. But the functions that see the blank rest took the used part for the whole:
 
-| Formula | Excel | Before |
-| --- | --- | --- |
-| `ROWS(A:A)` | 1,048,576 | 3 |
-| `COLUMNS(1:1)` | 16,384 | 2 |
-| `COUNTBLANK(A:A)` | 1,048,573 | 0 |
-| `COUNTIF(A:A,"<>x")` | 1,048,575 | 2 |
-| `INDEX(A:A,100)` | an empty cell | #REF! |
-| `SUMIFS(T!B:B,A:A,"a")`, two sheets used to different depths | 5 | #VALUE! (ranges differ in size) |
+| Formula                                                      | Excel         | Before                          |
+| ------------------------------------------------------------ | ------------- | ------------------------------- |
+| `ROWS(A:A)`                                                  | 1,048,576     | 3                               |
+| `COLUMNS(1:1)`                                               | 16,384        | 2                               |
+| `COUNTBLANK(A:A)`                                            | 1,048,573     | 0                               |
+| `COUNTIF(A:A,"<>x")`                                         | 1,048,575     | 2                               |
+| `INDEX(A:A,100)`                                             | an empty cell | #REF!                           |
+| `SUMIFS(T!B:B,A:A,"a")`, two sheets used to different depths | 5             | #VALUE! (ranges differ in size) |
 
 **How it was found.** The sample's order count, `=COUNTIFS(Orders!L:L,"<>Returned")`, gave 229
 where Python counted 228 orders. The formula was wrong too:
+
 - In the app, it counted the header.
 - In Excel, it would have counted every blank row as well, over a million.
 
 **The fix.**
+
 - `ROWS`, `COLUMNS`, `COUNTBLANK` and `COUNTIF(S)` add the blank tail of a whole range. COUNTIFS
   adds it only when every criterion takes a blank.
 - `INDEX` past the used rows gives an empty cell.
@@ -1457,6 +7126,7 @@ dates is the category axis, while plain numbers, or a mix, stay a series as in E
 charts, the chart dialog and the .xlsx writer all pass the formats.
 
 **After:**
+
 - The workbook imported before the fix now draws four regions over Jan to Dec. The layout is
   worked out as the chart is drawn, so no stored workbook needs changing.
 - In the regenerated file, the chart has four series over `Dashboard!$A$9:$A$20`.
@@ -1482,6 +7152,7 @@ a formula a blank stays blank (`ISBLANK(A500)` is TRUE, `COUNTA` skips it), and 
   does the same with a file like that; the cells needed the format.
 
 **The fix.**
+
 - The generator places the charts right of the data, and below the list by its computed length.
 - The spill cells carry the dollar format.
 - The samples test fails if any chart covers a filled or spilled cell. It failed on the old files
@@ -1495,6 +7166,7 @@ the workbook for reads, which the browser answers from the workbook as the perso
 ends with an answer and proposals the person applies, each one undoable.
 
 The decisions:
+
 - **The browser holds the workbook, so the browser runs the reads.** A viewer's share has already
   cut the sheets and rows the browser holds, so the model can read only what the person can.
   Nothing on the server re-reads the workbook for the model.
@@ -1508,6 +7180,7 @@ The decisions:
   the answer's proposals are checked against the workbook before they are shown.
 
 Tests: `tests/unit/sheetsAssist.test.ts` (41):
+
 - the protocol;
 - the reads, against a real engine;
 - the description the model starts from;
@@ -1523,6 +7196,7 @@ The model's answers read "I've added a Revenue column…" while the proposals sa
 Someone who took the answer at its word would close the panel with nothing done.
 
 **The fix, in two parts:**
+
 - The prompt says nothing changes until a proposal is applied, and tells the model never to say
   it changed anything.
 - Whatever the model says, the panel now puts "Nothing has changed yet. Apply what you want (each
@@ -1538,6 +7212,7 @@ Asked to chart revenue by region without the units column, the model proposed a 
 A prompt rule alone did not stop it: the next answer proposed the same two blocks.
 
 **The fix:**
+
 - `oneRange` names two blocks as two ("is 2 separate blocks of cells; this takes one block, like
   A1:C4").
 - `proposalProblems` checks every proposal of an answer against the workbook before it is
@@ -1547,6 +7222,7 @@ A prompt rule alone did not stop it: the next answer proposed the same two block
   asked again".
 
 **After:**
+
 - The same question got the columns side by side first, as formulas (`=C2`), and a chart of
   E1:F4: West 44.5, East 51, North 47.25.
 - A highlight asked for on a table sheet was sent back. The second answer said a table sheet
@@ -1561,6 +7237,7 @@ and showed #VALUE!. A table sheet's rows never come into a grid, by design (see
 had never been told that.
 
 **The fix, in two parts:**
+
 - The prompt lists the functions the lakehouse computes over a table. The list is built from the
   evaluator's own set (`TABLE_PUSHDOWN`), so the two cannot drift. It also says FILTER, SORT,
   UNIQUE and a bare column show #VALUE!, and points to the table sheet's filter instead.
@@ -1581,6 +7258,7 @@ After explaining `=VLOOKUP("Dee",C2:F9,2,FALSE)` in Sales!H2, the answer offered
 done nothing.
 
 **The fix:**
+
 - The proposal check sends back an edit that leaves every cell as it is.
 - The explain hint tells the model never to propose the formula the cell already holds.
 
@@ -1595,6 +7273,7 @@ around them. The parser needed an array, so every answer was lost. The server st
 **Fill 5 rows** would have written the blanks and closed.
 
 **The fix:**
+
 - The answers are read wherever they stand: an array, or `{"i", "o"}` objects on their own.
 - An answer with nothing readable in it is an error that says nothing was written.
 
@@ -1606,6 +7285,7 @@ Found reading R135's response: the call cost $0.00028 on the trace, but the serv
 returned no cost. `readChatStream` in `internalChat.server.ts` looked for `{"type":"cost"}` data
 frames, which the channel never sends. It also stopped at `[DONE]`, and the channel's `event: cost`
 frame comes after it. So every caller got a null cost:
+
 - AI functions in SQL (their stats `cost_usd`);
 - document OCR;
 - Sheets.
@@ -1617,6 +7297,7 @@ was the figure shown to the person.
 (`src/lib/chatStream.ts`).
 
 **After:**
+
 - The fill's response carries `cost: 0.0002315`.
 - The assistant shows "Cost $0.0017" under an answer.
 - The Lakehouse's AI-functions badge gives a cost for an `ai_sentiment` query.
@@ -1668,6 +7349,7 @@ asks it. `tests/unit/sheetsSharing.test.ts` keeps that true: a new function that
 listed with a reason fails it.
 
 The decisions:
+
 - **Table sheets read the lakehouse as the reader.** The AI Analyst already works this way. Reading
   as the owner would have let a share skip the lakehouse's own row filters and column masks.
 - **Where a viewer's rows are cut.**
@@ -1683,6 +7365,7 @@ The decisions:
   do it: a service-role write has no actor, and a share row has no owner column.
 
 Tests:
+
 - `tests/unit/sheetsSharing.test.ts` (39): how shares combine; grid rows; the restriction run on
   DuckDB through pages, value lists, grid formulas, pivots and lookups; the share checks; who may
   do what, on a fake database; and the sweep of every function.
@@ -1693,6 +7376,7 @@ Tests:
 The engine computes every formula as it is built. It asks the page's resolver whether a name is a
 table sheet, and the resolver answered from the page's list of sheets, which was filled only after
 the engine was built. So on every opening:
+
 - `=COUNTA(Orders[region])` read **1** (the one error the unresolved name made, counted);
 - `=SUM(Orders[revenue])` read **#VALUE!**;
 - both stayed that way until the cell was typed again.
@@ -1709,6 +7393,7 @@ previous load's list of sheets.
 #VALUE!.
 
 **After** (hot-deployed):
+
 - A fresh load reads 108 and 51,749.84.
 - Viewed as the share (EMEA only) it reads 36 and 15,524.94. The Lakehouse gives the same for
   `region = 'EMEA'`.
@@ -1751,6 +7436,7 @@ Ownership is read live from the sheets (`sheet_tabs.table_config.origin` of
 `upload` or `warehouse`). Deleting the sheet frees the table; restoring a
 version holds it again. Every writer asks `sheetOwnedRefusal`
 (`src/utils/sheets/owned.server.ts`) first:
+
 - statements through `runLakehouseStatement` (the SQL editor, Insert row,
   Drop, workflow SQL steps, feature-view training sets);
 - dropping a schema;
@@ -1781,6 +7467,7 @@ wrote (a daily schedule), whatever is at the name now. A model stored as a
 view runs `DROP TABLE IF EXISTS` on the name first.
 
 **Driven, before** (builds without the fix):
+
 - **Model.** `later_rows` (`SELECT 1 AS model_col`, schema `r126_held`) was
   saved while the name was free. `later_rows.csv` (3 rows, `id, label`) was
   then uploaded to `r126_held.later_rows` as the sheet LaterRows. **Build this
@@ -1795,6 +7482,7 @@ view runs `DROP TABLE IF EXISTS` on the name first.
   its `label` column.
 
 **After** (hot-deployed):
+
 - **Model.** The build fails "1 failed, 0 skipped, 0 built" with the Sheets
   message, and the Builds tab records it. With the model changed to
   `SELECT 2`, a second build is refused too, and the table still reads 1.
@@ -1833,6 +7521,7 @@ UPDATE runs. Real uploads (`analytics.orders_jan_feb_2024`,
 `r126_held.held_rows`) are still held.
 
 **The fix**, two layers:
+
 - **The save.** It keeps the stored `source` and `origin`. Only the server
   paths that make a sheet set them.
 - **The claim.** It counts only when the sheet's owner owns the table's
@@ -1859,6 +7548,7 @@ Sheets guard.
 `CREATE TABLE lake.ice_sales.r126_probe AS SELECT 1 AS x` ran and made the
 table; it was dropped again, then the schema.
 **After** (hot-deployed, `lake` made again):
+
 - `CREATE TABLE lake.ice_sales.r126_probe AS SELECT 1 AS x` is refused as a
   read-only Iceberg mount.
 - `UPDATE lake.analytics.orders_jan_feb_2024 …` gets the Sheets refusal.
@@ -1885,6 +7575,7 @@ rebuilt the editor from the saved copy each time. A sweep of every hook
 keyed on the token found the same shape in 21 more places.
 
 The worst were:
+
 - **Three editors: ETL pipelines, BI reports and workflows.** Each silently
   reverted unsaved steps, blocks and names. The ETL editor's Save button stayed
   enabled, so the next save wrote the older copy over the work.
@@ -1895,6 +7586,7 @@ The worst were:
   The key stayed valid but could never be shown again.
 
 The rest:
+
 - the IAM model-rules draft;
 - the audit retention box;
 - the lakehouse layout dialog;
@@ -1908,6 +7600,7 @@ The rest:
 
 Two needed more than the token taken out, because the refresh re-renders the
 page and they were also keyed on something new on every render:
+
 - **The table sheet's loader was keyed on the workbook object**, which is new
   on every render of the page around it. Any save finishing started the sheet
   over as well.
@@ -1923,6 +7616,7 @@ user is editing? The 93 still keyed on the token after the fix only re-read
 what the user sees: lists, options for a picker, a status.
 
 **Driven, before and after**:
+
 - Forcing a refresh: each case set the stored session to expire in five
   seconds and signalled the tab visible; supabase-js refreshed within 2–30 s.
 - Driven in both builds (unsaved edits, then the refresh), 14 in all:
@@ -1956,6 +7650,7 @@ and sign-out. The table sheet reads the workbook through a ref too, and the
 explore dialog keys its query on what the drill path and cross-filter say.
 
 **Tests.** `tests/unit/tokenReloadSweep.test.ts`:
+
 - It pins each of the 26 fixed dependency lists.
 - It ratchets the 93 reviewed ones per file, so a new hook keyed on the token
   fails until someone has read it.
@@ -2260,8 +7955,8 @@ on the same endpoint:
   no authentication) → "Registered r111_rest: 2 namespaces". Mount `r107`
   as `ice_r111` → "Mounted 2 tables".
 - Query: `CREATE TABLE ice_r111.r111_written AS SELECT 1 AS id, 'written
-  into a read-only mount' AS note` succeeded. `SELECT id, note FROM
-  ice_r111.r111_written` read back `1 · written into a read-only mount`.
+into a read-only mount' AS note` succeeded. `SELECT id, note FROM
+ice_r111.r111_written` read back `1 · written into a read-only mount`.
 - Remove `r111_rest` → the confirm "Remove "r111_rest"? Its 1 mounted
   schema(s) go with it. Tables in the catalog itself are untouched." →
   Remove. The same SELECT then answered "No access to schema "ice_r111"".
@@ -2284,7 +7979,7 @@ first: `r111b_rest`, mounting `r107` as `ice_r111b`, into which
 refusal:
 
 - Query: `CREATE TABLE ice_r111b.r111_after …` and `INSERT INTO
-  ice_r111b.r111b_kept …` each answered "Schema "ice_r111b" is a
+ice_r111b.r111b_kept …` each answered "Schema "ice_r111b" is a
   read-only Iceberg mount — query it, or write to a regular schema.
   Publish to Iceberg puts a table into the catalog." Reading the mount
   still worked.
@@ -2295,11 +7990,11 @@ refusal:
 - Remove `r111b_rest` → the same confirm → Remove → "Not removed:
   ice_r111b.r111b_kept is a table of your own inside a mounted schema,
   and would be dropped with it. Copy it to a regular schema first (CREATE
-  TABLE analytics.… AS SELECT * FROM ice_r111b.r111b_kept), then drop the
+  TABLE analytics.… AS SELECT \* FROM ice_r111b.r111b_kept), then drop the
   mounted schema in the explorer, which says every table in it goes." The
   catalog stayed, and the table still read its row.
 - That way out was followed. `CREATE TABLE analytics.r111b_kept_copy AS
-  SELECT * FROM ice_r111b.r111b_kept` read back the row. The explorer
+SELECT * FROM ice_r111b.r111b_kept` read back the row. The explorer
   listed `ice_r111b (3)` with `r111b_kept · 817 B` beside the two views.
   "Drop schema "ice_r111b"? Every table in it is dropped too." → "Dropped
   ice_r111b".
@@ -2372,7 +8067,7 @@ was refused from the browser with a 503, and Open was pressed on "R109
 chat echo" (`d10c86c5`):
 
 - postgrest-js tried four times, and then the canvas made a `POST
-  swarms` (201).
+swarms` (201).
 - The URL still said `?swarm=d10c86c5-…`, but the canvas was "My First
   Swarm", 0 nodes, "Start wiring your swarm", with no toast.
 - Back in the gallery: 19 swarms. "My First Swarm" was new at the top,
@@ -2618,7 +8313,7 @@ live or has finished.
   "Review approval" and no duration.
 - The four read `Decided, not resumed`, started 1d ago, with no duration
   and no button. The two in view sit directly under `(api) · Success · 5s
-  · 3 steps` rows, the runs that hold their work.
+· 3 steps` rows, the runs that hold their work.
 - The panel's other 21 rows (7 Error, 14 Success) read as before.
 - "Review approval" on a row opened the inbox, `Pending Approvals 5`,
   paused 20h, 21h, 22h, 22h and 23h ago.
@@ -2705,18 +8400,18 @@ storage error, a policy on the source.
 namespace made for the purpose:
 
 - `CREATE TABLE analytics.r107_src AS SELECT 1 AS id, 'published' AS
-  note`, and `CREATE TABLE analytics.r107_bad AS SELECT 2 AS id, INTERVAL
-  1 DAY AS span`.
+note`, and `CREATE TABLE analytics.r107_bad AS SELECT 2 AS id, INTERVAL
+1 DAY AS span`.
 - A probe, with no drop involved: `r107_bad` → Publish to Iceberg →
   catalog `local_rest`, namespace `r107`, table `r107_probe`, Refuse →
   `Invalid Input Error: Column type INTERVAL is not a valid Iceberg Type.`
 - `r107_src` → Publish → `r107` / `r107_pub`, Refuse → `Published 1
-  row(s) to r107.r107_pub`. Publishing it again with Refuse gave `Catalog
-  Error: Table with name "r107_pub" already exists`, so the table was
+row(s) to r107.r107_pub`. Publishing it again with Refuse gave `Catalog
+Error: Table with name "r107_pub" already exists`, so the table was
   there.
 - `r107_bad` → Publish → `r107` / `r107_pub`, Replace it (drop, then
   create) → `Invalid Input Error: Column type INTERVAL is not a valid
-  Iceberg Type.`
+Iceberg Type.`
 - Iceberg → Mount a namespace → `local_rest` / `r107` as `ice_r107` →
   `Mounted 0 tables`. The published table was gone, and nothing had
   replaced it.
@@ -2755,9 +8450,9 @@ put back first:
 - `r107_bad` → Replace `r107_pub` → the INTERVAL error. The catalog's log
   shows the staging name `r107_pub__publishing_4482b342` looked up, never
   created, and nothing dropped. Mount `ice_r107_fixed` → `Mounted 2
-  tables`.
+tables`.
 - `r107_src` → Replace `r107_pub` → `Published 1 row(s) to
-  r107.r107_pub`. The catalog's log, in order: committed
+r107.r107_pub`. The catalog's log, in order: committed
   `r107_pub__publishing_81ccfb38`, dropped `r107_pub`, committed
   `r107_pub`, dropped `r107_pub__publishing_81ccfb38`.
 - Mount `ice_r107_final` → `Mounted 2 tables`. Through that mount,
@@ -2844,7 +8539,7 @@ same injected refusal:
 
 - `r106_scratch` → Delete → confirm. The one DELETE (now asking for the
   row back, `select=id`) was refused. The toast read `"r106_scratch" was
-  not deleted: R106 injected: the delete did not reach the database`. The
+not deleted: R106 injected: the delete did not reach the database`. The
   dialog stayed open, and the list still showed the dataset, which was
   now the truth.
 - With the refusal removed, the same dialog's Delete dataset gave
@@ -2898,15 +8593,15 @@ then read back `order_id · label_at · net_usd · payment_rows · status ·
 
 - A fresh `analytics.r105_keep2` (`1052 · still not a training set`) as
   the output → Build → `analytics.r105_keep2 already exists, and no
-  training set of yours wrote it. Building there would replace its rows
-  with the training set. Pick a new output table, or drop that table first
-  if replacing it is what you mean.`
+training set of yours wrote it. Building there would replace its rows
+with the training set. Pick a new output table, or drop that table first
+if replacing it is what you mean.`
 - The label table as the output → `analytics.r105_labels is the label
-  table. Building the training set there would replace the labels it is
-  built from. Pick another output table.`
+table. Building the training set there would replace the labels it is
+built from. Pick another output table.`
 - Rebuilding a training set's own output is unchanged. Write to
   `r105_keep`, which the before-drive's build wrote → `Built
-  analytics.r105_keep — 20 row(s)`.
+analytics.r105_keep — 20 row(s)`.
 - Read back: `r105_keep2` gave `still not a training set`, `r105_labels`
   gave 20 rows, and `r105_keep` gave 20.
 
@@ -2958,16 +8653,16 @@ then failed: `Referenced column "note" not found … Candidate bindings:
 
 - A fresh `analytics.r104_keep2` (`1042 · still not a prediction`) as the
   output → Predict. The dialog stayed open with `analytics.r104_keep2
-  already exists, and no prediction of yours wrote it. Scoring into it
-  would replace its rows with predictions. Pick a new output table, or drop
-  that table first if replacing it is what you mean.`
+already exists, and no prediction of yours wrote it. Scoring into it
+would replace its rows with predictions. Pick a new output table, or drop
+that table first if replacing it is what you mean.`
 - Output `revenue_facts`, the input itself, with the filter `region =
-  'EMEA'` → `analytics.revenue_facts is the table being scored. Writing the
-  predictions there would replace it with only the rows the filter keeps.
-  Pick another output table.`
+'EMEA'` → `analytics.revenue_facts is the table being scored. Writing the
+predictions there would replace it with only the rows the filter keeps.
+Pick another output table.`
 - Scoring again into its own output is unchanged. Output `r104_keep`,
   written by the before-drive's prediction, gave `Batch prediction
-  started`, then `succeeded · 836 · 60s`.
+started`, then `succeeded · 836 · 60s`.
 - Read back: `r104_keep2` gave `still not a prediction`,
   `analytics.revenue_facts` kept 836 rows, and `r104_keep` held 836.
 
@@ -3019,11 +8714,11 @@ gone, dropped by the build, with a view in their place.
 **After the rebuild** (container `cf409cf0925a`):
 
 - `CREATE TABLE analytics.r103_keep2 AS SELECT 1032 AS id, 'still no model
-  built this' AS note`. Then New model `r103_keep2`, `analytics`, View,
+built this' AS note`. Then New model `r103_keep2`, `analytics`, View,
   `SELECT 1 AS x` → Create. The toast read `analytics.r103_keep2 already
-  exists, and this model did not build it. Building the model would
-  replace it (a view-stored model drops the table first). Give the model
-  another name, or drop the table first if replacing it is what you mean.`
+exists, and this model did not build it. Building the model would
+replace it (a view-stored model drops the table first). Give the model
+another name, or drop the table first if replacing it is what you mean.`
   No model was created.
 - A model rebuilding its own target is unchanged. Opening `r103_keep` and
   changing its SQL to `SELECT 2 AS x` → Save gave `Saved r103_keep`. Build
@@ -3068,7 +8763,7 @@ Lakehouse object explorer has a **New table** button. Its dialog, titled
   guard, and an existing name is refused.
 - **Import dataset** pages a platform dataset out of the store and runs
   `CREATE OR REPLACE TABLE <schema>.<name> AS SELECT * FROM
-  read_json_auto(...)` on a raw engine connection. An existing name was
+read_json_auto(...)` on a raw engine connection. An existing name was
   replaced, rows and columns, followed by "Table … ready".
 
 The same write also skipped the rest of the guard it bypasses. The page
@@ -3088,18 +8783,18 @@ gone.
 **After the rebuild** (container `820d1915bef9`):
 
 - A fresh table: `CREATE TABLE analytics.r102_keep AS SELECT 102 AS id,
-  'untouched by the import' AS note`. Then New table → Import dataset →
+'untouched by the import' AS note`. Then New table → Import dataset →
   `f1_constructor_standings` → `r102_keep` → Import. The toast read
   `analytics.r102_keep already exists. Importing would replace its rows with
-  this dataset. Pick a new name, or drop the table first if replacing it is
-  what you mean.` The dialog stayed open, and `SELECT * FROM
-  analytics.r102_keep` read back `102 · untouched by the import`.
+this dataset. Pick a new name, or drop the table first if replacing it is
+what you mean.` The dialog stayed open, and `SELECT * FROM
+analytics.r102_keep` read back `102 · untouched by the import`.
 - The same refusal for `r101_keep2`.
 - A free name still imports. The same dataset → `r102_import` → `Imported
-  10 row(s)` and `Table analytics.r102_import ready`, reading back 10 rows.
+10 row(s)` and `Table analytics.r102_import ready`, reading back 10 rows.
 - R101's refusal, now through the shared check, still holds. Save as view
   onto `r102_keep` answered `analytics.r102_keep is an existing table, not
-  a materialized view…`.
+a materialized view…`.
 
 The import now refuses an existing name before it pages a single row out
 of the store. The write itself is a plain `CREATE TABLE`, so a table
@@ -3155,12 +8850,12 @@ The dialog had said nothing about the name being taken.
 **After the rebuild** (container `91a6460a6a93`):
 
 - A second scratch table, `CREATE TABLE analytics.r101_keep2 AS SELECT 7 AS
-  id, 'still precious' AS note`, read back `7 | still precious`. Then
+id, 'still precious' AS note`, read back `7 | still precious`. Then
   `SELECT 42 AS answer` → Save as view → `analytics` / `r101_keep2` /
   `manual` → Save and build. The toast read `analytics.r101_keep2 is an
-  existing table, not a materialized view. Saving a view there would
-  replace its rows with this query's answer. Pick a new name, or drop the
-  table first if replacing it is what you mean.` The dialog stayed open,
+existing table, not a materialized view. Saving a view there would
+replace its rows with this query's answer. Pick a new name, or drop the
+table first if replacing it is what you mean.` The dialog stayed open,
   and the table read back `7 | still precious`.
 - Redefining a view that IS one still works. `SELECT 43 AS answer` → Save
   as view → `analytics` / `r101_keep`, which the before-drive had
@@ -3210,13 +8905,13 @@ showed was the wrong diagnosis for the deploy error. It is real here.
 **Driven, before the fix** (image of R99, `52e61c76e4f1`):
 
 - MCP Builder → `R99 hello` → Stop. Then Agent Swarms → `R99 MCP tool
-  call` → the MCP Tool Call node → `{"name": "r100 before"}` → Test this
+call` → the MCP Tool Call node → `{"name": "r100 before"}` → Test this
   node → Run node. After about 12.5 s it returned `{"error":"The operation
-  was aborted due to timeout"}`. The endpoint's `initialize` was answered
+was aborted due to timeout"}`. The endpoint's `initialize` was answered
   200 after 17.7 s, and the sandbox logged no DELETE.
 - MCP Builder → Stop again. Then Integrations → MCP Servers → `R99 hello`
   (`● Active`) → Refresh. After about 11 s the toast read `Probe failed:
-  The operation was aborted due to timeout`, and the card changed to
+The operation was aborted due to timeout`, and the card changed to
   `● Error`.
 
 **After the rebuild** (container `5c5895ec55d0`), the same two paths with
@@ -3303,7 +8998,7 @@ this time as `R99 MCP tool call`, with arguments `{"name": "r99 after"}`:
 
 - **With the sandbox warm**, Run node answered
   `{"jsonrpc":"2.0",…,"result":{…,"content":[{"text":"Hello, r99
-  after!","type":"text"}],"isError":false,…}}`. The sandbox logged the
+after!","type":"text"}],"isError":false,…}}`. The sandbox logged the
   whole session: `POST 200` (initialize), `202` (initialized), `POST 200`
   (the call), then `DELETE /mcp 200`. The endpoint forwards a DELETE only
   after removing its own session row. That first call in a freshly started
@@ -3390,7 +9085,7 @@ request's stream open for 90 s with a keep-alive comment every 5 s.
   spent its whole `initialize` timer waiting for a stream that already held
   the answer. `answered tools/list` followed 2 ms later. The deploy
   answered after **49.1 s** with the toast `The operation was aborted due
-  to timeout`, and the app was marked **Error** while its sandbox ran on.
+to timeout`, and the app was marked **Error** while its sandbox ran on.
 - **Test console**, with only `tools/call` held open, so Deploy succeeded
   (`Deployed — 1 tool.`). Tools → `echo` → `{ "text": "r98 before" }` →
   Call echo at 02:22:10. The sandbox logged `answered tools/call` at
@@ -3409,8 +9104,8 @@ with the text `never` gets no reply at all.
 - **Test console**, `echo` → `{ "text": "r98 after" }`: `echo: r98 after`
   in **1.26 s**, with the sandbox still holding the stream open.
 - **Test console**, `{ "text": "never" }`: the sandbox logged `stayed silent
-  on tools/call`, and after **61.0 s** the console showed `Error:
-  tools/call → no answer within 60s` with the button enabled again.
+on tools/call`, and after **61.0 s** the console showed `Error:
+tools/call → no answer within 60s` with the button enabled again.
 - **A stock FastMCP server that closes its streams** (`HTTP Test`):
   `Deployed — 2 tools.` in about 18 s, so nothing was lost for the common
   case.
@@ -5017,8 +10712,7 @@ control missed, baseline green first.
 The write-side survey's next page. Reject every `PATCH` to
 `budget_settings` and type a monthly cap of 25 over the saved 20: the cap
 reads 25, the strip reads `Month-to-date spend: $1.79 / $25.00`, and there
-is no toast. Press the page's own button: `All settings auto-saved`. Reload:
-20. A cap that was never saved was the cap on screen, and the page said so
+is no toast. Press the page's own button: `All settings auto-saved`. Reload: 20. A cap that was never saved was the cap on screen, and the page said so
 in so many words — on a page whose one job is to state what the platform
 will refuse to spend past.
 
@@ -5582,11 +11276,11 @@ behaviour-changing mutants each killed, control missed, baseline green first.
 The timeline that corrected R51's cause. A fresh load of `/data-sql`, sampled
 every two seconds, untouched:
 
-| t    | Sources panel                         | server-function calls |
-| ---- | ------------------------------------- | --------------------- |
-| 8 s  | `Local tables 0`                      | 0                     |
-| 18 s | `Local tables 33`, no `sftest` row    | **0**                 |
-| 20 s | `Local tables 26` · `sftest 7`        | 1 (made at 17.97 s)   |
+| t    | Sources panel                      | server-function calls |
+| ---- | ---------------------------------- | --------------------- |
+| 8 s  | `Local tables 0`                   | 0                     |
+| 18 s | `Local tables 33`, no `sftest` row | **0**                 |
+| 20 s | `Local tables 26` · `sftest 7`     | 1 (made at 17.97 s)   |
 
 Two wrong answers before the right one. The first is the loading state rendered
 as a count: R50 taught the panel to say `—` when the read FAILED, and nothing

@@ -1,3 +1,4 @@
+import { callerFailure, callerFailureStatus } from "@/utils/callerLookup.server";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -53,8 +54,10 @@ async function handle(request: Request, action: Action): Promise<Response> {
   const { data: auth, error: authError } = await supabaseAdmin.auth.getUser(bearer);
   const userId = auth.user?.id;
   if (authError || !userId) {
-    if (action === "open") return deniedOpen(401, "Unauthorized", null, "invalid_session");
-    return json(401, { error: "Unauthorized" });
+    const status = callerFailureStatus(authError);
+    const message = callerFailure(authError, "Unauthorized");
+    if (action === "open") return deniedOpen(status, message, null, "invalid_session");
+    return json(status, { error: message });
   }
   let assurance: { aal?: string };
   try {

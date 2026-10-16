@@ -17,7 +17,9 @@ import { getPlatformResources } from "@/utils/notebookRuntime/config.server";
 import { refreshSession, startSession, stopSession } from "@/utils/notebookRuntime/service.server";
 import { ensurePlatformEgress } from "@/utils/notebookRuntime/egressApply.server";
 import { etlPrelude, scrubSecrets } from "@/utils/etl/service.server";
-import { lakehouseAttachFn } from "@/utils/etl/codegen";
+import { lakeGatewayFn } from "@/utils/etl/codegen";
+import type { LakeManifest } from "@/utils/lakehouse/sandboxLake.server";
+import { mlPredictManifest } from "@/utils/ml/lakeManifest";
 import { TRAIN_PY } from "./pyTrain";
 import { mlErrorMessage, mlTrainingEnv } from "./train.server";
 import type { MlModelRow, MlVersionRow } from "./access.server";
@@ -165,7 +167,7 @@ export async function mlPredictBundleFor(
   const b64 = Buffer.from(JSON.stringify(program), "utf8").toString("base64");
   const code =
     etlPrelude() +
-    lakehouseAttachFn() +
+    lakeGatewayFn() +
     "\n" +
     TRAIN_PY +
     `\n_ML_CONFIG = json.loads(base64.b64decode('${b64}').decode('utf-8'))\n`;
@@ -176,14 +178,30 @@ export async function mlPredictBundleFor(
 export async function mlPredictEnvFor(
   stash: MlJobStash,
   userId: string,
-): Promise<{ env: Record<string, string>; requirements: string[] } | { error: string }> {
+): Promise<
+  { env: Record<string, string>; requirements: string[]; lake?: LakeManifest } | { error: string }
+> {
   const b = await loadPredictionBundle(stash.job_id, userId);
   if (!b) return { error: "Prediction run not found for this session" };
   try {
     // Same lakehouse env as training; the program self-installs the ML
     // stack only if the image lacks it, so no pip round-trip here.
     const { env } = await mlTrainingEnv(b.model, b.version.version);
-    return { env, requirements: [] };
+    const limits = await getPlatformResources();
+    const input = b.prediction.input as {
+      kind: string;
+      schema?: string;
+      table?: string;
+      where?: string;
+    };
+    // What this prediction may read, write and load (ml/lakeManifest.ts).
+    const lake = mlPredictManifest({
+      input,
+      output: b.prediction.output as { schema: string; table: string } | null,
+      maxRows: limits.mlPredictMaxRows,
+      artifactUri: b.version.artifact_uri ?? "",
+    });
+    return { env, requirements: [], lake };
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -291,10 +309,33 @@ export async function startPrediction(args: {
       memLimitMb: limits.mlTrainMemLimitMb,
       maxMinutes: args.kind === "rows" ? 15 : 120,
     });
-    await supabaseAdmin
+    // FOUND IN R308 (sweep 10). A Cancel pressed while this sandbox was
+    // starting found no session to stop, and this write put "running" over
+    // it, so the prediction ran anyway. Its error went unread too, leaving a
+    // sandbox no row knew. The prediction takes the sandbox only while queued.
+    const { data: took, error: recErr } = await supabaseAdmin
       .from("ml_predictions")
       .update({ status: "running", session_id: session.id, started_at: new Date().toISOString() })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .eq("status", "queued")
+      .select("id");
+    if (recErr || !took?.length) {
+      await stopSession(session).catch(() => {});
+      if (recErr) {
+        throw new Error(
+          `The prediction's sandbox started but could not be recorded: ${recErr.message}; it was stopped again.`,
+        );
+      }
+      const { data: now } = await supabaseAdmin
+        .from("ml_predictions")
+        .select("status")
+        .eq("id", row.id)
+        .maybeSingle();
+      return {
+        ok: false,
+        error: `The prediction was ${now?.status ?? "removed"} while its sandbox was starting, so it was stopped and nothing ran.`,
+      };
+    }
   } catch (e) {
     const message = (e as Error).message;
     await markPredictionFailed(row.id, message, "");

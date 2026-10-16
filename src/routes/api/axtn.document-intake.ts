@@ -1,3 +1,4 @@
+import { callerFailure, callerFailureStatus } from "@/utils/callerLookup.server";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -23,7 +24,11 @@ async function handle(request: Request): Promise<Response> {
   if (!bearer) return json(401, { error: "Unauthorized" });
 
   const { data: auth, error: authError } = await supabaseAdmin.auth.getUser(bearer);
-  if (authError || !auth.user) return json(401, { error: "Unauthorized" });
+  if (authError || !auth.user) {
+    return json(callerFailureStatus(authError), {
+      error: callerFailure(authError, "Unauthorized"),
+    });
+  }
 
   const bootstrapEmail = (process.env.ADMIN_EMAIL ?? process.env.VITE_ADMIN_EMAIL ?? "")
     .trim()

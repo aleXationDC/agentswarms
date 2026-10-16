@@ -6,7 +6,8 @@
 // side panel, with the compiled Python one toggle away. Code mode is a
 // full-height editor with AI generate/refine through the shared
 // provider+model picker, so IAM model rules apply here exactly as in BI.
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
+import { confirmAsk } from "@/components/ui/confirm-dialog";
 import { useServerFn } from "@tanstack/react-start";
 
 import { chainTargetsOf, describeChain } from "@/lib/etlChain";
@@ -146,6 +147,7 @@ import { ETL_TEMPLATES } from "@/lib/etlTemplates";
 import { listWarehouseConnections } from "@/utils/warehouse.functions";
 import { listSaasConnections } from "@/utils/saas.functions";
 import { SAAS_TARGETS, isWritableVendor, type SaasTargetVendor } from "@/lib/saasTargets";
+import { useSingleFlight } from "@/lib/singleFlight";
 import type { WarehouseConnectionSummary } from "@/utils/warehouse/types";
 import {
   cancelEtlRunFn,
@@ -614,7 +616,18 @@ function PipelineRow({
             <RunDots pulse={pulse} />
           </div>
         </button>
-        <StatusChip status={p.last_run_status} />
+        <div className="flex flex-col items-end gap-0.5">
+          <StatusChip status={p.last_run_status} />
+          {/* FOUND IN R183: the chip outlived the definition it vouched for. */}
+          {p.changed_since_last_run && (
+            <span
+              className="text-[11px] text-amber-600 dark:text-amber-400"
+              title="The pipeline changed after this run (an edit, or a newer version of the compiler): the next run executes something this status never checked."
+            >
+              changed since this run
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           {p.schedule === "continuous" && p.live_run ? (
             <Button size="sm" variant="outline" onClick={stopLive} disabled={busy}>
@@ -699,7 +712,8 @@ function NewPipelineDialog({
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const create = async () => {
+  // R214: Enter in the name field skipped the button's in-flight guard.
+  const create = useSingleFlight(async () => {
     if (!name.trim()) return;
     setBusy(true);
     try {
@@ -722,6 +736,7 @@ function NewPipelineDialog({
               : { source_code: codeTemplate() }),
         },
       });
+      if ("stale" in res) throw new Error(res.error);
       onCreated(res.id);
       setName("");
       setTemplateId(null);
@@ -730,7 +745,7 @@ function NewPipelineDialog({
     } finally {
       setBusy(false);
     }
-  };
+  });
 
   // Dismissing resets the form. Radix unmounts the content but not this
   // component, so without it a template stays selected across openings — and
@@ -824,7 +839,7 @@ function NewPipelineDialog({
           <Button variant="outline" onClick={dismiss}>
             Cancel
           </Button>
-          <Button onClick={create} disabled={busy || !name.trim()}>
+          <Button onClick={() => void create()} disabled={busy || !name.trim()}>
             {busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Create
           </Button>
         </DialogFooter>
@@ -874,9 +889,17 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
 
   const [p, setP] = useState<EditorPipeline | null>(null);
   const [dirty, setDirty] = useState(false);
+  // The name the pipeline is saved under, for asking about unsaved edits: the
+  // name in the editor may be one of them.
+  const [savedName, setSavedName] = useState("");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [tab, setTab] = useState("build");
+  // The fingerprint of the definition this editor opened or last saved
+  // (R287, sweep 9). Save sends it back and is refused when the stored
+  // pipeline has moved on; then the editor says so.
+  const fingerprintRef = useRef<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   // Loads the saved pipeline over the editor: on opening it, and after a
   // version is restored. Not when the session refreshes (R125): keyed on the
@@ -891,6 +914,9 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
       try {
         const res = await getFn({ data: { access_token: token, id } });
         const row = res.pipeline;
+        fingerprintRef.current = row.fingerprint;
+        setStale(false);
+        setSavedName(row.name);
         setP({
           id: row.id,
           name: row.name,
@@ -936,7 +962,7 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
     setDirty(true);
   };
 
-  const save = async (): Promise<boolean> => {
+  const save = async (overwrite = false): Promise<boolean> => {
     if (!p) return false;
     setSaving(true);
     try {
@@ -969,10 +995,23 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
           timeout_minutes: p.timeout_minutes,
           poll_seconds: p.poll_seconds,
           engine: p.engine,
+          // Overwriting is said in so many words: a save with neither is
+          // refused, as a page opened before R287 would send (R303).
+          ...(overwrite
+            ? { overwrite: true as const }
+            : { expected_fingerprint: fingerprintRef.current ?? undefined }),
         },
       });
+      if ("stale" in res) {
+        setStale(true);
+        toast.error(res.error);
+        return false;
+      }
+      fingerprintRef.current = res.fingerprint;
+      setStale(false);
       setP((prev) => (prev ? { ...prev, source_code: res.source_code } : prev));
       setDirty(false);
+      setSavedName(p.name);
       if (res.compile_error) {
         toast.warning(`Saved — but the graph can't run yet: ${res.compile_error}`);
       } else {
@@ -1006,6 +1045,28 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
     }
   };
 
+  /** Ask before unsaved edits are left behind; true when the editor may go. */
+  async function mayLeave(what: string): Promise<boolean> {
+    if (!dirty) return true;
+    return Boolean(
+      await confirmAsk({
+        title: `Discard the changes to "${savedName}"?`,
+        body: `They are not saved. ${what}`,
+        actionLabel: "Discard changes",
+      }),
+    );
+  }
+
+  // FOUND IN R275: "← Pipelines", a link and a closed tab all dropped unsaved
+  // edits without a word, though the editor knew it had them (Save was on).
+  // The back button is the editor's own state, not a route, so it asks itself;
+  // the blocker covers links and the tab.
+  useBlocker({
+    shouldBlockFn: async () => !(await mayLeave("Leaving the pipeline drops them.")),
+    enableBeforeUnload: dirty,
+    disabled: !dirty,
+  });
+
   if (!p) {
     return (
       <div className="w-full space-y-3 p-6">
@@ -1017,9 +1078,40 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
 
   return (
     <div className="flex h-canvas w-full flex-col gap-3 p-3 md:p-4">
+      {stale && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+          data-testid="pipeline-stale"
+        >
+          <span className="min-w-0 flex-1">
+            This pipeline was changed in another tab or session, so Save did not write over it.
+            Reload to see that version, dropping your edits here, or overwrite it with yours.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={saving}
+            onClick={() => {
+              setDirty(false);
+              reloadPipeline();
+            }}
+          >
+            Reload
+          </Button>
+          <Button size="sm" variant="outline" disabled={saving} onClick={() => void save(true)}>
+            Overwrite with mine
+          </Button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBack}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              if (await mayLeave("Going back to the list drops them.")) onBack();
+            }}
+          >
             ← Pipelines
           </Button>
           <Input
@@ -1032,7 +1124,7 @@ function PipelineEditor({ id, onBack }: { id: string; onBack: () => void }) {
           </Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={save} disabled={saving || !dirty}>
+          <Button variant="outline" onClick={() => void save()} disabled={saving || !dirty}>
             {saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />} Save
           </Button>
           <Button onClick={() => runNow()} disabled={running}>

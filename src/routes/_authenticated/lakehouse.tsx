@@ -2,6 +2,7 @@
 // run governed SQL (typed or NL-generated), inspect snapshots, import
 // platform datasets — all through the server chokepoint that enforces
 // schema access, audits every statement, and writes query history.
+import { formatUsd } from "@/lib/usd";
 import { confirmAsk } from "@/components/ui/confirm-dialog";
 import { SharesDialog } from "@/components/lakehouse/SharesDialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -65,6 +66,9 @@ import {
   PublishToIcebergDialog,
 } from "@/components/lakehouse/IcebergDialog";
 import { downloadCsv } from "@/lib/exportData";
+import { useSingleFlight } from "@/lib/singleFlight";
+import { pollSparkQuery } from "@/lib/sparkPoll";
+import { matviewBadge } from "@/lib/matviewBadge";
 import { useAuth } from "@/hooks/use-auth";
 import { useTokenRef } from "@/hooks/use-token-ref";
 import { supabase } from "@/integrations/supabase/client";
@@ -506,6 +510,8 @@ function QueryTab({
 }) {
   const { session } = useAuth();
   const token = session?.access_token ?? "";
+  // A Spark query can be polled for minutes, across a session refresh (R271).
+  const { tokenRef } = useTokenRef(token);
   const runFn = useServerFn(runLakehouseQuery);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<LakehouseResult | null>(null);
@@ -569,25 +575,21 @@ function QueryTab({
     setSparkJob({ id, startedAt, status: "queued" });
     try {
       // Two seconds between polls: a sandbox takes ~10 s to start and a
-      // query seconds to minutes, so anything tighter is noise.
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const q = await getSparkFn({ data: { access_token: token, id } });
-        if (!q) throw new Error("The query is gone — it may have been cancelled elsewhere.");
-        setSparkJob({ id, startedAt, status: q.status });
-        if (q.status === "succeeded") return q.result;
-        if (q.status === "cancelled") return null;
-        if (q.status === "failed") {
-          const tail = (q.logs ?? "").trim().split("\n").slice(-6).join("\n");
-          throw new Error((q.error ?? "The query failed on Spark.") + (tail ? `\n\n${tail}` : ""));
-        }
-      }
+      // query seconds to minutes, so anything tighter is noise. A failed poll
+      // is retried; it is not the query ending (R222).
+      return await pollSparkQuery(
+        () => getSparkFn({ data: { access_token: tokenRef.current, id } }),
+        (q) => setSparkJob({ id, startedAt, status: q.status }),
+      );
     } finally {
       setSparkJob(null);
     }
   };
 
-  const run = async (statement?: string) => {
+  // One run at a time, from the button or from Ctrl+Enter (R211): the
+  // button's disabled={running} never reached the keyboard, and one INSERT
+  // with two quick Ctrl+Enters wrote two rows.
+  const run = useSingleFlight(async (statement?: string) => {
     const s = (statement ?? sql).trim();
     if (!s) return;
     setRunning(true);
@@ -605,9 +607,10 @@ function QueryTab({
     } finally {
       setRunning(false);
     }
-  };
+  });
 
-  const generate = async () => {
+  // One draft at a time, from the button or from Enter (R211).
+  const generate = useSingleFlight(async () => {
     if (!nl.trim()) return;
     setGenerating(true);
     setExplanation("");
@@ -632,7 +635,7 @@ function QueryTab({
     } finally {
       setGenerating(false);
     }
-  };
+  });
 
   const exportCsv = () => {
     if (!result) return;
@@ -791,7 +794,7 @@ function QueryTab({
                     <Badge
                       variant="secondary"
                       className="text-[10px]"
-                      title={`AI functions (${result.ai.functions.join(", ")}): ${result.ai.calls} model call(s), ${result.ai.cached} from the answer cache${result.ai.cost_usd != null ? ` · $${result.ai.cost_usd.toFixed(4)}` : ""}${result.ai.models.length ? ` · ${result.ai.models.join(", ")}` : ""}`}
+                      title={`AI functions (${result.ai.functions.join(", ")}): ${result.ai.calls} model call(s), ${result.ai.cached} from the answer cache${result.ai.cost_usd != null ? ` · ${formatUsd(result.ai.cost_usd)}` : ""}${result.ai.models.length ? ` · ${result.ai.models.join(", ")}` : ""}`}
                     >
                       {result.ai.calls} AI call{result.ai.calls === 1 ? "" : "s"}
                       {result.ai.cached ? ` · ${result.ai.cached} cached` : ""}
@@ -913,6 +916,7 @@ function TableTab({
   const [detail, setDetail] = useState<LakehouseTableDetail | null>(null);
   const [policy, setPolicy] = useState<LakehousePolicy | null>(null);
   const [matview, setMatview] = useState<LakehouseMatview | null>(null);
+  const matviewState = matview ? matviewBadge(matview) : null;
   const [preview, setPreview] = useState<LakehouseResult | null>(null);
 
   useEffect(() => {
@@ -989,19 +993,24 @@ function TableTab({
           Define metrics on this
         </Link>
         <PublishToIcebergDialog schema={schema} table={table} />
-        {matview && (
+        {matviewState && (
+          // FOUND IN R185: a failed rebuild read "materialized", the failure
+          // only in this badge's hover title.
           <Badge
             variant="outline"
-            className="gap-1 text-[10px]"
-            title={
-              matview.last_status === "error"
-                ? `Last rebuild failed: ${matview.last_error ?? ""}`
-                : `Rebuilt ${matview.schedule}`
+            className={
+              matviewState.failed
+                ? "gap-1 border-destructive/50 text-[10px] text-destructive"
+                : "gap-1 text-[10px]"
             }
+            title={matviewState.title}
           >
             <Layers className="h-3 w-3" />
-            {matview.schedule === "manual" ? "materialized" : `rebuilt ${matview.schedule}`}
+            {matviewState.label}
           </Badge>
+        )}
+        {matviewState?.note && (
+          <span className="text-[11px] text-destructive">{matviewState.note}</span>
         )}
         {policy && (
           <Badge
@@ -1021,42 +1030,52 @@ function TableTab({
         )}
         <div className="ml-auto flex gap-2">
           {matview?.is_owner && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={refreshingMv}
+            // FOUND IN R274: a view Sheets holds offered Rebuild, which the
+            // server always refuses. It says why before it is pressed now, on
+            // a wrapper: a disabled button takes no pointer, so its own title
+            // would never show.
+            <span
+              className="inline-flex"
               title={
-                matview.last_refreshed_at
-                  ? `Last rebuilt ${new Date(matview.last_refreshed_at).toLocaleString()}`
-                  : "Never rebuilt"
+                detail.sheet_owner
+                  ? `Held by Sheets: only Sheets changes ${schema}.${table}, so it is not rebuilt here. Delete the sheet "${detail.sheet_owner.sheet}" in Sheets, and it can be.`
+                  : matview.last_refreshed_at
+                    ? `Last rebuilt ${new Date(matview.last_refreshed_at).toLocaleString()}`
+                    : "Never rebuilt"
               }
-              onClick={async () => {
-                setRefreshingMv(true);
-                try {
-                  const res = await refreshMvFn({
-                    data: { access_token: token, id: matview.id },
-                  });
-                  if (res.error) toast.error(`Rebuild failed: ${res.error}`);
-                  else toast.success(`Rebuilt — ${res.rows ?? 0} row(s) in ${res.ms} ms`);
-                  const views = await matviewsFn({ data: { access_token: token } });
-                  setMatview(
-                    views.find((v) => v.schema_name === schema && v.table_name === table) ?? null,
-                  );
-                  setDetail(await detailFn({ data: { access_token: token, schema, table } }));
-                } catch (e) {
-                  toast.error((e as Error).message);
-                } finally {
-                  setRefreshingMv(false);
-                }
-              }}
             >
-              {refreshingMv ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              )}
-              Rebuild
-            </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={refreshingMv || !!detail.sheet_owner}
+                onClick={async () => {
+                  setRefreshingMv(true);
+                  try {
+                    const res = await refreshMvFn({
+                      data: { access_token: token, id: matview.id },
+                    });
+                    if (res.error) toast.error(`Rebuild failed: ${res.error}`);
+                    else toast.success(`Rebuilt — ${res.rows ?? 0} row(s) in ${res.ms} ms`);
+                    const views = await matviewsFn({ data: { access_token: token } });
+                    setMatview(
+                      views.find((v) => v.schema_name === schema && v.table_name === table) ?? null,
+                    );
+                    setDetail(await detailFn({ data: { access_token: token, schema, table } }));
+                  } catch (e) {
+                    toast.error((e as Error).message);
+                  } finally {
+                    setRefreshingMv(false);
+                  }
+                }}
+              >
+                {refreshingMv ? (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                )}
+                Rebuild
+              </Button>
+            </span>
           )}
           <PolicyDialog
             schema={schema}

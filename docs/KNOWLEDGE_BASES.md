@@ -41,6 +41,23 @@ dropped; if every page is, the upload reports it rather than adding an empty
 document. The transcription prompt forbids description, commentary and
 translation, and asks for tables as rows with `|` between cells.
 
+An upload writes a `kb_sources` row and then its `knowledge_documents` row.
+When the document does not land, the source is deleted again. If that delete
+fails too, the source is set to `status = 'error'` with the reason. A source
+never reads `ok` with no document behind it. The dialog counts what landed
+("1 of 2 files added"), names each file that did not with its reason, and
+keeps those files listed to try again.
+
+A file that landed but was not indexed is announced as such ("1 file added, not
+fully indexed"), with the reason: the embed call failed, or no embedding key
+is set. Until it is indexed, by **Re-index** or the next embed, it is found by
+keyword only, and the Documents list shows it as pending.
+
+An uploaded text file (`.txt`, `.md`, `.json`, `.docx` …) is stored as kind
+`manual`, the kind the table allows for text, with its filename in the
+source's config. The Sources list and its documents show it as a **File** and
+an "Uploaded file", not as a manual paste.
+
 ## Connected services
 
 | Provider     | Credentials                                                                                       | What syncs                                                                                                                                      | ACL mirroring                   |
@@ -57,7 +74,9 @@ OAuth consent flow ships, because that requires operator-registered apps per
 provider; the wizard states exactly which credential form supports unattended
 scheduled syncs. Save-time validation runs against the real connector, so a
 misconfigured source fails at save with instructions — not at 3am on its
-first scheduled run.
+first scheduled run. Editing a source fills the wizard once, when it opens:
+what you change, credentials included, stays until you save or close it,
+through a session refresh too (R219).
 
 Per-source caps: **500 items**, **400k characters per item**, folders to
 depth 5. Every item the connector saw but did not ingest is recorded on the
@@ -71,6 +90,12 @@ same maintenance pass as BI refreshes and SaaS syncs (`/api/bi/cron` or the
 in-process 60s scheduler), and claim each due source by atomically pushing
 `next_sync_at` forward — of N app instances polling the same second, exactly
 one syncs a given source.
+
+Every sync, scheduled or pressed, also claims the source itself by moving it
+to "syncing". A second sync of the same source does not start while one runs:
+**Sync now** says so, and a scheduled pass leaves it alone (R313). A sync that
+died leaves its claim; another may take it once the source has not changed
+for `KB_SYNC_LEASE_MINUTES` (60 by default).
 
 Two levels make a schedule safe to run forever:
 
@@ -357,6 +382,13 @@ Step 2 is the one that was invisible: the settings dialog only ever offered a
 provider the _user_ had connected, so an instance with `OPENROUTER_API_KEY` set
 and no personal integration displayed OpenAI as the default while the server
 was already embedding through OpenRouter.
+
+The dialog suggests that default only until the user picks a provider **or a
+model**. Before R220 only a provider pick stopped it. The page reloaded the
+connected providers on every session refresh, which ran the default again, so
+a model picked under the default provider went back to that provider's first
+model about hourly. Uploads and re-indexing then used a model nobody chose. The
+providers now reload when the signed-in user changes, not on a refresh.
 
 OpenRouter embedding models offered, all confirmed against the live endpoint to
 return 1536 dimensions (the pgvector column width):

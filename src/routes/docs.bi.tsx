@@ -66,7 +66,8 @@ function BiPage() {
         that produced it, so an exported report never attributes old numbers to a newly-chosen
         model. Reasoning models are also given a longer request deadline than chat models, because
         their time goes on thinking rather than output — sized for chat models, the analyst&apos;s
-        required model class was the one that timed out.
+        required model class was the one that timed out. One question runs at a time: a second Enter
+        while the first is starting is ignored, so it never runs twice or saves two threads.
       </P>
       <H3 id="analyst-governed">Governed steps</H3>
       <P>
@@ -234,12 +235,13 @@ function BiPage() {
         IAM groups and recipients can open it and ask their own questions — but every query they run
         is authorised as <em>them</em>, with their dataset grants, their warehouse credentials and
         their row filters. A shared analyst can therefore return different numbers to different
-        people, which the share dialog states before you grant, blocking problems first. An analyst
-        scoped to <em>all local datasets</em> resolves per reader, so shared it points at the
-        recipient&apos;s data rather than yours. <strong>Your saved analyses stay yours</strong> —
-        they hold rows fetched under your access — and renaming, editing and deleting remain
-        owner-only. A grant is refused outright if the recipients&apos; IAM model rules do not allow
-        the analyst&apos;s model.
+        people, which the share dialog states before you grant, blocking problems first. The groups
+        you tick hold until you save, even across a session refresh. An analyst scoped to{" "}
+        <em>all local datasets</em> resolves per reader, so shared it points at the recipient&apos;s
+        data rather than yours. <strong>Your saved analyses stay yours</strong> — they hold rows
+        fetched under your access — and renaming, editing and deleting remain owner-only. A grant is
+        refused outright if the recipients&apos; IAM model rules do not allow the analyst&apos;s
+        model.
       </P>
       <H3 id="analyst-provenance">Provenance and export</H3>
       <P>
@@ -273,7 +275,7 @@ function BiPage() {
           },
           {
             title: "Add a visual",
-            body: "The right-hand builder pane takes your source (table, prepared table, or a governed metric), the fields to plot, and the chart type.",
+            body: "The right-hand builder pane takes your source (table, prepared table, or a governed metric), the fields to plot, the chart type and a title. Until the visual can be added, the line under Add to dashboard says what is still missing: a query to run, the columns to chart, or the title.",
           },
           {
             title: "Or describe it",
@@ -553,6 +555,13 @@ GROUP BY region`}</Code>
           ],
         ]}
       />
+      <P>
+        A bar race starts playing when it is drawn and can be paused. Pausing it, and where it has
+        got to, survive whatever the dashboard does around it — a filter changed on another widget,
+        a refresh after a write, a session renewed in the background. It restarts only when the
+        periods it is animating actually change.
+      </P>
+
       <Callout kind="why">
         Pick the chart from the question, not the other way round. "Which region is biggest" is a
         bar; "is it growing" is a line; "what share" is a pie with few slices. If you cannot state
@@ -625,7 +634,7 @@ GROUP BY region`}</Code>
             <C key="b">dateGrain</C>,
             "auto | day | week | month | quarter | year",
             "line, area",
-            "Default bucketing; viewers can toggle it.",
+            "Default bucketing; viewers can toggle it. Buckets are UTC, the zone the SQL engines run in: a timestamp written without an offset is read as UTC, so a viewer in any time zone sees the months and days the query returned.",
           ],
           [
             <C key="c">compare</C>,
@@ -1022,7 +1031,8 @@ GROUP BY region`}</Code>
       <P>
         <strong>Export → Export to PowerPoint</strong> builds a branded deck. You choose which
         visuals to include (grouped by page), a model to write the prose, and optionally an
-        instruction for tone, audience or emphasis.
+        instruction for tone, audience or emphasis. Every exportable visual starts ticked when the
+        dialog opens, and what you untick stays unticked until you export or close it.
       </P>
       <P>
         <strong>The figures are the dashboard&apos;s figures.</strong> Every slide is filled from

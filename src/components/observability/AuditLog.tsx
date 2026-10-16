@@ -3,6 +3,7 @@
 // every model call from execution_traces. Regular users see their own
 // trail; superadmins see all users with emails and can configure the
 // retention window (events are purged hourly past it).
+import { formatUsd } from "@/lib/usd";
 import { useCallback, useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { formatDistanceToNow } from "date-fns";
@@ -51,6 +52,7 @@ import {
   auditSetRetention,
   type AuditRow,
 } from "@/utils/audit.functions";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 const ACTION_META: Record<string, { label: string; className: string }> = {
   "model.call": { label: "model call", className: "bg-primary/10 text-primary" },
@@ -160,8 +162,7 @@ function describeDetail(r: AuditRow): string {
   const bits: string[] = [];
   if (typeof d.surface === "string") bits.push(String(d.surface));
   if (typeof d.tokens === "number" && d.tokens > 0) bits.push(`${d.tokens.toLocaleString()} tok`);
-  if (typeof d.cost_usd === "number" && d.cost_usd > 0)
-    bits.push(`$${Number(d.cost_usd).toFixed(4)}`);
+  if (typeof d.cost_usd === "number" && d.cost_usd > 0) bits.push(formatUsd(d.cost_usd));
   if (typeof d.model === "string") bits.push(String(d.model));
   if (Array.isArray(d.tables) && d.tables.length > 0) bits.push(`tables: ${d.tables.join(", ")}`);
   if (typeof d.steps === "number") bits.push(`${d.steps} steps`);
@@ -355,6 +356,8 @@ export function AuditLog() {
                         : `Chain BROKEN at sequence ${res.firstBrokenSeq} — an event was altered or removed`,
                       { duration: Infinity },
                     );
+                } catch (e) {
+                  reportFailure("verify the audit chain", e);
                 } finally {
                   setVerifying(false);
                 }

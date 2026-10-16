@@ -1,3 +1,5 @@
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
+import { isCallerRefusal } from "@/utils/callerLookup.server";
 import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -15,12 +17,20 @@ export async function startCaseSwarm(input: CaseSwarmStart) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("CASE_EXECUTION_SERVER_NOT_CONFIGURED");
-  const client = createClient<Database>(url, key, {
-    global: { headers: { Authorization: `Bearer ${request.access_token}` } },
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
+  const client = createClient<Database>(
+    url,
+    key,
+    withNulSafeFetch({
+      global: { headers: { Authorization: `Bearer ${request.access_token}` } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    }),
+  );
   const { data: auth, error: authError } = await client.auth.getUser();
-  if (authError || !auth.user) throw new Error("CASE_ACCESS_DENIED");
+  if (authError || !auth.user) {
+    // R297: a lookup that failed is not a refusal.
+    if (!isCallerRefusal(authError)) throw new Error("CASE_AUTH_CHECK_FAILED");
+    throw new Error("CASE_ACCESS_DENIED");
+  }
   const userId = auth.user.id;
   const principal = { kind: "user_session" as const, id: userId };
   const access = CaseAccessView.parse(

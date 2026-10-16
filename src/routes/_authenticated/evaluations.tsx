@@ -5,6 +5,7 @@
 // comparable runs. The BATCH is driven from this page: a small concurrent loop
 // of runEvalCase server calls — cancel and resume are therefore natural (the
 // server refuses cases for cancelled runs and skips already-scored ones).
+import { formatUsd } from "@/lib/usd";
 import { confirmAsk } from "@/components/ui/confirm-dialog";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -56,6 +57,7 @@ import {
   type EvalEvaluator,
   type EvalResultLite,
 } from "@/lib/evalScoring";
+import { useSingleFlight } from "@/lib/singleFlight";
 import {
   addEvalCases,
   cancelEvalRun,
@@ -63,6 +65,7 @@ import {
   runEvalCase,
   startEvalRun,
 } from "@/utils/evals.functions";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 export const Route = createFileRoute("/_authenticated/evaluations")({
   component: EvaluationsPage,
@@ -133,7 +136,7 @@ const COMPARE_CHOICES = 50;
  * page contradicted itself on a screen whose entire output is a verdict.
  */
 const fmtScore = (s: number | null) => (s === null ? "—" : s.toFixed(2));
-const fmtUsd = (n: number) => (n > 0 ? `$${n.toFixed(4)}` : "$0");
+const fmtUsd = (n: number) => formatUsd(n);
 
 function statusBadge(s: ResultRow["status"] | Run["status"]) {
   const styles: Record<string, string> = {
@@ -197,7 +200,8 @@ function EvaluationsPage() {
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
-  const newDataset = async () => {
+  // R214: Enter in the name field skipped the button's in-flight guard.
+  const newDataset = useSingleFlight(async () => {
     if (!newName.trim()) return toast.error("Give the dataset a name.");
     setCreating(true);
     try {
@@ -214,7 +218,7 @@ function EvaluationsPage() {
     } finally {
       setCreating(false);
     }
-  };
+  });
 
   return (
     <main className="mx-auto w-full max-w-[1500px] px-4 py-6 md:px-8">
@@ -374,16 +378,25 @@ function DatasetPanel({
   onRunStarted: (runId: string) => void;
 }) {
   const [cases, setCases] = useState<Case[]>([]);
+  // FOUND IN R186: a failed read of the cases read as "0 cases", with New
+  // eval run disabled, beside a run list saying the dataset had two.
+  const [casesError, setCasesError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: "", input: "", expected: "" });
   const [runOpen, setRunOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("eval_cases")
       .select("*")
       .eq("dataset_id", dataset.id)
       .order("sort");
+    if (error) {
+      setCasesError(error.message);
+      setCases([]);
+      return;
+    }
+    setCasesError(null);
     setCases((data as unknown as Case[]) ?? []);
   }, [dataset.id]);
   useEffect(() => {
@@ -452,7 +465,9 @@ function DatasetPanel({
       }))
     )
       return;
-    await supabase.from("eval_cases").delete().eq("id", id);
+    // FOUND IN R186: a refused delete said nothing; the case stayed.
+    const { error } = await supabase.from("eval_cases").delete().eq("id", id);
+    if (error) toast.error("The case was not deleted", { description: error.message });
     await load();
   };
 
@@ -463,7 +478,12 @@ function DatasetPanel({
       }))
     )
       return;
-    await supabase.from("eval_datasets").delete().eq("id", dataset.id);
+    // FOUND IN R186: a refused delete said nothing; the dataset stayed.
+    const { error } = await supabase.from("eval_datasets").delete().eq("id", dataset.id);
+    if (error) {
+      toast.error(`"${dataset.name}" was not deleted`, { description: error.message });
+      return;
+    }
     onChanged();
   };
 
@@ -473,8 +493,8 @@ function DatasetPanel({
         <div>
           <h2 className="text-lg font-semibold tracking-tight">{dataset.name}</h2>
           <p className="text-xs text-muted-foreground">
-            {cases.length} case{cases.length === 1 ? "" : "s"} · columns beyond name / input /
-            expected become typed start-form values
+            {casesError ? "cases not read" : `${cases.length} case${cases.length === 1 ? "" : "s"}`}{" "}
+            · columns beyond name / input / expected become typed start-form values
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -501,6 +521,14 @@ function DatasetPanel({
         </div>
       </div>
 
+      {casesError && (
+        <p className="text-sm text-destructive">
+          The cases could not be read, so this list says nothing about them: {casesError}{" "}
+          <Button variant="outline" size="sm" className="ml-2 h-7" onClick={() => void load()}>
+            Try again
+          </Button>
+        </p>
+      )}
       <Card className="divide-y overflow-hidden">
         {cases.map((c, i) => (
           <div key={c.id} className="flex items-start gap-3 p-3">
@@ -781,6 +809,9 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
   const [driving, setDriving] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [compareId, setCompareId] = useState<string>("");
+  // The baseline's own results; compareError below is the list of runs.
+  const [baselineError, setBaselineError] = useState<string | null>(null);
+  const [resultsError, setResultsError] = useState<string | null>(null);
   const [compareResults, setCompareResults] = useState<EvalResultLite[] | null>(null);
   const stopRef = useRef(false);
   // Reentrancy guard. `driving` is React state and updates asynchronously, so
@@ -789,11 +820,17 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
   const drivingRef = useRef(false);
 
   const loadResults = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("eval_results")
       .select("*")
       .eq("eval_run_id", run.id)
       .order("created_at");
+    // FOUND IN R186: a failed read showed "No results." under "2/2 · 100%".
+    if (error) {
+      setResultsError(error.message);
+      return;
+    }
+    setResultsError(null);
     setResults((data as unknown as ResultRow[]) ?? []);
   }, [run.id]);
   useEffect(() => {
@@ -807,15 +844,25 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
     setDriving(true);
     stopRef.current = false;
     try {
-      const { data: allCases } = await supabase
+      const { data: allCases, error: casesErr } = await supabase
         .from("eval_cases")
         .select("id")
         .eq("dataset_id", run.dataset_id ?? "")
         .order("sort");
-      const { data: doneRows } = await supabase
+      const { data: doneRows, error: doneErr } = await supabase
         .from("eval_results")
         .select("case_id")
         .eq("eval_run_id", run.id);
+      // FOUND IN R186: a failed read of the cases left the queue empty, and
+      // the run sat at "running · 0/2 · Executing cases…" with nothing
+      // executing. Say why it stopped instead.
+      const readErr = casesErr ?? doneErr;
+      if (readErr) {
+        toast.error("The run could not carry on", {
+          description: `Its cases could not be read: ${readErr.message}`,
+        });
+        return;
+      }
       const scored = new Set((doneRows ?? []).map((r) => r.case_id));
       const queue = ((allCases ?? []) as { id: string }[]).filter((c) => !scored.has(c.id));
       let idx = 0;
@@ -834,6 +881,8 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
         }
       };
       await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    } catch (e) {
+      reportFailure("run the evaluation case", e);
     } finally {
       drivingRef.current = false;
       setDriving(false);
@@ -857,10 +906,18 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
   const loadCompare = useCallback(async (otherId: string) => {
     setCompareId(otherId);
     if (!otherId) return setCompareResults(null);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("eval_results")
       .select("case_id, case_name, case_input, status, score")
       .eq("eval_run_id", otherId);
+    // FOUND IN R186: a failed read compared against an empty baseline, and
+    // every case read as new to it ("only_b", "— → pass").
+    if (error) {
+      setCompareResults(null);
+      setBaselineError(error.message);
+      return;
+    }
+    setBaselineError(null);
     setCompareResults((data as unknown as EvalResultLite[]) ?? []);
   }, []);
 
@@ -1010,6 +1067,11 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
               ))}
             </SelectContent>
           </Select>
+          {baselineError && (
+            <span className="text-xs text-destructive">
+              The baseline&apos;s results could not be read: {baselineError}
+            </span>
+          )}
           {olderThanShown > 0 && (
             <span className="text-xs text-muted-foreground">
               most recent {comparable.length} of {comparable.length + olderThanShown} on this
@@ -1063,10 +1125,20 @@ function RunPanel({ run, runs, onChanged }: { run: Run; runs: Run[]; onChanged: 
       )}
 
       <Card className="divide-y overflow-hidden">
-        {results.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">
-            {run.status === "running" ? "Executing cases…" : "No results."}
+        {resultsError ? (
+          <p className="p-4 text-sm text-destructive">
+            The results could not be read, so this list says nothing about them: {resultsError}
           </p>
+        ) : (
+          results.length === 0 && (
+            <p className="p-4 text-sm text-muted-foreground">
+              {driving
+                ? "Executing cases…"
+                : run.status === "running"
+                  ? "No case is executing now. Run remaining carries on."
+                  : "No results."}
+            </p>
+          )
         )}
         {results.map((r) => (
           <div key={r.id}>

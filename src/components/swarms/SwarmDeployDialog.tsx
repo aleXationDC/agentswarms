@@ -61,6 +61,8 @@ import {
   History,
 } from "lucide-react";
 import { toast } from "sonner";
+import { confirmAsk } from "@/components/ui/confirm-dialog";
+import { reportFailure } from "@/lib/silentFailureNet";
 
 type ApiKeyRow = {
   id: string;
@@ -196,6 +198,15 @@ export function SwarmDeployDialog({
   // comparing against the in-memory canvas instead would promise to roll out
   // edits that were never saved.
   const [row, setRow] = useState<PublishableSwarm | null>(null);
+  // FOUND IN R188: each read dropped its error. A failed schedules read said
+  // "No schedules yet.", which invites adding the same schedule again and
+  // running the swarm twice on every tick; a failed keys or row read made a
+  // live swarm read "Not deployed". Why each list could not be read.
+  const [readErrors, setReadErrors] = useState<{
+    keys?: string;
+    schedules?: string;
+    row?: string;
+  }>({});
   const [publishing, setPublishing] = useState(false);
 
   // New-key form
@@ -219,30 +230,32 @@ export function SwarmDeployDialog({
   const load = useCallback(async () => {
     if (!swarmId) return;
     setLoading(true);
-    const [{ data: k }, { data: s }, { data: sw }] = await Promise.all([
-      supabase
-        .from("swarm_api_keys")
-        .select(
-          "id, name, key_prefix, reject_approvals, is_active, last_used_at, created_at, expires_at, last_used_ip, scopes",
-        )
-        .eq("swarm_id", swarmId)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("swarm_schedules")
-        .select(
-          "id, name, input, interval_minutes, reject_approvals, is_active, last_run_at, last_run_status, last_run_error",
-        )
-        .eq("swarm_id", swarmId)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("swarms")
-        .select("nodes, edges, published_nodes, published_edges, published_at")
-        .eq("id", swarmId)
-        .maybeSingle(),
-    ]);
-    setKeys((k ?? []) as ApiKeyRow[]);
-    setSchedules((s ?? []) as ScheduleRow[]);
-    setRow((sw ?? null) as PublishableSwarm | null);
+    const [{ data: k, error: kErr }, { data: s, error: sErr }, { data: sw, error: swErr }] =
+      await Promise.all([
+        supabase
+          .from("swarm_api_keys")
+          .select(
+            "id, name, key_prefix, reject_approvals, is_active, last_used_at, created_at, expires_at, last_used_ip, scopes",
+          )
+          .eq("swarm_id", swarmId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("swarm_schedules")
+          .select(
+            "id, name, input, interval_minutes, reject_approvals, is_active, last_run_at, last_run_status, last_run_error",
+          )
+          .eq("swarm_id", swarmId)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("swarms")
+          .select("nodes, edges, published_nodes, published_edges, published_at")
+          .eq("id", swarmId)
+          .maybeSingle(),
+      ]);
+    setReadErrors({ keys: kErr?.message, schedules: sErr?.message, row: swErr?.message });
+    setKeys(kErr ? [] : ((k ?? []) as ApiKeyRow[]));
+    setSchedules(sErr ? [] : ((s ?? []) as ScheduleRow[]));
+    setRow(swErr ? null : ((sw ?? null) as PublishableSwarm | null));
     setLoading(false);
   }, [swarmId]);
 
@@ -308,7 +321,12 @@ export function SwarmDeployDialog({
   };
 
   const deployed = keys.length > 0 || schedules.length > 0;
-  const state = row ? deployState(row, deployed) : "not-deployed";
+  const state =
+    readErrors.keys || readErrors.schedules || readErrors.row
+      ? "unknown"
+      : row
+        ? deployState(row, deployed)
+        : "not-deployed";
   const copy = deployStateCopy(state);
   // Publish pins what is SAVED. If the canvas has moved on since the last save,
   // say so instead of letting the button appear to promote what is on screen.
@@ -328,6 +346,8 @@ export function SwarmDeployDialog({
       await load();
       onPublishedChange?.();
       toast.success("Published — deployed runs now use this version");
+    } catch (e) {
+      reportFailure("publish the swarm", e);
     } finally {
       setPublishing(false);
     }
@@ -344,6 +364,8 @@ export function SwarmDeployDialog({
       await load();
       onPublishedChange?.();
       toast.success("Unpinned — deployed runs follow the canvas again");
+    } catch (e) {
+      reportFailure("unpin the swarm", e);
     } finally {
       setPublishing(false);
     }
@@ -379,8 +401,22 @@ export function SwarmDeployDialog({
   };
 
   const deleteSchedule = async (id: string) => {
+    // R242. revokeKey in this same dialog is guarded by an AlertDialog; this
+    // one was not.
+    if (
+      !(await confirmAsk({
+        title: "Delete this schedule?",
+        body: "The swarm stops running on it, and its settings and history are not kept. This cannot be undone.",
+        actionLabel: "Delete schedule",
+      }))
+    )
+      return;
     const { error } = await supabase.from("swarm_schedules").delete().eq("id", id);
-    if (error) return toast.error("Could not delete schedule");
+    if (error) {
+      return toast.error("Could not delete the schedule", {
+        description: `${error.message}. It is still scheduled and will still run.`,
+      });
+    }
     setSchedules((prev) => prev.filter((s) => s.id !== id));
   };
 
@@ -670,6 +706,11 @@ export function SwarmDeployDialog({
               <div className="space-y-1.5">
                 {loading ? (
                   <p className="text-xs text-muted-foreground py-2">Loading…</p>
+                ) : readErrors.keys ? (
+                  <p className="text-xs text-destructive py-2">
+                    The keys could not be read, so this list says nothing about them:{" "}
+                    {readErrors.keys}
+                  </p>
                 ) : keys.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2">No keys yet.</p>
                 ) : (
@@ -808,7 +849,12 @@ export function SwarmDeployDialog({
                     <Switch checked={schedReject} onCheckedChange={setSchedReject} /> Reject
                     approvals
                   </label>
-                  <Button size="sm" className="h-8" onClick={addSchedule} disabled={addingSched}>
+                  <Button
+                    size="sm"
+                    className="h-8"
+                    onClick={addSchedule}
+                    disabled={addingSched || !!readErrors.schedules}
+                  >
                     {addingSched ? (
                       <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                     ) : (
@@ -822,6 +868,12 @@ export function SwarmDeployDialog({
               <div className="space-y-1.5">
                 {loading ? (
                   <p className="text-xs text-muted-foreground py-2">Loading…</p>
+                ) : readErrors.schedules ? (
+                  <p className="text-xs text-destructive py-2">
+                    The schedules could not be read, so this list says nothing about them:{" "}
+                    {readErrors.schedules}. Adding one is off until they can be: an existing
+                    schedule would run the swarm twice.
+                  </p>
                 ) : schedules.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-2">No schedules yet.</p>
                 ) : (

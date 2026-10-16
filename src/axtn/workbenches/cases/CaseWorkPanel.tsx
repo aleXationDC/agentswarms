@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
+import { sessionUser } from "@/lib/sessionUser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -90,8 +90,8 @@ export function CaseWorkPanel({
       | "ABANDONED",
     returnToSwarm = false,
   ) {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
+    const user = await sessionUser();
+    if (!user) {
       setError("Not signed in.");
       return;
     }
@@ -102,7 +102,7 @@ export function CaseWorkPanel({
         transitionKey: `human:${caseId}:${crypto.randomUUID()}`,
         eventType,
         reasonCode: reason,
-        actorRef: data.user.id,
+        actorRef: user.id,
         ...(record?.candidate_sha ? { candidateSHA: record.candidate_sha } : {}),
         ...(eventType === "TAKEOVER"
           ? {
@@ -184,10 +184,10 @@ export function CaseWorkPanel({
     });
   }
   async function createChild() {
-    const { data } = await supabase.auth.getUser();
+    const user = await sessionUser();
     const contract = record?.work_identity?.workContractRef ?? record?.work_contract_ref;
     const scenarioClass = record?.work_identity?.scenarioClass ?? record?.scenario_class;
-    if (!data.user || !record || !contract || !scenarioClass) {
+    if (!user || !record || !contract || !scenarioClass) {
       setError("Visible exact Work contract required.");
       return;
     }
@@ -202,7 +202,7 @@ export function CaseWorkPanel({
         subject: childSubject,
         caseType: childType,
         parentCaseId: caseId,
-        actorRef: data.user.id,
+        actorRef: user.id,
         processingMode: "HUMAN",
         executionChannel: "HUMAN",
         requiredDependencies: [],

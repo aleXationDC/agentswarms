@@ -565,7 +565,7 @@ the repository root:
 
 ```bash
 export REGISTRY=<your registry host and path>   # set per cloud, below
-export TAG=1.5.0
+export TAG=1.6.0
 docker build -t "$REGISTRY/agentswarms:$TAG" .
 docker build -t "$REGISTRY/docgen:$TAG" ./docgen-service
 docker build -t "$REGISTRY/js-sandbox:$TAG" ./services/js-sandbox
@@ -598,7 +598,7 @@ export AWS_REGION=us-east-1
 export CLUSTER=agentswarms
 export ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 export REGISTRY="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
-export TAG=1.5.0
+export TAG=1.6.0
 ```
 
 **1. Create the cluster.** Three 4-vCPU nodes clear the roughly 4.5 CPU and
@@ -897,7 +897,7 @@ export PROJECT=$(gcloud config get-value project)
 export REGION=us-central1
 export CLUSTER=agentswarms
 export REGISTRY="$REGION-docker.pkg.dev/$PROJECT/agentswarms"
-export TAG=1.5.0
+export TAG=1.6.0
 gcloud services enable container.googleapis.com artifactregistry.googleapis.com sqladmin.googleapis.com storage.googleapis.com
 ```
 
@@ -1089,7 +1089,7 @@ export LOCATION=eastus
 export CLUSTER=agentswarms
 export ACR=agentswarmsacr          # must be globally unique
 export REGISTRY="$ACR.azurecr.io"
-export TAG=1.5.0
+export TAG=1.6.0
 az group create --name "$RG" --location "$LOCATION"
 ```
 
@@ -1253,7 +1253,7 @@ export OCI_REGION=us-ashburn-1
 export REGION_KEY=iad                     # the registry prefix for that region
 export NAMESPACE=$(oci os ns get --query data --raw-output)
 export REGISTRY="$REGION_KEY.ocir.io/$NAMESPACE/agentswarms"
-export TAG=1.5.0
+export TAG=1.6.0
 ```
 
 **1. Create the cluster and a node pool.** Size the pool for the roughly
@@ -2648,6 +2648,15 @@ Monitoring; the fix is a restart:
 
 ```bash
 docker compose restart notebook-docker-proxy
+```
+
+**If the log says a sandbox "was not removed".** The line names the container and Docker's answer.
+Since R302 it is not written when two teardowns of one sandbox overlap: the second waits for the
+first (`NOTEBOOK_TEARDOWN_WAIT_MS`, 10 s). So the container is really there. List it, then remove it
+with `docker rm -f` and the name shown:
+
+```bash
+docker ps -a --filter name=nb-
 ```
 
 ### Upgrades

@@ -1,3 +1,4 @@
+import { AuthApiError } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ getUser: vi.fn(), transport: vi.fn(), fetch: vi.fn() }));
@@ -93,7 +94,7 @@ describe("effective model discovery (MOCK, not an LLMHub live response)", () => 
   it("never resolves a transport for an unauthenticated caller", async () => {
     mocks.getUser.mockResolvedValue({
       data: { user: null },
-      error: { message: "invalid session" },
+      error: new AuthApiError("invalid session", 401, "bad_jwt"),
     });
     expect(await listProviderModels(request)).toEqual({ ok: false, error: "Unauthorized" });
     expect(mocks.transport).not.toHaveBeenCalled();

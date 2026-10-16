@@ -16,12 +16,13 @@ import {
   type IcebergCatalogConfig,
 } from "@/utils/lakehouse/iceberg";
 import type { IcebergCatalogRow } from "@/utils/lakehouse/iceberg.server";
+import { callerFailure } from "@/utils/callerLookup.server";
 
 type Fail = { ok: false; error: string };
 
 async function resolveCaller(accessToken: string): Promise<{ ok: true; userId: string } | Fail> {
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data?.user) return { ok: false, error: "Not signed in" };
+  if (error || !data?.user) return { ok: false, error: callerFailure(error, "Not signed in") };
   return { ok: true, userId: data.user.id };
 }
 
@@ -292,12 +293,6 @@ export const icebergMountRefresh = createServerFn({ method: "POST" })
     }
   });
 
-/** The source table must be readable by the caller: their own schema, or one shared with them. */
-async function canRead(userId: string, schema: string): Promise<boolean> {
-  const { accessibleSchemas } = await import("@/utils/lakehouse/core.server");
-  return (await accessibleSchemas(userId)).some((s) => s.name === schema);
-}
-
 export const icebergPublish = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
@@ -317,10 +312,14 @@ export const icebergPublish = createServerFn({ method: "POST" })
     if (!caller.ok) return caller;
     const row = await ownCatalog(caller.userId, data.id);
     if (!row) return { ok: false, error: "Catalog not found" };
-    if (!(await canRead(caller.userId, data.source_schema))) {
-      return { ok: false, error: `No access to schema "${data.source_schema}"` };
-    }
     try {
+      const { icebergPublishRefusal } = await import("@/utils/lakehouse/publishGuard.server");
+      const refusal = await icebergPublishRefusal(
+        caller.userId,
+        data.source_schema,
+        data.source_table,
+      );
+      if (refusal) return { ok: false, error: refusal };
       const { publishToIceberg } = await import("@/utils/lakehouse/iceberg.server");
       const res = await publishToIceberg({
         row,

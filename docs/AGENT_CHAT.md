@@ -10,11 +10,25 @@ grounded in your own data.
 ## Chatting with an agent
 
 1. Pick an agent from the selector (create one first in **Agent Builder**).
+   If your agents cannot be read, the page says so, with the error and
+   **Try again**, instead of asking for a pick from an empty selector.
+   An agent you have not chatted with gets a first conversation made for it.
+   If that, or **New Chat**, cannot be saved, a toast and the empty chat say
+   so, with the reason and **Try again**: without a conversation there is
+   nowhere to write, and the message box stays off.
 2. Type a message. The agent runs with its configured system prompt, tools,
    knowledge base and model.
 3. The right-hand **inspector** shows the live thinking, tool calls, and the
    full request/response for the last turn; everything is also recorded in
-   **Traces**. A tool call shows its arguments and a preview of its result —
+   **Traces**. Its Trace tab says "Trace not recorded" only after reading the
+   table and finding no row; a read that fails says "Trace not read", with the
+   error and **Try again**.
+4. When a turn fails, the playground names who refused it. A provider's rate
+   limit or exhausted credits opens the fallback model picker. The platform's
+   own refusals — `budget_exceeded` (402), `model_not_allowed` (403),
+   `conversation_too_large` — are shown in the route's own words, with no
+   provider name in front and no picker, since every model is refused alike
+   (`src/lib/chatFailure.ts`). A tool call shows its arguments and a preview of its result —
    except the ML tools, whose results are shown as a person reads them: a
    prediction table with the key columns first, the model and version above
    it, which keys were not found and where the features came from beside it

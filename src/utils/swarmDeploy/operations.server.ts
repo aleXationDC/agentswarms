@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { auditEvent } from "@/utils/audit.server";
 import { generateWebhookSecret } from "@/utils/swarmWebhook.server";
+import { type CallerCheckFailed, checkFailed } from "@/utils/callerLookup.server";
 import { graphFingerprint } from "@/lib/swarmPublish";
 
 type CreateSwarmApiKeyInput = {
@@ -14,10 +15,10 @@ type CreateSwarmApiKeyInput = {
   callback_url?: string | null;
 };
 
-async function userFromToken(accessToken: string): Promise<string | null> {
+async function userFromToken(accessToken: string): Promise<string | null | CallerCheckFailed> {
   const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
-  if (error || !data.user) return null;
-  return data.user.id;
+  // R297: a check that failed is said, not taken for "signed out".
+  return checkFailed(error) ?? data.user?.id ?? null;
 }
 
 function generateRawKey(): string {
@@ -36,7 +37,7 @@ export async function jsSandboxStatus(
   accessToken: string,
 ): Promise<{ configured: boolean; healthy: boolean }> {
   const userId = await userFromToken(accessToken);
-  if (!userId) return { configured: false, healthy: false };
+  if (!userId || typeof userId !== "string") return { configured: false, healthy: false };
   const { resolveJsSandboxUrl } = await import("@/utils/jsSandbox.server");
   const url = await resolveJsSandboxUrl();
   if (!url) return { configured: false, healthy: false };
@@ -56,6 +57,7 @@ export async function createSwarmApiKey(
 > {
   const userId = await userFromToken(data.access_token);
   if (!userId) return { ok: false, error: "Invalid session" };
+  if (typeof userId !== "string") return { ok: false, error: userId.checkFailed };
 
   const { data: swarm } = await supabaseAdmin
     .from("swarms")
@@ -191,6 +193,7 @@ export async function publishSwarm(
 ): Promise<{ ok: false; error: string } | { ok: true; published_at: string }> {
   const userId = await userFromToken(accessToken);
   if (!userId) return { ok: false, error: "Not signed in" };
+  if (typeof userId !== "string") return { ok: false, error: userId.checkFailed };
   return publishSwarmForOwner(swarmId, userId);
 }
 
@@ -200,6 +203,7 @@ export async function unpublishSwarm(
 ): Promise<{ ok: false; error: string } | { ok: true }> {
   const userId = await userFromToken(accessToken);
   if (!userId) return { ok: false, error: "Not signed in" };
+  if (typeof userId !== "string") return { ok: false, error: userId.checkFailed };
   const { data: swarm } = await supabaseAdmin
     .from("swarms")
     .select("id, user_id")

@@ -20,6 +20,10 @@ and reports. An editable dashboard is called a **BI project**:
   grouped or stacked), and every numeric visual takes a **value format**
   (currency / percent). Widgets live on a 12-column drag-and-resize grid,
   with markdown text blocks for report narrative.
+- **Saves as you go** — an edit is saved 0.7 s later, and the badge by the
+  title reads Saving, Saved or Save failed. Until a save has gone through,
+  closing the tab asks first, and a link saves first — asking only if that
+  save fails, with the reason (R281).
 - **Filters &amp; cross-filtering** — add dashboard filters (value slicers
   and date ranges) that apply to every widget containing that column, and
   **click any bar or pie slice to cross-filter** the rest of the dashboard.
@@ -163,7 +167,9 @@ month`, since the rows underneath have no `month` column to filter on.
     entirely client-side.
   - **PowerPoint** builds a branded deck. Choose which visuals to include
     (grouped by dashboard page), pick the model that writes the prose, and add
-    your own instructions for tone, audience or emphasis.
+    your own instructions for tone, audience or emphasis. The dialog ticks every
+    visual that can be exported each time it opens; what you untick then stays
+    unticked until you export or close it, through a session refresh too (R218).
 
   **Every figure in the deck is the dashboard's own figure.** Slides are filled
   from each widget's saved snapshot — the same rows the card on screen renders
@@ -194,7 +200,10 @@ month`, since the rows underneath have no `month` column to filter on.
   warehouse, with its row count, duration and (for failures) the error. Click
   one to load it back into the editor along with the connection it ran against.
   Kept per user, newest 200, and clearable at any time — separate from the
-  compliance audit trail, which is hash-chained and retention-governed.
+  compliance audit trail, which is hash-chained and retention-governed. A query
+  you typed and never ran is in no history. So when a table in the explorer, a
+  pick from Recent queries or the Catalog's ▶ replaces it, a toast offers
+  **Undo** (R304).
 - **Uploading data** — Data &amp; SQL → **Upload data** accepts **CSV, TSV,
   JSON, NDJSON and Excel (.xlsx)**. The file streams to the server and is
   parsed there, so a large upload is bounded by the server's limits rather than
@@ -206,6 +215,13 @@ month`, since the rows underneath have no `month` column to filter on.
   rather than loading a silent subset — see [deployment](./DEPLOYMENT.md).
   Types are inferred from a sample and shown after the import; re-uploading over
   an existing dataset keeps the old contents as a restorable version.
+  A NUL character (U+0000) cannot be stored in Postgres. Legacy exports and
+  fixed-width dumps often pad with it, so it is removed from values and column
+  names as each row arrives, and the result says in how many cells ("NUL
+  characters removed from 1 cell"). Before R300, one NUL anywhere failed the
+  whole import with "unsupported Unicode escape sequence". Every other save
+  has the character removed in transit too (R301), so a title, text block or
+  cell holding pasted terminal output saves with the NUL removed.
 - **Data preparation** — a visual prep studio (BI Workspace → Data
   preparation): drag tables onto the canvas to build a join pipeline (left /
   inner / right / full outer, join keys auto-detected from matching column
@@ -292,7 +308,9 @@ month`, since the rows underneath have no `month` column to filter on.
   (owner-controlled, or superadmin via Admin → IAM) makes the dashboard
   appear read-only in members' BI Workspace. Viewers always see the stored
   snapshots — your warehouse credentials are never used on their behalf and
-  never leave the server.
+  never leave the server. The groups you tick stay ticked until you press
+  **Save group access** or close the dialog, through a session refresh too
+  (R217).
 - **Workspaces, folders & promotion** — group dashboards into **workspaces**
   (with user- or IAM-group members, read-only for members) and nest them in
   **folders**; a `null` workspace stays your private _Personal_ space, so this
@@ -316,6 +334,20 @@ and the page count matters.
 
 Open **BI Workspace → Reports** (`/bi`, the Reports tab). A report opens in
 its own designer at `/bi/report/:id`.
+
+The designer does not save as it goes: blocks, page settings, header and footer
+stay in the page until **Save**, and an "Unsaved changes" note says so. **← BI**,
+any other link or closing the tab with something unsaved asks first — "Discard
+the changes to "Month-end pack"?" — and Cancel keeps it (R278).
+
+Save writes only over the version the designer opened. If the report was saved
+from another tab or session since, Save is refused — "This report was changed in
+another tab or session after this page read it" — and a banner offers **Reload**
+(that version, dropping the edits here) or **Overwrite with mine** (R284).
+
+A report that could not be loaded says so, with **Try again**. That covers a read that failed on the server
+and a request that never arrived. "Report not found" means the read answered and there is no such report
+(R296). Before, a failed read said "Report not found", and a failed request left the page a skeleton.
 
 ### The two halves are shared on purpose
 
@@ -435,6 +467,11 @@ question, and a model outside the list is refused even when a plan names it:
 the same allow-list rule as an agent's ML tool, enforced when a step scores,
 not only in what the planner is shown. Create as many analysts as you have
 jobs for them.
+
+**One question runs at a time.** Ask, Enter and a starter chip share one
+in-flight guard. It is set the moment a question is asked, before the analyst
+fetches a warehouse schema, so a quick second Enter neither runs the analysis
+again nor saves a second thread (R216).
 
 All three choices stay **editable** — the pencil on an analyst's card reopens the
 same dialog, so a model that turns out too slow, or data that moved, is a
@@ -717,7 +754,8 @@ advances its schedule, so it recovers on the next tick instead of re-running a
 broken query forever. **Run now** goes through the identical code path.
 
 **Sharing an analyst shares the analyst, not your data access.** An analyst
-can be granted to IAM groups; recipients open it and ask their own questions,
+can be granted to IAM groups (the groups you tick hold until you save, through
+a session refresh too); recipients open it and ask their own questions,
 and every query they run is authorised as **them** — their dataset grants,
 their warehouse credentials, their row filters and column masks. Which means
 a shared analyst can legitimately return **different numbers to different

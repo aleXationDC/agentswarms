@@ -76,8 +76,48 @@ Type `=` and a formula, as in Excel. About 240 functions are available:
     Sunday).
   - NETWORKDAYS from a later date back to an earlier one is minus the count forwards (Friday back to
     Monday is -5), times of day are dropped, and an error in a date is passed on, as in Excel.
+  - Dates are counted as Excel counts them, with its 1900-02-29 included. Serial 1 is 1900-01-01,
+    60 is the 29th of February 1900 (a day that never was, kept from Lotus 1-2-3), and 61 is
+    1900-03-01. A blank cell read as a date is serial 0, which YEAR, MONTH and DAY read as 1900, 1
+    and 0. DATEDIF in days is the difference of the serials, so 1900-02-28 to 03-01 is 2 days. A
+    table sheet counts its dates the same way.
 - **Statistics:** STDEV, VAR, RANK, MODE, PERCENTILE and QUARTILE, under their old names and new
-  ones; FORECAST(.LINEAR), TREND, GROWTH, FREQUENCY.
+  ones; FORECAST(.LINEAR), TREND, GROWTH, FREQUENCY. Also AVERAGEA, MAXA and MINA (from a range,
+  text counts as 0 and TRUE as 1), TRIMMEAN, QUARTILE.EXC, PERCENTRANK and its .INC and .EXC forms
+  (truncated to three digits, as Excel does: 5 of 9 is 0.555), BINOM.DIST, and the T.DIST family
+  (T.DIST, T.DIST.RT, T.DIST.2T, TDIST). VARP and VARA under their old names.
+  - The distributions and their inverses: EXPON.DIST, POISSON.DIST, WEIBULL.DIST, HYPGEOM.DIST,
+    NEGBINOM.DIST, CHISQ.DIST(.RT) and CHISQ.INV(.RT), GAMMA.DIST and GAMMA.INV, BETA.DIST and
+    BETA.INV, F.DIST(.RT) and F.INV(.RT), LOGNORM.DIST and LOGNORM.INV, T.INV and T.INV.2T,
+    BINOM.INV, CONFIDENCE.NORM and CONFIDENCE.T; GAMMA, GAMMALN(.PRECISE), FISHER, FISHERINV, PHI,
+    GAUSS, STANDARDIZE, COMBINA, PERMUTATIONA; and the pre-2010 names (POISSON, CHIDIST, FDIST,
+    TINV, BETADIST, LOGNORMDIST, CRITBINOM…) with their own arguments — BETADIST takes bounds,
+    LOGNORMDIST is cumulative, FDIST and CHIDIST are the right tail, TINV is two-tailed.
+  - A statistic with too few numbers answers Excel's error, never a number: a sample STDEV or VAR
+    needs two (#DIV/0!), SKEW three and KURT four (#DIV/0!), a population STDEV or VAR one
+    (#DIV/0!); LARGE, SMALL, PERCENTILE and QUARTILE of an empty list are #NUM!, GEOMEAN of nothing
+    #NUM!, MODE #N/A; HARMEAN of any value of 0 or less is #NUM!.
+- **Database functions:** DSUM, DAVERAGE, DCOUNT, DCOUNTA, DMAX, DMIN, DPRODUCT, DGET, DSTDEV,
+  DSTDEVP, DVAR and DVARP, over a table whose first row names its columns, with a criteria range
+  read as Excel reads one: its first row names fields (in any case), each row under it is one
+  alternative (OR), the cells in a row must all hold (AND), a blank cell is no condition, and bare
+  text means *begins with* (`Ap` finds Apple) while `=Apple` is exact. DGET is #VALUE! when nothing
+  matches and #NUM! when more than one record does. A criteria column whose label is not a field of
+  the table matches nothing: Excel reads such a column as a formula criterion, which is not
+  supported here.
+- **Complex numbers:** all twenty-five of Excel's — IMSUM, IMSUB, IMPRODUCT, IMDIV, IMCONJUGATE,
+  IMPOWER, IMSQRT, IMABS, IMREAL, IMAGINARY, IMARGUMENT, IMEXP, IMLN, IMLOG10, IMLOG2, and the
+  trigonometric and hyperbolic ones (IMSIN … IMCSCH) — over Excel's text form (`3+4i`, `2-j`,
+  `1E-07+2i`) or a plain number. An answer keeps the suffix its arguments used, a mix of `i` and `j`
+  is #VALUE!, a zero part is dropped and a unit written `i` alone, and every number is written to
+  fifteen significant digits as Excel writes one (`IMDIV("1","3")` is `0.333333333333333`). Angles
+  are in (−π, π], so the negative real axis is at π: `IMSQRT("-4")` is `2i`, `IMLN("-1")` is
+  `3.14159265358979i`. Text that is not a complex number is #NUM!, TRUE or FALSE #VALUE!, a pole
+  (`IMCOT("0")`) or an overflow #NUM!. IMSUM and IMPRODUCT read ranges and pass over blank cells; a
+  blank single argument counts as 0 (Excel's own answer for a blank is unconfirmed).
+- **Matrices, bits and types:** MMULT spills its product; BITAND, BITOR, BITXOR, BITLSHIFT,
+  BITRSHIFT; COMPLEX writes Excel's text form (`3+4i`); TYPE (1 number, 2 text, 4 logical, 16 error,
+  64 array) and ERROR.TYPE (2 for #DIV/0!, 7 for #N/A…).
 - **The long tail** of statistical, financial and engineering functions.
   - CEILING, FLOOR and their .MATH forms land on the multiple a decimal step names
     (`=FLOOR(4.35,0.05)` is 4.35), and a positive number with a negative step is #NUM!, as in
@@ -86,6 +126,11 @@ Type `=` and a formula, as in Excel. About 240 functions are available:
   - For loans and investments, beside PMT, IPMT, PPMT, FV, PV, NPER, RATE, NPV, IRR, XNPV and XIRR:
     CUMIPMT and CUMPRINC (interest and principal between two periods), MIRR (which skips blank
     flows, as IRR does), FVSCHEDULE, SYD, ISPMT, PDURATION and RRI.
+  - VDB depreciates from one period to another by declining balance (double, unless a factor is
+    given) and switches to straight line over what is left once that is larger, unless its last
+    argument is TRUE. A part period takes its share of that period, so `=VDB(2400,300,10,0,0.875,1.5)`
+    is 315 and the pieces of a life add up to cost − salvage. A span that ends before it starts or
+    after the life, a negative number, a factor of 0 or a salvage above the cost is #NUM!.
   - They read their arguments as Excel does. In a range, a blank cell is not a 0, and text and TRUE
     are left out, so `=GEOMEAN(A1:A3)` over 1, a blank and 3 is 1.73 and `=NPV(0.1,A1:A3)`
     discounts two payments, not three. STDEVA counts text as 0 and TRUE as 1, and still skips
@@ -105,6 +150,23 @@ The same rules as Excel apply:
   as Excel writes it: 123456789012 stays whole (`LEN` 12), `=1/3&""` is `0.333333333333333`, and
   `=0.1+0.2&""` is `0.3`. From 1E+15 up, and under 1E-9, it is written in scientific notation. The
   cell itself still shows a long number the way a narrow cell does (`1.23457E+11`).
+- General shows ten significant digits, and a whole part of eleven digits in full:
+  12345678901.005 shows as `12345678901`. Numbers from 1E+11 up and under 1E-6 show in scientific
+  notation with a two-digit exponent (`1.5E-07`).
+- A number format past 15 digits shows 15 and then zeros, as Excel does:
+  `=TEXT(12345678901234567,"#,##0")` is `12,345,678,901,234,600`, and `=TEXT(1.5E+21,"0")` writes
+  out all 22 digits.
+- CEILING, FLOOR and their .MATH forms read the quotient at the same 15 digits:
+  `=CEILING(0.0000000001,1)` is 1 and `=CEILING(5.0000000001,1)` is 6, while `=FLOOR(0.3,0.1)` is
+  still 0.3.
+- A number format and TEXT() round the 15 digits Excel keeps, as ROUND does. 2.675 is stored a
+  hair under 2.675, but `=TEXT(2.675,"0.00")` and a cell formatted `0.00` both show 2.68, and
+  `=TEXT(0.01+0.075,"0.00")` is 0.09. TEXT of a blank cell is TEXT of 0 (`0.00`).
+- ROUND, ROUNDUP, ROUNDDOWN and TRUNC round the same 15 digits: `=ROUND(1.005,2)` is 1.01, and
+  `=TRUNC(0.29,2)` is 0.29 (TRUNC is ROUNDDOWN, as in Excel).
+- PROPER capitalises the first letter of each word in any alphabet: `=PROPER("ÉCOLE normale")` is
+  `École Normale`. As in Excel, anything that is not a letter starts a word, so `o'neil 2-way`
+  becomes `O'Neil 2-Way`. A letter whose capital is two letters, such as `ß`, stays as it is.
 - Criteria are strings such as `">100"`, `"<>West"` and `"ap*"`.
 - References can be relative or absolute (`$A$1`), whole columns (`A:A`), or cross-sheet (`'Sales Data'!D2`).
   - A whole column is all 1,048,576 rows, as in Excel, and a whole row all 16,384 columns.
@@ -139,7 +201,10 @@ While a formula is being typed:
 - The list under the formula bar suggests function names and the workbook's names. Press
   **Tab** to insert one.
 - A hint shows the arguments of the function the caret is in.
-- Clicking or dragging across cells inserts their reference, as Excel's point mode does.
+- Clicking or dragging across cells inserts their reference, as Excel's point mode does. Dragging
+  across the whole of a spilled array inserts its spill reference, `A2#`, so the formula follows the
+  array when it grows or shrinks; part of it is an ordinary range, and a spill that is blocked has
+  no `A2#`.
 
 Open parentheses are closed for you on **Enter**.
 
@@ -235,7 +300,9 @@ the workbook.
 It is one Ctrl+Z. After a cut it is refused, as in Excel: what was cut moves whole.
 
 A cell's menu also has **Insert cells…** and **Delete cells…**, as Excel's: shift the neighbouring
-cells right or down (insert) or left or up (delete), or take whole rows or columns. Only the cells
+cells right or down (insert) or left or up (delete), or take whole rows or columns. The dialog starts
+on the way the selection's shape suggests: sideways for a selection taller than it is wide (B8:B12
+shifts right), up or down otherwise, one cell included. Only the cells
 in the block's rows (or columns) move. Formulas that pointed at a moved cell follow it, and one
 that pointed into deleted cells shows `#REF!`. A range follows when it lies wholly in the rows (or
 columns) that move, so `=SUM(A2:E2)` grows with a cell inserted into row 2, while `=SUM(C1:C9)`
@@ -260,6 +327,15 @@ A sheet tab's menu (the arrow on the tab) renames, duplicates, moves, hides and 
   view moves to the next one showing. Ctrl+Z takes back a Hide or an Unhide, and a hidden sheet
   is never left on screen.
 - A workbook keeps at least one sheet showing, so hiding or deleting the last one is refused.
+  That holds for two deletes arriving at the same moment too: the count that decides is taken
+  after the delete, and a delete that turns out to have taken the last sheet puts it back whole,
+  cells and all, and says so (R246). If a workbook does end up with no sheets, it says that
+  plainly and offers to add one, rather than sitting on "Opening…".
+- **Delete** asks first, and says what goes. A grid sheet's cells go with it, and formulas
+  elsewhere that refer to it show #REF!. A table sheet has no cells: only the sheet goes, and the
+  lakehouse table (or the query's tables, or the sheet a pivot sums up) stays; a table Sheets held
+  — rows uploaded or imported into it — can be changed from the Lakehouse again. Formulas and
+  pivots that use a deleted table sheet show an error.
 - Moving a tab passes over the hidden sheets beside it, and Find leaves hidden sheets out, as
   Excel's does.
 - Only grid sheets can be hidden or duplicated for now.
@@ -617,7 +693,9 @@ sheet's calculated columns, pivots and formulas stand on its columns. So it is c
 Sheets:
 
 - In the Lakehouse it reads like any table. Its page says **Held by Sheets · workbook › sheet**,
-  links to the sheet, and offers no **Insert row** or **Drop**.
+  links to the sheet, and offers no **Insert row** or **Drop**. If it is also a materialized view,
+  **Rebuild** is off, and says why on hover: only Sheets changes it; delete the sheet, and it can
+  be rebuilt there.
 - Anything that would change it is refused, naming the sheet:
   - a statement in the SQL editor or a workflow SQL step;
   - an ETL pipeline writing it;
@@ -669,7 +747,23 @@ the query the lakehouse runs, so a calculated column costs the same on ten milli
 
 It follows Excel where SQL would differ:
 
-- A blank counts as 0 in arithmetic and as "" in text.
+- A blank counts as 0 in arithmetic and as "" in text: `[@name] & ": " & [@amount]` ends in ": "
+  on a row with no amount, as a grid does.
+- MIN, MAX and AVERAGE of this row's values (`AVERAGE([@a], [@b])`) skip a blank, text or
+  TRUE/FALSE reference, as Excel skips such a cell.
+- ROUND, ROUNDUP, ROUNDDOWN, TRUNC and TEXT round the 15 significant digits Excel keeps, by the
+  same rule as a grid: `ROUND(1.005, 2)` is 1.01 and `TRUNC(0.29, 2)` is 0.29, though the stored
+  binary is a hair under each. Most rows take plain arithmetic; only a value on the edge of a half
+  is worked out from its digits, so the cost over a million rows is close to SQL's own `round()`.
+- A number in text is written to 15 significant digits, as in a grid: `[@total] & ""` over
+  0.01 + 0.075 is `0.085`, not the 17-digit `0.08499999999999999`. TEXT past 15 digits shows 15
+  and then zeros, and CEILING and FLOOR read the quotient at 15 digits, as a grid does.
+- PROPER capitalises each word in any alphabet, a word starting after anything that is not a
+  letter: `o'neil 2-way` becomes `O'Neil 2-Way`, as in Excel.
+- A number with no value, a negative to a fractional power or MROUND with signs that differ, shows
+  `#NUM!`.
+- `tests/unit/sheetsGridTableParity.test.ts` runs a list of formulas through the grid engine and
+  through the compiled SQL on DuckDB, row by row, and they must agree.
 - Text compares without case.
 - MOD takes the divisor's sign.
 - `DATE(2024, 13, 1)` rolls over to 2025-01-01.

@@ -220,8 +220,11 @@ something goes wrong:
 <query>`, so anyone querying during a rebuild sees the old rows or the new
   ones, never a half-built table.
 - **A failed rebuild keeps the previous data.** Stale rows a user can see and
-  diagnose beat an empty table. The failure is recorded on the view and shown
-  in the UI.
+  diagnose beat an empty table. The failure is recorded on the view, and the
+  table's tab says so where people look: the badge reads **last rebuild
+  failed** in red, beside the reason's first line and the time of the rebuild
+  the rows are from (the whole error on hover). Until R185 the badge went on
+  reading "materialized" and the failure lived only in its hover title.
 - **The definition is re-checked every time, not just when saved.** A grant
   revoked since then stops the refresh, and a definition edited into a write is
   refused rather than executed.
@@ -274,7 +277,20 @@ comments-and-casing, UNION arm), all of which stayed filtered, plus an
 aggregate over a masked column, which returned no values.
 
 If the rewrite cannot be completed for any reason, the query is **refused**.
-The one failure this must never have is running unfiltered.
+The one failure this must never have is running unfiltered. A rewrite that
+finds a policed table and replaces nothing is refused too (R224).
+
+`SUMMARIZE` is a read like any SELECT: it reports the min, max, distinct
+count and quartiles of every column, so a reader's `SUMMARIZE` goes through
+the same rewrite and summarises only the rows and values they may see.
+`DESCRIBE` and `SHOW` return a table's shape, not its rows, and are not
+rewritten. Before R224 the statement's tables were looked up by its first
+word, and SUMMARIZE named none, so no policy was loaded and a masked column's
+minimum and maximum were two real values. That includes not
+being able to *read* the policy: a failed read of the table policies, the tag
+policies or the catalog tags they key on is an error, never "no policy" (R223).
+Before R223 those reads dropped their errors, and one failed read ran a
+reader's query unfiltered.
 
 A filter is validated against the real table when you save it, so a typo is
 caught at authoring time rather than by blocking every reader at once.
@@ -413,6 +429,12 @@ reaches the engine, at one chokepoint (`runLakehouseStatement`):
    …) are refused because the engine-level S3 secret would otherwise let any
    user read any path the deployment can (pure generators like `range` pass).
 3. **Writes must be schema-qualified** and target an accessible schema.
+   Pipelines and other sandboxes reach the lake through the same rules, run by
+   the app for them: see [Sandbox lakehouse access](./SANDBOX_LAKEHOUSE_ACCESS.md).
+   A write may not call a table function anywhere in it (R226). DuckDB
+   will not parse a write into an AST, so every name the statement calls is
+   compared with every table function the engine lists in
+   `duckdb_functions()`; the pure generators pass, as they do in a SELECT.
 4. Row caps (10k default) and an interrupt-based timeout bound every query.
 5. **Tables a Sheets table sheet holds** (an uploaded file, rows imported
    from a connection) are read, never changed, here: every write path asks
@@ -518,12 +540,37 @@ an attached catalog directly; the guard refuses every catalog but the
 lakehouse's own, so the only way to an Iceberg table is a mount you can see.
 
 **Publish a table.** On a table tab, **Publish to Iceberg** writes a copy of
-the table into a catalog namespace as an Iceberg table (`CREATE TABLE AS`
-through the catalog, which commits the metadata and owns the files from then
-on). "Replace" drops and recreates - the extension has no `CREATE OR
-REPLACE` for Iceberg - and "refuse" keeps an existing table. **Import** is
-the reverse: copy an Iceberg table into a schema you created as a real
-DuckLake table, with no dependence on the catalog afterwards.
+the table into a catalog namespace as an Iceberg table: a `CREATE TABLE`
+with the source's own column list, then an `INSERT` of its rows, through the
+catalog, which commits the metadata and owns the files from then on. It is
+not a `CREATE TABLE AS`: the iceberg extension build a fresh image bakes
+writes a `CREATE TABLE AS`'s files to a relative `data/` directory whenever
+the ducklake extension is loaded, as it always is here, and every publish
+failed (R181). Column types are accepted or refused exactly as before
+(`UTINYINT`, `UBIGINT`, `ENUM` and `INTERVAL` are not Iceberg types). A
+publish whose rows do not go in removes the empty table it made.
+
+Only a table's **owner** publishes it whole. A reader of a shared schema reads
+its tables through the owner's row filters and column masks, and an Iceberg
+table cannot carry them, so a reader is refused a table under a policy, as on
+Spark (R223). Before R223 the publish checked only that the reader could see
+the schema, and copied the table unfiltered into a catalog the reader owns.
+
+"Replace" never leaves the name empty (R182); the extension has no `CREATE
+OR REPLACE` for Iceberg. When the catalog's table already has the new
+data's columns (same names, order and types as the engine reads them), its
+rows are deleted and the new ones inserted in one transaction: one commit,
+so a reader sees the old rows or the new ones and a failed write leaves the
+old rows. The old rows stay in the table's history until the catalog expires
+its snapshots. Otherwise the new data is staged under a name made for that
+publish (a write that cannot happen fails there, before anything is touched,
+R107), then swapped in by two renames in one transaction, and the old table
+is dropped last. A REST catalog applies those renames one after the other, so
+for that moment (0.4 to 1.5 s on the development catalog) a reader can miss
+the table, but never finds it empty. A swap that fails puts the old table
+back. "Refuse" keeps an existing table. **Import** is the reverse: copy an
+Iceberg table into a schema you created as a real DuckLake table, with no
+dependence on the catalog afterwards.
 
 Every action is audited: catalog definitions through the `iceberg_catalog`
 row trigger; `lakehouse.iceberg.mount`, `lakehouse.iceberg.refresh`,
@@ -593,6 +640,14 @@ guarantee a DuckDB query gives. Results are capped at the same row limit as
 the page's DuckDB path; a query holds its cluster for at most
 `LAKEHOUSE_SPARK_QUERY_MINUTES` (default 30). The History tab marks Spark
 answers, so a 40-second Spark query is not mistaken for a slow DuckDB one.
+
+The page polls the query every two seconds while it runs. A poll that fails,
+whether the network or the server's read of the query, is retried; after five
+in a row the page stops watching and says the query may still be running, and
+History shows it when it ends. Before R222 the server answered a failed read as
+"no such query", and the page took one such answer for the query having ended:
+it stopped watching and said it "may have been cancelled elsewhere" while the
+query ran on and finished.
 
 Verified live on the compose Spark 4.2 endpoint: a table written, flushed,
 then edited (so it had both a data file and a delete file) returned the same

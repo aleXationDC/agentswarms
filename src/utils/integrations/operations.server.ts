@@ -44,15 +44,23 @@ export async function saveIntegrationForUser(
     await import("../providers/integrationConfig.server");
   const { auditEvent } = await import("../audit.server");
 
+  // R254: a row that could not be read is not a row that is not there. A blank
+  // secret field keeps the saved one by merging with that row.
+  const unreadable = (e: { message: string }) => ({
+    ok: false as const,
+    error: `Could not read the saved integration, so nothing was saved (a blank secret field would have erased the stored one): ${e.message}`,
+  });
+
   let targetId: string | null = null;
   let existingConfig: Record<string, unknown> | null = null;
   if (data.id) {
-    const { data: existing } = await supabaseAdmin
+    const { data: existing, error: existingErr } = await supabaseAdmin
       .from("integrations")
       .select("id, config")
       .eq("id", data.id)
       .eq("user_id", userId)
       .maybeSingle();
+    if (existingErr) return unreadable(existingErr);
     if (existing) {
       targetId = existing.id;
       existingConfig = (existing.config ?? null) as Record<string, unknown> | null;
@@ -65,10 +73,11 @@ export async function saveIntegrationForUser(
       .eq("user_id", userId)
       .eq("type", data.type);
     if (data.type === "llm_provider") query = query.eq("provider", data.provider);
-    const { data: rows } = await query
+    const { data: rows, error: rowsErr } = await query
       .order("is_active", { ascending: false })
       .order("updated_at", { ascending: false })
       .limit(1);
+    if (rowsErr) return unreadable(rowsErr);
     if (rows && rows.length > 0) {
       targetId = rows[0].id;
       existingConfig = (rows[0].config ?? null) as Record<string, unknown> | null;
@@ -104,15 +113,25 @@ export async function saveIntegrationForUser(
       if (inserted.error.code === "23505") {
         let query = supabaseAdmin
           .from("integrations")
-          .select("id")
+          .select("id, config")
           .eq("user_id", userId)
           .eq("type", data.type);
         if (data.type === "llm_provider") query = query.eq("provider", data.provider);
-        const { data: winner } = await query.limit(1).maybeSingle();
+        const { data: winner, error: winnerErr } = await query.limit(1).maybeSingle();
+        if (winnerErr) return unreadable(winnerErr);
         if (!winner) return { ok: false, error: inserted.error.message };
+        // The row being updated is the winner's, so a blank secret keeps the winner's value.
+        const winnerRow = {
+          ...row,
+          config: preserveBlankSecrets(
+            data.type,
+            await encryptIntegrationConfig(data.type, data.config),
+            (winner.config ?? null) as Record<string, unknown> | null,
+          ) as Database["public"]["Tables"]["integrations"]["Insert"]["config"],
+        };
         const { error } = await supabaseAdmin
           .from("integrations")
-          .update(row)
+          .update(winnerRow)
           .eq("id", winner.id)
           .eq("user_id", userId);
         if (error) return { ok: false, error: error.message };

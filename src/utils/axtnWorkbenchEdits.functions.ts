@@ -1,3 +1,5 @@
+import { withNulSafeFetch } from "@/integrations/supabase/nulSafeFetch";
+import { callerFailure } from "@/utils/callerLookup.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -27,13 +29,18 @@ export const saveAxtnWorkbenchMetadata = createServerFn({ method: "POST" })
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_PUBLISHABLE_KEY;
     if (!url || !key) throw new Error("Server is not configured.");
-    const sb = createClient<Database>(url, key, {
-      global: { headers: { Authorization: `Bearer ${data.access_token}` } },
-    });
+    const sb = createClient<Database>(
+      url,
+      key,
+      withNulSafeFetch({
+        global: { headers: { Authorization: `Bearer ${data.access_token}` } },
+      }),
+    );
     const {
       data: { user },
+      error: userError,
     } = await sb.auth.getUser();
-    if (!user) throw new Error("Invalid session.");
+    if (!user) throw new Error(callerFailure(userError, "Invalid session."));
     const edits = allowlistedMetadataEdits(data.edits);
     if (Object.keys(edits).length === 0) throw new Error("Select at least one editable field.");
     const documentIds = data.ids.map(Number);
