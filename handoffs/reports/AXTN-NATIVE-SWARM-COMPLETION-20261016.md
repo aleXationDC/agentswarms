@@ -142,3 +142,22 @@ Es wurde nichts lokal als Release-Image eingesetzt.
 **Rollengrenzen:** Eine einzelne Fixture-Messung belegt Vertragstreue, nicht Qualität; kein bounded Vergleich mit fehlerhaften Kandidaten für Flash ausgeführt. Live-IAM-Negativprobe pro Modell mit synthetischer Identität weiterhin nicht ausgeführt (Voraussetzung: isolierte Test-Identität ohne Modellrecht).
 
 **Phase A `AXTN-SUPACASE-USABILITY-0001`: NOT_READY.** Der publizierte Swarm validiert fest `repository=aXtn/development-swarm-acceptance` (`axtnDevelopmentSwarm.ts:52`), `path=src/normalize_score.py` (:57), `request` ≤ 8000 (:56), Testprofil `python-normalization-v1` (:66), Candidate ≤ 16000 Zeichen (:76), PR-Ziel/Branch hart auf das Acceptance-Repo (:77/:85/:180) und Builder-Prompt auf normalize_score (:292). Der Case-Auftrag (Repo `aXtn/aXtn-agentswarms`, mehrere Dateien/Bereiche) passt nicht; Tarnung als Python-Task wäre unzulässig (SWARM-Work-Order). Kleinste native Anschlussmöglichkeit: neuer Task-Vertrag `axtn.development.task/v2` mit Repository-Allowlist, Mehrdatei-Candidate, Testprofil für TypeScript (`npm`-basiert) im Runtime-Verify-Tool, Builder-Prompt aus dem Vertrag, plus Case-Lineage (ein Parent, Pakete `master-data`, `case-workbench`, `logging-observation`, `acceptance`). Keine Ausführung des Auftrags erfolgt.
+
+## Nachtrag 7fced1df – Teilstatus (Stand Fortsetzung)
+
+**Temperatur-Fix**
+- Source: `agent?.temperature ?? 0.7` (`5a4d1405`); Regressionstest `tests/unit/agentFormTemperature.test.ts` (`57fe65cb`, grün, eslint ok).
+- Deployed: Image `127.0.0.1:3000/axtn/axtn-agentswarms:57fe65cb…`, Digest `sha256:f04c13b962471c61aa445c271979d0073b3c01393a3d0184f55fbe8df56ea1d4`; Container healthy, HTTP 200. Rollback: `compose.pre-release-57fe65cb.env`.
+- Live-UI-Readback (Playwright, deployed): Builder und DMS Stage 1 zeigen Temperatur 0 (DB: 0.00), Demo Friendly 0.5, neuer Agent Default 0.7, Slider auf 0 einstellbar. Ein vollständiger Speichern-Roundtrip mit Testagent wurde NICHT abgeschlossen (Scratch-Agent wurde nicht angelegt); produktive Agenten blieben unverändert.
+- Guarded-Badge: `hasGuardrails` ist bei `contentSafetyLevel !== "off"` true; die früheren Dev-Agents speichern nun explizite Defaults (Filter aus). Kein Schutzverlust, kein Code-Fix.
+
+**TypeScript-Runtime (Teil 4) – Lücke belegt**
+- Runtime-Image `agentswarms/notebook-runtime:latest` (geprüft, `--network none`): nur Python 3.12; `node`, `npm`, `git` fehlen.
+- Der Development-Swarm ist in `src/lib/axtnDevelopmentSwarm.ts` fest auf Repo-Allowlist, `src/normalize_score.py` und Testprofil `python-normalization-v1` verdrahtet (`workContract.ts` enum nur `python-normalization-v1 | documentation-v1`). Ein TypeScript-Produktrepo-Task ist nativ NICHT ausführbar.
+- Kleinster Erweiterungsentwurf (nicht implementiert): neues unveränderliches Testprofil `node-ts-v1` mit Mehrdatei-Pfadscope, Base-SHA-Checkout im Runtime-Image mit gepinnten Node/npm (offline, lockfile-basierte Dependencies), Receipt, der den gesamten Candidate (alle Dateien) hasht; v1-Fixture und Repo-Allowlist bleiben unverändert; kein freier Shell-/npm-Befehl im Task.
+
+**Offen (nicht erledigt)**
+- KB „aXtn LLMHub Model Knowledge“ und Skill „aXtn LLMHub Model Selection“: Dokumente liegen im Repo (`docs/architecture/llmhub-model-knowledge/`), UI-Import, Indexstatus, Agententest mit Trace-IDs, Registry-Abgleich fehlen.
+- IAM-Negativprobe und Flash-Gegenprobe am fehlerhaften Candidate fehlen.
+
+**Sicherheitsvorfall**: Beim Anzeigen von `compose.env` wurden `AGENTSWARMS_INTERNAL_RUN_SECRET` und `AGENTSWARMS_PROVIDER_CREDS_SECRET` (dev-native) im Klartext in die Sitzungsausgabe geschrieben. Rotation empfohlen.
