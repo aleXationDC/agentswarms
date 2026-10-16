@@ -1,3 +1,17 @@
+# Aktuell: Update zuerst, danach aXtn vLLM Swarm Selector — 16.10.2026 15:26 Europe/Berlin
+
+Maßgeblich ist die jüngste UPDATE-FIRST-Fortsetzung am Ende des vollständigen Auftrags:
+handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md
+
+Zuerst AgentSwarms auf verifizierter Git-Basis gegen v1.6.0@70c295f17af39c81b1a4b56e6552307f5d91eef3 aktualisieren, validieren und über bestehende Host-Release-Verträge in Betrieb nehmen. Dann erst die benannte aXtn-Erweiterung auf neuer Basis prüfen/entwickeln. Alte Selector-Patches erhalten, aber nicht ungeprüft als native Updatebestandteile übernehmen. Bereits akzeptierte aXtn-Funktionen und historische Migrationen erhalten. Kein blindes moving-main-Update, keine neue Orchestrierung.
+
+Produkt-/Wartungsabgrenzung: docs/architecture/axtn-vllm-swarm-selector.md.
+Source-Audit: handoffs/reports/AXTN-NATIVE-GATEWAY-PARITY-AUDIT-20261016.md.
+
+Die bloße Update-Prüfung im vorigen Addendum ist durch die ausdrückliche Nutzerentscheidung zur Update-Umsetzung ersetzt. Echte Credential-/Backupvoraussetzungen bleiben unverändert; keine allgemeine erneute Update-Freigabe verlangen.
+
+## Frühere Auftragsstände — nur soweit nicht durch die jüngste Fortsetzung ersetzt
+
 # Maßgebliche Nutzerpräzisierung — 16.10.2026, 11:19
 
 Native Benutzer-/Gruppen-IAM bestimmt Modellzugriff. Agent-Opt-in bestimmt den nativen Gateway-Weg, route_all=false. Case, Account und Kostenträger sind keine zusätzliche Modell-/Gateway-Berechtigung und wählen keine andere Credential-Identität. Der native Ausführungsbenutzer bleibt serverseitig authentifiziert; Cases bleiben fachlicher Träger/Evidence.
