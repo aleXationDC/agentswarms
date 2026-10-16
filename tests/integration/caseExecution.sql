@@ -31,10 +31,10 @@ BEGIN
   INSERT INTO iam_groups(id,name) VALUES(fixture_group,'synthetic-execution-'||fixture_group);
   INSERT INTO iam_group_members(group_id,user_id) VALUES(fixture_group,b),(fixture_group,c);
   INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern)
-    VALUES('user',b,'openai','fixture-model'),('user',c,'openai','fixture-model');
+    VALUES('user',b,'axtn_chatgpt_plan','fixture-model'),('user',c,'axtn_chatgpt_plan','fixture-model');
   INSERT INTO integrations(user_id,type,name,provider,is_active,config) VALUES
-    (b,'llm_provider','Synthetic personal fixture','openai',true,'{}'),
-    (c,'llm_provider','Synthetic personal fixture','openai',true,'{}');
+    (b,'llm_provider','Synthetic personal fixture','axtn_chatgpt_plan',true,'{}'),
+    (c,'llm_provider','Synthetic personal fixture','axtn_chatgpt_plan',true,'{}');
   root:=axtn_case_manual(a,'create',jsonb_build_object('row',jsonb_build_object(
     'subject','Synthetic native execution','status','OPEN','priority',3,'source_kind','manual','source_id',a),
     'expectedVersion',0,'transitionKey','execution-root','_principal',jsonb_build_object('kind','user_session','id',a)));
@@ -55,8 +55,8 @@ BEGIN
   original_case:=first_child->>'case_id';
   INSERT INTO swarms(id,user_id,name) VALUES(swarm,a,'Synthetic execution fixture');
   INSERT INTO swarm_runs(id,user_id,swarm_id,status,swarm_snapshot) VALUES
-    (first_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"openai","model":"fixture-model"}}]}'),
-    (second_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"openai","model":"fixture-model"}}]}');
+    (first_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"axtn_chatgpt_plan","model":"fixture-model"}}]}'),
+    (second_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"axtn_chatgpt_plan","model":"fixture-model"}}]}');
   request:=jsonb_build_object('runId',first_run,'caseId',original_case,
     '_principal',jsonb_build_object('kind','user_session','id',a));
   result:=axtn_case_execution(a,'bind_run',request);
@@ -127,19 +127,13 @@ BEGIN
     (other_run,a,swarm,'running','{"nodes":[{"id":"agent","data":{"kind":"agent","provider":"openai","model":"fixture-model"}}]}');
   PERFORM axtn_case_execution(a,'bind_run',jsonb_build_object(
     'runId',company_run,'caseId',company_case->>'case_id','_principal',jsonb_build_object('kind','user_session','id',a)));
-  BEGIN
-    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object(
-      'runId',company_run,'nodeId','agent','operationKey','agent/no-own-grant'));
-    RAISE EXCEPTION 'SYSTEM_INTEGRATION accepted the actor-owned credential without an IAM grant';
-  EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM<>'SYSTEM_INTEGRATION_UNAVAILABLE' THEN RAISE; END IF;
-  END;
-  INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
-    VALUES('user',a,'integration',company_integration);
+  -- Native identity: the run owner's own integration is valid without an IAM grant, and the Case
+  -- responsible group is a reporting dimension, not a funding gate or payer.
   result:=axtn_case_execution(a,'resolve',jsonb_build_object('runId',company_run,'nodeId','agent','operationKey','agent/0'));
-  IF result->>'budget_subject_group_id'<>fixture_group::text OR result->>'budget_subject_user_id' IS NOT NULL
+  IF result->>'budget_subject_group_id' IS NOT NULL OR result->>'budget_subject_user_id'<>a::text
     OR result->>'execution_class'<>'SYSTEM_INTEGRATION' OR result->>'policy_user_id'<>a::text
-  THEN RAISE EXCEPTION 'Configured company funding did not bind responsible group'; END IF;
+    OR result->>'responsible_group_id'<>fixture_group::text
+  THEN RAISE EXCEPTION 'Native owner identity/budget was replaced by Case funding'; END IF;
   result:=axtn_case_execution(a,'credential',jsonb_build_object('runId',company_run,'nodeId','agent'));
   IF result->>'ownerId'<>a::text OR result->>'source'<>'integration'
     OR result->>'id'<>company_integration::text
@@ -329,8 +323,8 @@ BEGIN
   END;
   UPDATE budget_limits SET is_active=false WHERE scope_type='group' AND scope_id=fixture_group;
   result:=axtn_case_execution(a,'resolve',jsonb_build_object('runId',company_run,'nodeId','agent','operationKey','agent/1'));
-  IF result->>'budget_subject_group_id'<>fixture_group::text
-  THEN RAISE EXCEPTION 'Live cap change silently changed Attempt payer'; END IF;
+  IF result->>'budget_subject_group_id' IS NOT NULL OR result->>'budget_subject_user_id'<>a::text
+  THEN RAISE EXCEPTION 'Live cap change changed the native budget identity'; END IF;
   INSERT INTO execution_traces(id,user_id,agent_name,llm_provider,llm_model,prompt,cost_usd,
     budget_execution_run_id,budget_subject_user_id,cost_scope_type,cost_scope_id)
     VALUES(private_trace,a,'Synthetic private personal trace','openai','fixture-model',
@@ -339,18 +333,18 @@ BEGIN
     budget_execution_run_id,budget_subject_user_id) VALUES
     (a,'Synthetic second personal trace','openai','fixture-model',3,second_run,second_actor);
   INSERT INTO execution_traces(user_id,agent_name,llm_provider,llm_model,cost_usd,
-    budget_execution_run_id,budget_subject_group_id,cost_scope_type,cost_scope_id) VALUES
-    (a,'Synthetic company trace','openai','fixture-model',5,company_run,fixture_group,'swarm_api_key',resource_key),
-    (a,'Synthetic other company trace','openai','fixture-model',13,other_run,other_group,NULL,NULL);
+    budget_execution_run_id,budget_subject_user_id,cost_scope_type,cost_scope_id) VALUES
+    (a,'Synthetic company trace','openai','fixture-model',5,company_run,a,'swarm_api_key',resource_key),
+    (a,'Synthetic other company trace','openai','fixture-model',13,other_run,a,NULL,NULL);
   INSERT INTO execution_traces(user_id,agent_name,llm_provider,llm_model,cost_usd) VALUES
     (first_actor,'Synthetic legacy member trace','openai','fixture-model',1),
     (a,'Synthetic legacy operator trace','openai','fixture-model',7);
   PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
-  IF budget_spend_since(a,date_trunc('month',now()))<>7
+  IF budget_spend_since(a,date_trunc('month',now()))<>25
     OR budget_spend_since(first_actor,date_trunc('month',now()))<>3
     OR budget_spend_since(second_actor,date_trunc('month',now()))<>3
-    OR (axtn_case_group_spend(fixture_group,date_trunc('month',now()))->>'spend')::numeric<>11
-    OR (axtn_case_group_spend(other_group,date_trunc('month',now()))->>'spend')::numeric<>19
+    OR (axtn_case_group_spend(fixture_group,date_trunc('month',now()))->>'spend')::numeric<>6
+    OR (axtn_case_group_spend(other_group,date_trunc('month',now()))->>'spend')::numeric<>6
     OR budget_spend_since(NULL,date_trunc('month',now()),'swarm_api_key',resource_key)<>7
   THEN RAISE EXCEPTION 'Company/personal/operator/key attribution cross-charged or double-counted'; END IF;
   PERFORM set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',first_actor)::text,true);
@@ -428,7 +422,9 @@ BEGIN
     IF SQLERRM<>'CASE_EXECUTION_NATIVE_RETENTION_REQUIRED' THEN RAISE; END IF;
   END;
   RESET ROLE;
-  SELECT id INTO duplicate_integration FROM integrations WHERE user_id=first_actor AND provider='openai';
+  INSERT INTO integrations(user_id,type,name,provider,is_active,config)
+    VALUES(first_actor,'llm_provider','Synthetic second company fixture','openai',true,'{}')
+    RETURNING id INTO duplicate_integration;
   INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
     VALUES('user',a,'integration',duplicate_integration);
   BEGIN
@@ -447,15 +443,15 @@ BEGIN
   END;
   UPDATE integrations SET is_active=true WHERE user_id=a AND provider='openai';
   INSERT INTO iam_resource_grants(principal_type,principal_id,resource_type,resource_id)
-    SELECT 'user',second_actor,'integration',id FROM integrations WHERE user_id=first_actor AND provider='openai';
-  UPDATE integrations SET is_active=false WHERE user_id=second_actor AND provider='openai';
+    SELECT 'user',second_actor,'integration',id FROM integrations WHERE user_id=first_actor AND provider='axtn_chatgpt_plan';
+  UPDATE integrations SET is_active=false WHERE user_id=second_actor AND provider='axtn_chatgpt_plan';
   BEGIN
     PERFORM axtn_case_execution(a,'credential',jsonb_build_object('runId',second_run,'nodeId','agent'));
     RAISE EXCEPTION 'Personal connection fell back to granted foreign connection';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM<>'PERSONAL_CONNECTION_REQUIRED' THEN RAISE; END IF;
   END;
-  UPDATE integrations SET is_active=true WHERE user_id=second_actor AND provider='openai';
+  UPDATE integrations SET is_active=true WHERE user_id=second_actor AND provider='axtn_chatgpt_plan';
   DELETE FROM iam_group_members WHERE group_id=fixture_group AND user_id=first_actor;
   BEGIN
     PERFORM axtn_case_execution(a,'resolve',jsonb_build_object('runId',first_run,'nodeId','agent','operationKey','agent/2'));

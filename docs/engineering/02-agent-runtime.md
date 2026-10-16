@@ -67,13 +67,17 @@ and (for gateway nodes) the budget decision are that user's; the Case assignee,
 custodian-of-payment, account, customer and semantic-route fields add no
 entitlement. A node with `routeThroughGateway=true` in the run's immutable
 published snapshot is routed through that user's active `llm_gateway`
-integration (migrations `20261016030000`–`20261016050000`); a caller claim that
+integration (migrations `20261016030000`–`20261016060000`); a caller claim that
 disagrees with the snapshot is rejected with `ROUTING_DECISION_REQUIRED`.
 A missing or inactive gateway fails closed (`SYSTEM_INTEGRATION_UNAVAILABLE`)
 and never falls back to a direct provider credential. Case data access is
 checked separately and is not derived from model rights. Nodes without the
-opt-in keep their bound credential, and the personal ChatGPT account/plan path
-is unchanged.
+opt-in resolve provider/model from the node's own (snapshot) configuration or
+the native default, never from the Case route, with the owner's own or
+IAM-granted integration. Only an `axtn_chatgpt_plan` node uses the personal
+ChatGPT account path (assignee's own connection); a Case's personal-mode field
+alone does not trigger it. Case responsible group/route remain reporting
+dimensions, not funding gates.
 
 ---
 

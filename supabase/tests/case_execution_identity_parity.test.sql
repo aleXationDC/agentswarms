@@ -19,6 +19,7 @@ DECLARE
   tbl uuid := gen_random_uuid(); cid text := gen_random_uuid()::text;
   sw uuid := gen_random_uuid(); run uuid := gen_random_uuid();
   gw_b uuid := gen_random_uuid(); gw_a uuid := gen_random_uuid();
+  oa uuid := gen_random_uuid(); run2 uuid := gen_random_uuid(); pb jsonb;
   pa jsonb; r jsonb; n int;
   snapshot jsonb := jsonb_build_object('nodes', jsonb_build_array(
     jsonb_build_object('id','gw','data',jsonb_build_object('kind','agent','provider','vllm','model','gpt-oss-120b','routeThroughGateway',true)),
@@ -84,15 +85,69 @@ BEGIN
   PERFORM pg_temp.expect_fail('resolve',run,'forged','CASE_EXECUTION_SEMANTIC_NODE_REQUIRED');
   RAISE NOTICE 'PASS manipulated node id rejected';
 
-  -- Non-opted-in node on a personal-mode Case keeps the personal path (account/plan exception).
-  BEGIN
-    PERFORM axtn_case_execution(a,'resolve',jsonb_build_object('runId',run,'nodeId','plain','operationKey','ok-2'));
-    RAISE EXCEPTION 'FAIL personal path unexpectedly resolved';
-  EXCEPTION WHEN OTHERS THEN
-    IF SQLERRM NOT IN ('PERSONAL_CONNECTION_REQUIRED','MODEL_ACCESS_DENIED','NO_ELIGIBLE_EXECUTION_PRINCIPAL')
-    THEN RAISE EXCEPTION 'FAIL personal path error %', SQLERRM; END IF;
-  END;
-  RAISE NOTICE 'PASS personal path unchanged (%)', 'still personal-gated';
+  -- Standard (non-gateway) provider on a personal-mode Case: owner A's native rights decide, the Case
+  -- route (anthropic) and assignee B play no role.
+  PERFORM pg_temp.expect_fail('resolve',run,'plain','MODEL_ACCESS_DENIED');
+  INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern) VALUES ('user',a,'openai','gpt-4o');
+  INSERT INTO integrations(id,user_id,type,name,provider,is_active) VALUES (oa,a,'llm_provider','oa','openai',true);
+  r := axtn_case_execution(a,'resolve',jsonb_build_object('runId',run,'nodeId','plain','operationKey','ok-2'));
+  IF r->>'policy_user_id' <> a::text OR r->>'budget_subject_user_id' <> a::text OR r->>'budget_subject_group_id' IS NOT NULL
+    OR r->>'execution_class' <> 'SYSTEM_INTEGRATION' OR r->>'provider_id' <> 'openai'
+  THEN RAISE EXCEPTION 'FAIL standard provider identity %', r; END IF;
+  r := axtn_case_execution(a,'credential',jsonb_build_object('runId',run,'nodeId','plain'));
+  IF r->>'ownerId' <> a::text OR r->>'id' <> oa::text THEN RAISE EXCEPTION 'FAIL standard credential %', r; END IF;
+  RAISE NOTICE 'PASS standard provider resolves on the run owner identity, not Case route/assignee';
+
+  -- Persisted evidence equals what is returned (binding, per-node route, audit).
+  SELECT row->'execution_bindings'->(run::text) INTO pb FROM user_data_rows WHERE table_id=tbl;
+  IF pb->>'policy_user_id' <> a::text OR pb->>'budget_subject_user_id' <> a::text
+    OR pb->>'budget_subject_group_id' IS NOT NULL OR pb->>'execution_class' <> 'SYSTEM_INTEGRATION'
+    OR pb->'node_routes'->(run||':plain')->>'policy_user_id' <> a::text
+    OR pb->'node_routes'->(run||':plain')->>'provider_id' <> 'openai'
+    OR pb->'node_routes'->(run||':gw')->>'transport' <> 'LLM_GATEWAY'
+  THEN RAISE EXCEPTION 'FAIL persisted binding evidence %', pb; END IF;
+  IF NOT EXISTS(SELECT 1 FROM audit_events WHERE action='axtn_case_execution.SEMANTIC_BOUND' AND resource_id=run
+    AND detail#>>'{binding,policy_user_id}'=a::text) THEN RAISE EXCEPTION 'FAIL audit evidence'; END IF;
+  RAISE NOTICE 'PASS persisted binding/node-route/audit evidence matches the returned identity';
+
+  -- Case without assignee/group + gateway: no personal precondition. Fresh attempt, fresh binding.
+  UPDATE user_data_rows SET row=row-'assignee_user_id'||jsonb_build_object('responsible_principal_type','USER',
+    'responsible_principal_id',a) WHERE table_id=tbl;
+  INSERT INTO swarm_runs(id,user_id,swarm_id,swarm_snapshot,status,case_id,case_attempt_id,case_execution_principal)
+    VALUES (run2,a,sw,snapshot||jsonb_build_object('nodes',(snapshot->'nodes')||jsonb_build_array(
+      jsonb_build_object('id','bare','data',jsonb_build_object('kind','agent')),
+      jsonb_build_object('id','cgpt','data',jsonb_build_object('kind','agent','provider','axtn_chatgpt_plan','model','plan-m')))),
+      'running',cid::uuid,run2::text,pa);
+  r := axtn_case_execution(a,'resolve',jsonb_build_object('runId',run2,'nodeId','gw','operationKey','ok-3'));
+  IF r->>'policy_user_id' <> a::text OR r->'node_routes'->(run2||':gw')->>'transport' <> 'LLM_GATEWAY'
+  THEN RAISE EXCEPTION 'FAIL gateway without assignee %', r; END IF;
+  RAISE NOTICE 'PASS Case without assignee: gateway resolves on owner identity';
+
+  -- Node without provider/model: native default, never Case.semantic_route; equals the non-Case decision.
+  IF axtn_case_model_allowed(a,'openrouter','google/gemini-3-flash-preview') THEN RAISE EXCEPTION 'FAIL fixture'; END IF;
+  PERFORM pg_temp.expect_fail('resolve',run2,'bare','MODEL_ACCESS_DENIED');
+  INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern) VALUES ('user',a,'openrouter','*');
+  INSERT INTO integrations(user_id,type,name,provider,is_active) VALUES (a,'llm_provider','or','openrouter',true);
+  r := axtn_case_execution(a,'resolve',jsonb_build_object('runId',run2,'nodeId','bare','operationKey','ok-4'));
+  IF r->>'provider_id' <> 'openrouter' OR r->>'model_id' <> 'google/gemini-3-flash-preview'
+  THEN RAISE EXCEPTION 'FAIL Case route replaced missing node config %', r; END IF;
+  RAISE NOTICE 'PASS missing node config uses the native default, not the Case route';
+
+  -- Personal ChatGPT plan stays personal: assignee B's own connection and rights.
+  PERFORM pg_temp.expect_fail('resolve',run2,'cgpt','PERSONAL_CONNECTION_REQUIRED');
+  UPDATE user_data_rows SET row=row||jsonb_build_object('assignee_user_id',b) WHERE table_id=tbl;
+  INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern) VALUES ('user',b,'anthropic','x');
+  PERFORM pg_temp.expect_fail('resolve',run2,'cgpt','MODEL_ACCESS_DENIED');
+  INSERT INTO iam_model_rules(principal_type,principal_id,provider,model_pattern) VALUES ('user',b,'axtn_chatgpt_plan','*');
+  PERFORM pg_temp.expect_fail('resolve',run2,'cgpt','PERSONAL_CONNECTION_REQUIRED');
+  INSERT INTO integrations(user_id,type,name,provider,is_active) VALUES (b,'llm_provider','plan','axtn_chatgpt_plan',true);
+  r := axtn_case_execution(a,'resolve',jsonb_build_object('runId',run2,'nodeId','cgpt','operationKey','ok-5'));
+  IF r->>'execution_class' <> 'PERSONAL_CONNECTION' OR r->>'policy_user_id' <> b::text
+    OR r->>'execution_principal_user_id' <> b::text OR r->>'budget_subject_user_id' <> b::text
+  THEN RAISE EXCEPTION 'FAIL personal ChatGPT plan not personal %', r; END IF;
+  r := axtn_case_execution(a,'credential',jsonb_build_object('runId',run2,'nodeId','cgpt'));
+  IF r->>'ownerId' <> b::text THEN RAISE EXCEPTION 'FAIL personal credential owner'; END IF;
+  RAISE NOTICE 'PASS ChatGPT plan keeps the personal binding; standard nodes in the same attempt stay owner-bound';
 
   -- Missing Case data access stays blocked independent of model rights.
   DELETE FROM user_data_rows WHERE table_id=tbl;
