@@ -1,3 +1,16 @@
+# Aktuelle Ergänzung — Modellwissen nativ in AgentSwarms bereitstellen
+
+Nutzerauftrag 16.10.2026 20:00 Europe/Berlin: recherchierte LLMHub-Informationen in nativer KB bereitstellen, wiederverwendbaren nativen Modellwahl-Skill einrichten und tatsächlichen Registry-/Agentzugriff prüfen.
+
+Vollständiger zusätzlicher Ausführungsauftrag:
+handoffs/requests/AXTN-LLMHUB-NATIVE-MODEL-KNOWLEDGE-20261016.md
+
+Fertiger Skill-Importtext: docs/architecture/axtn-llmhub-model-selection-skill.md.
+Wissensquelle: docs/architecture/axtn-llmhub-model-role-research-20261016.md.
+Native KB-/Skillobjekte idempotent konfigurieren und echten Retrieval-/Skill-Test liefern. Vorhandene Registry ist im geprüften Source AIMLAPI-basiert, Gateway-Discovery separat; kein nachgewiesenes Standard-Leseagenttool für LLM-Kataloge. Diese Lücke nicht durch eine neue unfreigegebene Registry-/Toolengine überspielen. Unabhängige KB-/Skillbereitstellung abschließen.
+
+Der folgende Rollen-/Development-/Case-Management-Auftrag bleibt aktiv und wird nicht ersetzt:
+
 # Aktuelle Fortsetzung — alle Development-Rollen über Corporate LLMHub
 
 Nutzerentscheidung 16.10.2026 19:37 Europe/Berlin: alle bestehenden LLM-Agenten auf die aufgabenbezogene LLMHub-Startbelegung konfigurieren, nativ speichern/publizieren und für den vorbereiteten Case-Management-Test nutzbar machen.
