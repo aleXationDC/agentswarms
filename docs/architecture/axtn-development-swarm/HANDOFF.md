@@ -1,3 +1,14 @@
+# Aktuelle Fortsetzung — alle Development-Rollen über Corporate LLMHub
+
+Nutzerentscheidung 16.10.2026 19:37 Europe/Berlin: alle bestehenden LLM-Agenten auf die aufgabenbezogene LLMHub-Startbelegung konfigurieren, nativ speichern/publizieren und für den vorbereiteten Case-Management-Test nutzbar machen.
+
+Vollständiger Auftrag: handoffs/requests/AXTN-NATIVE-SWARM-COMPLETION-20261016.md
+Die neueste Fortsetzung "Alle Rollen auf LLMHub konfigurieren und realen Folgeauftrag prüfen" ist maßgeblich. Builder Qwen3.6-35B-A3B-FP8, Contract GLM-5.2 nach Discovery/Rollenprüfung (festgelegte Alternative gpt-oss-120b), Security gpt-oss-120b, Maintainability Mistral-Small-4-119B-2603. Alle über native Agent-/Node-Gateway-Opt-ins; route_all=false. Agent-Bibliothek und Swarm-Snapshots konsistent nativ administrieren. Keine erneute allgemeine Mapping-Freigabe.
+
+Deployment/Gateway-Mischlauf ist laut Bericht 9c68bf47 erfolgt; keine alten Credential-/Backupblocker erneut als offen behandeln. All-Gateway-Rollenbaseline und echte native Developer-Toolchain-/Produktrepo-Fähigkeit bleiben separat zu belegen. Anschließend den vorbereiteten Auftrag AXTN-SUPACASE-USABILITY-0001 gemäß architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1 Phase A–D durch den Swarm bearbeiten lassen, sofern der native Taskvertrag ihn trägt. CLI ersetzt den Swarm nicht. Kein Python-Fixture-PASS als echte Produktentwicklung, keine neue Custom-Orchestrierung.
+
+## Vorheriger Auftrag und Detailherkunft
+
 # Aktueller Abschlussauftrag — native administrierbarer Development Swarm
 
 Nutzerentscheidung 16.10.2026 16:21 Europe/Berlin: lauffähigen Swarm fertigstellen; Agents, Skills, Tools, Modell- und Swarm-Konfiguration nativ administrieren; nur minimaler aXtn vLLM Swarm Selector.
