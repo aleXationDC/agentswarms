@@ -126,3 +126,18 @@ Nutzer will mit der noch nicht produktiv genutzten Installation anfangen und den
 - Echten nativen Corporate-Gateway-Run mit route_all=false, konkreter Modellwahl und gatewayRouted=true sowie Native-Runtime-/Receipt-/Approval-/Case-Abschluss durchführen. Nur bereits autorisierte synthetische Approval-Simulation, keine fingierte Produktivabnahme.
 - Noch vorhandene Fixture-/allgemeine Development-Grenze ehrlich ausweisen. Das nachfolgende Case-Management-Arbeitspaket nicht schon als durch den Swarm ausführbar erklären, solange dessen Repository-/Pfad-/Testspezifikation und native Fähigkeiten nur normalize_score zulassen. Kein Generalisieren durch Entfernen von Schutzregeln als Nebeneffekt.
 - Ergebnis anhand tatsächlicher Betriebsfähigkeit berichten; Task nicht allein wegen Dokumentation/Source-Tests als fertig abschließen.
+
+## Publisher-Identität zuerst nachvollziehen — Nutzerbeleg 16.10.2026 18:31 Europe/Berlin
+
+Nutzer zeigt die native Gitea-Benutzerverwaltung: Es bestehen separate Konten aXtn-copilot-cli, axtn-admin, axtn-codex und axtn-gitea-mcp. Existenz oder letzte interaktive Anmeldung ist KEIN Nachweis von Token-/Registry-Rechten. Name des ausführenden KI-Produkts bestimmt ebenfalls nicht automatisch die Publisher-Identität.
+
+Vor jeder erneuten Aufforderung an den Nutzer, ein axtn-codex-Token zu erzeugen:
+1. Frühere erfolgreiche App-Image-Publikationen und Host-Release-Evidence gezielt lesen: Registry/Namespace, Publisher-Identität, Credential-Herkunftsreferenz und normaler Build-/Pushweg. Keine Secretwerte/alten credentialhaltigen Tool-Logs lesen oder ausgeben.
+2. Insbesondere bestehenden technischen Zugang von aXtn-copilot-cli anhand seines dokumentierten Betriebszwecks und des definierten geschützten Credential-/Docker-/CI-Konfigurationswegs prüfen. Kein blindes Durchsuchen fremder Home-Verzeichnisse oder Auslesen weiterer privater Schlüssel.
+3. Klären, warum die aktuelle Shell axtn-codex verwendet (z.B. taskbezogener Git-Credentialhelper oder übernommene Umgebung) und ob Git-Schreibidentität irrtümlich zugleich als verpflichtender Registry-Publisher behandelt wurde. Git- und Registry-Authentifizierung sind technisch getrennte Vorgänge. Keine neue generelle Identitätsarchitektur.
+4. Wenn ein bestehender für diesen Release zugelassener Publisher-Zugang vorhanden ist, ihn unverändert im bestehenden Standardworkflow nutzen. Keine neue Credentials-/Benutzeranlage nur wegen des Namens der ausführenden CLI; keine passwortlose Rechteeskalation.
+5. Wenn tatsächlich kein zulässiger Publishzugang existiert, konkret belegen, welche vorgesehenen Zugänge geprüft wurden und welche native Authentifizierung fehlt. Erst dann EINEN präzisen Betreiber-Schritt liefern. Nicht allein vom unzureichenden axtn-codex-Git-Token auf fehlende gesamte Publisherfähigkeit schließen.
+6. Bereits gemeldetes Tokenleck getrennt behandeln: der geleakte Token braucht Ersatz/Widerruf über regulären Kontoweg; das beweist nicht, dass dieser Token der einzig mögliche oder richtige Registry-Publisher ist. Keine pauschale write:user-Freigabe verlangen.
+7. Sobald der bestehende Weg regulär funktioniert, mit fertiggestelltem Backup und geprüftem Kandidaten unmittelbar Image-Push/Digest, regulären Release und Deployment/E2E fortsetzen. Keine neuen allgemeinen Planungs-/Abnahmerunden vor Auslieferung.
+
+Der Screenshot ist ein Hinweis zur Kontozuordnung, keine im Chat erteilte Adminrolle, kein Secret und kein Beleg einer bereits geprüften alternativen Anmeldung.
