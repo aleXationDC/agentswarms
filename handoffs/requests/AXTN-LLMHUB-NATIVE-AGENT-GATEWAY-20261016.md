@@ -111,3 +111,68 @@ Keine neue allgemeine Planungs-/Freigabeschleife. Ein ungeprüftes Dokument ist 
 ## Stand dieser Übergabe
 
 Nutzerziel und native Implementierungsgrenzen sind präzisiert. Repository-Auftragsarbeit, keine Live-/Credential-/Routingänderung durch diese ChatGPT-Sitzung.
+
+## Verbindliche Restarbeit nach Teilabschluss 47beb751 — 16.10.2026, 12:33
+
+Quellenstand vollständig geprüft: Implementierungshead 47beb751349014480f239092528dedc9d1c73029; technischer Bericht 33497c2aa535aff4d37d012013ffe26024ecc346. Kein weiterer allgemeiner Freigabestopp. Bestehenden autorisierten nativen Umsetzungsauftrag im selben Taskworktree abschließen. Live-Migration allein ist kein vollständiger Funktions-/Security-Nachweis.
+
+### 1. Noch verbliebene falsche Case-/Payer-Ableitung korrigieren
+
+Der neue SQL-Block ersetzt Credential-Suche durch Gateway-Suche, verändert jedoch die bestehende Actor-/Binding-Auswahl nicht. Referenz: supabase/migrations/20261005210000_case_execution_binding.sql:
+- personal wird aus binding.execution_class bzw. Case.semantic_route_mode abgeleitet;
+- actor wird aus Case.assignee_user_id bzw. custodian abgeleitet;
+- provider/model werden aus Case.semantic_route_provider_id/model_id bzw. bereits gebundener Case-Route vor Node-Konfiguration bevorzugt;
+- policy_user_id und ggf. responsible-group budget werden aus dieser Ableitung persistiert.
+Neue Migration 20261016030000 ersetzt nur den Credential-Kandidatenblock und die Transport-Evidence.
+src/routes/api/chat.ts verwendet weiterhin caseExecution.binding.policy_user_id für IAM/Gateway und getCaseBudgetDecision für Case-Aufrufe.
+
+Das ist NICHT automatisch die neue gewünschte native Benutzer-IAM-Semantik. Kein Satz „der Case liefert nur policy_user“ als Beweis der Entkopplung. Mit aktiver Live-Funktionsdefinition/Nachfolgemigrationen abgleichen und die Abweichung konkret schließen:
+
+- Für Standard-LLM-/API-/Gateway-Aufrufe exakt dieselbe authentifizierte/vertrauenswürdig autorisierte native Ausführungsidentität wie im äquivalenten Non-Case-Lauf verwenden. Browser: echte Session; Headless: tatsächlich validierter nativer Run-/API-Key-Owner gemäß unverändertem Authvertrag. Keine Identität aus Case-Custody/Assignee/Account/Payer an ihre Stelle setzen und keine Caller-user_id vertrauen.
+- Case-/Datenzugriffsberechtigung bleibt separat voll wirksam. Case-Sichtbarkeit/Datenscope niemals aus Modellfreigabe ableiten oder umgekehrt.
+- Standard-Modell-/Provider-/Gateway-Wahl aus der vorhandenen autorisierten Agent-/Node-/Snapshot-Konfiguration; keine Case-semantic-route-Felder als zweite Entitlement-/Credential-Steuerung. Native Benutzer-/Gruppen-Modellregeln und native Budgets auf derselben Ausführungsidentität wie ohne Case prüfen.
+- Persönliche ChatGPT-Account-/Abo-Ausnahme nur im passenden axtn_chatgpt_plan-/Accountpfad erhalten. SYSTEM_INTEGRATION/PERSONAL_CONNECTION nicht weiterhin für jede normale API-/Gateway-Verbindung als Sondervorbedingung verwenden.
+- Historische Case-/Attempt-/Budget-/Trace-/Snapshotdaten unverändert erhalten; keine aktiven Attempts nachträglich umhängen. Fehlermeldung/Versionierung nutzen, falls ein alter gebundener Attempt widersprechende Semantik trägt; neue korrekte Test-Attempts gezielt erstellen.
+- Im bestehenden nativen Auth-/IAM-/Gateway-/Case-Vertrag minimal korrigieren, keine Ersatz-Policy-/Routingengine. Notwendige additive Migration an neuem Timestamp erstellen; bereits live angewendete 20261016030000 nicht umschreiben.
+
+### 2. Abnahme der Benutzeridentität — Pflicht vor Deployment
+
+Isolierte SQL-/App-Verhaltenstests mit zwei realistisch getrennten Testnutzern A/B, unterschiedlichen Modellregeln und Integrationsberechtigungen:
+- Benutzer A + gleiche Agentkonfiguration, mit/ohne Case → gleicher Model-IAM-/Gateway-/Budgetentscheid.
+- Case-Custodian B, Responsible/Assignee B, anderer Kunde/Account/Kostenträger oder Case.semantic_route_mode/provider/model ändern nicht A's native Modell-/Gatewayidentität.
+- A ohne Modellrecht wird trotz Rechte von B/Case-Owner abgelehnt; A mit Recht wird nicht allein wegen fehlender Rechte beim Case-Owner abgelehnt, solange A regulär auf den Case zugreifen darf.
+- fehlender Case-Datenzugriff bleibt unabhängig davon gesperrt.
+- Headless/Canvas verwenden denselben tatsächlich autorisierten Benutzer und immutable Opt-in.
+- Persönliche ChatGPT-Accountzuordnung bleibt eingeschränkt; Standard-Unternehmensgateway braucht keine persönliche ChatGPT-Verbindung.
+Nicht nur Intent-Booleans testen; aktueller caseGatewayIntent-Test prüft lediglich die Flag-Extraktion und belegt keine Identity-/IAM-Parität.
+
+### 3. Fehlende Prüfungen jetzt ausführen
+
+- SQL-Negativtests gegen tatsächlich gebundene synthetische Case-Runs: inaktiv/fehlend/mehrdeutig/fremder Gateway-Owner bzw. unwirksame native Integrationsrechte, Modell-IAM verweigert, Body/Snapshot-Drift. Kein Providercall/kein Fallback/keine Secret-Ausgabe bei Ablehnung.
+- lint, normale Source-/Typecheck-/Build-Generierung einschließlich benötigter routeTree.gen und einschlägiges test:integration ausführen. Fehlende generierte Dateien mit vorhandenem Buildprozess erzeugen; keinen Typecheck-Fehler pauschal als PASS deklarieren.
+- Canvas-/Headless-Parität (Abnahme B) auf geeignet isolierter Testinstanz/Fixture oder regulär geprüftem Kandidaten belegen. Registry-Publish ist keine Voraussetzung für alle isolierten Source-/DB-/Executorprüfungen. Wirklich liveabhängige Teile nach regulärem Deployment nachholen, aber vor Release nicht alle SQL-Negativtests verschieben.
+- Beide Full-Suite-Baselinefehler mit exakter Basis/Suite/Fehlernachweis dispositionieren. Bericht widerspricht der jüngeren User-Zusammenfassung zum ausgeführten Basisvergleich; Nachweis anhand tatsächlich gespeicherter Ergebnisse aktualisieren, keinen Lauf erfinden.
+- docs/engineering/02-agent-runtime.md auf geltendes Ziel korrigieren. Historischen Bericht docs/llmhub-prod-lineage-acceptance-20261009.md nicht fälschlich als heutige Beschreibung belassen: prominent als superseded kennzeichnen und auf aktuellen Request/Architektur/Ergebnis verweisen, historische damalige Evidence nicht umschreiben.
+
+### 4. Gateway-Key kontrolliert verifizieren — kein erfundener menschlicher Blocker
+
+Nutzer hat die Verbindung erneuert und bestätigt, den Key unter vLLM zusätzlich eingegeben zu haben; Gateway ist auf der nativen UI aktiviert, route_all=false. Der direkte vLLM-Key-Fehler beweist KEINEN Fehler des Gateway-Keys.
+
+- Genau den konfigurierten llm_gateway-Pfad durch vorhandene native Validate/Discovery-/Chat-Funktion mit autorisiertem Benutzer kontrolliert prüfen. Secret intern durch bestehenden verschlüsselten Resolver nutzen lassen; „Keys nicht lesen“ bedeutet nicht, dass die App den Key nicht regulär verwenden darf.
+- Kein Auslesen/Loggen/Export von Credentialwerten und kein Ersetzen durch direkte vLLM-Verbindung.
+- Auf dem noch alten Live-Code kann die bestehende native Non-Case-Validierung/Discovery die Gateway-Authentifizierung prüfen; der neue Case-Code muss dafür nicht schon deployed sein. Ergebnis status-/metadatenbasiert belegen.
+- Bei erfolgreicher Auth native Discovery und bounded JSON-/Rollenmessung durchführen, exakte IDs verwenden und keine ungeprüfte Modellbelegung als beschlossen darstellen.
+- Nur bei tatsächlich aktuellem Gateway-401/deactivated den exakten Integrationsnamen und vorhandenen sicheren UI-Aktualisierungsschritt als menschlichen Blocker melden. Nicht vorsorglich eine erneute LLMHub-Key-Ausstellung verlangen.
+
+### 5. Release und echte Blocker sauber abschließen
+
+Nach bestandenen Prüfungen kompatiblen kumulativen Source-/Image-/SQL-Kandidaten bauen und bestehende Host-Release-Linie nutzen. Registry-PAT-write:package bleibt echte Credentialgrenze; keine eigenen Token/Grants erweitern, kein lokales Image am Provenienzvertrag vorbei releasen. Unabhängige Tests/Gatewayvalidierung/Docs fertigstellen.
+Token wurde laut früherem Bericht im Tool-Log ausgegeben: keine weiteren Logs mit Secrets lesen/ausgeben, Rotation/Widerruf des betroffenen Tokens über vorhandenen geschützten Mechanismus als offen oder tatsächlich erledigt dokumentieren. Menschlicher Schritt muss genaues Konto/native UI/Scope/geschützten Zielpfad nennen.
+AXTN_BACKUP_RECIPIENT ist ein separates echtes Konfigurationsthema, kein pauschaler Grund, Source-/App-/SQL-Tests oder Gatewayauth auszulassen. Verschlüsselungspflicht vor neuen geschützten Backup-/Live-Schritten anhand geltendem Host-Vertrag erfüllen; keine unverschlüsselten Dumps exportieren, keinen Recipient erfinden.
+
+Nach regulärem Deployment: nur gezielte neue Agent-/Swarm-Version mit native Gateway-Opt-ins veröffentlichen, route_all=false erhalten, Abnahme A/B/C/D inklusive Corporate-E2E und gekennzeichneter synthetischer Test-Approval ausführen. Erfolgreiche alte OpenAI-Fixture ist weiterhin kein Corporate-Nachweis.
+
+### 6. Bericht und Abschluss
+
+Aktuellen Bericht auf tatsächlichen Head nachführen: Identity-/IAM-Parität, Source-/SQL-/Lint-/Integration-/Canvas-/Headless-Nachweise, Gateway-Keystatus, Discovery, Rollenmessung, Image/Release/Version, Corporate-E2E und echte restliche menschliche Schritte getrennt. Kein „danach Tests“ für unabhängig ausführbare Pflichten und kein Task-complete bei offenem Ziel.
+Diese Fortsetzung ist Repository-Auftragsarbeit, kein behaupteter Remote-/Live-Test durch ChatGPT.
