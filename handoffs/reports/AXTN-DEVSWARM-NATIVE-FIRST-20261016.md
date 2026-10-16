@@ -43,6 +43,8 @@ Der echte native Quellkontext-/Toollauf ist **PASS**. Die Annahme von `AXTN-SUPA
 
 Die bestehende Parent-Case-Lineage `85a1d829-39ac-49bd-9047-163ab52d427b` und der Graph-Child `43d22cf1-8767-40ef-b682-785607e6d724` werden weiterverwendet; es wurde kein Case erzeugt und keine Acceptance behauptet. Dieser Bericht ist die stabile Evidence-Quelle für die veröffentlichte Version, den Run und den präzisen Blocker. Fortsetzung nur über einen tatsächlich vorhandenen, nativ erreichbaren und autorisierten TypeScript-Prüfweg.
 
+Der letzte native Case-Detail-Readback zeigte den Graph-Child als `OPEN`. In dieser CLI-Sitzung war keine aktive authentifizierte AgentSwarms-UI-Session verfügbar; daher konnte die vorgesehene native `BLOCKED`-Transition mit `TYPESCRIPT_RUNNER_UNAVAILABLE` und Evidence-Referenz auf diesen Bericht nicht geschrieben oder zurückgelesen werden. Es wurde weder direkt in die Datenbank geschrieben noch ein Ersatz-Case-Pfad benutzt. Die Case-Transition bleibt ein offener Abschluss-Schritt.
+
 ## Historischer Ist-Stand vor der authentifizierten Fortsetzung (Handoff `991b742`)
 
 - Der laufende AgentSwarms-App-Container antwortet auf `http://127.0.0.1:18080/` mit HTTP 200 und verwendet Image `axtn-agentswarms-native:57fe65cbc88f9592c678d103b240458433419647` (`sha256:f04c13b962471c61aa445c271979d0073b3c01393a3d0184f55fbe8df56ea1d4`). Der gespeicherte Development Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` hat den veröffentlichten Snapshot `f7fc9cb5-3ffb-49e1-93a7-009b099ba55a` mit 31 Nodes und 34 Edges. Der Datenbank-Readback meldet zugleich `is_deployed=false`; ein deployter Graph-Snapshot wird daher nicht behauptet.
