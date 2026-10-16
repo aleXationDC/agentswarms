@@ -23,6 +23,8 @@ export interface PortableSwarmNode {
   // LLM config (optional — only meaningful for agent / condition / loop)
   provider?: string;
   model?: string;
+  // aXtn vLLM Swarm Selector: per-node opt-in to the built-in LLM gateway.
+  routeThroughGateway?: boolean;
   temperature?: number;
   systemPrompt?: string;
   conditionPrompt?: string;
@@ -117,6 +119,7 @@ function toPortableNode(n: Node<SwarmNodeData>): PortableSwarmNode {
     position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
     provider: d.provider,
     model: d.model,
+    ...(d.routeThroughGateway === true ? { routeThroughGateway: true } : {}),
     temperature: d.temperature,
     systemPrompt: d.systemPrompt,
     conditionPrompt: d.conditionPrompt,
@@ -219,6 +222,7 @@ export function importSwarm(raw: unknown): ImportedSwarm {
       status: "idle",
       provider: p.provider,
       model: p.model,
+      ...(p.routeThroughGateway === true ? { routeThroughGateway: true } : {}),
       temperature: p.temperature,
       systemPrompt: p.systemPrompt,
       conditionPrompt: p.conditionPrompt,
