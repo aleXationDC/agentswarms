@@ -1,3 +1,14 @@
+# Maßgebliche Nutzerpräzisierung — 16.10.2026, 11:19
+
+Native Benutzer-/Gruppen-IAM bestimmt Modellzugriff. Agent-Opt-in bestimmt den nativen Gateway-Weg, route_all=false. Case, Account und Kostenträger sind keine zusätzliche Modell-/Gateway-Berechtigung und wählen keine andere Credential-Identität. Der native Ausführungsbenutzer bleibt serverseitig authentifiziert; Cases bleiben fachlicher Träger/Evidence.
+
+Vollständiger aktueller Auftrag:
+handoffs/requests/AXTN-LLMHUB-NATIVE-AGENT-GATEWAY-20261016.md
+
+Die frühere aXtn-Case-/Payer-Sonderarchitektur und der pauschale Case-Gateway-Ausschluss werden nicht als Nutzeranforderungen fortgeführt. Native Integrations-/IAM-/Budget-/Credential-Prüfungen bleiben; keine Schutzprüfungen blind entfernen und keine neue Policyengine bauen. Frühere direkte-vLLM-Zielangaben sind überholt, konfigurierte vLLM-Verbindung erhalten.
+
+## Vorheriger Handoff zur Herkunft und Umsetzungshistorie
+
 # Aktueller Auftrag — natives LLM Gateway je Agent
 
 Nutzerziel bestätigt 16.10.2026, 11:15 Europe/Berlin:
