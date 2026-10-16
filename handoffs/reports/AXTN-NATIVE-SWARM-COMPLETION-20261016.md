@@ -161,3 +161,9 @@ Es wurde nichts lokal als Release-Image eingesetzt.
 - IAM-Negativprobe und Flash-Gegenprobe am fehlerhaften Candidate fehlen.
 
 **Sicherheitsvorfall**: Beim Anzeigen von `compose.env` wurden `AGENTSWARMS_INTERNAL_RUN_SECRET` und `AGENTSWARMS_PROVIDER_CREDS_SECRET` (dev-native) im Klartext in die Sitzungsausgabe geschrieben. Rotation empfohlen.
+
+## Nachtrag 7fced1df – KB/Skill und Gegenproben
+- KB, Skill, Advisor-Agent, Trace-IDs, Registry-Abgleich und Zugriffslücke: siehe `AXTN-LLMHUB-NATIVE-MODEL-KNOWLEDGE-20261016.md`.
+- **IAM-Negativprobe:** Live-Probe NICHT durchgeführt – sie bräuchte eine synthetische Identität und eine Änderung der globalen IAM-Einstellungen (Default-Deny) auf der Produktivinstanz. Produktgleiche isolierte Tests laufen grün: `iamModelDefaultDeny`, `iamPolicyReadFailure`, `gatewayRouting` (35/35; Fail-closed ohne Direktfallback bei fehlendem/unvollständigem Gateway). Source-/Unit-Test ≠ Live-Abnahme.
+- **Flash an fehlerhaftem Candidate:** Gateway-Lauf GLM-5.3-Flash (HTTP 200, 2.9 s) mit bekannt fehlerhaftem `normalize_score` (None→None, kein Clamp unten, Banker-Rounding, bool). Antwort war valides JSON mit `defects` + `candidate`; lokal ausgeführte Prüfungen (None→0, Clamp, Round-half-up, TypeError bei bool) PASS. Kleine Einzelprobe, kein Qualitätsranking, kein Qwen-Vergleich.
+- Temperatur-Fix-Readback: Agent mit Temperatur 0 wurde im Advisor-Anlegen-/Edit-Pfad nicht erneut geprüft; Temperatur-0-Anzeige und Default 0.7 siehe oben.
