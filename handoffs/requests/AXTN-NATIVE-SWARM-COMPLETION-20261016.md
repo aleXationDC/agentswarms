@@ -216,3 +216,19 @@ GLM-5.2 darf nur bei tatsächlich über den nativen Gateway-Katalog verfügbarer
 11. Falls der bestehende Python-Fixture-Vertrag Phase A ablehnt, NOT_READY mit exaktem Validator/Graph-/Source-/Toolvertrag und kleinster verifizierter nativer Anpassungsmöglichkeit belegen. Bestehende native Konfigurationsmöglichkeiten innerhalb des Scope nutzen; kein pauschales Entfernen von Repo-/Pfad-/Testgrenzen, kein neuer Dispatcher/Executor. Echte über native Konfiguration hinausgehende Capability-/Schnittstellenlücke als konkrete technische Restarbeit ausweisen; nicht weitere Python-Läufe als Ersatz liefern und nicht eine neue Architektur erfinden.
 
 Lieferung im bestehenden Report: tatsächliche vorher/nachher Rollenmatrix, native Agent-/Swarm-Versionen, bounded Rollenmessungen und Grenzen, All-Gateway-Run/Receipt, Case-Management-Phase A und anschließend reale Ausführung oder exakt belegtes NOT_READY. "LLMHub vollständig konfiguriert", "native Development-Toolchain nutzbar" und "Case-Management-Auftrag fertig" getrennt belegen. Keine erneute allgemeine Konfigurationsfreigabe verlangen.
+
+## Recherchekorrektur aller zehn Modelle — 16.10.2026 19:41 Nutzerfortsetzung
+
+Alex verlangt ausdrücklich Internetrecherche zu ALLEN zehn verfügbaren Modellen und ihren Stärken. Vollständige Primärquellenrecherche:
+docs/architecture/axtn-llmhub-model-role-research-20261016.md (erstellt in 42cff3027f4bcf7a2d53b3d6234a0c04035d5b86).
+
+Der historische vollständige Katalog am 212f213c45776b35c329bd50c5d1edb98ed627f5 enthält sieben Sprachmodelle und drei Embeddings. Other-Model-1 ist nur synthetischer Testwert. Keine Embeddings als LLM-Agent zuweisen. Aktuelle native Discovery/IAM vor Konfiguration unverändert erforderlich.
+
+Die unmittelbar vorherige Builder-Priorisierung Qwen3.6 war vor der erneuten vollständigen Recherche vorläufig und wird jetzt präzisiert:
+- Builder: GLM-5.3-Flash ist vorrangiger Kandidat für agentisches Coding und visuelle UI-Arbeit; Qwen3.6-35B-A3B-FP8 bleibt explizite alternative Builder-Belegung.
+- Contract: GLM-5.2; Security: gpt-oss-120b; Maintainability: Mistral-Small-4-119B-2603.
+- Mistral Small 4 ist ausdrücklich Coding-/Reasoning-fähig; keine Reduktion auf Dokument-/Bildverarbeitung. Flash ist kein bloßer Hilfsrouter. Hersteller-Benchmarks sind keine eigenen oder unabhängigen Hub-Messungen.
+- Bounded auftragsnahen Builder-Output-/Tool-/Testvertrag für Flash und Qwen3.6 vergleichen, keine vollständige Sieben-Modelle-Benchmarkkampagne. Bei gleicher funktionaler Eignung native gemessene Gesamtkosten/-latenz berücksichtigen. Priorität Flash bei erfülltem nativem Rollenvertrag; bei fehlender Verfügbarkeit/Berechtigung oder konkreter Untauglichkeit Qwen3.6 mit offener Begründung verwenden. Keine stille Umschaltung während eines Runs.
+- Qwen3.8-27B-FP8 und Nemotron sind ernsthafte weitere Vergleichskandidaten, keine automatische zusätzliche Stage; Qwen3.8-Einzelbefund nicht als generelles Modellurteil verwenden.
+- Jina Code, Jina DE und BGE-M3 sind Kandidaten für vorhandene native Retrievalfunktionen, kein Auftrag neue Tools oder produktives Reembedding einzuführen. Hersteller-Hybridretrieval nicht als bereits durch den Hub exponiert behaupten.
+Alle übrigen Ausführungs-/Publish-/All-Gateway-/Developer-Toolchain-/Case-Management-Abnahmekriterien der letzten Fortsetzung bleiben bestehen. Die Recherche ist Konfigurationsgrundlage, keine Behauptung schon geänderter Runtime.
