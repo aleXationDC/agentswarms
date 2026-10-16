@@ -1,3 +1,14 @@
+# Maßgeblicher Auftrag — zuerst echte native Swarm-Ausführung
+
+Nutzerpräzisierung 16.10.2026, 22:54 Europe/Berlin.
+Vollständig lesen und ausführen: handoffs/requests/AXTN-DEVSWARM-NATIVE-FIRST-20261016.md
+
+Zuerst vorhandene native Developer-Werkzeuge im bestehenden Swarm konfigurieren, speichern/publizieren und sichtbar real ausführen. Danach bearbeitet der Swarm selbst PR #8 aus aXtn/aXtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1. Copilot richtet ein, ersetzt den Swarm nicht bei Produktcode. Keine weitere Python-Fixture-Abnahme als Ersatz; keine zusätzliche eigene Runtime/Executor/Orchestrierung autorisiert. Echte native Grenzen source- und runtime-belegt benennen statt Erweiterungen vorauszusetzen. Alle vorhandenen Sonderpfade transparent zuordnen und native Ablösung nachweisen. Bestehende Secret-Rotationsautorisierung und Schutzverträge bleiben gültig.
+
+Der folgende Stand ist historisch; bei Widerspruch gilt der neue Auftrag. Insbesondere ist „TypeScript-Runtime fehlt“ keine abschließend belegte Aussage über sämtliche nativen Entwicklungsfähigkeiten.
+
+## Historie
+
 # Aktuelle Fortsetzung — belastbarer Teilabschluss und verbleibende Entscheidungen
 
 Berichte 1b4e7f7868298758f75e8f70295cdcc25057f8ad gelesen. Aktueller vollständiger Auftrag:
