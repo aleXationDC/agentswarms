@@ -146,6 +146,27 @@ describe("real native executors, mocked HTTP/storage (MOCK)", () => {
     },
   );
 
+  it("keeps two nodes on their own exact model IDs and opt-in flags in one run", async () => {
+    const a = { ...node("agent", true), id: "a" };
+    const b = {
+      ...node("agent", false),
+      id: "b",
+      data: { ...node("agent", false).data, model: "Other-Model-1" },
+    };
+    const edges = [{ id: "e", source: "a", target: "b" }];
+    await executeSwarmServer({
+      swarm: { id: "synthetic-swarm", name: "Synthetic", nodes: [a, b], edges },
+      userId: "runner-a",
+      origin: "https://mock.invalid",
+      input: "Synthetic probe",
+      source: "api",
+      rejectApprovals: false,
+    });
+    const bodies = mocks.fetch.mock.calls.map(([, o]) => JSON.parse(o.body));
+    expect(bodies.map((x) => x.model)).toEqual(["GLM-5.2", "Other-Model-1"]);
+    expect(bodies.map((x) => x.routeThroughGateway === true)).toEqual([true, false]);
+  });
+
   it("keeps explicit false, headless owner authentication and measured model usage", async () => {
     const result = await executeSwarmServer({
       swarm: { id: "synthetic-swarm", name: "Synthetic", nodes: [node("agent", false)], edges: [] },

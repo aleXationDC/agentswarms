@@ -46,3 +46,18 @@ Agent Builder speichern → im Canvas Agent bewusst erneut übernehmen → Node 
 ## Danach (Reihenfolge laut Vertrag)
 
 Verschlüsseltes Backup → Image-Digest → Host-Pin/Review → Migration 060 (Ledgerprüfung) → Deployment → Health/Smoke → native Agent-/Swarm-Konfiguration + Publish → Corporate-E2E (zwei Nodes/Modelle, Opt-in gezielt, `gatewayRouted=true`, Gegenproben, Runtime-Session/Testreceipt, Approval/Resume) → Case-Lifecycle.
+
+## Nachtrag zu 85fe009b (16.10.2026 ~15:00 UTC)
+
+**Helper-Image (kein Credential):** Host pinnt bereits `supabase/postgres@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00` (`architecture/SUPABASE-HOST-OVERRIDE.yaml`). Lokal verifiziert: amd64/linux, `tar` (busybox 1.37.0) vorhanden. Als `AXTN_BACKUP_HELPER_IMAGE` in der wirksamen, untracked Runtime-Datei `.runtime/compose.env` des Host-Checkouts gesetzt (Default von `scripts/backup.sh`; `/run/axtn/prod/compose.env` aus `prod.env.example` existiert auf diesem Host nicht). Für PROD-Vorlagen (`environments/*.env.example` tragen noch `REVIEW_REQUIRED_IMMUTABLE_DIGEST`) ist die Übernahme dieses Digests über regulären Host-Review nötig. Keine Secrets berührt.
+
+**apply.mts:** Keine Referenz in `src/`/`package.json`; reguläre UI-Publikation (Draft/Publish) benötigt das Skript nicht und setzt gespeicherte Operatoränderungen nicht zurück. Drift-Schutz bleibt unverändert (Bootstrap/Regression only).
+
+**Neue Gegenproben (reale Resolver-/Executor-Pfade, synthetische Daten):**
+- `gatewayRouting.test.ts`: Opt-in ohne aktives, mit unvollständigem oder mit nicht lesbarem Gateway → fail-closed („LLM Gateway unavailable“), kein direkter Upstream-Zugriff.
+- `swarmGatewayExecution.test.ts`: zwei Nodes im selben Lauf behalten eigene exakte Modell-IDs (`GLM-5.2` / `Other-Model-1`) und eigenes Opt-in (true/false).
+- Vitest 25/25 grün, eslint/tsc sauber.
+
+**Isolierte UI-Abnahme (Agent → Canvas → Draft → Publish → Readback):** nicht ausführbar, konkret fehlt: ein isoliertes synthetisches Supabase-/Auth-Backend für den Kandidaten (v1.6.0 + Migration 060). Das Live-Schema steht auf 050; ein zweiter dauerhafter Fullstack ist ausgeschlossen. Source-/Executorverträge sind oben abgedeckt; UI-Teil wird am regulär deployten Kandidaten bestätigt.
+
+**Weiterhin Kontoinhaber:** `write:package`-Token für `axtn-codex` (Ersatz/Widerruf) und echter age-Public-Key (`AXTN_BACKUP_RECIPIENT`). Kein LLMHub-Key-Refresh nötig.

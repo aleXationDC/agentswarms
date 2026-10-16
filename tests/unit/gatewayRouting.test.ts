@@ -103,7 +103,7 @@ describe("native owner-scoped gateway resolution (MOCK)", () => {
     ).toMatchObject({ endpointUrl: `${gateway.baseUrl}/chat/completions` });
   });
 
-  it.each(["absent", "incomplete", "lookup-error"])(
+  it.each(["absent", "unavailable", "lookup-error"])(
     "fails closed on %s, with no provider fallback",
     async (kind) => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -123,6 +123,26 @@ describe("native owner-scoped gateway resolution (MOCK)", () => {
       expect(adapter).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["no active gateway", { data: null, error: null }, "unavailable"],
+    [
+      "an incomplete gateway",
+      { data: { is_active: true, config: { base_url: "", api_key: "" } }, error: null },
+      "unavailable",
+    ],
+    ["a failed lookup", { data: null, error: { message: "boom" } }, "unavailable"],
+  ])("fails closed on opt-in with %s, without a direct upstream fallback", async (_n, row, msg) => {
+    db.query.maybeSingle.mockResolvedValue(row);
+    await expect(
+      resolveOpenAICompatTransport({
+        userId: "runner-a",
+        provider: "openai",
+        routeThroughGateway: true,
+      }),
+    ).rejects.toThrow(msg);
+    expect(db.query.eq).not.toHaveBeenCalledWith("provider", "openai");
+  });
 
   it("does not silently ignore a gateway for a signed provider", async () => {
     expect(canRouteThroughGateway("bedrock")).toBe(false);
