@@ -11,7 +11,12 @@ const Principal = z
   })
   .strict();
 const NodeRoute = z
-  .object({ provider_id: z.string().min(1), model_id: z.string().min(1) })
+  .object({
+    provider_id: z.string().min(1),
+    model_id: z.string().min(1),
+    transport: z.literal("LLM_GATEWAY").optional(),
+    gateway_integration_id: z.string().uuid().optional(),
+  })
   .strict();
 export const CaseExecutionBinding = z
   .object({
@@ -297,12 +302,13 @@ export async function resolveCaseChat(args: {
   z.string().uuid().parse(args.runId);
   const { data: run, error } = await supabaseAdmin
     .from("swarm_runs")
-    .select("user_id, case_id")
+    .select("user_id, case_id, swarm_snapshot")
     .eq("id", args.runId)
     .maybeSingle();
   if (error) throw new Error("CASE_EXECUTION_RUN_READ_FAILED");
   if (!run) throw new Error("CASE_ACCESS_DENIED");
   if (!run.case_id) return null;
+  const gatewayIntent = nodeGatewayIntent(run.swarm_snapshot, args.nodeId);
   const binding = CaseExecutionBinding.parse(
     await call(run.user_id, "resolve", {
       runId: args.runId,
@@ -323,7 +329,21 @@ export async function resolveCaseChat(args: {
       runOwnerId: run.user_id,
     } satisfies CaseCredentialContext,
     principal: context.principal,
+    gatewayIntent,
   };
+}
+
+// The per-agent "Route through gateway" opt-in is read from the run's immutable
+// published snapshot, never from the caller.
+export function nodeGatewayIntent(snapshot: unknown, nodeId: string): boolean {
+  const nodes =
+    snapshot && typeof snapshot === "object" && "nodes" in snapshot ? snapshot.nodes : null;
+  if (!Array.isArray(nodes)) return false;
+  const node = nodes.find(
+    (item): item is { id: string; data?: { routeThroughGateway?: unknown } } =>
+      !!item && typeof item === "object" && "id" in item && item.id === nodeId,
+  );
+  return node?.data?.routeThroughGateway === true;
 }
 
 export async function loadCaseCredential(context: CaseCredentialContext, provider: string) {

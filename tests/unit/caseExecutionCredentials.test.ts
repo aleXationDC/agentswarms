@@ -91,7 +91,7 @@ describe("Case server credential transport reuses actual encrypted storage witho
     );
     expect(fixture.reads).toEqual([]);
   });
-  it("rejects connection revocation or explicit gateway substitution before provider inference", async () => {
+  it("rejects connection revocation before provider inference", async () => {
     fixture.selected = new Error("PERSONAL_CONNECTION_REAUTH_REQUIRED");
     await expect(
       resolveOpenAICompatTransport({
@@ -100,16 +100,6 @@ describe("Case server credential transport reuses actual encrypted storage witho
         credentialContext: context,
       }),
     ).rejects.toThrow("PERSONAL_CONNECTION_REAUTH_REQUIRED");
-    await expect(
-      streamWithProvider({
-        userId: owner,
-        provider: "anthropic",
-        modelId: "synthetic-model",
-        messages: [],
-        credentialContext: context,
-        gateway: { baseUrl: "https://foreign.invalid", apiKey: "synthetic-foreign-key" },
-      }),
-    ).rejects.toThrow("ROUTING_DECISION_REQUIRED");
     expect(anthropicChatStream).not.toHaveBeenCalled();
     expect(fixture.reads).toEqual([]);
   });
@@ -124,8 +114,21 @@ describe("Case server credential transport reuses actual encrypted storage witho
     ).rejects.toThrow("SYSTEM_INTEGRATION_UNAVAILABLE");
     expect(fixture.reads).toEqual([]);
   });
-  it("rejects a node gateway opt-in before resolving a Case credential or any personal integration", async () => {
-    fixture.selected = new Error("Case credential must not be loaded for an unauthorized gateway");
+  it("routes an opted-in Case node through the gateway without loading a direct Case credential", async () => {
+    fixture.selected = new Error("Case credential must not be loaded for a gateway node");
+    const transport = await resolveOpenAICompatTransport({
+      userId: owner,
+      provider: "openai",
+      credentialContext: context,
+      gateway: { baseUrl: "https://gateway.invalid/v2", apiKey: "synthetic-gateway-key" },
+      routeThroughGateway: true,
+    });
+    expect(transport.endpointUrl).toContain("gateway.invalid");
+    expect(transport.apiKey).toBe("synthetic-gateway-key");
+    expect(fixture.reads).toEqual([]);
+  });
+  it("fails closed when an opted-in Case node has no usable gateway and never falls back", async () => {
+    fixture.selected = new Error("SYSTEM_INTEGRATION_UNAVAILABLE");
     await expect(
       resolveOpenAICompatTransport({
         userId: owner,
@@ -133,7 +136,21 @@ describe("Case server credential transport reuses actual encrypted storage witho
         credentialContext: context,
         routeThroughGateway: true,
       }),
-    ).rejects.toThrow("ROUTING_DECISION_REQUIRED");
-    expect(fixture.reads).toEqual([]);
+    ).rejects.toThrow();
+    expect(anthropicChatStream).not.toHaveBeenCalled();
+  });
+  it("keeps the bound credential for a Case node without the opt-in", async () => {
+    const config = await encryptIntegrationConfig("llm_provider", {
+      api_key: "synthetic-direct-key",
+      base_url: "https://fixture.invalid/v1",
+    });
+    fixture.selected = { source: "integration", row: { user_id: owner, is_active: true, config } };
+    const transport = await resolveOpenAICompatTransport({
+      userId: owner,
+      provider: "openai",
+      credentialContext: context,
+      routeThroughGateway: false,
+    });
+    expect(transport.apiKey).toBe("synthetic-direct-key");
   });
 });

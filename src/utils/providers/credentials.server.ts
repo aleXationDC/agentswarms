@@ -285,16 +285,16 @@ export async function resolveOpenAICompatTransport(args: {
   // Gateway resolution: an explicit override from the caller (per-agent
   // opt-in) wins; otherwise honor the user's "route all LLM traffic" gateway
   // setting here, at the one chokepoint every OpenAI-compat surface shares.
-  if (args.credentialContext && (args.gateway || args.routeThroughGateway === true)) {
-    throw new Error("ROUTING_DECISION_REQUIRED");
-  }
-  const gateway = args.credentialContext
-    ? undefined
-    : (args.gateway ??
-      (await resolveUserGatewayOverride(userId, {
-        requireRouteAll: args.routeThroughGateway !== true,
-        required: args.routeThroughGateway === true,
-      })));
+  // A Case-bound call only takes the gateway on an explicit per-agent opt-in
+  // (fail-closed, no direct-provider fallback); otherwise it keeps its bound credential.
+  const gateway =
+    args.gateway ??
+    (args.credentialContext && args.routeThroughGateway !== true
+      ? undefined
+      : await resolveUserGatewayOverride(userId, {
+          requireRouteAll: args.routeThroughGateway !== true,
+          required: args.routeThroughGateway === true,
+        }));
 
   // Gateway override short-circuits per-provider creds — every gateway we
   // support (LiteLLM/Portkey/Helicone) speaks OpenAI Chat Completions.
@@ -777,10 +777,10 @@ export async function streamWithProvider(args: {
 }): Promise<Response> {
   const { userId, provider, modelId, systemPrompt, messages, temperature, maxTokens, gateway } =
     args;
-  if (args.credentialContext && gateway) throw new Error("ROUTING_DECISION_REQUIRED");
-  const selected = args.credentialContext
-    ? await loadCaseCredential(args.credentialContext, provider)
-    : null;
+  const selected =
+    args.credentialContext && !gateway
+      ? await loadCaseCredential(args.credentialContext, provider)
+      : null;
 
   if (gateway) {
     if (!canRouteThroughGateway(provider)) {

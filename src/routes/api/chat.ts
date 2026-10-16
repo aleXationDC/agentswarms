@@ -1456,11 +1456,15 @@ export const Route = createFileRoute("/api/chat")({
             return merged;
           }
 
-          const routeThroughGateway =
-            typeof body.routeThroughGateway === "boolean"
+          // Case-bound runs take the opt-in from the published run snapshot; a caller
+          // claim that disagrees with it is rejected rather than honoured.
+          if (caseExecution && (body.routeThroughGateway === true) !== caseExecution.gatewayIntent)
+            throw new Error("ROUTING_DECISION_REQUIRED");
+          const routeThroughGateway = caseExecution
+            ? caseExecution.gatewayIntent
+            : typeof body.routeThroughGateway === "boolean"
               ? body.routeThroughGateway
               : agentRouteThroughGateway;
-          if (caseExecution && routeThroughGateway) throw new Error("ROUTING_DECISION_REQUIRED");
           if (routeThroughGateway && !userId) {
             return new Response(
               JSON.stringify({ error: "Authentication required for LLM Gateway." }),
@@ -1470,10 +1474,12 @@ export const Route = createFileRoute("/api/chat")({
               },
             );
           }
-          // The same owner-scoped resolver serves browser and internal runs.
+          // The same user-scoped resolver serves browser, internal and Case-bound runs;
+          // a Case contributes the policy user, never a different gateway or credential.
+          const gatewayUserId = caseExecution ? policyUserId : userId;
           const gatewayOverride: GatewayOverride | undefined =
-            userId && !caseExecution
-              ? ((await resolveUserGatewayOverride(userId, {
+            gatewayUserId && !(caseExecution && !routeThroughGateway)
+              ? ((await resolveUserGatewayOverride(gatewayUserId, {
                   requireRouteAll: !routeThroughGateway,
                   required: routeThroughGateway,
                 })) ?? undefined)
@@ -2000,7 +2006,6 @@ export const Route = createFileRoute("/api/chat")({
               : rawAllowList;
             // Owner-scope tool data access on headless runs (RLS is off there).
             const toolScopeUserId = isInternalRun && userId ? userId : undefined;
-            if (caseExecution && gatewayOverride) throw new Error("ROUTING_DECISION_REQUIRED");
             const transportPromise = resolveOpenAICompatTransport({
               userId: policyUserId,
               provider,
