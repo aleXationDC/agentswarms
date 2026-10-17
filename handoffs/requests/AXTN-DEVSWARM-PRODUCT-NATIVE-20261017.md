@@ -201,3 +201,31 @@ Bericht e634526c6c4849fbe3db42ee331eb9aa8d1bea89 bestätigt den deployten App-Fi
 9. Gesamtbericht nach den materiellen Schritten aktualisieren: App-Health, Case-Provider-E2E, Produkt-Candidate, Reviews und CI klar unterscheiden. Bei Schutzsperre den betroffenen Schritt offen lassen und die übrige zulässige Arbeit weiterführen.
 
 Ziel dieser Fortsetzung: echter Case-Swarm-Fortschritt trotz noch ausstehendem Betreiber-Deploy und eine überprüfbare minimale Betreiberaktion. Keine neuen Runtime-/Auth-/Diagnosedienste und keine unbewiesene E2E-Fertigmeldung.
+
+
+## Sofortfortsetzung — exakte Auftragsreferenz statt Default-Branch-Suche (17.10.2026, 20:52 Europe/Berlin)
+
+Jüngste CLI-Meldung: Auftragsdokument im Architecture-Repo nicht gefunden; handoffs fehlt, docs nur mit zwei unpassenden Dateien. Dies belegt nicht das Fehlen des beauftragten Dokuments. Alle drei kanonischen Auftragsdateien wurden jetzt über Gitea mit exaktem Ref erfolgreich zurückgelesen. Architecture-PR #8 ist offen und hat unverändert diesen Head:
+
+owner: aXtn
+repository: aXtn-architecture
+ref: 14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1
+branch: work/AXTN-SUPACASE-USABILITY-0001
+
+Exakte Pfade und zurückgelesene Git-Blob-SHAs:
+- work-orders/AXTN-SUPACASE-USABILITY-0001.md -> e7b4d81cccb9244210020edda41b16da01d099cf
+- work-orders/AXTN-SUPACASE-USABILITY-0001-SWARM.md -> 6488f5fa774a71498f1eecc9152289b3f79dc14b
+- work-orders/AXTN-SUPACASE-USABILITY-0001-TEST.md -> 1cb06ac62b73c82f653b113f6041dcfe8c334085
+
+Die Dateien liegen im work-orders-Verzeichnis des PR-Branches, nicht unter handoffs oder docs und nicht notwendigerweise auf main. Kein Merge des Architecture-PR ist erforderlich, um diese freigegebene Revision zu lesen. Der Produktbranch im AgentSwarms-Repo und der Auftragsbranch im Architecture-Repo heißen gleich, sind aber unterschiedliche Repositories.
+
+Nächste Aktionen ohne erneutes allgemeines Preflight:
+1. Die tatsächlich gesendeten nichtgeheimen Leseparameter im bisherigen nativen MCP-Node/Request feststellen: owner, repository, path/identifier und ref. Den Fehler mit bereinigtem Status unterscheiden: falscher Pfad/Ref (404), fehlender Scope (403) oder Transport-/Schemafehler. Kein rohes Payload-/Headerlogging.
+2. Vorhandene native Gitea-MCP-Read-Nodes auf genau die obigen drei Referenzen konfigurieren. Tools/list und die bisherigen erfolgreichen Read-Nodes liefern den tatsächlichen Toolnamen und das Schema. Keine Parameter oder Toolnamen erfinden. Bei einem fetch-kompatiblen Schema entsprechen die Daten: owner=aXtn, repository=aXtn-architecture, target=file, identifier=obiger work-orders-Pfad, ref=vollständiger Commit.
+3. Den Ref explizit senden und den erfolgreichen nativen Readback einschließlich Pfad, Revision und Blob-SHA belegen. Falls die konkrete Oberfläche nur Branchrefs unterstützt: den genannten Branch verwenden und seinen aufgelösten SHA vor/nach dem Read mit 14b51ce7… vergleichen; kein stiller main-Fallback.
+4. Falls eine tatsächliche Repository-/Pfadfreigabe fehlt, die bereits beauftragte eng begrenzte READ-Freigabe für genau diese drei Architecture-Dateien und den festgelegten Ref über die vorhandene native MCP-Konfiguration herstellen, soweit der legitime Betreiberweg dies erlaubt. Keine globalen Rechte und keine Kopie in ein anderes Repo zur Umgehung einer Ablehnung. Tatsächliche Policy-Verbote bleiben verbindlich.
+5. Vollständige gelesene Aufträge dem nativen Builder-/Review-Arbeitskontext zuordnen, speichern/publizieren und den bestehenden Master-Data-Case fortsetzen. Keine neue Auftragsfassung erfinden und keine Inhalte aus bloßen Dateinamen rekonstruieren. Kein CLI-Produktpatch.
+6. Ausgangspunkt bleibt Produktkandidat 0f07f92f045441488c3367b3cbac38bf38040da1. Bestehende native Runs a99f03d5-f951-5575-aa5e-a224923329fb, bee23003-d0d8-5acb-a659-f942600cd9b1 und Review e2bbd0c3-8cdc-5fdc-a180-90fe778156cf erhalten. Der Kandidat ist nur eine Datei und bleibt UNVERIFIED; keine Erfüllung des ganzen PR-#8-Auftrags daraus ableiten. Verbleibende Arbeitspakete durch den Swarm bearbeiten und schließlich alle drei Reviewer auf denselben finalen vollständigen SHA binden.
+7. Der gesperrte Gitea-Deploy bleibt separat OPERATOR_ACTION_REQUIRED. Die konkrete Betreiberübergabe im Bericht@11ab46d60deef44a6d5d468d6338627cc3f6b10e nicht als ausgeführt behandeln oder selbst über ausgeschlossene Inputs ausführen. CI/Approval/PR_READY weiterhin erst nach echtem Nachweis.
+
+Erwartetes nächstes Ergebnis: Die drei versionierten Aufträge sind im nativen Run tatsächlich gelesen, der Swarm setzt die fachliche Arbeit fort und referenziert den nächsten Candidate. Bei erneutem Fehlschlag genaue nichtgeheime Request-Parameter und bereinigten Fehler angeben; nicht wieder pauschal behaupten, der Auftrag existiere nicht. Alex muss diese bestehenden Dateien weder neu hochladen noch erneut beschreiben oder für Lesbarkeit mergen.
