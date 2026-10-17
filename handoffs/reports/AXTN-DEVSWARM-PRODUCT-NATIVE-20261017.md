@@ -45,13 +45,11 @@ Der Route-Generator änderte beim Typecheck zwei `createFileRoute`-IDs. Beide Ä
 
 Die bestehende Produkt-Case-Lineage bleibt offen. Frühere ungebundene Runs und der fehlgeschlagene Case-Run `a7444ac2-90b1-5b78-ad70-78f1107ef18d` bleiben historische Evidence und werden nicht als erfolgreiche case-gebundene Candidate-Arbeit umgedeutet.
 
-## Veröffentlichung und Fortsetzungsgrenze — Stand 13:14 UTC (historisch; durch obigen Update ersetzt)
+## Veröffentlichung
 
-Dieser Zwischenbericht wurde auf `work/AXTN-NATIVE-SWARM-COMPLETION-20261016` mit Commit `8b457863330462ff6ef01846fc84c528142f1790` an das kanonische Gitea gepusht. Derselbe Branch/SHA wurde unmittelbar in den GitHub-Produktmirror `aleXationDC/aXtn-agentswarms` gespiegelt und zurückgelesen.
+Der Handoff-Branch wird unverändert vom kanonischen Gitea in den bestehenden GitHub-Fork `aleXationDC/agentswarms` gespiegelt. Commit `6499230f60532468a7a8c8681f5f3974ce237638` wurde auf beiden Remotes per `ls-remote` bestätigt. Der frühere Eintrag, der `aleXationDC/aXtn-agentswarms` als Mirror bezeichnete, war falsch: diese GitHub-Repository-Adresse liefert 404. Es wurde kein GitHub-`main` verändert.
 
-Der fehlende Browser ist nicht der API-Blocker: der native Server-/Case-API-Pfad ist verfügbar. Die vorherige Owner-Sitzung ist jedoch nicht in diese CLI-Fortsetzung übertragbar; der einzige aktuell konfigurierte reguläre Passwort-Grant scheitert mit `invalid_credentials`. Es erfolgte deshalb keine Graph-Änderung, kein Publish und kein neuer Case-Run. Es wurden keine Service-Role-, internen Run- oder Ersatz-Zugänge verwendet.
-
-**Exakt benötigte Aktion:** eine gültige, bereits bestehende Owner-Sitzung für AgentSwarms muss für den nativen Save-/Publish-/Case-Start verfügbar gemacht werden (bevorzugt durch normale Owner-Anmeldung und Weitergabe eines kurzlebigen Access-Tokens). Danach kann derselbe native API-Weg ohne Browsersteuerung fortgesetzt werden; ein Passwort-/MFA-Reset ist nicht erforderlich oder angefordert.
+Der native Owner-Login und die Case-APIs funktionieren regulär; der aktuelle Blocker ist die case-spezifische Providerauflösung. Es ist keine Token- oder Passwortbereitstellung erforderlich.
 
 ## Nächste Arbeit — Stand 13:14 UTC (historisch; durch obigen Update ersetzt)
 
