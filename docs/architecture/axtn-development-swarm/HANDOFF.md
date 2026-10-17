@@ -1,4 +1,61 @@
-## Fortsetzung nach 5bc92e10 — exakte Auftragsrefs und native Candidate-Fortsetzung
+## Fortsetzung nach 5bc92e10 — sichere Candidate-Recovery und Validierung
+
+Stand: 17.10.2026, 20:45 UTC. Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.
+
+Der bestehende Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` blieb an Case
+`913dbf33-9891-4712-b945-aab9a5cfe5b9` gebunden. Seine drei getrennten
+PR-#8-Arbeitsaufträge wurden im Run erneut nativ von
+`aXtn/axtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1` gelesen.
+Die aktuelle Case-Referenz ist Version 18:
+`gitea://aXtn/axtn-agentswarms/work/AXTN-SUPACASE-USABILITY-0001@517ab350468e00b7f0b5013ebae3b9c2dc148f29`.
+Native Gitea-Reads am Commit und Branch bestätigen für
+`src/routes/_authenticated/accounts_.$accountId.tsx` Datei-Commit
+`517ab350468e00b7f0b5013ebae3b9c2dc148f29`, Blob
+`5a6af26b29742305c7c44832d2d3f45a22660481` und 22,273 Bytes. Der Blob stimmt
+mit dem zuvor geprüften, nichtleeren Account-Detail-Stand `77fd20f0…` überein.
+
+Bei einem Prettier-Pass lieferte der Builder leere Ausgabe, und der erste
+Condition-Aufbau blockierte den Writer nicht: der Ziel-SHA-Pfad umging den
+Condition-Knoten. Der native Lauf `cb51cf90-ad00-53b5-a484-3b56af368382`
+schrieb deshalb einen leeren Blob `e69de29…` in Commit
+`7dd50e598c3bc5ac8d6b297340c718511195ba05`; der Case blieb auf dem intakten
+Kandidaten `77fd20f0…`. Dieser Lauf ist als fehlgeschlagener Schreibversuch
+dokumentiert, nicht als Kandidatenarbeit. Der Graph wurde danach so korrigiert,
+dass sowohl Builder-Ausgabe als auch aktueller Datei-SHA durch den Condition
+laufen und ausschließlich dessen YES-Ausgang `prepare_upsert_fields` erreicht.
+Der case-gebundene Lauf `4fe95635-ec98-58cc-a522-099d2470c8d5` bestätigte:
+bei leerer Builder-Ausgabe antwortete der Guard NO und die Nodes
+`prepare_upsert_fields`, Serializer und Gitea-Writer wurden übersprungen.
+
+Mit dieser Topologie stellte der Swarm den Account-Detail-Inhalt aus dem
+unveränderlichen Kandidaten `77fd20f0…` wieder her. Run
+`a31e7d40-0696-5fba-a600-42039b323d64` erzeugte vollständige Ausgabe (22,273
+Bytes); der Guard antwortete YES, der native Upsert commitete `517ab350…`, und
+Gitea-Readback bestätigte den Datei-Blob. Case-Version 18 wurde anschließend
+owner-authentifiziert auf genau diesen Commit aktualisiert und zurückgelesen.
+Ein weiterer Formatierungsversuch `98d6ca9a-3614-54ac-aeda-a1ff05d7b448`
+lieferte wieder leere Ausgabe; diesmal antwortete der Guard NO und der Writer
+wurde nachweislich übersprungen. Der aktive Graph-Snapshot ist
+`0f465fd6-b2f9-4547-96ec-39c0af78c2bf` (15 Nodes, 22 Edges); ohne neue sichere
+Graph-Konfiguration nicht erneut starten.
+
+Lokale Kandidatenprüfung in isolierten Worktrees: `npm run build` und
+`tsc --noEmit` bestanden; der fokussierte Testlauf bestand 21/21 einschließlich
+`noNativeDialogs` (4/4). Der Full-Suite-Lauf meldete 618 bestandene Testdateien,
+2 fehlgeschlagene Testdateien, 10,111 bestandene Tests und 40 übersprungene.
+Die zwei Fehler sind `docsUseCases.test.ts` (fehlender Use-cases-Abschnitt in
+`docs/IAM.md`) und `documentRecoveryInventory.test.ts` (veraltete Router-
+Revision). ESLint findet in den sechs geänderten Routen weiterhin 56
+Prettier-Fehler und 4 Hook-Warnungen. Ein kompletter CI-Lauf ist mangels
+bereitgestelltem Gitea Actions Runner nicht belegt.
+
+**Noch offen:** Lint-Korrekturen müssen weiter durch den Swarm erfolgen; CLI
+hat keinen Produktcode geschrieben. Drei unabhängige Reviews auf demselben
+finalen vollständigen Candidate-SHA, native Approval und der reviewbare
+ungemergte Produkt-PR fehlen. Gitea-Deploy/Runner bleibt dem autorisierten
+Betreiber übergeben; kein Merge, Release, Produktdeploy oder PASS.
+
+## Historischer Stand nach 5bc92e10 — exakte Auftragsrefs und native Candidate-Fortsetzung
 
 Stand: 17.10.2026, 19:20 UTC. Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.
 
