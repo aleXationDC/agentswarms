@@ -4,13 +4,21 @@
 
 Stand: 17.10.2026, 19:20 UTC
 
+### Contact-Detail-Pass nach dem Account-Pass
+
+Der bestehende native Development Swarm wurde im Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` auf Snapshot `09b04dcc-7bd0-44d6-9d3d-b06aa13e4c81` ausgeführt. Run `1be7a784-704d-526e-a2ff-0b274a0b6e2a` endete `success` mit 14/14 Schritten und 0 Fehlern. Der Graph las erneut die drei kanonischen Auftragsdateien an `aXtn/axtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1`, dazu den aktuellen generischen Dataset-Vertrag sowie `accountManagement.server.ts` und `caseManagement.functions.ts` an Candidate-Ref `1115d435…`. Der Builder war auf `src/routes/_authenticated/contacts_.$contactId.tsx` begrenzt und schrieb über den bestehenden nativen Gitea-MCP-Upsert.
+
+Der separate native Gitea-MCP-Readback am Branch `work/AXTN-SUPACASE-USABILITY-0001` bestätigt `last_commit_sha=455418fc6804fecfa19b788609ea1318925d7101`, Blob `4f9565a543eaaf84f39dc5e726bda7c8a14987e2`, 17,871 Bytes. Die normale Owner-authentifizierte Case-Operation wechselte die externe Referenz von `…@1115d435d5ce7779ec6c357a1e5288e5a0519007` (Version 5) auf `…@455418fc6804fecfa19b788609ea1318925d7101` (Version 6); der Readback bestätigte die Referenz. Das ist ein durch den Swarm materialisierter Candidate, nicht die Abnahme der Änderung.
+
+Der publizierte Graph `09b04dcc…` bleibt bei Produkt-Ref `1115d435…` und dem Contact-Detail-Writer. Nicht erneut ausführen, bevor die Quellen und das nächste konkrete Ziel auf den bestätigten Candidate aktualisiert und neu publiziert sind. Weiterhin unbelegt: Tests, Typecheck, Build, echter CI-Lauf, unabhängige Reviews auf demselben vollständigen finalen SHA, native Approval und Produkt-PR.
+
 ### Account-Detail-Pass nach dem 19:10-Stand
 
 Der bestehende native Development Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde auf der publizierten Version `7fcb9f0c-3f76-445b-9507-684d453f060b` case-gebunden ausgeführt. Run `04319e38-b1c3-5ba9-a5b5-389fa0984e5a` meldete 14/14 erfolgreiche Schritte. Der Builder war auf `src/routes/_authenticated/accounts_.$accountId.tsx` begrenzt; die vorhandenen Backend-, Server-Function- und Dataset-Contract-Reads sowie alle drei unveränderten Auftrags-Reads waren Teil des Graphen.
 
 Der native Gitea-MCP-Readback auf Branch `work/AXTN-SUPACASE-USABILITY-0001` bestätigt für diese Route `last_commit_sha=1115d435d5ce7779ec6c357a1e5288e5a0519007`, `sha=9f1dd2c3e3b31cc37255e4247f4bf4204a93d7fe` und 22,190 Bytes. Die normale Owner-authentifizierte Case-Operation aktualisierte die externe Referenz von `gitea://aXtn/axtn-agentswarms/work/AXTN-SUPACASE-USABILITY-0001@6cc875…` (Version 4) auf `…@1115d435…` (Version 5); die Antwort bestätigte Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` und die neue Referenz. Das belegt die native Candidate-Materialisierung und Case-Bindung, nicht die fachliche Abnahme.
 
-Ein zusätzlicher nativer Read auf Candidate-Ref `1115d435…` fand die bestehende Route `src/routes/_authenticated/contacts_.$contactId.tsx` mit Datei-Commit `610cc69c6c7d450ed7f0366eacb24cae043d91ff`, Blob `08589b049ec8117f0ff1ea1b22419c7d23f231b5` (9,020 Bytes). Dieser Read hat nichts geschrieben. Snapshot `7fcb9f0c…` bleibt auf Produkt-Ref `6cc875…` und dem Account-Detail-Writer konfiguriert: **nicht erneut ausführen**, bevor Produkt-Reads/SHA-Extractor/Writer auf den bestätigten Candidate `1115d435…` und ein neues passendes Ziel aktualisiert und publiziert sind.
+Ein zusätzlicher nativer Read auf Candidate-Ref `1115d435…` fand die bestehende Route `src/routes/_authenticated/contacts_.$contactId.tsx` mit Datei-Commit `610cc69c6c7d450ed7f0366eacb24cae043d91ff`, Blob `08589b049ec8117f0ff1ea1b22419c7d23f231b5` (9,020 Bytes). Dieser Read hat nichts geschrieben. Zu diesem Zeitpunkt zeigte Snapshot `7fcb9f0c…` noch auf Produkt-Ref `6cc875…` und den Account-Detail-Writer; er wurde anschließend durch den oben dokumentierten Contact-Detail-Snapshot `09b04dcc…` ersetzt.
 
 Weiterhin nicht belegt sind Typecheck, Tests, Build, CI, drei unabhängige Reviews auf demselben vollständigen finalen SHA, native Approval oder Produkt-PR. Der Kandidat bleibt **PARTIAL / UNVERIFIED**; der separate content-excluded Gitea-Actions-Deployment-/Runner-Blocker bleibt offen. Kein Merge, Release oder Produktdeploy erfolgte; Copilot CLI hat keinen Produktcode geschrieben.
 
