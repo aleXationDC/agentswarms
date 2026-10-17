@@ -144,3 +144,43 @@ Nächster konkreter Arbeitsschritt:
 Falls Schritt 2 policybedingt oder Schritt 3 mit dem tatsächlich vorgesehenen Zugang scheitert: keine weiteren Passwortversuche und keine Umgehung. Exakt den bereinigten Fehler und eine einzige sichere Betreiberaktion nennen: normalen Owner-Login über einen vorgesehenen sicheren Auth-Kanal herstellen oder den vorgesehenen Credential-Eintrag geschützt aktualisieren. Keine Bitte um Token-/Passwortwerte im Chat. Eine erforderliche Anpassung einer Content-Exclusion-Policy nur über den dafür zuständigen Betreiberweg veranlassen; nicht selbst umgehen und nicht pauschal alle .env-Dateien freigeben.
 
 Gesamtauftrag bleibt offen; nach erfolgreicher Authentifizierung direkt weiterarbeiten. Der neue Bericht muss unterscheiden: erfolgreicher nativer API-Zugriff, tatsächlicher Graph-Readback, tatsächlicher Case-Run, Fehlerkorrektur durch Swarm und noch fehlende Abnahme. Keine erledigte Implementierung aus einem gelungenen Login ableiten.
+
+
+## Unmittelbare Reparaturfortsetzung nach de242674 — Case-Chat und Gitea Actions (17.10.2026, 16:34 Europe/Berlin)
+
+Gesicherter Fortschritt: regulärer Owner-Login funktioniert; nativer Save/Publish und zwei echte case-gebundene Starts sind belegt. Diese Zugangsklärung nicht erneut öffnen. Bericht de24267450faf59a57cd00486a2fb8486ba2ac0e bleibt Ausgangsevidence. Gesamtauftrag ist nicht abgeschlossen.
+
+### Arbeitspaket A: Fehler im vorhandenen Case-Chat-Pfad beheben und weiterlaufen
+
+Source-geprüfte Ansatzpunkte:
+- src/routes/api/chat.ts: äußerer catch verwendet caseProviderFailure, protokolliert bei Case-Bindung nur einen Code und erzeugt keinen regulären Trace; die spätere TraceContext-Erstellung folgt erst nach Case-Auflösung, IAM, Budget, Agentkonfiguration und Gatewayauflösung.
+- src/axtn/workbenches/cases/caseExecution.server.ts: caseProviderFailure fällt bei nicht erkannten Fehlern auf PROVIDER_UNAVAILABLE zurück. Dies ist kein Beweis eines Provider-Ausfalls.
+- resolveCaseChat führt nach dem nativen resolve-Aufruf noch CaseExecutionBinding.parse, Route-Lookup und readCaseRunContext aus. Persistierte execution_bindings beweisen die vorangegangene DB-Wirkung, nicht den erfolgreichen Abschluss dieser nachfolgenden Schritte.
+
+Durchführung:
+1. Exakten laufenden Source-/Image-/Migrationsstand und den verwendeten Published Snapshot abgleichen. Den nativen Case-Aufruf mit der erfolgreichen direkten Chat-Probe vergleichen: serverseitig aufgelöster Owner-/Policy-Scope, Case-/Node-/Operation-Bindung, Gateway-Opt-in aus Snapshot, Request-Flag, Provider/Modell und aktivierter Toolpfad. Nur nichtgeheime Metadaten, keine Body-/Konfig-/Header-Dumps.
+2. Den vorhandenen Fehler-/Tracingpfad eng verbessern, damit ein Vor-Stream-Fehler sicher korrelierbar wird: serverseitige Korrelations-ID, feste Phase, bereinigter Fehlercode, Run-/Node-Referenz und Laufzeit. Bestehende Observability-/Trace-Helfer verwenden; kein neuer Diagnosedienst, keine Log-Datenbank oder zweite Trace-Pipeline.
+3. Fest definierte Phasen um die tatsächlich vorhandenen Schritte setzen: Case-Auflösung einschließlich Binding-Schema/Route/Run-Kontext, Modell-IAM, Budget, Agentkonfiguration, Gatewayauflösung, Trace-Vorbereitung und Provider-Transport. Nicht jeden erfolgreichen Schritt dauerhaft ausführlich loggen. Bei Schemafehlern höchstens sichere Fehlerklasse und Schema-Pfad/Code, niemals rohe Zod-Exceptions, Eingabewerte oder vollständige Stack-/Exception-Dumps.
+4. Nur serverseitig authentifizierte, berechtigte Case-/Run-Zuordnungen korrelieren. Keine aus Request-Claims übernommenen Owner-Zuweisungen und keine Case-/Promptinhalte in Fehler-Metadaten. Tokens, Cookies, Credentials, Provider-Konfigurationen und Secretwerte bleiben ausgeschlossen. Vor Rückgabe einer Diagnose sicherstellen, dass fremde/unauthentifizierte Caller keine internen Details erhalten.
+5. Mit einer gezielten Reproduktion die konkrete fehlschlagende Phase bestimmen und anschließend die tatsächliche Ursache im vorhandenen Code oder der vorhandenen Konfiguration beheben. Kein neuer Gateway-/Credentialpfad und keine zusätzliche Case-Policy. Route-/IAM-/Budget-/Candidate-Bindung nicht entfernen, um den Fehler loszuwerden.
+6. Eine minimal nötige Reparatur am bestehenden Case-/Chat-/Observability-Code gehört zum bereits beauftragten Fehlerbehebungsscope; sie ist keine Freigabe für neue Plattformfähigkeiten. Passenden Regressionstest mit injiziertem Vor-Stream-Fehler sowie Schutz vor Secret-/Payload-Ausgabe und den tatsächlichen Ursachenfall prüfen. Nachweis: reproduzierbar vor Reparatur fehlgeschlagen, nach Reparatur bestanden. Keine Testschwächung und kein erfolgreicher direkter Chat-Aufruf als Ersatz.
+7. Falls Codeänderung erforderlich: im bestehenden autorisierten App-Reparatur-/Releaseweg prüfen, unveränderlich bauen/pinnen, bereitstellen und Health kontrollieren. Betroffene Daten/Stand und Rollback nach bestehendem Vertrag sichern; kein pauschaler erneuter Gesamtbackup als Routine für jede Diagnose.
+8. Danach denselben Master-Data-Case mit neuem klar referenziertem Reparatur-Attempt nativ fortsetzen; historische fehlgeschlagene Runs nicht umdeuten. Der Swarm soll den bekannten falschen Accounts-/Contacts-Kandidaten korrigieren. Produktcode bleibt Swarm-Arbeit. Nicht nach Diagnose, Instrumentierung oder erfolgreichem Provider-Aufruf als fertig enden; mit Candidate/Review/CI/Approval gemäß Gesamtauftrag weiterarbeiten.
+
+### Arbeitspaket B: offiziellen Runner über legitimen Gitea-Betreiberweg einrichten
+
+1. 403 präzise zuordnen: tatsächlicher HTTP-Method/Endpoint, aktive eigene Identität, benötigter Scope/Repo-Zugriff, Proxy- gegenüber Gitea-Antwort. Kein Secret/Tokenwert ausgeben. Eine erreichbare API mit 403 nicht als Netzwerk-Unerreichbarkeit beschreiben.
+2. Zuerst repo-begrenzte native Runner-/Actions-Verwaltung prüfen, nicht globale Adminrechte verlangen. Für die ohnehin beauftragte Einrichtung gibt es zusätzlich den offiziellen Gitea-CLI-Weg:
+   https://docs.gitea.com/1.27/administration/command-line/
+   https://docs.gitea.com/1.27/usage/actions/runner/
+   Dokumentierter Befehl: gitea actions generate-runner-token --scope OWNER/REPO.
+3. Die aktive 1.27.3-Binary mit --help sowie User/Config-/Work-Path prüfen. Den bereits autorisierten Host-/Container-Betreiberzugang und die offizielle Gitea-CLI verwenden, soweit dieser Zugang in der Umgebung erlaubt ist. Kein Zugriff auf ausgeschlossene Konfigurationen über alternative Wege, keine SQL-Insertion oder eigene Token-Minting-Logik, keine Passwortänderung und keine Vergabe globaler Adminrechte an Copilot-/Swarm-Konten.
+4. Ein gegebenenfalls erzeugtes repo-gebundenes Registrierungsgeheimnis nur unmittelbar in den geschützten Standard-Registrierungsweg übergeben. Es darf nicht in Toolausgabe, Chat, Shell-History, Git oder Evidence erscheinen. Bestehende Runner-/Tokenzustände vor einer möglichen Neugenerierung prüfen; keine unbemerkte Rotation anderer Registrierungen. Kein globales Token mangels Bequemlichkeit erzeugen.
+5. Offiziellen kompatiblen Runner wie im Gesamtauftrag isoliert bereitstellen, native Actions-/Runner-Einträge zurücklesen, einen echten begrenzten Prüfjob durchführen und Ergebnisse nativ nachweisen. Produktion, Provider-Credentials und Host-Docker-Socket bleiben für Candidate-Jobs unzugänglich.
+6. Wenn der Betreiber-/CLI-Weg tatsächlich nicht autorisiert/verfügbar ist, exakt die nötige repo-begrenzte Aktion des zuständigen Admins nennen. Nicht wieder nur „Admin-Zugang fehlt“ melden. Dies blockiert Arbeitspaket A und zulässige Swarm-Candidate-/Review-Arbeit nicht.
+
+### Bericht und Fertigstellung
+
+Bestehende Parent-/Child-Lineage verwenden, verantwortliche Reparaturarbeit native nachführen und Teilstände nach materiellen Änderungen pushen. Im Gesamtbericht getrennt ausweisen: konkrete Ursache und Fix, safe korrelierter Vor-Stream-Fehler, echter case-gebundener Modelllauf, durch Swarm materialisierter Candidate, Runner/CI, unabhängige Reviews und Approval.
+
+Keine neuen Credential-Schritte von Alex verlangen, solange regulärer Owner-Login funktioniert und legitime bestehende Betreiberwege nicht konkret geprüft sind. Gesamtziel bleibt der überprüfte echte Produktauftrag, nicht eine weitere Source-Bestätigung.
