@@ -1,6 +1,71 @@
 # AXTN Development Swarm — Zwischenstand
 
-## Aktueller Fortsetzungsstand — Candidate-Recovery und Validierung
+## Aktueller Fortsetzungsstand — native Review-Reparaturen bis 21:34 UTC
+
+Stand: 17.10.2026, 21:34 UTC. Tracking: `aXtn/axtn-agentswarms#7`.
+Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.
+
+Der bestehende Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` lief im offenen
+Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` weiter. In allen
+Implementierungsläufen wurden die drei unveränderten Auftragsdateien erneut
+nativ von `aXtn/axtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1`
+gelesen. Kein Produktcode wurde durch CLI geschrieben.
+
+### Review-Ausgang und Swarm-verfasste Korrekturen
+
+Der bounded, serielle Review-Run `e085727c-8a43-50e4-a9ca-e97f6bd32d4b`
+prüfte Candidate `517ab350…`. Workflow-Review fand u. a. einen Promise/String-
+Fehler beim Account-Parent-Lookup sowie unsichere Unsaved-Change-Behandlung in
+Contact Detail. Der Security-Review lieferte nur einen partiellen Bericht; der
+Quality-Review endete mit leerer Ausgabe. Diese Reviews sind nicht auf den
+aktuellen Candidate übertragbar.
+
+Der erneute Review-Run `ff975478-51d6-52b7-a6de-c7be046277c9` las alle
+Produktquellen nativ am exakten aktuellen Candidate `e4ca073…` und alle drei
+Aufträge am unveränderten Architecture-Commit. Der Security-Reviewer brach
+seine Antwort nach 411 Bytes ab; Workflow- und Quality-Reviewer lieferten
+leere Ausgaben. Damit sind keine drei unabhängigen Reviews für den aktuellen
+SHA belegt.
+
+Der Swarm setzte die bestätigten Befunde durch native Gitea-MCP-Upserts um.
+Die folgenden Commits wurden jeweils nativ zurückgelesen; nach jedem
+Readback wurde die Case-Referenz owner-authentifiziert fortgeschrieben:
+
+| Run | Native Änderung | Commit / Case-Referenz |
+|---|---|---|
+| `00e4ea5f-a7f0-5d22-a081-2870be8582b2` | `applyAccount` wartet nun auf `token()` für den Account-Parent-Lookup. | `3088d3c7e22af3ba6587dbab75a3da58783c2fd2`, Case-Version 19; Account-Blob `cfec641c2f9b9ca6d359bf1fea42c0b52ef47be5`, 22,291 Bytes. |
+| `3fc63109-60a9-5b8d-a94c-8c3864423c79` | Contact-Detail-`beforeunload` setzt `returnValue`; Cancel fragt per `confirmAsk` vor Verwerfen. | `54b9ba49349e1d0f3f7e74e163a188d0b850cead`, Case-Version 20; Contact-Blob `68b84c74a01d5f25c3d7b76c42d1249bc612ad7d`, 18,622 Bytes. |
+| `80e4964d-e04f-5c07-a177-6a75b294270a` | Der Build-Fund zum fehlenden Helper-Modul wurde durch Wechsel auf den vorhandenen Import `@/components/ui/confirm-dialog` behoben. | `e4ca073195ada22dc378f6da0f300f498f2ebbf2`, Case-Version 21; Contact-Blob `23b9e66ade0e068a52558adef6aff932e2c33dd4`, 18,624 Bytes. |
+
+### Validierung und verbleibende Blocker
+
+Auf einem isolierten Worktree des exakten Candidates `e4ca073…` bestanden
+`npm run typecheck` und `npm run build`. Die vollständige `npm test`-Suite
+meldet weiterhin 2 fehlgeschlagene Testdateien, 618 bestandene, insgesamt
+10,111 bestandene Tests und 40 übersprungene:
+`docs/unit/docsUseCases.test.ts` schlägt für den fehlenden Use-cases-Abschnitt
+in `docs/IAM.md` fehl; `tests/unit/documentRecoveryInventory.test.ts` wegen
+einer veralteten Router-Revision. ESLint über die acht geänderten Produktdateien
+meldet 59 Fehler, überwiegend Prettier, plus 4 Hook-Warnungen.
+
+Vier native Account-Detail-Formatierungsversuche (`140b993e-9f33-50a4-a17f-3e3970c53710`,
+`e8e7afb7-d04c-59e8-a9f4-41ec651be509`,
+`af048059-1f24-56eb-a55e-f355fab060f5`,
+`899ac648-b3bb-5393-a48c-e2fa36f933a4`) erreichten keine vollständige
+Builder-Ausgabe. Ein separater nativer MCP-Source-Extractor reduzierte die
+Builder-Eingabe auf den Rohquelltext, löste die fehlende Ausgabe aber nicht.
+In jedem Lauf antwortete der Source-Guard NO und übersprang Prepare,
+Serializer und Writer. Es entstand kein leerer oder sonstiger
+Formatierungs-Commit; der Kandidat und die Case-Referenz blieben auf
+`e4ca073…`.
+
+Es gibt noch keinen finalen Review aller drei Rollen auf genau diesem SHA,
+keine native Approval, keinen Produkt-PR und keinen verifizierten echten CI-
+Lauf. Gitea Actions/Runner erfordert den autorisierten Operator-Deploy;
+content-excluded Deployment-Inputs wurden nicht geöffnet. Kein PASS, Merge,
+Release oder Produktdeploy.
+
+## Historischer Stand — Candidate-Recovery und Validierung (20:45 UTC)
 
 Stand: 17.10.2026, 20:45 UTC. Tracking: `aXtn/axtn-agentswarms#7`.
 Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.

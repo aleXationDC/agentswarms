@@ -1,4 +1,60 @@
-## Fortsetzung nach 5bc92e10 — sichere Candidate-Recovery und Validierung
+## Fortsetzung am 17.10.2026, 21:34 UTC — Reviews, Swarm-Reparaturen und Kandidatenprüfung
+
+Status bleibt **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**. Der bestehende
+Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` arbeitet weiter am offenen Case
+`913dbf33-9891-4712-b945-aab9a5cfe5b9`; die drei Auftragsdateien wurden in den
+neuen Implementierungsläufen erneut nativ von
+`aXtn/axtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1` gelesen.
+
+Der bounded Review-Run `e085727c-8a43-50e4-a9ca-e97f6bd32d4b` untersuchte den
+damaligen Kandidaten `517ab350…`. Der Workflow-Reviewer identifizierte
+konkrete Fehler im Account- und Contact-Detail; der Security-Reviewer lieferte
+einen partiellen Bericht, während der Quality-Reviewer ohne Inhalt endete.
+Diese Reviews gelten **nicht** für den aktuellen Kandidaten.
+
+Der erneute Review-Run `ff975478-51d6-52b7-a6de-c7be046277c9` las alle
+Produktquellen nativ am exakten aktuellen Kandidaten `e4ca073…` und alle drei
+Aufträge am unveränderten Architecture-Commit. Der Security-Reviewer brach
+seine Antwort nach 411 Bytes ab; Workflow- und Quality-Reviewer lieferten
+leere Ausgaben. Damit sind keine drei unabhängigen Reviews für den aktuellen
+SHA belegt.
+
+Der Swarm reparierte die bestätigten Defekte über native Gitea-MCP-Schreib-
+und Readback-Pfade:
+
+| Case-Run | Ergebnis |
+|---|---|
+| `00e4ea5f-a7f0-5d22-a081-2870be8582b2` | Account parent lookup wartet jetzt auf `token()`; Commit `3088d3c7e22af3ba6587dbab75a3da58783c2fd2`, Blob `cfec641c2f9b9ca6d359bf1fea42c0b52ef47be5`, 22,291 Bytes; Case-Referenz Version 19. |
+| `3fc63109-60a9-5b8d-a94c-8c3864423c79` | Contact `beforeunload` setzt `returnValue`, Cancel verwendet `confirmAsk`; Commit `54b9ba49349e1d0f3f7e74e163a188d0b850cead`, Blob `68b84c74a01d5f25c3d7b76c42d1249bc612ad7d`, 18,622 Bytes; Case-Referenz Version 20. |
+| `80e4964d-e04f-5c07-a177-6a75b294270a` | Ein vom lokalen Build gefundener falscher `confirmAsk`-Import wurde auf die vorhandene `@/components/ui/confirm-dialog`-Implementierung korrigiert; Commit `e4ca073195ada22dc378f6da0f300f498f2ebbf2`, Blob `23b9e66ade0e068a52558adef6aff932e2c33dd4`, 18,624 Bytes; Case-Referenz Version 21. |
+
+Die nativen Branch-Readbacks bestätigten die Änderungen im Quelltext. Im
+isolierten Worktree auf exakt `e4ca073…` bestanden `npm run typecheck` und
+`npm run build`. Die vollständige Suite bleibt rot mit den bereits bekannten
+zwei Testdateien: `docsUseCases.test.ts` (fehlender Abschnitt in `docs/IAM.md`)
+und `documentRecoveryInventory.test.ts` (veraltete Router-Revision);
+10,111 Tests bestanden, 40 übersprungen. ESLint über alle acht geänderten
+Produktdateien meldet 59 Fehler (überwiegend Prettier) und 4 Hook-Warnungen.
+
+Vier native Account-Detail-Formatierungsversuche (`140b993e-9f33-50a4-a17f-3e3970c53710`,
+`e8e7afb7-d04c-59e8-a9f4-41ec651be509`,
+`af048059-1f24-56eb-a55e-f355fab060f5`,
+`899ac648-b3bb-5393-a48c-e2fa36f933a4`) gaben keine vollständige
+Builder-Ausgabe zurück. Auch ein separater Source-Extractor reduzierte die
+Builder-Eingabe auf den Rohquelltext, aber alle Versuche endeten mit leerer
+Ausgabe. Der Guard antwortete jeweils NO; `prepare_upsert_fields`, Serializer
+und Writer wurden übersprungen. Es entstand kein Commit und der Case blieb
+sicher auf `e4ca073…`. Die Formatierung muss weiter durch den Swarm gelingen;
+CLI hat keinen Produktcode verändert.
+
+**Offen:** finaler unabhängiger Review aller drei Rollen auf genau demselben
+Kandidaten `e4ca073…`, erfolgreiche Lint-Korrekturen, Auflösung der zwei
+Full-Suite-Fehler, echter Gitea-CI-Lauf, native Approval und reviewbarer
+ungemergter Produkt-PR. Der Gitea Actions/Runner-Deploy bleibt dem autorisierten
+Betreiber übergeben; content-excluded Deployment-Inputs wurden nicht gelesen.
+Kein PASS, Merge, Release oder Produktdeploy.
+
+## Historischer Stand 17.10.2026, 20:45 UTC — sichere Candidate-Recovery und Validierung
 
 Stand: 17.10.2026, 20:45 UTC. Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.
 
