@@ -1,12 +1,91 @@
 # AXTN Development Swarm — Zwischenstand
 
-Stand: 17.10.2026, 16:30 UTC
+Stand: 17.10.2026, 18:20 UTC
 
 Tracking: `aXtn/aXtn-agentswarms#7`
 
-Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@a10b4e98b79ff70406413eca6fe6c61562e84bcb`
+Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@3e575327261d6489ed5289709faf9e26207ae4b4`
 
-Status: **PARTIAL / BLOCKED**. Der Case-Chat-Fix ist deployed; CI- und Runner-Konfigurationen sind committet und gepusht, aber der Runner ist nicht registriert und es gab keinen echten Gitea-CI-Lauf. Gitea-Compose-Deployment ist in diesem CLI durch Content-Exclusion blockiert. Außerdem liegt keine wiederverwendbare Owner-authentifizierte AgentSwarms-Sitzung für den nächsten Case-Run vor. Kein neuer Candidate-SHA, erfolgreicher Swarm-Produktlauf, CI-PASS, Review, Approval oder PR #8 ist belegt.
+Status: **PARTIAL / OPERATOR_ACTION_REQUIRED**. Owner-Auth und native Save/Publish funktionieren wieder. Der Swarm hat im bestehenden Master-Data-Case einen Kandidaten erstellt und unabhängig geprüft; sein aktueller Branch-Head ist `0f07f92f045441488c3367b3cbac38bf38040da1`. Der geschützte Gitea-Compose-Deploy ist nicht ausgeführt, es läuft kein Runner, und es gibt daher keinen CI-PASS. Der Kandidat ist nur eine Datei und erfüllt weder den vollständigen PR-#8-Auftrag noch dessen drei Reviews auf demselben finalen SHA, native Approval oder offenen Produkt-PR. Kein Produktcode wurde durch Copilot CLI geschrieben.
+
+## Fortsetzung nach 3e575327 — 17.10.2026, 18:20 UTC
+
+- Regulärer Owner-Login, der bestehende Case-Zugriff und der native Builder-Publish wurden wiederverwendet. Der letzte Builder-Snapshot ist `b7e7023a-f1ea-415c-8ddd-0b46d5a6db1d` (9 Nodes, 10 Edges); der vorübergehende Review-only-Snapshot ist nicht mehr aktiv.
+- Case-Run `a99f03d5-f951-5575-aa5e-a224923329fb` lief an Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` mit 9/9 erfolgreichen Schritten und 0 Fehlern. Der Swarm commitete die Metadatenkorrektur als `37090588723cac30fbf343a189fa759f844f9116`.
+- Der unabhängige Review-Run `0d348b4d-69ad-5090-a405-8886cc03b916` lief mit 7/7 erfolgreichen Schritten. Er bestätigte `parent_account_id` in der Metadatenliste für neue und bestehende owner-eigene Account-Datasets; die zuvor vermuteten fehlenden RLS-Policies sind durch `supabase/migrations/20260420170100_f0858a49-b3fb-4036-bf16-5fcdd1707107.sql` widerlegt.
+- Der Swarm setzte den Review-Fund weiter um: Case-Run `bee23003-d0d8-5acb-a659-f942600cd9b1` lief mit 9/9 erfolgreichen Schritten und 0 Fehlern und erzeugte Commit `0f07f92f045441488c3367b3cbac38bf38040da1`. Die Änderung beschränkt das Metadaten-UPDATE zusätzlich auf `user_id` und meldet ein UPDATE ohne zurückgegebene Zeile explizit.
+- Gitea-MCP-Readback bestätigt auf `work/AXTN-SUPACASE-USABILITY-0001` den Datei-Commit `0f07f92f045441488c3367b3cbac38bf38040da1` und Blob `42c8dcbb2a77b124c01f11c71eb5599a24187274` für `src/axtn/workbenches/cases/accountManagement.server.ts`. Die native Case-Referenz wurde über die normale `/api/cases/work`-Owner-Operation auf diese SHA aktualisiert; `external_reference_version` wechselte von 1 auf 2 und wurde zurückgelesen.
+- Der finale unabhängige Review-Run `e2bbd0c3-8cdc-5fdc-a180-90fe778156cf` lief mit 7/7 erfolgreichen Schritten. Er meldet keine blockierenden oder größeren Findings. Übrig gebliebene LOW/INFO-Hinweise betreffen ein vorbestehendes Verhalten bei ungültiger `columns`-Form sowie einen möglichen konkurrierenden Delete; keine der Aussagen ist ein Build-/Testnachweis.
+- Drei Review-Runs liegen über aufeinanderfolgende Kandidatenstände vor; nur `e2bbd0c3…` prüfte den finalen SHA `0f07f92…`. Es wurden keine Tests, Typecheck, Build, Gitea-Actions-Runs, Approval oder PR #8 auf diesem Kandidaten ausgeführt. Der finale Kandidat bleibt **UNVERIFIED** und das Gesamtziel offen.
+
+## Konkrete Betreiberübergabe — Gitea Actions bereitstellen
+
+Die Konfigurationsmetadaten wurden geprüft, ohne den ausgeschlossenen Deployment-Input zu lesen oder zu rendern:
+
+| Feld | Verifizierter Stand |
+|---|---|
+| Repository / Zielbranch | `aXtn/aXtn-git`, `work/AXTN-GITEA-CI-RUNNER-0001` |
+| Bereitstellungscommit | `b79e78bb3e82d0b4d97560c5913e27afc0746cb3` |
+| Exakte Änderung | `compose.yaml` setzt für `gitea` `GITEA__actions__ENABLED: "true"`; `README.md` dokumentiert den separat verwalteten Runner |
+| Rollback-Parent | `dfbb45ad6ee546e4b84cea35a106a0bce20c7070`; der Compose-Diff enthält dort die Actions-Variable nicht |
+| Aktiver Compose-Projektpfad | Projekt `axtn-git`, Project Directory `/home/alex/aXtn-git`; laufender Checkout `0094812b2ee5eca13fffcd300659a35d6e2914e5` |
+| Deployment-Compose-Datei | `/home/alex/aXtn-git-ci-runner-worktree/compose.yaml`, sauberer Checkout auf `b79e78bb…` |
+| Live-Zustand | `axtn-gitea` (`gitea/gitea:1.27.3`) ist `running|healthy`; die Compose-Umgebungsvariable ist noch nicht gesetzt |
+| Netzwerke vor Recreate | `axtn-native-api`, `axtn_git_ci` und `axtn_git_internal` hängen aktuell an `axtn-gitea`; die ersten beiden sind manuelle Bindings und können beim Recreate verloren gehen |
+| Runner | Kein Runner-Container in `docker ps`; Actions-Konfiguration allein ist kein CI-Nachweis |
+
+**Eine nötige Betreiberaktion:** den folgenden Befehl mit den bestehenden, unveränderten und geschützten Compose-Inputs über den genehmigten Hostweg ausführen. Der `.env`-Inhalt wird nicht angefordert oder ausgegeben:
+
+```sh
+sudo docker compose \
+  --project-name axtn-git \
+  --project-directory /home/alex/aXtn-git \
+  --env-file /home/alex/aXtn-git/.env \
+  --file /home/alex/aXtn-git-ci-runner-worktree/compose.yaml \
+  up -d --no-deps --force-recreate --wait --wait-timeout 180 gitea
+
+for network in axtn-native-api axtn_git_ci; do
+  if ! sudo docker network inspect "$network" \
+    --format '{{range $id, $endpoint := .Containers}}{{println $endpoint.Name}}{{end}}' |
+    grep -Fxq axtn-gitea; then
+    sudo docker network connect --alias axtn-gitea "$network" axtn-gitea
+  fi
+done
+
+test "$(sudo docker inspect --format '{{.State.Status}}|{{.State.Health.Status}}' axtn-gitea)" = "running|healthy"
+sudo docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' axtn-gitea |
+  awk -F= '$1 == "GITEA__actions__ENABLED" && $2 == "true" { found=1 } END { if (!found) exit 1; print "Actions setting enabled" }'
+for network in axtn-native-api axtn_git_ci; do
+  sudo docker network inspect "$network" \
+    --format '{{range $id, $endpoint := .Containers}}{{println $endpoint.Name}}{{end}}' |
+    grep -Fxq axtn-gitea
+done
+```
+
+**Exakter Rollback** auf `dfbb45ad…`; er liest nur die versionierte Compose-Datei und verwendet dieselben unveränderten geschützten Inputs. Danach werden die zuvor beobachteten manuellen Netze idempotent wieder angebunden und Health geprüft:
+
+```sh
+rollback_file="$(mktemp /tmp/axtn-gitea-compose-rollback.XXXXXX.yaml)"
+trap 'rm -f "$rollback_file"' EXIT
+git -C /home/alex/aXtn-git-ci-runner-worktree \
+  show dfbb45ad6ee546e4b84cea35a106a0bce20c7070:compose.yaml > "$rollback_file"
+sudo docker compose \
+  --project-name axtn-git \
+  --project-directory /home/alex/aXtn-git \
+  --env-file /home/alex/aXtn-git/.env \
+  --file "$rollback_file" \
+  up -d --no-deps --force-recreate --wait --wait-timeout 180 gitea
+for network in axtn-native-api axtn_git_ci; do
+  if ! sudo docker network inspect "$network" \
+    --format '{{range $id, $endpoint := .Containers}}{{println $endpoint.Name}}{{end}}' |
+    grep -Fxq axtn-gitea; then
+    sudo docker network connect --alias axtn-gitea "$network" axtn-gitea
+  fi
+done
+test "$(sudo docker inspect --format '{{.State.Status}}|{{.State.Health.Status}}' axtn-gitea)" = "running|healthy"
+```
+
+Diese Übergabe schaltet nur die Gitea-Compose-Konfiguration um. Sie registriert keinen Runner. Nach bestätigtem Deploy kann die bereits versionierte offizielle repo-scoped Runner-Konfiguration aus `aXtn/aXtn-host@cad8500a00995c98707045b04bc337fd351a96aa` regulär fortgesetzt werden; bis zu echtem Workflow/Job-Readback bleibt CI offen. Die uncommitteten Löschungen im aktiven `/home/alex/aXtn-git`-Checkout (`mirror-hooks/axtn-github-mirror` und `scripts/install-github-push-mirror-hooks.sh`) wurden nicht verändert.
 
 ## Fortsetzung nach a10b4e98 — 17.10.2026, 16:30 UTC
 

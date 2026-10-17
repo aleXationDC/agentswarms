@@ -1,6 +1,45 @@
-## Jetzt ausführen: Case-E2E nach Fix und konkrete Betreiberübergabe
+## Fortsetzung nach 3e575327 — 17.10.2026, 18:20 UTC
 
-Im bestehenden Gesamtauftrag die jüngste Fortsetzung nach e634526 vollständig ausführen. Fix f3bd040c ist healthy, aber noch ohne neuen Live-Case-Run. Den bereits erfolgreichen erlaubten Owner-Login regulär wiederaufnehmen und Swarm-Candidate-/Review-Arbeit fortsetzen; nicht wegen fehlender CI oder bloß abgelaufener Sitzung global stoppen. Content-Exclusion am Gitea-Deployment-Input respektieren. Statt einer allgemeinen Betreiberaufforderung eine konkrete geprüfte Bereitstellungs-/Rollback-Anweisung für Gitea@b79e78bb aus erlaubten Metadaten vorbereiten. Nur dieser geschützte Schritt ist an den berechtigten Betreiber zu übergeben; keine Secretwerte, kein Policy-Bypass, keine Aufforderung zu Tokenkopien. Der Gesamtauftrag unten bleibt offen.
+Status: **PARTIAL / OPERATOR_ACTION_REQUIRED**. Der reguläre Owner-Zugang und
+native Save/Publish sind wieder funktionsfähig. Case `913dbf33-9891-4712-b945-aab9a5cfe5b9`
+hat einen durch den Swarm materialisierten Kandidaten: Branch
+`work/AXTN-SUPACASE-USABILITY-0001`, Commit
+`0f07f92f045441488c3367b3cbac38bf38040da1`. Das ist nur die Korrektur einer
+Datei, nicht der vollständige Mehrdatei-Auftrag für Architektur-PR #8.
+
+Der case-gebundene Builder-Run `bee23003-d0d8-5acb-a659-f942600cd9b1` war mit
+9/9 Schritten erfolgreich. Der finale unabhängige Review-Run
+`e2bbd0c3-8cdc-5fdc-a180-90fe778156cf` war mit 7/7 Schritten erfolgreich und
+fand keine blockierenden oder größeren Probleme. Drei Review-Runs erfolgten
+über wechselnde Candidate-SHAs; nur der letzte prüfte `0f07f92…`. Kein Test,
+Typecheck, Build, CI, native Approval oder PR #8 auf diesem finalen Candidate
+ist belegt. Er bleibt **UNVERIFIED**. Der aktualisierte Candidate wurde auf
+dem bestehenden Case als externe Referenz zurückgelesen. Der Builder-Snapshot
+`b7e7023a-f1ea-415c-8ddd-0b46d5a6db1d` ist wieder veröffentlicht (9 Nodes,
+10 Edges).
+
+Die einzige geschützte Betreiberaktion ist nun konkret vorbereitet:
+`handoffs/reports/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md` enthält den
+verifizierten Compose-Aufruf für `aXtn/aXtn-git@b79e78bb3e82d0b4d97560c5913e27afc0746cb3`,
+die Netzwerk-Wiederanbindung, sichere Nachkontrolle und Rollback auf Parent
+`dfbb45ad6ee546e4b84cea35a106a0bce20c7070`. Der Content-excluded `.env`
+wurde nicht gelesen oder gerendert. Live-Gitea ist `running|healthy`, die
+Actions-Umgebungsvariable ist noch nicht gesetzt, und derzeit läuft kein
+Runner. Diese Übergabe ist nicht als ausgeführter Deploy oder CI-Nachweis zu
+behandeln.
+
+Nach dem bestätigten Betreiber-Deploy mit der offiziellen Runner-Konfiguration
+fortfahren und einen echten Gitea-Workflow nachweisen. Bis dahin sind CI,
+vollständige drei Reviews auf demselben SHA, native Approval und der offene
+Produkt-PR ausstehend. Der Gesamtauftrag bleibt offen.
+
+## Ausgangsauftrag nach e634526 — Case-Ausführung erledigt, Deploy übergeben
+
+Die Case-Ausführung, Kandidatenkorrektur und Reviews wurden wie oben dokumentiert
+fortgesetzt. Der geschützte Gitea-Deploy ist nicht ausgeführt; die konkrete
+Betreiberübergabe steht im verlinkten aktuellen Bericht. Die darunterstehenden
+älteren Abschnitte bleiben historische Evidence und sind nicht der aktuelle
+Ausführungsstatus.
 
 ## Jetzt ausführen: Case-Chat reparieren und Runner nativ einrichten
 
