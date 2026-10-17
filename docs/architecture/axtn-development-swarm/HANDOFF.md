@@ -1,3 +1,7 @@
+## Jetzt ausführen: Bedienzugang und native Ausführung wiederaufnehmen
+
+Nutzerauftrag 17.10.2026, 14:44 Europe/Berlin. Im folgenden Gesamtauftrag ist die Fortsetzung „nativen Bedienzugang wiederherstellen“ maßgeblich für den nächsten Schritt: Kandidat 58869c… vollständig zuordnen und Zwischenstand veröffentlichen, fehlende Browserfunktion von abgemeldeter Session unterscheiden, vorhandenen legitimen nativen Bedienweg wiederaufnehmen und unmittelbar case-gebunden weiterarbeiten. Keine Credential-Anforderung auf Verdacht, keine neuen Ersatzdienste, kein direkter DB-/Service-Role-Bypass und kein Umbau des funktionierenden CLI-MCP. Bei echter fehlender Sitzungsfähigkeit exakt eine nötige Bereitstellungs-/Loginaktion nennen, nicht nur pauschal „authentifizierter Zugriff fehlt“. Gesamtziel und Sicherheitsgrenzen unten gelten unverändert.
+
 # Development Swarm — aktueller Gesamtauftrag
 
 Stand: 17.10.2026. Tracking: aXtn/aXtn-agentswarms#7.
