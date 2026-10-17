@@ -1,12 +1,24 @@
 # AXTN Development Swarm — Zwischenstand
 
-Stand: 17.10.2026, 13:14 UTC
+Stand: 17.10.2026, 13:58 UTC
 
 Tracking: `aXtn/aXtn-agentswarms#7`
 
-Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@f63ccd8d990924bee3fb49e1da51226c643e1f9e`
+Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@2ef63a8196a31f1e3239460cfdf4f4a60c85f3bd`
 
-Status: **PARTIAL**. Der vorhandene Produktkandidat ist eindeutig identifiziert, erneut typgeprüft und in der bestehenden Case-Lineage nativ referenziert. Der alte UI-Blocker war nicht „fehlende Anmeldung“: In dieser CLI-Sitzung gibt es weder ein Browserwerkzeug noch einen laufenden Browser/CDP-Endpunkt, aber der bestehende geschützte Owner-Zugang konnte regulär am Supabase-Auth-Endpunkt angemeldet werden. Danach waren die vorhandenen AgentSwarms-Server- und Case-APIs mit derselben Sitzung erreichbar. Der case-gebundene Swarm-Lauf und die Graph-Umstellung folgen; es wird noch kein erfolgreicher Produktlauf behauptet.
+Status: **PARTIAL / BLOCKED an der case-spezifischen Providerauflösung**. Der vorgesehene Owner-Credentialweg funktionierte mit regulärem Supabase-Login. Der bestehende Swarm wurde nativ gespeichert und publiziert; der case-gebundene Run führte beide getrennten Gitea-MCP-Lese-Nodes erfolgreich aus, scheiterte aber beim Builder-Agent mit `PROVIDER_UNAVAILABLE`. Ein gezielter owner-authentifizierter nativer `/api/chat`-Probeaufruf mit demselben `vllm/GLM-5.3-Flash`-Modell lieferte HTTP 200 und neun SSE-Frames ohne Fehler. Damit ist das Modell außerhalb des Case-Kontexts erreichbar; der Fehler ist auf den case-gebundenen Kontext einzugrenzen. Die Upsert-Node wurde nicht erreicht und kein Produktcode geändert. Es gibt keinen neuen Candidate-SHA und keinen erfolgreichen Produktlauf, Review, CI-Nachweis, Approval oder PR.
+
+## Aktueller Fortsetzungsstand — 17.10.2026, 13:58 UTC
+
+Der Owner-Login erfolgte regulär über den im Auftrag benannten geschützten Credentialweg. Passwort und Access-Token wurden weder ausgegeben noch in den Chat übertragen; die Auth-Sitzung wurde unmittelbar für native Owner-RLS-Reads, Save/Publish und Case-Start verwendet. Die ausgeschlossene `.env` wurde nicht geöffnet oder über andere Wege ausgewertet.
+
+Der Development Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde nativ gespeichert und publiziert. Draft und Published Readback stimmen mit Version `62afaa0b-429b-434e-935c-781edb19509d` überein. Der veröffentlichte Graph enthält sechs Nodes: Input, Builder, Output, zwei separate Gitea-MCP-Read-Nodes sowie eine begrenzte Upsert-Node. Die vorherige Version `256497c0-f577-4430-b91c-15dac21006ca` bleibt erhalten. Dieser fokussierte Builder-Graph ist nicht der vollständige Development Swarm mit allen Rollen.
+
+Der Case-Run/Attempt `fce6cb5c-a58b-52e6-a1a8-0534cc08eed2` war an den bestehenden Master-Data-Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` und die Published-Version gebunden. Native `swarm_run_steps` zeigen Input `success`, beide Gitea-MCP-Lese-Nodes `success`, danach Builder `error` mit Provider `vllm`, Modell `GLM-5.3-Flash`, Fehlercode `PROVIDER_UNAVAILABLE` (96 ms). Der Lauf endete mit `step_count=4`, `error_count=1`; die Upsert-Node wurde nicht ausgeführt.
+
+Die Case-Bindung weist `SYSTEM_INTEGRATION` / `CASE_SYSTEM_POLICY` mit Route `vllm/GLM-5.3-Flash` aus; die Owner-vLLM-Integration ist als aktiv hinterlegt. Der App-Log enthält für diesen Fehler nur den bereinigten Code. Da derselbe Provider und dasselbe Modell im normalen owner-authentifizierten Chat erfolgreich antworten, liegt der offene Fehler im Case-spezifischen Credential-/Routingkontext und nicht in einer allgemeinen Modellverfügbarkeit. Der Remote-Head von `work/AXTN-SUPACASE-USABILITY-0001` wurde nach dem Run erneut via `git ls-remote` gelesen und steht weiterhin auf `58869c783b076e7cada3232a1f556bc84c019a49`. Das bestätigt, dass dieser Run keinen Candidate-Write erzeugte. Die Produktkorrektur bleibt ausschließlich Aufgabe des Swarms.
+
+**Nächster Schritt:** den bestehenden nativen Case-Credential-/Routingkontext für `vllm/GLM-5.3-Flash` diagnostizieren, ohne Case-Route, Rollenmodell oder Zugangsschutz zu umgehen. Nach Behebung den gebundenen Run erneut ausführen, den Candidate-Head remote zurücklesen und den Swarm-Write belegen. Der bekannte Candidate bleibt bis dahin **UNVERIFIED**; sein Typecheck hatte 62 Fehler im falschen physischen Accounts-/Contacts-Schema. Kein PASS, Review, CI, Approval oder Produkt-PR ist belegt.
 
 ## Kandidat 58869c783b076e7cada3232a1f556bc84c019a49
 
@@ -22,7 +34,7 @@ Status: **PARTIAL**. Der vorhandene Produktkandidat ist eindeutig identifiziert,
 
 Der Route-Generator änderte beim Typecheck zwei `createFileRoute`-IDs. Beide Änderungen wurden auf den Ausgangsinhalt zurückgesetzt; der geprüfte lokale Candidate-Checkout ist wieder tracked-clean und steht weiterhin exakt auf `58869c…`.
 
-## Native Bedienung und Case-Zuordnung
+## Native Bedienung und Case-Zuordnung — Stand 13:14 UTC (historisch; durch obigen Update ersetzt)
 
 | Fähigkeit | Mechanismus / Konfiguration | Readback / Ergebnis |
 |---|---|---|
@@ -33,7 +45,7 @@ Der Route-Generator änderte beim Typecheck zwei `createFileRoute`-IDs. Beide Ä
 
 Die bestehende Produkt-Case-Lineage bleibt offen. Frühere ungebundene Runs und der fehlgeschlagene Case-Run `a7444ac2-90b1-5b78-ad70-78f1107ef18d` bleiben historische Evidence und werden nicht als erfolgreiche case-gebundene Candidate-Arbeit umgedeutet.
 
-## Veröffentlichung und aktuelle Fortsetzungsgrenze
+## Veröffentlichung und Fortsetzungsgrenze — Stand 13:14 UTC (historisch; durch obigen Update ersetzt)
 
 Dieser Zwischenbericht wurde auf `work/AXTN-NATIVE-SWARM-COMPLETION-20261016` mit Commit `8b457863330462ff6ef01846fc84c528142f1790` an das kanonische Gitea gepusht. Derselbe Branch/SHA wurde unmittelbar in den GitHub-Produktmirror `aleXationDC/aXtn-agentswarms` gespiegelt und zurückgelesen.
 
@@ -41,7 +53,7 @@ Der fehlende Browser ist nicht der API-Blocker: der native Server-/Case-API-Pfad
 
 **Exakt benötigte Aktion:** eine gültige, bereits bestehende Owner-Sitzung für AgentSwarms muss für den nativen Save-/Publish-/Case-Start verfügbar gemacht werden (bevorzugt durch normale Owner-Anmeldung und Weitergabe eines kurzlebigen Access-Tokens). Danach kann derselbe native API-Weg ohne Browsersteuerung fortgesetzt werden; ein Passwort-/MFA-Reset ist nicht erforderlich oder angefordert.
 
-## Nächste Arbeit
+## Nächste Arbeit — Stand 13:14 UTC (historisch; durch obigen Update ersetzt)
 
 1. Den veröffentlichten Swarm über den vorhandenen nativen Save-/Publish-Weg mit separaten Gitea-MCP-Tool-Nodes ausstatten; Rollenmodell, Gateway-Opt-ins und bestehende Versionshistorie erhalten.
 2. Auf dem bestehenden Master-Data-Case einen echten gebundenen Run starten und Trace, Run, Attempt und Candidate-Referenzen zurücklesen. Produktkorrekturen erstellt ausschließlich der Swarm.

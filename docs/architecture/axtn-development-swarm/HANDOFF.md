@@ -1,10 +1,13 @@
-## Sofortige Auth-Fortsetzung nach Bericht a1b9f4c
+## Aktueller Fortsetzungsstand nach 2ef63a8 (17.10.2026, 13:58 UTC)
 
-Im Gesamtauftrag handoffs/requests/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md die jüngste Fortsetzung „Owner-Auth korrekt wiederaufnehmen“ vollständig lesen und ausführen. Runtime-/Bootstrap-Zugang nicht ungeprüft als aktuellen Owner-Login behandeln. Vorherigen erlaubten dedizierten Owner-Credentialweg und reguläre Session-/Refresh-Funktionen nutzen. Kein Access-Token im Chat, keine Content-Exclusion-Umgehung und keine neue Auth-Infrastruktur. Bei erfolgreicher Auth sofort nativ speichern/publizieren und case-gebunden weiterarbeiten; Fehler des Kandidaten 58869c… vom Swarm bearbeiten lassen. Die unten genannten Ziele und Grenzen bleiben gültig.
+- Der vorgesehene Owner-Credentialweg authentifizierte regulär. Passwort und Access-Token wurden nicht ausgegeben oder in den Chat übertragen; die ausgeschlossene `.env` wurde nicht geöffnet oder anderweitig ausgewertet.
+- Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde nativ gespeichert und publiziert. Draft und Published Readback stimmen mit Version `62afaa0b-429b-434e-935c-781edb19509d` überein; die vorherige Version `256497c0-f577-4430-b91c-15dac21006ca` bleibt erhalten.
+- Case-Run/Attempt `fce6cb5c-a58b-52e6-a1a8-0534cc08eed2` ist an Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` gebunden. Input und beide separaten Gitea-MCP-Read-Nodes waren erfolgreich; der Builder `vllm/GLM-5.3-Flash` endete mit `PROVIDER_UNAVAILABLE`. Die Upsert-Node wurde nicht erreicht; kein Candidate-Write ist belegt.
+- Aktueller Zwischenbericht: `handoffs/reports/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md`. Der Remote-Head von `work/AXTN-SUPACASE-USABILITY-0001` wurde nach dem Run via `git ls-remote` erneut gelesen und bleibt `58869c783b076e7cada3232a1f556bc84c019a49`; es gab keinen Candidate-Write.
+- Ein gezielter owner-authentifizierter nativer `/api/chat`-Probeaufruf mit demselben `vllm/GLM-5.3-Flash`-Modell lieferte HTTP 200 und neun SSE-Frames. Damit ist der Modellpfad außerhalb des Case-Kontexts erreichbar.
+- Nächster Schritt: die bestehende native Case-Credential-/Routingauflösung diagnostizieren und beheben, ohne Case-Route, Rollenmodell oder Zugangsschutz zu umgehen. Erst danach Case-Run wiederholen und Candidate-Head/Swarm-Write zurücklesen. Der Gesamtauftrag bleibt offen; kein PASS, CI, Review, Approval oder Produkt-PR ist belegt.
 
-## Jetzt ausführen: Bedienzugang und native Ausführung wiederaufnehmen
-
-Nutzerauftrag 17.10.2026, 14:44 Europe/Berlin. Im folgenden Gesamtauftrag ist die Fortsetzung „nativen Bedienzugang wiederherstellen“ maßgeblich für den nächsten Schritt: Kandidat 58869c… vollständig zuordnen und Zwischenstand veröffentlichen, fehlende Browserfunktion von abgemeldeter Session unterscheiden, vorhandenen legitimen nativen Bedienweg wiederaufnehmen und unmittelbar case-gebunden weiterarbeiten. Keine Credential-Anforderung auf Verdacht, keine neuen Ersatzdienste, kein direkter DB-/Service-Role-Bypass und kein Umbau des funktionierenden CLI-MCP. Bei echter fehlender Sitzungsfähigkeit exakt eine nötige Bereitstellungs-/Loginaktion nennen, nicht nur pauschal „authentifizierter Zugriff fehlt“. Gesamtziel und Sicherheitsgrenzen unten gelten unverändert.
+Die neue Fortsetzung „Owner-Auth korrekt wiederaufnehmen“ ist damit ausgeführt. Keine Credential-Anforderung auf Verdacht, kein Browser-/Connectorersatz, kein direkter DB-/Service-Role-Bypass und kein Umbau des funktionierenden CLI-MCP. Die Ziele und Sicherheitsgrenzen unten bleiben gültig.
 
 # Development Swarm — aktueller Gesamtauftrag
 
