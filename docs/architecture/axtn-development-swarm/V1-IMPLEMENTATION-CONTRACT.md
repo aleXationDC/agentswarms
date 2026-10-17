@@ -1,3 +1,5 @@
+> Historischer V1-Canary-Vertrag. Die ausschließliche Python-/Acceptance-Repo-Beschränkung gilt nicht als aktueller Produktauftrag. Für die Produktbefähigung ist handoffs/requests/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md gemäß aktuellem HANDOFF.md maßgeblich. Dieses Dokument bleibt als Herkunft und historische Evidence erhalten.
+
 # aXtn Development Swarm V1 – Implementierungsauftrag
 
 **Stand:** 03.10.2026  
