@@ -1,3 +1,7 @@
+## Sofortige Auth-Fortsetzung nach Bericht a1b9f4c
+
+Im Gesamtauftrag handoffs/requests/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md die jüngste Fortsetzung „Owner-Auth korrekt wiederaufnehmen“ vollständig lesen und ausführen. Runtime-/Bootstrap-Zugang nicht ungeprüft als aktuellen Owner-Login behandeln. Vorherigen erlaubten dedizierten Owner-Credentialweg und reguläre Session-/Refresh-Funktionen nutzen. Kein Access-Token im Chat, keine Content-Exclusion-Umgehung und keine neue Auth-Infrastruktur. Bei erfolgreicher Auth sofort nativ speichern/publizieren und case-gebunden weiterarbeiten; Fehler des Kandidaten 58869c… vom Swarm bearbeiten lassen. Die unten genannten Ziele und Grenzen bleiben gültig.
+
 ## Jetzt ausführen: Bedienzugang und native Ausführung wiederaufnehmen
 
 Nutzerauftrag 17.10.2026, 14:44 Europe/Berlin. Im folgenden Gesamtauftrag ist die Fortsetzung „nativen Bedienzugang wiederherstellen“ maßgeblich für den nächsten Schritt: Kandidat 58869c… vollständig zuordnen und Zwischenstand veröffentlichen, fehlende Browserfunktion von abgemeldeter Session unterscheiden, vorhandenen legitimen nativen Bedienweg wiederaufnehmen und unmittelbar case-gebunden weiterarbeiten. Keine Credential-Anforderung auf Verdacht, keine neuen Ersatzdienste, kein direkter DB-/Service-Role-Bypass und kein Umbau des funktionierenden CLI-MCP. Bei echter fehlender Sitzungsfähigkeit exakt eine nötige Bereitstellungs-/Loginaktion nennen, nicht nur pauschal „authentifizierter Zugriff fehlt“. Gesamtziel und Sicherheitsgrenzen unten gelten unverändert.
