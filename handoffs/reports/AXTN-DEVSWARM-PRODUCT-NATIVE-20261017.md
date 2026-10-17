@@ -1,14 +1,34 @@
 # AXTN Development Swarm — Zwischenstand
 
-Stand: 17.10.2026, 14:14 UTC
+Stand: 17.10.2026, 16:30 UTC
 
 Tracking: `aXtn/aXtn-agentswarms#7`
 
-Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@2ef63a8196a31f1e3239460cfdf4f4a60c85f3bd`
+Handoff: `work/AXTN-NATIVE-SWARM-COMPLETION-20261016@a10b4e98b79ff70406413eca6fe6c61562e84bcb`
 
-Status: **PARTIAL / BLOCKED an der case-spezifischen Provider-/Chat-Auflösung**. Der vorgesehene Owner-Credentialweg funktionierte mit regulärem Supabase-Login. Der bestehende Swarm wurde nativ gespeichert und publiziert; zwei case-gebundene Runs führten jeweils beide getrennten Gitea-MCP-Lese-Nodes erfolgreich aus, scheiterten aber beim Builder-Agent mit `PROVIDER_UNAVAILABLE`. Ein gezielter owner-authentifizierter nativer `/api/chat`-Probeaufruf mit demselben `vllm/GLM-5.3-Flash`-Modell lieferte HTTP 200 und acht provider-originierte SSE-Frames im Case-Frameformat. Der Fehler ist daher nicht durch generelle Modell-/Endpoint-Unerreichbarkeit belegt; der Fehler der Case-Ausführung bleibt unaufgelöst. Die Upsert-Node wurde nicht erreicht und kein Produktcode geändert. Es gibt keinen neuen Candidate-SHA und keinen erfolgreichen Produktlauf, Review, CI-Nachweis, Approval oder PR.
+Status: **PARTIAL / BLOCKED**. Der Case-Chat-Fix ist deployed; CI- und Runner-Konfigurationen sind committet und gepusht, aber der Runner ist nicht registriert und es gab keinen echten Gitea-CI-Lauf. Gitea-Compose-Deployment ist in diesem CLI durch Content-Exclusion blockiert. Außerdem liegt keine wiederverwendbare Owner-authentifizierte AgentSwarms-Sitzung für den nächsten Case-Run vor. Kein neuer Candidate-SHA, erfolgreicher Swarm-Produktlauf, CI-PASS, Review, Approval oder PR #8 ist belegt.
 
-## Aktueller Fortsetzungsstand — 17.10.2026, 14:14 UTC
+## Fortsetzung nach a10b4e98 — 17.10.2026, 16:30 UTC
+
+Der Case-Chat-Fix `f3bd040cfe2b3250e65a65fa58fde06f63feeebc` wurde auf `fix/AXTN-CASE-CHAT-PHASE-DIAGNOSTICS-20261017` gepusht und über den bestehenden Host-Konvergenzweg deployed. Der laufende AgentSwarms-Container meldete Revision `f3bd040c…`, war healthy und `/api/health` lieferte HTTP 200. Die gezielten Case-Credential-/Binding-/Diagnostiktests, Typecheck und Produktionsbuild waren erfolgreich. Ein neuer case-gebundener Swarm-Lauf fand danach nicht statt, weil diesem CLI keine wiederverwendbare Owner-authentifizierte Sitzung zur Verfügung stand; es wurde kein neuer Login versucht und kein Credential angefordert.
+
+Die Standard-CI-/Runner-Konfiguration ist in drei getrennten Branches committet und gepusht:
+
+| Repository / Branch | Commit | Inhalt |
+|---|---|---|
+| `aXtn/aXtn-git`, `work/AXTN-GITEA-CI-RUNNER-0001` | `b79e78bb3e82d0b4d97560c5913e27afc0746cb3` | Gitea Actions in der Compose-Quelle aktivieren; README beschreibt Runner-/Netzwerkgrenze. |
+| `aXtn/aXtn-host`, `work/AXTN-DEVELOPMENT-SWARM-NATIVE-0002` | `cad8500a00995c98707045b04bc337fd351a96aa` | Offiziellen Runner digest-pinnen, Token nur über geschützte Datei zuführen, Job-Netzwerk isolieren und native Compose-/Bind-Befehle ergänzen. |
+| `aXtn/aXtn-agentswarms`, `fix/AXTN-CASE-CHAT-PHASE-DIAGNOSTICS-20261017` | `0a3cbf821dd9425f76462b8ed5986f5da0d49b5b` | Gitea-Workflow für `npm ci` und `npm run check`, mit `contents: read` und ohne persistierte Checkout-Credentials. |
+
+Alle drei Remote-Refs wurden zurückgelesen. Die gepinnte Runner-Binary akzeptiert die restriktive Konfiguration; der gepinnte Ubuntu-Job-Container enthält Node 24.19.0, npm 11.17.0 und Git 2.55.0. Der Host hat das separat gelabelte `axtn_git_ci`-Bridge angelegt und nur `axtn-gitea` angehängt. Kein Runner-Container, keine Registrierung und kein Runner-Token wurden angelegt; es fand noch kein echter Gitea-CI-Lauf statt.
+
+Die `403`-Antwort des unauthentifizierten Gitea-API-Probes ist mit `REQUIRE_SIGNIN_VIEW` konsistent und kein Netzwerkausfall. Die Repo-Konfigurationsbranches ließen sich über den autorisierten SSH-Pfad pushen. Der für die reguläre Gitea-Compose-Bereitstellung benötigte geschützte Input wurde in diesem CLI jedoch durch die Organisations-Content-Exclusion gesperrt. Kein alternativer Leseweg, kein Compose-Deploy und keine Container-/Bundle-Inspektion wurde versucht. Die Änderung `GITEA__actions__ENABLED=true` ist folglich nur versioniert, nicht live; für die Bereitstellung muss ein autorisierter Betreiber den Gitea-Compose-Branch über den normalen genehmigten Pfad anwenden und Gitea mit den geschützten Inputs neu starten. Es werden keine Credentials im Chat benötigt.
+
+Der lokale vollständige `npm run check` erreichte die Testphase nach erfolgreichem Typecheck, Lint und Dokumentationsprüfungen, meldete aber 10.044 bestandene Tests, 40 übersprungene und zwei fehlgeschlagene Assertions in `tests/unit/documentRecoveryInventory.test.ts`: der erwartete Router-Revisionseintrag `6c13432b` weicht vom Istwert `2bada0814fca2ac719518310cea2ce5113fd0a2c` ab; ein gespeicherter SHA-256 (`eccc9d08…`) weicht vom aktuellen Dateiinhalt (`5275332e…`) ab. Der separate Produktionsbuild war erfolgreich. Diese Abweichungen wurden nicht stillschweigend übersprungen oder durch CLI-Produktcode geändert; bis zur Korrektur gibt es keinen CI-PASS.
+
+**Fortsetzung bleibt offen:** Nach autorisierter Gitea-Bereitstellung den Runner repo-scoped mit der offiziellen CLI in die geschützte Token-Datei registrieren, einen tatsächlichen Workflowlauf zurücklesen und den Case-gebundenen Swarm über eine regulär angemeldete Owner-Sitzung weiter ausführen. Produktkandidat, Reviews, native Approval und PR #8 bleiben ungeprüft bzw. ausstehend.
+
+## Vorheriger Fortsetzungsstand — 17.10.2026, 14:14 UTC (historisch)
 
 Der Owner-Login erfolgte regulär über den im Auftrag benannten geschützten Credentialweg. Passwort und Access-Token wurden weder ausgegeben noch in den Chat übertragen; die Auth-Sitzung wurde unmittelbar für native Owner-RLS-Reads, Save/Publish und Case-Start verwendet. Die ausgeschlossene `.env` wurde nicht geöffnet oder über andere Wege ausgewertet.
 
