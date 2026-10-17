@@ -1,3 +1,31 @@
+## Fortsetzung nach 5bc92e10 — exakte Auftragsrefs und native Candidate-Fortsetzung
+
+Stand: 17.10.2026, 19:20 UTC. Status: **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**.
+
+Seit dem unten dokumentierten 19:10-Stand hat der bestehende native Swarm den Account-Detail-UI-Pass ausgeführt. Snapshot `7fcb9f0c-3f76-445b-9507-684d453f060b`; case-gebundener Run `04319e38-b1c3-5ba9-a5b5-389fa0984e5a` meldete 14/14 erfolgreiche Schritte. Der native Gitea-Readback für `src/routes/_authenticated/accounts_.$accountId.tsx` auf `work/AXTN-SUPACASE-USABILITY-0001` bestätigt Datei-Commit `1115d435d5ce7779ec6c357a1e5288e5a0519007`, Blob `9f1dd2c3e3b31cc37255e4247f4bf4204a93d7fe` (22,190 Bytes). Die normale Owner-Operation aktualisierte danach die bestehende Case-Referenz von Commit `6cc875…`, Version 4, auf `1115d435…`, Version 5; das Readback bestätigte die Referenz. Der Candidate ist damit für diesen Pfad materialisiert, aber nicht getestet oder unabhängig reviewed.
+
+Der veröffentlichte Graph zeigt weiterhin auf den vorigen Candidate `6cc875…` und den Account-Detail-Writer. **Diesen Snapshot nicht erneut ausführen.** Vor der nächsten Swarm-Ausführung müssen die Produkt-Reads und der Writer auf den aktuell verifizierten Stand und ein neues, vertraglich begründetes Dateiziel konfiguriert und nativ publiziert werden. Ein separater nativer Read des vorhandenen `src/routes/_authenticated/contacts_.$contactId.tsx` auf Ref `1115d435…` ergab dessen Datei-Commit `610cc69c6c7d450ed7f0366eacb24cae043d91ff`, Blob `08589b049ec8117f0ff1ea1b22419c7d23f231b5`, 9,020 Bytes; dieser Read diente nur der nächsten Scope-Eingrenzung und änderte die Datei nicht.
+
+Der Kandidat bleibt **PARTIAL / UNVERIFIED**: kein Typecheck, Test, Build, echter CI-Lauf, drei Reviews auf demselben vollständigen finalen SHA, native Approval oder Produkt-PR ist belegt. Der separate geschützte Gitea-Actions-Deploy-/Runner-Blocker bleibt offen. Kein Merge, Release oder Produktdeploy erfolgte; kein Produktcode wurde durch CLI geschrieben.
+
+Der kanonische Handoff-Commit `5bc92e1023eda94a585e5670250bd5585d19bcef` wurde gelesen. Architecture PR #8 ist weiterhin offen und hat Head `14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1`. Alle drei Aufträge wurden vollständig über den bestehenden nativen Gitea-MCP-Read auf `aXtn/aXtn-architecture`, `target=file` und explizitem `ref=14b51ce…` zurückgelesen:
+
+| Datei | Blob-SHA |
+|---|---|
+| `work-orders/AXTN-SUPACASE-USABILITY-0001.md` | `e7b4d81cccb9244210020edda41b16da01d099cf` |
+| `work-orders/AXTN-SUPACASE-USABILITY-0001-SWARM.md` | `6488f5fa774a71498f1eecc9152289b3f79dc14b` |
+| `work-orders/AXTN-SUPACASE-USABILITY-0001-TEST.md` | `1cb06ac62b73c82f653b113f6041dcfe8c334085` |
+
+Der bestehende Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde auf Snapshot `0d7d7cfc-cb69-46d2-8050-a1e004a72014` mit drei getrennten exakten Auftrags-Read-Nodes und auf `0f07f92…` gepinnten Produkt-Reads veröffentlicht. Case-Run `a40b53f4-dfc7-5799-abe3-0e9c3414c706` lief mit 12/12 Schritten und erzeugte Kandidat `d0a727680fda8478cd6f97eea45337d475a7b17b` (Backenddatei `accountManagement.server.ts`, Blob `90ef038b311816037b959b1a48102ab83790fb92`).
+
+Auf der Folgeversion wurde ein gewöhnlicher SHA-Extractor-Fehler entdeckt: Run `e1139c5e-5666-5e08-af5c-d99aff62aa7b` las die Wrapperdatei erfolgreich, aber der überholte Extractor-Prompt lieferte `NOT_FOUND`. Das war keine Scope-/Policy-Ablehnung und erzeugte keinen Commit. Der Prompt wurde auf die tatsächliche `case_management_functions_source`-Datei korrigiert; der native Snapshot ist `df93eb07-1acb-4222-a643-4d714d8348b6`.
+
+Der erneute Case-Run `ee19c2b3-c666-5cf3-a367-bb798a46264c` lief mit 13/13 erfolgreichen Schritten. Der native Gitea-Readback bestätigt aktuellen Produktbranch-Stand `6cc87508886bca0fdc6160fdc8ac2580845dba8e`, Blob `82723aa0313f239241a0e39781a14166f02d5119` für `caseManagement.functions.ts`; die Backenddatei `accountManagement.server.ts` bleibt auf `d0a727…`. Der bestehende Case referenziert `6cc875…` bei Version 4.
+
+**Noch offen:** Es liegen zwei geänderte Produktdateien, aber weder der volle Mehrdatei-Auftrag noch Typecheck/Test/Build, CI, drei unabhängige Reviews auf demselben finalen vollständigen SHA, native Approval oder Produkt-PR vor. Kein Merge, Release oder Deploy. Der geschützte Gitea-Actions-Deploy bleibt separat an den Operator übergeben: Content-excluded Compose-Input nicht angetastet, kein Runner, kein echter CI-Lauf. Das ist kein tatsächlicher MCP-Scope-Fehler für die Architektur-Lesezugriffe und blockiert zulässige Kandidatenarbeit nicht.
+
+Vor jeder weiteren Builder-Ausführung Snapshot `df93eb07…` nicht erneut starten: dessen Produkt-Reads zeigen noch auf `d0a727…` und Writer auf `caseManagement.functions.ts`. Zuerst die nativen Produkt-Reads auf `6cc875…` aktualisieren und ein nächstes erlaubtes Ziel mit passendem Ref-/SHA-Readback konfigurieren. Details und Evidence: `handoffs/reports/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md`.
+
 ## Sofort: Auftragsdateien mit exaktem Repo/Pfad/Ref lesen und Swarm fortsetzen
 
 Die drei PR-#8-Auftragsdateien existieren und wurden jetzt erfolgreich kanonisch zurückgelesen: aXtn/aXtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1, Verzeichnis work-orders/, Dateien AXTN-SUPACASE-USABILITY-0001.md, -SWARM.md und -TEST.md. PR #8 bleibt offen mit genau diesem Head. Eine Suche nach handoffs/docs auf main ist kein gültiger Fehlen-Nachweis. Im Gesamtauftrag die jüngste Fortsetzung „exakte Auftragsreferenz“ mit vollständigen Read-Parametern und Blob-SHAs ausführen; vorhandene native MCP-Read-Nodes korrigieren und Arbeit am bestehenden Produktkandidaten 0f07f92… fortsetzen. Keine neue Auftragsfassung, kein erforderlicher Merge für Lesbarkeit und kein CLI-Produktpatch. Tatsächliche Scope-/Policy-Ablehnung von falschem Pfad/Ref unterscheiden. Der separate geschützte Betreiber-Deploy/CI-Blocker bleibt bestehen.

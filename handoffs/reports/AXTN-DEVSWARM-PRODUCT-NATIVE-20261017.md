@@ -1,5 +1,39 @@
 # AXTN Development Swarm — Zwischenstand
 
+## Fortsetzung nach 5bc92e10 — exakte Auftragsrefs und case-gebundene Kandidatenarbeit
+
+Stand: 17.10.2026, 19:20 UTC
+
+### Account-Detail-Pass nach dem 19:10-Stand
+
+Der bestehende native Development Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde auf der publizierten Version `7fcb9f0c-3f76-445b-9507-684d453f060b` case-gebunden ausgeführt. Run `04319e38-b1c3-5ba9-a5b5-389fa0984e5a` meldete 14/14 erfolgreiche Schritte. Der Builder war auf `src/routes/_authenticated/accounts_.$accountId.tsx` begrenzt; die vorhandenen Backend-, Server-Function- und Dataset-Contract-Reads sowie alle drei unveränderten Auftrags-Reads waren Teil des Graphen.
+
+Der native Gitea-MCP-Readback auf Branch `work/AXTN-SUPACASE-USABILITY-0001` bestätigt für diese Route `last_commit_sha=1115d435d5ce7779ec6c357a1e5288e5a0519007`, `sha=9f1dd2c3e3b31cc37255e4247f4bf4204a93d7fe` und 22,190 Bytes. Die normale Owner-authentifizierte Case-Operation aktualisierte die externe Referenz von `gitea://aXtn/axtn-agentswarms/work/AXTN-SUPACASE-USABILITY-0001@6cc875…` (Version 4) auf `…@1115d435…` (Version 5); die Antwort bestätigte Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` und die neue Referenz. Das belegt die native Candidate-Materialisierung und Case-Bindung, nicht die fachliche Abnahme.
+
+Ein zusätzlicher nativer Read auf Candidate-Ref `1115d435…` fand die bestehende Route `src/routes/_authenticated/contacts_.$contactId.tsx` mit Datei-Commit `610cc69c6c7d450ed7f0366eacb24cae043d91ff`, Blob `08589b049ec8117f0ff1ea1b22419c7d23f231b5` (9,020 Bytes). Dieser Read hat nichts geschrieben. Snapshot `7fcb9f0c…` bleibt auf Produkt-Ref `6cc875…` und dem Account-Detail-Writer konfiguriert: **nicht erneut ausführen**, bevor Produkt-Reads/SHA-Extractor/Writer auf den bestätigten Candidate `1115d435…` und ein neues passendes Ziel aktualisiert und publiziert sind.
+
+Weiterhin nicht belegt sind Typecheck, Tests, Build, CI, drei unabhängige Reviews auf demselben vollständigen finalen SHA, native Approval oder Produkt-PR. Der Kandidat bleibt **PARTIAL / UNVERIFIED**; der separate content-excluded Gitea-Actions-Deployment-/Runner-Blocker bleibt offen. Kein Merge, Release oder Produktdeploy erfolgte; Copilot CLI hat keinen Produktcode geschrieben.
+
+Der aktuelle Handoff-Commit `5bc92e1023eda94a585e5670250bd5585d19bcef` wurde aus dem kanonischen Gitea-Branch gelesen. Architektur-PR #8 bleibt offen und auf `14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1`. Die drei vollständigen Auftragsdateien wurden über den bestehenden nativen Gitea-MCP-`fetch` mit `owner=aXtn`, `repository=axtn-architecture`, `target=file` und diesem expliziten Commit-`ref` gelesen:
+
+| Pfad | Git-Blob-SHA | Last file commit |
+|---|---|---|
+| `work-orders/AXTN-SUPACASE-USABILITY-0001.md` | `e7b4d81cccb9244210020edda41b16da01d099cf` | `e77efaf7862964616eb937c2987670bbf10e892d` |
+| `work-orders/AXTN-SUPACASE-USABILITY-0001-SWARM.md` | `6488f5fa774a71498f1eecc9152289b3f79dc14b` | `15fd6758614ed641f3122424f1c205e3e39c81c4` |
+| `work-orders/AXTN-SUPACASE-USABILITY-0001-TEST.md` | `1cb06ac62b73c82f653b113f6041dcfe8c334085` | `14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1` |
+
+Der publizierte Swarm `ad06e17d-460b-4b65-946a-9b5d78c6fd02` wurde nativ gespeichert und veröffentlicht. Version `0d7d7cfc-cb69-46d2-8050-a1e004a72014` enthält drei getrennte Architektur-Datei-Read-Nodes mit genau diesen Pfaden und dem festen Ref `14b51ce…`; die Produkt-Code-Reads wurden auf den unveränderlichen Ausgangskandidaten `0f07f92f045441488c3367b3cbac38bf38040da1` gepinnt. Der ursprüngliche Provider `vllm`, das Modell `GLM-5.3-Flash` und die Gateway-/Agentkonfiguration blieben erhalten.
+
+Auf dem bestehenden Master-Data-Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` führte Run `a40b53f4-dfc7-5799-abe3-0e9c3414c706` alle 12 Graph-Schritte ohne Fehler aus, einschließlich der drei nativen Auftrags-Reads. Der Swarm ergänzte Account-/Contact-Backendfelder im bestehenden `accountManagement.server.ts` und materialisierte Kandidat `d0a727680fda8478cd6f97eea45337d475a7b17b`, Blob `90ef038b311816037b959b1a48102ab83790fb92`.
+
+Für die Folgearbeit wurde der native Graph auf Version `b8b53bf6-64e1-47f1-b55d-e1dc470648d0` erweitert, um `caseManagement.functions.ts` zusammen mit der Backenddatei und den unveränderten Auftragsreads zu laden. Der erste Wrapper-Run `e1139c5e-5666-5e08-af5c-d99aff62aa7b` ließ Builder und MCP-Nodes erfolgreich laufen, aber der `upsert_file`-Readback enthielt einen Fehler: der vorhandene SHA-Extractor gab `NOT_FOUND` für die neu gewählte Wrapperdatei aus, obwohl der native Datei-Read erfolgreich war. Das war ein veralteter Extractor-Prompt, keine Gitea-Scope-/Policy-Ablehnung. Es wurde kein Wrapper-Commit geschrieben. Der Extractor wurde auf das tatsächliche `case_management_functions_source`-Fetch-Ergebnis umgestellt und Version `df93eb07-1acb-4222-a643-4d714d8348b6` nativ veröffentlicht.
+
+Der erneute Case-Run `ee19c2b3-c666-5cf3-a367-bb798a46264c` lief mit 13/13 erfolgreichen Schritten und 0 Fehlern. Er las erneut alle drei Auftragsdateien über MCP, extrahierte den Wrapper-Blob-SHA und materialisierte `caseManagement.functions.ts` über den nativen Gitea-MCP-Writer. Readback auf `work/AXTN-SUPACASE-USABILITY-0001` bestätigt Datei-Commit `6cc87508886bca0fdc6160fdc8ac2580845dba8e`, Blob `82723aa0313f239241a0e39781a14166f02d5119`; die Backenddatei bleibt auf Commit `d0a727…`, Blob `90ef038b…`. Der bestehende Case referenziert den aktuellen Produktkandidaten `6cc875…` mit `external_reference_version=4`.
+
+**Stand / Grenzen:** Kandidat `6cc875…` enthält Swarm-Arbeit an zwei Dateien und ist weiterhin nur ein partieller, unverified Zwischenstand. Die Detail-/Listen-UI, weitere Case-Workbench-Arbeit, echte Typecheck-/Test-/Build-Receipts, drei unabhängige Reviews auf demselben vollständigen Candidate-SHA, Approval und Produkt-PR fehlen. Kein Merge, Release oder Deploy erfolgte. Der nachfolgende Gitea-Actions-Operatorblocker aus dem vorigen Bericht bleibt separat bestehen: geschützter Compose-Input weiterhin content-excluded, kein Runner und kein echter CI-Lauf. Diese Sperre ist kein Grund, den zulässigen Candidate-Workstream zu stoppen.
+
+Der aktuell veröffentlichte Graph `df93eb07…` bleibt auf Produkt-Ref `d0a727…` und als Writer-Target `caseManagement.functions.ts` eingestellt. Nicht erneut ausführen: vor weiterer Candidate-Arbeit zuerst alle relevanten Produkt-Reads auf `6cc875…` aktualisieren und das nächste erlaubte Ziel samt passendem SHA-Readback nativ konfigurieren.
+
 Stand: 17.10.2026, 18:20 UTC
 
 Tracking: `aXtn/aXtn-agentswarms#7`
