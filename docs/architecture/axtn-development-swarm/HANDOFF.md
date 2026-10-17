@@ -1,3 +1,7 @@
+## Jetzt ausführen: Case-Chat reparieren und Runner nativ einrichten
+
+Stand 17.10.2026, 16:34 Europe/Berlin. Im bestehenden Gesamtauftrag handoffs/requests/AXTN-DEVSWARM-PRODUCT-NATIVE-20261017.md die jüngste „Reparaturfortsetzung nach de242674“ vollständig ausführen. Owner-Login und Save/Publish sind gelöst. PROVIDER_UNAVAILABLE ist hier ein Sammelcode, kein belegter LLMHub-Ausfall. Vor-Stream-Phase sicher im vorhandenen Fehler-/Tracepfad korrelieren, Ursache beheben, gezielt testen, erforderlichen Fix regulär bereitstellen und echten Case-Swarm fortsetzen. Keine neue Runtime/Engine, keine rohen Exceptions oder Schutzumgehung. Gitea-403 präzisieren und repo-begrenzte native Verwaltung einschließlich dokumentierter offizieller CLI über bestehenden erlaubten Betreiberzugang nutzen; keine globalen Adminrechte/Token verlangen. Runner-Blocker stoppt die Providerreparatur nicht. Gesamtauftrag nicht nach der Diagnose beenden.
+
 ## Aktueller Fortsetzungsstand nach 2ef63a8 (17.10.2026, 14:14 UTC)
 
 - Der vorgesehene Owner-Credentialweg authentifizierte regulär. Passwort und Access-Token wurden nicht ausgegeben oder in den Chat übertragen; die ausgeschlossene `.env` wurde nicht geöffnet oder anderweitig ausgewertet.
