@@ -1,3 +1,7 @@
+## Sofort: Auftragsdateien mit exaktem Repo/Pfad/Ref lesen und Swarm fortsetzen
+
+Die drei PR-#8-Auftragsdateien existieren und wurden jetzt erfolgreich kanonisch zurückgelesen: aXtn/aXtn-architecture@14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1, Verzeichnis work-orders/, Dateien AXTN-SUPACASE-USABILITY-0001.md, -SWARM.md und -TEST.md. PR #8 bleibt offen mit genau diesem Head. Eine Suche nach handoffs/docs auf main ist kein gültiger Fehlen-Nachweis. Im Gesamtauftrag die jüngste Fortsetzung „exakte Auftragsreferenz“ mit vollständigen Read-Parametern und Blob-SHAs ausführen; vorhandene native MCP-Read-Nodes korrigieren und Arbeit am bestehenden Produktkandidaten 0f07f92… fortsetzen. Keine neue Auftragsfassung, kein erforderlicher Merge für Lesbarkeit und kein CLI-Produktpatch. Tatsächliche Scope-/Policy-Ablehnung von falschem Pfad/Ref unterscheiden. Der separate geschützte Betreiber-Deploy/CI-Blocker bleibt bestehen.
+
 ## Fortsetzung nach 3e575327 — 17.10.2026, 18:20 UTC
 
 Status: **PARTIAL / OPERATOR_ACTION_REQUIRED**. Der reguläre Owner-Zugang und
