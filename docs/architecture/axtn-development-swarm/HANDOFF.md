@@ -1,3 +1,26 @@
+# Fortsetzung nach PR #35 — Releasebasis und Betreiberübergabe präzisieren
+
+Stand: 18.10.2026. Der bestehende Auftrag handoffs/requests/AXTN-DEVSWARM-DELIVERY-UAT-20261018.md bleibt aktiv; bestehende Case-Lineage und Produktkandidat bleiben erhalten. Keine neue Zieldefinition und kein Statusgraph als Ersatz.
+
+## Kanonisch geprüfte Befunde
+
+- PR #35 ist offen, Head 14ad88b477b81ce123638e88b810f0e39990d4e5, Basis main@d87a155626d6564416b590bc0e0efb7e8f75436e. Gitea meldet 1.548 geänderte Dateien, 309.687 hinzugefügte und 14.195 entfernte Zeilen. Die Beschreibung nennt dagegen nur eine kleine MCP-Argumentreparatur. Das ist keine geprüfte isolierte Reparatur-PR.
+- PR-Autor laut Gitea ist axtn-codex. Das beweist den Ersteller dieser PR, nicht die Identität sämtlicher Git-Pushes. Copilot hat weiterhin seinen eigenen bestehenden vorgesehenen aXtn-copilot-cli-Weg zu verwenden; keine Codex-Credentials übernehmen und keine lokale MCP-Konfiguration auf Verdacht umbauen.
+- Im Head verlangt die native mcp_call_tool-Schemadefinition arguments als JSON-String; der vorhandene Handler akzeptiert weiterhin Objektargumente und weist fehlende/ungültige/nichtobjektförmige Argumente vor dem Transport zurück. Transporttests decken diese Fälle ab. Damit ist weder die Ursache am Corporate-Modell noch die Laufzeitfunktion nach Deployment bewiesen. Keine neue Serializer-/Dispatcher-Infrastruktur ergänzen.
+- Der gemeldete Bericht handoffs/reports/AXTN-DEVSWARM-UAT-0001.md war in dieser Architektursitzung weder auf dem Handoff-Branch noch auf dem PR-Head-Branch oder main abrufbar. Auch ref=8bf88d2d lieferte 404. Das belegt keine globale Nichtexistenz des Commits. Vollständigen Commit-SHA und tatsächlichen Branch prüfen und den Bericht über den eigenen erlaubten Git-Weg im vorgesehenen Handoff-Branch veröffentlichen; danach exakten Datei-Readback nachweisen.
+
+## Jetzt zulässig ausführen
+
+1. PR-Diff gegen den tatsächlich beabsichtigten und laufenden Release-Stand aufklären. Sind die 1.548 Dateien bereits separat autorisierte Update-/Reparaturvoraussetzungen, deren Herkunft und Integrationsstand explizit darstellen. Andernfalls die kleine Reparatur auf der korrekten aktuellen Releasebasis isolieren. Kein blindes Cherry-pick auf veraltetes main und kein Merge des unerklärten Sammeldiffs. Gezielte Tests gelten zunächst nur für den getesteten Stand; Baseline-Fehler mit unverändertem Vergleich belegen.
+2. Bereits vorhandenen eigenen Copilot-Zugriff unverändert korrekt verwenden. Die PR-Autorabweichung anhand des verwendeten Erstellungswegs eingrenzen; keine neuen Tokens auf Verdacht und keine Identitätsumgehung. Bei tatsächlich fehlendem erlaubten Copilot-API-Weg nur diese Aktion offen ausweisen; zulässige SSH-/Source-Arbeit fortführen.
+3. Runner-Lücke zu Ende konkretisieren: zuerst unterscheiden zwischen global deaktivierten Actions, repo-deaktivierten Actions und fehlender Runnerregistrierung. Ein 403 des Admin-Endpunkts beweist nicht die Unmöglichkeit repo-begrenzter Registrierung. Den bereits vorgesehenen offiziellen Gitea-CLI-Weg über den bestehenden erlaubten Betreiberzugang prüfen; dessen reale Syntax mit dem installierten Binary verifizieren. Kein neuer Runnerdienst oder eigener Executor. Falls die Organisation genau diesen Zugang verweigert, nicht umgehen, sondern eine einzige ausführbare Betreiberübergabe liefern: vorhandener Worktree/Commit, tatsächlicher normaler Deployment-/Registrierungsaufruf, geschützter Token-Dateipfad ohne Tokenwert, Runnerstart und sichere Nachkontrolle. Keinen vagen Auftrag „Adminzugang bereitstellen“ wiederholen. Bereits vorbereitete Gitea-/Host-Branches weiterverwenden.
+4. UAT separat: exakten ausgeschlossenen Artefaktpfad und verweigerte Operation anhand bereinigter vorhandener Denial-Metadaten benennen. Ungeheime kanonische Vendor-Komposition und geschützten Runtime-Input auseinanderhalten. Keine ausgeschlossenen Inhalte über Ersatzkanäle beschaffen oder rekonstruieren. Eine tatsächlich notwendige Betreiberbereitstellung muss Artefaktrevision, Zielpfad, Nutzung und bestehenden erlaubten Betreiberweg nennen. Keine pauschale neue Freigabeanforderung und keine Secretwerte im Chat.
+5. Sobald der normale Plattform-Releaseweg verfügbar ist: den geprüften Reparaturstand regulär bereitstellen, laufenden SHA/Digest und Health zurücklesen und den bereits verlangten echten begrenzten case-gebundenen Builder-MCP-Read/Write/Readback ausführen. Erst reale Events und Git-Effekt belegen die Reparatur. Danach Produktarbeit durch den Swarm und isolierte UAT fortführen. Fehlende CI/Policy-Sperren begrenzen nur betroffene Schritte; kein unwahrer PASS oder erneuter reiner Statuslauf.
+
+Es gibt keine zusätzliche allgemeine Nutzerfreigabe: normale Einrichtung, enge Plattformreparatur und UAT sind bereits beauftragt. Eine tatsächlich geltende Organisationssperre bleibt jedoch verbindlich und muss konkret an den zuständigen Betreiber übergeben werden. Veröffentlichung dieses Handoffs startet Copilot nicht.
+
+---
+
 # Sofortige Korrektur nach Statuslauf ohne Tool-Calls — 18.10.2026
 
 Aktueller Auftrag bleibt handoffs/requests/AXTN-DEVSWARM-DELIVERY-UAT-20261018.md, einschließlich der jüngsten **Verbindlichen Korrektur nach dem Statuslauf**.
