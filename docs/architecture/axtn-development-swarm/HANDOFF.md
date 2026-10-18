@@ -1,3 +1,19 @@
+# Sofortige Korrektur nach Statuslauf ohne Tool-Calls — 18.10.2026
+
+Aktueller Auftrag bleibt handoffs/requests/AXTN-DEVSWARM-DELIVERY-UAT-20261018.md, einschließlich der jüngsten **Verbindlichen Korrektur nach dem Statuslauf**.
+
+Die gemeldeten 63/63 Statusschritte sind kein Entwicklungs- oder UAT-Ergebnis. Development Swarm wieder funktional konfigurieren und zunächst einen echten begrenzten Corporate-MCP-Read/Write/Readback nachweisen. Historie erhalten; keine Statusgraphen als Lieferersatz.
+
+Zuständigkeiten verbindlich trennen: PR-#8-Businesslogik schreibt der Swarm; ausdrücklich autorisierte enge Reparaturen am vorhandenen Plattformpfad und eigene Betriebsberichte führt Copilot über seinen bestehenden eigenen regulären Git-Arbeitsweg aus. Das 64-KiB-Limit von scoped upsert_file bleibt bestehen; kein neuer Patchdienst und keine Umgehung von Connector- oder Organisationsschutz. Die vorhandenen enabledTools/toolConfigs werden bereits übergeben; fehlende Skillparität nicht pauschal als Voraussetzung jedes MCP-Aufrufs behandeln.
+
+UAT-Content-Exclusion respektieren. Exakt betroffenen Input/Operation zuordnen und falls erforderlich eine konkrete Betreiberübergabe liefern. Andere erlaubte Arbeit fortführen. Keine neue allgemeine Credential-/Freigaberunde und kein weiterer Abschluss mit bloßem Statuslauf.
+
+Die neuesten Run-/Snapshotangaben stammen aus der von Alex übermittelten CLI-Meldung und wurden in dieser ChatGPT-Sitzung nicht live zurückgelesen. Veröffentlichter Handoff startet die CLI nicht automatisch.
+
+---
+
+## Vorheriger aktiver Anschluss und Historie
+
 # Aktiver Anschluss — Development Swarm und bedienbare UAT
 
 Stand: 18.10.2026. Alex hat nach dem beendeten Copilot-Lauf die Fortsetzung angefordert.
