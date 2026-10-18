@@ -20,6 +20,8 @@ The three existing attempts remain `a87f6e56-943d-5154-a408-c384671d81d4`, `380e
 
 For all three Builder steps, persisted run evidence has assistant text but no tool-call event/frame. No `create_branch` or `upsert_file` was sent, so there is no connector rejection or parser error attributable to these attempts. The traces do not persist the effective per-request tool schema, raw tool-call frame, or provider `finish_reason`; the exact stop reason cannot be reconstructed. Completion-token counts (4,096 per response in the first attempt; 32,768 and 3,820 in the second; 18,806 in the third) do not by themselves prove a token-limit stop. These results identify a model response without an emitted/recorded tool call; they do not prove an allowlist denial. No identical Builder run was repeated.
 
+A bounded comparison with another existing model was not started. AgentSwarms' MCP allowlist restricts the server name, not individual remote operations, and the deployed connector permits non-protected writes across owner `aXtn`; a “read-only” prompt alone cannot prevent an unintended write. Restore enforceable connector scope before exposing this capability to any alternative Builder model.
+
 ### Deployed connector scope contradicts the Handoff
 
 The running `axtn-gitea-mcp` container is image `axtn-gitea-mcp:dev-dfbb45a`, labeled with source revision `dfbb45ad6ee546e4b84cea35a106a0bce20c7070`. Its compose source defines only `MCP_ALLOWED_OWNERS` (default `aXtn`) and `MCP_WRITE_MODE` (default `review`) for write authorization. The live container has `MCP_ALLOWED_OWNERS=aXtn` and `MCP_WRITE_MODE=review`; it has neither `MCP_ALLOWED_WRITE_BRANCHES_BY_REPOSITORY` nor `MCP_ALLOWED_WRITE_PATHS_BY_REPOSITORY`, and no mounted runtime config supplies them.
