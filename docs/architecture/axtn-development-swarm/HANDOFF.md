@@ -1,3 +1,23 @@
+# Aktive Fortsetzung nach lokalem Bericht f727e7fe — keine neue Freigaberunde
+
+Stand: 18.10.2026. Der Gesamtauftrag AXTN-DEVSWARM-DELIVERY-UAT-20261018 und seine Schutzgrenzen bleiben unverändert aktiv. Bestehende Case-Lineage und Produktkandidat erhalten; nicht neu beginnen.
+
+Alex meldet einen nur lokal vorliegenden Bericht bei f727e7fe9a8ddb2bef5bd33ebbbe1b41cd08b2db: Plattformrevision 14ad88b4 deployed/Health 200, fünf case-gebundene native MCP-Reads, drei gestartete Actions-Runs, kein upsert_file, kein CI-Abschluss, keine UAT. Diese Laufzeitangaben sind in dieser Architektursitzung nicht unabhängig verifiziert. Der Bericht war weder unter dem vollständigen genannten Commit noch auf dem Remote-Handoff-Branch abrufbar (404). Kein veröffentlichter Bericht wird behauptet.
+
+## Jetzt fortsetzen
+
+1. Die drei bereits gestarteten Actions-Runs an ihren tatsächlichen Run-IDs und getesteten SHAs bis zum Ergebnis prüfen. Bei aktivem Runner keine neue Runner-/Token-Einrichtung beginnen. Bei Fehlern Ursache anhand der tatsächlichen Jobs eingrenzen; kein CI-PASS aus gestartet/queued oder lokalen Tests ableiten.
+2. Der geforderte Schreibnachweis ist ausdrücklich eine begrenzte synthetische Read/Write/Readback-Probe auf einem schon erlaubten isolierten Arbeitsbranch mit der bestehenden Effect-/Case-Bindung. Keine sachlich unnötige PR-#8-Produktänderung erfinden. Ein fehlender gerechtfertigter Produktpatch ersetzt diesen Probe-Nachweis nicht. Falls der bestehende Scope keine solche Probe erlaubt, präzise diesen einzelnen Scopekonflikt benennen; nicht eigenmächtig erweitern oder auf geschützte Produktpfade ausweichen.
+3. Den funktionalen Development-Swarm einschließlich der drei unabhängigen Reviewer, vorgesehenen nativen Skills/KBs und vollständigen Quellenkontexte herstellen und am unveränderten Kandidaten e4ca073195ada22dc378f6da0f300f498f2ebbf2 bzw. inzwischen verifiziertem Nachfolger prüfen. Ein Drei-Knoten-Buildergraph ist keine finale Lieferkonfiguration. Review-Funde an denselben Case zurückführen; Änderungen am Produkt weiterhin ausschließlich durch den Swarm. Keine leeren/partiellen Reviews als PASS.
+4. Eigene Berichts-/Releaseveröffentlichung über den bestehenden vorgesehenen aXtn-copilot-cli-Git-Weg ausführen, sofern dieser in dieser Sitzung erlaubt und verfügbar ist. Keine zusätzliche allgemeine Nutzerfreigabe nötig. Falls tatsächlich eine Kontositzung oder Policy fehlt, genau die fehlende Operation und bereinigten Ablehnungsnachweis sichtbar ausgeben. Keine Codex-Identität, keine neuen Credentials auf Verdacht, keine Umgehung. Den lokalen Bericht vor Übernahme des neueren Remote-Handoffs bewahren; danach regulär integrieren, kein Force-Push. Lokal verifiziert ist nicht remote veröffentlicht.
+5. UAT: Fehlender isolierter Host-Compose-Einstieg ist beauftragte Einrichtungsarbeit, keine fehlende Zielentscheidung. Die geltende Content-Exclusion für den kanonischen Input bleibt jedoch verbindlich. Keine Kopie, Rekonstruktion oder anderer Kanal zur Beschaffung ausgeschlossener Inhalte. Wenn genau diese Sperre den Aufbau verhindert, die bereits verlangte konkrete Betreiberübergabe direkt im sichtbaren Ergebnis ausgeben, nicht ausschließlich im unveröffentlichten lokalen Bericht: betroffener Artefaktpfad, gepinnte Revision, verweigerte Operation, zuständiger erlaubter Betreiberweg und bereits tatsächlich geprüfter Bereitstellungsschritt. Keine ungeprüften Befehle erfinden. Der Betreiber muss geschützte Inputs selbst über den zulässigen Betriebsweg bereitstellen oder die maßgebliche Organisationsrichtlinie durch den zuständigen Administrator ändern lassen; eine Chat-Freigabe allein hebt sie nicht auf.
+
+PR #35 bleibt mangels erklärtem Releaseumfang keine isoliert mergefähige Reparatur-PR. Den tatsächlich deployten Reparaturstand und die korrekte Release-Lineage separat nachvollziehbar halten. Keine produktive PR-#8-Abnahme simulieren und kein UAT-Ergebnis behaupten.
+
+Nächstes Ergebnis: tatsächliche CI-Ergebnisse, echte synthetische MCP-Write/Readback-Evidence, funktionaler Reviewer-Graph und veröffentlichter Bericht; eine verbleibende echte UAT-Policy-Sperre als genau eine konkrete sichtbare Betreiberaktion. Unabhängig erlaubte Arbeit fortführen. Dieser Handoff startet die CLI nicht automatisch.
+
+---
+
 # Fortsetzung nach PR #35 — Releasebasis und Betreiberübergabe präzisieren
 
 Stand: 18.10.2026. Der bestehende Auftrag handoffs/requests/AXTN-DEVSWARM-DELIVERY-UAT-20261018.md bleibt aktiv; bestehende Case-Lineage und Produktkandidat bleiben erhalten. Keine neue Zieldefinition und kein Statusgraph als Ersatz.
