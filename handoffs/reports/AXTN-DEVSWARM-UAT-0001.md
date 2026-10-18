@@ -1,6 +1,36 @@
 # Development Swarm UAT Operations Report
 
-**Status: PARTIAL — the dedicated Development MCP is bound and scoped. The Case-bound Swarm confirmed the assignment defect and emitted four real native writes, but each `upsert_file` timed out; product branch and Case reference remain at `e8f8cafd…` / version 23. No new regression test or final three-review set exists. CI result access and isolated UAT remain separately blocked. No acceptance or PASS is claimed.**
+**Current status at Handoff `aff006601b5d71bcea0e98d6fdf3162b2e7110f6`: PARTIAL — the two already-deployed repair commits and this report are being published through the existing Copilot SSH identity. Live container metadata matches both source revisions. The prior Case run wrote candidate `bea0a447…` without an `AXTN-EFFECT/v1` marker after its 500-record prescan failed; preserve that commit and do not treat it as an effect-bound write. No further product write has been made. CI, regression, final reviews, and UAT remain open; no acceptance or PASS is claimed.**
+
+## Continuation from Handoff `aff006601b5d71bcea0e98d6fdf3162b2e7110f6`
+
+The exact Handoff was fetched from `work/AXTN-NATIVE-SWARM-COMPLETION-20261016` and read in full. The report worktree was fast-forwarded from `6ab606dd25aa65e653316ff22e27076eb8bb095c` to the pinned Handoff; no report or Handoff history was rewritten.
+
+### Published deployed repair sources and live image mapping
+
+The existing Copilot SSH route authenticated as `aXtn-copilot-cli` using the configured `axtn-gitea` alias. No new credential was requested or used. The two already-deployed repair branches were published by normal non-forced pushes and their remote refs were read back:
+
+| Repository / branch | Source commit | Files |
+|---|---|---|
+| `aXtn/axtn-agentswarms` / `fix/AXTN-MCP-EFFECT-BUDGET-20261018` | `ded696b804c7d921f275560e3fc7bd799d4b3265` | `src/utils/mcpApps/budgets.ts`, `src/utils/tools/registry.server.ts`, `tests/unit/mcpColdStartBudget.test.ts` |
+| `aXtn/aXtn-git` / `fix/AXTN-MCP-WRITE-TIMEOUT-20261018` | `a1d5f58c9860ce41fa0de4e414b5c016eb7c84b8` | `mcp/src/axtn_gitea_mcp/server.py`, `mcp/tests/test_effects.py` |
+
+Docker inspection of the running containers confirms the deployed image/source association:
+
+| Service | Running image ID | `org.opencontainers.image.revision` | Runtime |
+|---|---|---|---|
+| `axtn-native-agentswarms-agentswarms-1` | `sha256:d63bf45cd10fd9f53dbd8e6517332be8ef75e23af6d1dd210b3f5969202ab54c` | `ded696b804c7d921f275560e3fc7bd799d4b3265` | Docker health `healthy` |
+| `axtn-native-agentswarms-development-gitea-mcp-1` | `sha256:210bb210b7b1356fd3f376c75906ef585190a59d2b98168fa51a5649b2f42893` | `a1d5f58c9860ce41fa0de4e414b5c016eb7c84b8` | running |
+
+The unauthenticated HTTP probe to `http://127.0.0.1:3000/api/health` returned 303, so no HTTP-200 application-health claim is made here. This confirms process/image metadata only; it is not a fresh MCP effect-write proof.
+
+### Prior unbound product write retained as evidence
+
+The existing Case run `fc659b4d-9b7d-535b-a99d-db3f8705c41a` is recorded as having attempted an Effect prescan that failed closed at its existing 500-record limit, then performed a direct `PUT`. Its readback candidate is `bea0a4476347e2007c9096f21fb44a11ce4ae669`; the observed commit message has no `AXTN-EFFECT/v1` marker. The report records this as an unbound write, not as proof of Effect idempotency or Case authorization. The candidate and history are preserved; no marker was backfilled and no further product write was attempted.
+
+This report records operational findings only. The required fail-closed enforcement for missing/invalid Effects and qualification of bounded history selection are still pending source changes, targeted tests, deployment, and a genuine Effect-bound Swarm write with marker/blob readback. The 500-record bound is not increased and no path-filtered conflict scan is accepted.
+
+**Historical status at the preceding report revision:** the then-current candidate and Case reference were `e8f8cafd…` / version 23, and four write attempts timed out. The current report above supersedes that snapshot; it does not imply a regression test, final three-review set, CI result, or UAT completion.
 
 ## Continuation from Handoff `114da1b3f62cfc5be892f03114d681703de715af`
 
