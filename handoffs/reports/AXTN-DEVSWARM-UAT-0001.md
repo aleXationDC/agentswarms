@@ -1,6 +1,6 @@
 # Development Swarm UAT Operations Report
 
-**Status: PARTIAL — the dedicated Development MCP binding and its exact repository/branch/path scope are live and verified. The existing Case-bound Swarm now produced and natively read back candidate `e8f8cafd…`; focused local typecheck/tests pass, but ESLint still reports formatting errors, the latest Maintainability review contradicts the source readback, no CI result is available, and UAT remains policy-blocked. No acceptance or PASS is claimed.**
+**Status: PARTIAL — the dedicated Development MCP is bound and scoped. The Case-bound Swarm confirmed the assignment defect and emitted four real native writes, but each `upsert_file` timed out; product branch and Case reference remain at `e8f8cafd…` / version 23. No new regression test or final three-review set exists. CI result access and isolated UAT remain separately blocked. No acceptance or PASS is claimed.**
 
 ## Continuation from Handoff `114da1b3f62cfc5be892f03114d681703de715af`
 
