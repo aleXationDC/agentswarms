@@ -1,3 +1,21 @@
+# Aktiver Anschluss — zuerst tatsächliche Development-MCP-Bindung prüfen
+
+Der bestehende Gesamtauftrag bleibt aktiv. Diese Priorität korrigiert die ungeprüfte Gleichsetzung des allgemeinen MCP-Dienstes mit dem dedizierten Development-Dienst. Vollständiger kanonischer Source-Audit: handoffs/reports/AXTN-DEVSWARM-MCP-BINDING-AUDIT-20261018.md am Commit 276111b79ef9cc2ed5b7a8e5cfcb2284cfa0c3a2. Vor weiterer Connectoränderung vollständig lesen.
+
+Der Fortsetzungsbericht d185fb07d8aded2ce039e81b756d91d661524b71 ist jetzt veröffentlicht und zurückgelesen. Copilots eigener SSH-Publikationsweg funktioniert wieder. Keine neue allgemeine Authentifizierungsrunde.
+
+Als Nächstes mit erlaubten nichtgeheimen Metadaten die effektive Kette belegen: publizierter Builder -> ownerbezogene native Registry-Zeile/Endpoint -> Netzwerkziel -> tatsächlich angesprochener Dienst/Container -> Image/Source -> tatsächliche Scope-Konfiguration. Die bloße Inspektion von axtn-gitea-mcp@dfbb45a beweist keine Verwendung dieses allgemeinen Dienstes durch den Builder. Das vorhandene Host-Design enthält separat development-gitea-mcp mit Alias axtn-development-gitea-mcp und einen historischen Deploymentnachweis. Historie nicht als heutigen Livezustand behaupten.
+
+Bei nachgewiesener Fehlbindung/fehlendem dediziertem Dienst den bestehenden autorisierten Betriebs-/nativen Registryweg gezielt wiederherstellen, keine Neuentwicklung und keine Änderung des allgemeinen MCP-Dienstes. Alten Provisioner nicht blind ausführen, keine direkte Registry-SQL- oder Secret-Übernahme als Abkürzung. Tatsächlich ausgeschlossene Inputs bleiben ausgeschlossen.
+
+Die vorbereitete Version 9b700ff5d1cbd8205d356b1413375767f630960a besitzt Repo-/Branch-/Pfadgrenzen und optionale Effect-Idempotenz, aber keine verpflichtende externe SupaCase-Autorisierung. Diese Konzepte nicht verwechseln und keinen neuen Case-Prüfdienst daraus beauftragen. Bei effect-create_branch werden Prefix und Endname geprüft: die genaue Konfigurationsmöglichkeit anhand Source/Negativtests belegen, keine ungeprüfte Endnamen-Allowlist oder Wildcard als Lösung einsetzen. Der Audit erläutert die Grenzen.
+
+Nach nachgewiesener korrekter Bindung und ausreichender vorhandener Begrenzung native Probe/Modellvergleich und Swarm-Produktkorrektur fortsetzen. Bis dahin keine weiteren identischen Builder-Runs, keinen Graphausbau, keinen Schreib-PASS. Actions benötigt den bereits identifizierten authentifizierten repo-begrenzten Ergebniszugriff, nicht erneute Runnerinstallation. Die ausdrücklich gemeldete UAT-Organisationssperre bleibt separat offen; keine Umgehung. Bestehende Cases und Candidate erhalten. Veröffentlichung dieses Handoffs startet die CLI nicht.
+
+---
+
+## Historischer Anschluss, soweit durch obige Prüfung nicht korrigiert
+
 # Aktive Priorität nach Bericht 9f0eecf2 — Ausführungsfähigkeit herstellen
 
 Stand 18.10.2026. Der bestehende Gesamtauftrag und seine Schutzgrenzen bleiben gültig. Keine weitere Vergrößerung des 69-Node-Graphs ohne nachgewiesene notwendige Funktion. Grüne Schrittzähler, Ankündigungen des Builders und Quellenreads ersetzen keinen Git-Effekt oder Review.
