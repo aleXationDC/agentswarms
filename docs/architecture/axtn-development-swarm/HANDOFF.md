@@ -1,3 +1,35 @@
+# Aktive Priorität nach Bericht 9f0eecf2 — Ausführungsfähigkeit herstellen
+
+Stand 18.10.2026. Der bestehende Gesamtauftrag und seine Schutzgrenzen bleiben gültig. Keine weitere Vergrößerung des 69-Node-Graphs ohne nachgewiesene notwendige Funktion. Grüne Schrittzähler, Ankündigungen des Builders und Quellenreads ersetzen keinen Git-Effekt oder Review.
+
+Die von Alex gemeldeten Live-IDs und Befunde wurden in dieser Sitzung nicht live verifiziert. Der neue Bericht bei 9f0eecf28ec62a0f146ac7a236291bb8a49b7183 ist remote nicht abrufbar. Bestehende Case-Lineage weiterführen, Produktkandidat nicht zurücksetzen.
+
+## 1. Fehlenden Toolcall diagnostizieren, nicht erneut ankündigen lassen
+
+Die neue Meldung enthält nun eine konkrete fachliche Abweichung: RESPONSIBLE-Vertrag versus fehlende „Mir zugewiesen“-Route. Diese gegen den unveränderten autoritativen PR-#8-Auftrag und Candidate prüfen; nicht ungeprüft neue Funktion erfinden. Für die drei schon erfolgten Builder-Versuche die vorhandene effektive Tooldefinition, enabledTools/toolConfigs, Modell-ID, begrenzte Toolrunden, Finish-/Stopreason, vorhandene Toolcall-Frames und Fehler-/Trunkierungsmetadaten sicher zuordnen. Keine Secrets oder vollständigen Payloads ausgeben. Zwischen fehlendem Toolangebot, Modellantwort ohne Toolcall, Parser-/Vertragsfehler und tatsächlich vom Connector abgewiesenem Toolcall unterscheiden. Ohne ausgesandten upsert_file ist die Branch-Allowlist noch keine belegte Ursache für genau diesen Builder-Versuch.
+
+Keine weiteren identischen langen Runs. Nur nach konkretem Befund eine begrenzte native Probe; falls das konfigurierte Corporate-Modell keine gültigen nativen Aufrufe liefert, einen vorhandenen für die Aufgabe geeigneten anderen Corporate-Agent-Modellpfad begrenzt vergleichen und Ergebnis dokumentieren. Keine neue Runtime, kein Serializer, kein CLI-Produktpatch, keine Fake-Toolcalls. Vorhandene native direkte MCP-Tool-Nodes bleiben zulässige Standardfähigkeit, aber nicht als autonomer Builder-Toolcall ausgeben; erforderliche Argumentabbildung vollständig nativ prüfen und keine JSON-Escaping-Lücke durch Prompt-Serializer kaschieren.
+
+## 2. Probe-Scope konkret konfigurieren statt Umgehung
+
+Die bestehende aXtn-Gitea-MCP-Konfiguration hat bereits MCP_ALLOWED_WRITE_BRANCHES_BY_REPOSITORY und MCP_ALLOWED_WRITE_PATHS_BY_REPOSITORY. Damit ist eine eng begrenzte Probe eine Konfigurationsfrage des vorhandenen Connectors, kein neuer Dienst. Den tatsächlichen zulässig lesbaren Konfigurationsstand und den vorhandenen Effekt-Vertrag prüfen: effect-gebundenes create_branch liefert einen abgeleiteten endgültigen Branchnamen; nachfolgende Writes müssen genau diesen Namen verwenden. Ein Name nur für den angefragten Prefix genügt unter einer Exact-Branch-Allowlist nicht. Eine solche Abweichung zuerst reproduzierbar belegen, nicht vermuten.
+
+Im bestehenden genehmigten Konfigurations-/Reviewweg genau einen isolierten Probe-Branch und genau einen ungefährlichen Probe-Dateipfad vorbereiten; bestehende Einträge erhalten, keine Wildcards, keine Freigabe von main, Merge, Admin oder Produktworkflows. Keine andere Branch-/Pfadwahl zur Umgehung einer Ablehnung. Ist die Bereitstellung policygesperrt oder fehlt Konfigurationsautorität, den minimalen tatsächlich ermittelten Alt/Neu-Diff und die normale Betreiberanwendung sichtbar übergeben; keine allgemeine Zugangsanforderung. Bis dahin keinen Write-PASS behaupten.
+
+## 3. Eigene Veröffentlichung: vorgesehener Git-Weg, kein erfundener Sitzungszwang
+
+Der zuletzt belegte reguläre Copilot-Weg ist SSH-Alias axtn-gitea mit Copilot-eigenem Schlüssel axtn_copilot_gitea und Gitea-Identität aXtn-copilot-cli. Fehlender Branch-Upstream allein verhindert keinen Push an ein explizites vorhandenes Remote. Über genau diesen vorgesehenen, sofern weiterhin erlaubten Weg Identität und Refs prüfen, lokale Berichtscommits bewahren, den neueren Remote-Handoff regulär integrieren und ohne Force-Push veröffentlichen. Keine neue API-/Browser-Sitzung als Voraussetzung eines normalen Git-Pushs erfinden. Falls dieser Zugang jetzt wirklich scheitert, den bereinigten konkreten Fehler benennen: SSH-Konfiguration/Schlüsselverfügbarkeit, Authentifizierung, Repo-Autorisierung, History-Konflikt oder Organisationspolicy. Keine Codex-Credentials und keine allgemeine Credential-/Konfigurationssuche. Bei expliziter Policy-Ablehnung nicht auf Ersatzwege ausweichen.
+
+## 4. Bestehende Außenabhängigkeiten abschließen, nicht erneut allgemein melden
+
+Actions 164–166: fehlender Ergebniszugriff trotz Task-Start ist offen, kein CI-PASS. Den bereits vorgesehenen repo-begrenzten erlaubten Ergebnisweg prüfen; 403 anhand des tatsächlich verwendeten Endpunkts/Actors zuordnen. Kein Adminzugang auf Verdacht. Kann kein erlaubter Ergebnisweg hergestellt werden, exakt benötigte Leseberechtigung und Betreiberweg sichtbar ausgeben.
+
+UAT-Content-Exclusion bleibt verbindlich. Fehlender isolierter Host-Target ist Einrichtungsbedarf; ausgeschlossenen kanonischen Input nicht lesen, kopieren, rekonstruieren oder über Ersatzkanäle verwenden. Die konkrete Betreiberaktion muss hier sichtbar sein, nicht nur im ungepushten Bericht: exakter betroffener Pfad/Artefaktref, bereits bekannte Revision, abgewiesene Operation und tatsächlich geprüfter normaler Bereitstellungsweg. Unbekannte Befehle nicht erfinden. Betreiberbereitstellung oder Änderung der Organisationsrichtlinie muss durch den zuständigen berechtigten Betreiber erfolgen; Chatfreigabe allein reicht nicht.
+
+Danach echten Schreib-/Readback-Nachweis, funktionalen Graph mit drei unabhängigen Reviewern und nativen Skills/KBs sowie tatsächlichen UAT-Aufbau fortführen. Keine weiteren erfolgreichen Statusgraphen als Lieferersatz. Veröffentlichung dieses Handoffs startet Copilot nicht.
+
+---
+
 # Aktive Fortsetzung nach lokalem Bericht f727e7fe — keine neue Freigaberunde
 
 Stand: 18.10.2026. Der Gesamtauftrag AXTN-DEVSWARM-DELIVERY-UAT-20261018 und seine Schutzgrenzen bleiben unverändert aktiv. Bestehende Case-Lineage und Produktkandidat erhalten; nicht neu beginnen.
