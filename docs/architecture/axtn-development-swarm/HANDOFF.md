@@ -1,5 +1,16 @@
 # Aktive Fortsetzung — allgemeiner nativer Git-Development-Prozess
 
+## Vorrangige Nutzerkorrektur — 18.10.2026, 22:45 Europe/Berlin
+
+Status: PAUSED_FOR_ARCHITECTURE_REVIEW. Den bisherigen Development-Swarm-/Blueprint-Ausbau nach diesem Auftrag vorerst nicht fortsetzen. Bestehende funktionierende Graphen, Konfigurationen, Artefakte und Historien erhalten; nichts abbauen. Diese Dokumentation beendet keine bereits laufende CLI-Sitzung.
+
+Alex stellt die bisherige Gesamtkonstruktion infrage und möchte zuerst eigenständig funktionsfähige Bausteine prüfen: Building-Prozess einschließlich erforderlicher Auftragsaufbereitung, Implementierung und Dev-Prüfung; davon getrennte Review-Fähigkeiten und deren Konsolidierung; darüber gegebenenfalls ein schlanker Leitprozess. Einzelne Security-/Contract-/Quality-Reviews sollen unabhängig ausführbar sein können. Ob diese als eigene Swarms und/oder Subswarm-Komposition eingesetzt werden, ist noch zu prüfen, nicht bereits als Architektur beschlossen.
+
+Parallelität ist eine Ausführungsoption unabhängig vom fachlichen Zuschnitt. Reviews können unabhängig am gleichen fixierten Kandidaten arbeiten und bei verfügbaren Ressourcen parallel laufen; daraus folgt keine Pflicht, einen großen gemeinsamen Graphen zu bauen. Native Fähigkeiten, tatsächliche Ein-/Ausgabeverträge, vorhandene DMS-Patterns und Kosten sind vor Umsetzung zu vergleichen. Keine neue Custom-Orchestrierung und kein bloßes Aufteilen der bestehenden 69 Nodes ohne fachliche Prüfung.
+
+Die bisherigen Git-/Case- und kausalen Child-Case-Grundsätze bleiben Planungsanforderungen. Die unten stehende aktive Ausbauanweisung ist bis zum abgeschlossenen Architekturabgleich ausgesetzt. Separate bereits autorisierte Betriebs-/Reparaturarbeiten werden dadurch nicht pauschal zurückgesetzt; keine weitere Graphvergrößerung als vermeintliche Fortsetzung dieses Auftrags.
+
+
 Verbindlicher Ausführungsauftrag: handoffs/requests/AXTN-DEVSWARM-GENERIC-GIT-PROCESS-20261018.md am Commit 6d390cb6b739505712f60eadd288c31dca69b018. Alex' Prozesskorrekturen vom 18.10.2026, 22:27/22:28 Europe/Berlin, haben Vorrang vor widersprechenden älteren Test-/Planvorgaben. Status ACTIVE_TO_RESUME; Veröffentlichung startet keine CLI.
 
 ## Ziel und verbindliche Ausführung
