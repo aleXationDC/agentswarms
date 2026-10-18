@@ -1,3 +1,35 @@
+# Aktive Fortsetzung — allgemeiner nativer Git-Development-Prozess
+
+Verbindlicher Ausführungsauftrag: handoffs/requests/AXTN-DEVSWARM-GENERIC-GIT-PROCESS-20261018.md am Commit 6d390cb6b739505712f60eadd288c31dca69b018. Alex' Prozesskorrekturen vom 18.10.2026, 22:27/22:28 Europe/Berlin, haben Vorrang vor widersprechenden älteren Test-/Planvorgaben. Status ACTIVE_TO_RESUME; Veröffentlichung startet keine CLI.
+
+## Ziel und verbindliche Ausführung
+
+Den vorhandenen Development Swarm als wiederverwendbaren nativen Prozess konfigurieren und tatsächlich qualifizieren: Auftragsanalyse/Planung recherchiert selbst im autorisierten Git-Repository und schreibt den Git-Auftrag; Builder implementiert und prüft in Dev; drei Breaker prüfen parallel denselben unveränderlichen Kandidaten und persistieren ihre Ergebnisse in Git; native Merge-Node und Konsolidierungsagent führen Ergebnisse und nächste Schritte zusammen. Prompts, Skills und KBs liefern wiederverwendbare Methodik und Standards, ausführbare Tests bleiben im Repository.
+
+Keine fest eingebauten Account-/Contact-/Case-Dateiabrufe als allgemeinen Prozess oder Funktionsnachweis behalten. Historische Graphen und Patterns sichern, funktionierenden Plattformfortschritt und Operatorarbeit erhalten. Zwei unterschiedliche autorisierte Aufgaben mit derselben publizierten Prozesskonfiguration belegen autonome Recherche; keine weitere fachliche Dateiliste im Graph als Ersatz.
+
+Nacharbeit bekommt einen Git-Auftrag und einen nativen Child-Case genau unter dem Entwicklungs-Case, dessen Ergebnis sie verursacht hat. case_work ensure mit stabiler WorkIdentity/sourceId und ursächlicher parentCaseId nutzen. Der weitere Run gehört zur case_id dieses Child-Cases. Parent-/Child-/Git-/Run-Readback und Wiederholbarkeit ohne doppelte Arbeit oder doppelten Dispatch belegen. Ein technischer Retry bleibt dieselbe Arbeit. Parent erst nach erforderlichen Ergebnissen und fachlicher Abnahme schließen; echte Queue-/Case-Sichtbarkeit nachweisen.
+
+## Vorhandene Reparatur fortsetzen, nicht zurücksetzen
+
+Vor Änderungen tatsächlichen aktuellen Git-/Runtime-/Case-/Graphstand lesen. Die bisherige enge Transport-/Effect-Reparatur und erforderliche Veröffentlichung ihrer Quellen/Reports bleiben beauftragt; keine neue parallele Reparatur erfinden. App-Quelle ded696b804c7d921f275560e3fc7bd799d4b3265 ist inzwischen remote lesbar; Development-Connector-Quelle 4235f9fb1bb6acc5b442d2017b3b4b75f685a12e wurde separat gelesen. Den aktuell laufenden Stand neu zuordnen; frühere Meldungen „nur lokal“ nicht ungeprüft wiederholen.
+
+Produktkandidat bea0a4476347e2007c9096f21fb44a11ce4ae669 und seine Lineage bleiben erhalten; der ungebundene Write ohne Effect-Marker ist kein gültiger Effect-Nachweis. Fehlendes effect darf im dedizierten Development-Writepfad keinen Bypass erlauben. Historische Detailanforderungen zur begrenzten vollständigen History-/Replay-/Konfliktprüfung gelten weiter, soweit der aktuelle sourcegeprüfte Stand sie nicht bereits erfüllt. Keine künstlichen Produktwrites für grüne Evidence.
+
+Native Fähigkeiten und bekannte Nachweislücken sind im aktiven Auftrag konkret abgegrenzt: dynamische vollständige Quellreads trotz Toolresultat-/Rundenlimits; tatsächliche Dev-/CI-Prüfungen; persistierte Review-Ergebnisse; Child-Anlage versus tatsächlicher Folge-Start. Keine neuen Custom-Dispatcher, versteckten Function-Orchestratoren oder Runtime-Dienste. Produktcode bleibt Swarm-Arbeit.
+
+Normale bereits erlaubte Owner-Authentifizierung und eigenes Copilot-Git-Konto verwenden; keine allgemeine neue Credentialrunde. CI-Ergebniszugriff und ausgeschlossener UAT-Compose-Input bleiben getrennte konkrete Betriebsaufgaben. Content-Exclusion nicht umgehen; keine UAT/Acceptance behaupten, bevor wirklich belegt.
+
+## Ergebnis
+
+Bestehenden Betriebsbericht mit realen Objekt-/Versions-/Git-/Run-/Child-Case-Referenzen fortführen. Umsetzung, technische Tests, Deployment, fachliche Nacharbeit und Acceptance getrennt ausweisen. Analyse, geplante Childs oder erfolgreiche Graph-Steps allein erfüllen den Gesamtauftrag nicht.
+
+---
+
+## Historischer Anschluss — vorheriger Effect-Reparaturauftrag
+
+Die folgende bisherige Fortsetzung ist als Detailreferenz erhalten. Die obige Aktivierung und der gepinnte allgemeine Prozessauftrag haben bei Ziel-/Graph-/Nacharbeitsfragen Vorrang.
+
 # Aktive Fortsetzung — Effect-Auslassung schließen und bestehende Reparatur abschließen
 
 Der Gesamtauftrag bleibt aktiv. Neueste CLI-Meldung von Alex: Plattformstände ded696b804c7d921f275560e3fc7bd799d4b3265 (App) und a1d5f58c9860ce41fa0de4e414b5c016eb7c84b8 (Development MCP) seien lokal committed/deployed, normaler Owner-Login erfolgreich; Effect-Prescan stoppt nach 500 Commitdatensätzen, danach ungebundener PUT. Die beiden Reparaturquellen waren in dieser Architektursitzung remote am vollständigen SHA nicht abrufbar (404). Der Remote-Betriebsbericht steht noch auf 6ab606dd25aa65e653316ff22e27076eb8bb095c. Laufzeitangaben nicht als hier unabhängig geprüft darstellen.
