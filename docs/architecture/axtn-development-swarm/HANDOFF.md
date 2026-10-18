@@ -1,3 +1,22 @@
+# Aktiver Anschluss — Development Swarm und bedienbare UAT
+
+Stand: 18.10.2026. Alex hat nach dem beendeten Copilot-Lauf die Fortsetzung angefordert.
+**Einziger aktueller Ausführungsauftrag:** handoffs/requests/AXTN-DEVSWARM-DELIVERY-UAT-20261018.md.
+
+Der Anschluss übernimmt den offenen Produktauftrag und aktiviert die vorbereitete UAT-Architektur aus Commit 0c782276a144081821894d2269545e39d0556596. Die dortige QUEUED-/Nicht-aktivieren-Anweisung ist durch diesen Anschluss aufgehoben. Nicht erneut nur prüfen oder auf eine weitere allgemeine Startfreigabe warten.
+
+Ausgangspunkt ist der zuletzt berichtete Kandidat e4ca073195ada22dc378f6da0f300f498f2ebbf2, Case-Version 21. Aktuellen Branch-Head zurücklesen und bestehende Lineage fortführen; kein Zurücksetzen, kein neuer Auftrag ab null. Keine drei vollständigen Reviews, kein CI-PASS, keine Approval oder Produkt-PR behaupten.
+
+Prioritäten: leere/partielle Modellantworten konkret eingrenzen; vorgegebene native MCP-/set_var-Verkabelung und Rollenprofile einsetzen; Skills/KBs nativ administrierbar herstellen; Produktkorrekturen durch Swarm, Tests/Reviews und parallel zulässige UAT-Bereitstellung bis zu einer tatsächlich bedienbaren Reviewadresse fortführen. Kein neuer Serializer, Dispatcher oder Runtime-Bau. Echte Policy-/Betriebssperren nur auf den konkret betroffenen Schritt beziehen.
+
+**Auftrag veröffentlicht/aktiviert heißt nicht, dass Copilot bereits läuft.** Veröffentlichung dieses Handoffs hat keine CLI-Sitzung gestartet. Start/Fortsetzung erfolgt nach Übergabe der exakten Handoff-Revision an Copilot.
+
+## Historie und weiterhin geltende Herkunft
+
+Die folgenden früheren Fortsetzungen und Bezeichnungen „jetzt“ oder „einziger Auftrag“ sind historische Stände. Für die aktuelle Ausführung gilt der oben genannte Anschluss; fachliche Kriterien und Schutzverträge des ursprünglichen Produktauftrags bleiben gemäß dessen expliziter Übernahme erhalten.
+
+---
+
 ## Fortsetzung am 17.10.2026, 21:34 UTC — Reviews, Swarm-Reparaturen und Kandidatenprüfung
 
 Status bleibt **PARTIAL / UNVERIFIED / OPERATOR_ACTION_REQUIRED**. Der bestehende
