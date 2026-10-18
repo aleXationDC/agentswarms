@@ -4,7 +4,7 @@
 
 ## Continuation from Handoff `f828292285852663cc2075d093a4a6dba8f27574`
 
-The exact Handoff was fetched from `ssh://axtn-gitea/aXtn/axtn-agentswarms.git`; SSH authenticated as `aXtn-copilot-cli`. Its current remote branch was integrated without rewriting history: local report commit `9f0eecf28ec62a0f146ac7a236291bb8a49b7183` and remote Handoff `f828292285852663cc2075d093a4a6dba8f27574` are both parents of merge commit `725a9e51f7ce0909e11b8015a52a1a274ff616a6`. The report branch has not yet been pushed.
+The exact Handoff was fetched from `ssh://axtn-gitea/aXtn/axtn-agentswarms.git`; SSH authenticated as `aXtn-copilot-cli`. Its current remote branch was integrated without rewriting history: local report commit `9f0eecf28ec62a0f146ac7a236291bb8a49b7183` and remote Handoff `f828292285852663cc2075d093a4a6dba8f27574` are both parents of merge commit `725a9e51f7ce0909e11b8015a52a1a274ff616a6`. The updated report was subsequently published to that branch over the same SSH remote.
 
 All three PR-#8 work orders were read in full through the existing native Gitea MCP read at the exact architecture ref `14b51ce781eeecfe766f6fe8dd83c0b393b2c2c1`; their native blob IDs match the canonical contract:
 
@@ -82,4 +82,4 @@ The separate UAT blocker is specifically the content-excluded vendor input `supa
 
 ## Superseded publication state
 
-The prior report's SSH-publication blocker and multi-branch push/rollback instructions are obsolete. SSH authenticated as `aXtn-copilot-cli`, the current remote Handoff was merged locally without force, and the only pending Git publication is this updated report on `work/AXTN-NATIVE-SWARM-COMPLETION-20261016`. No release-base or product-candidate ref is being published here.
+The prior report's SSH-publication blocker and multi-branch push/rollback instructions are obsolete. SSH authenticated as `aXtn-copilot-cli`, the current remote Handoff was merged without force, and the updated report was published to `work/AXTN-NATIVE-SWARM-COMPLETION-20261016`. No release-base or product-candidate ref was published here.
