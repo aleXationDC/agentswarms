@@ -1,3 +1,24 @@
+# Aktiver Handoff — modularer aXtn Development Process
+
+Status ACTIVE_STAGED_IMPLEMENTATION. Autorität: Alex' Prozessvorschlag und Fortsetzungsauftrag vom 19.10.2026. Vollständig lesen und stufenweise ausführen:
+
+handoffs/requests/AXTN-DEV-PROCESS-MODULAR-20261019.md
+am Commit d518a8ed865a43d05b0bf7a0c91e9b0885c2d453
+
+Dieser Auftrag löst die Analyse-Pause und den früheren Gesamtgraph-Ausbau für den beschriebenen modularen Scope ab. Zuerst gezielter Native-Vertragsabgleich, dann separat nachgewiesener Intake mit vollständigem Git-Plan und menschlichem Plan-Gate, Builder mit echten Dev-Prüfungen, unabhängige Reviewrollen und Audit, anschließend der Leitprozess. Nicht bei einer weiteren Bestandsaufnahme stehenbleiben; innerhalb der beauftragten nativen Konfiguration fortfahren.
+
+Der Intake plant Zerlegung UND Zusammenführung samt Gesamttest/UAT. Child-Cases tragen eigenständige verantwortbare Arbeit; Nacharbeit ist Child des verursachenden Entwicklungs-Cases. Run-Case-Bindung, wirksame Abhängigkeiten, drei fachliche Nacharbeitszyklen, vollständige Reviewpersistenz und Restart/Replay ohne doppelte Arbeit tatsächlich qualifizieren.
+
+Bestehende sechs Rollen/Skills/KBs nicht als vorhanden behaupten, bevor deren Objekte und Wirksamkeit gelesen sind. Native Funktionen, aXtn-Domainadapter und Standardintegration klar benennen. Keine neue Custom-Orchestrierung, kein versteckter Function-Dispatcher, keine festen fachlichen Quellpfade im allgemeinen Graph. Prüflücken der bestehenden aXtn-Acceptance und Subswarm-Case-Vererbung stehen konkret im Auftrag; vorhandene Guards nicht umgehen.
+
+Bestehende Graphen, veröffentlichte Versionen, Operatorarbeit, Produktkandidaten und Reparaturfortschritt erhalten. Materialarbeit durch vorhandene SupaCase-Lineage führen. Regelmäßiger belegter Fortschritt pro Baustein; tatsächliche menschliche Plan-/UAT-Entscheidung über native Gates vorlegen. Veröffentlichung dieses Handoffs startet keine CLI.
+
+---
+
+## Historischer Handoff vor modularer Aktivierung
+
+Die folgenden älteren Anweisungen sind historische Grundlagen; bei Konflikten gilt ausschließlich der oben gepinnte Auftrag.
+
 # Aktive Fortsetzung — allgemeiner nativer Git-Development-Prozess
 
 ## Vorrangige Nutzerkorrektur — 18.10.2026, 22:45 Europe/Berlin
