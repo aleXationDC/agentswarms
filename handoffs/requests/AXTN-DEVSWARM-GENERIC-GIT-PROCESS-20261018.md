@@ -1,6 +1,6 @@
 # AXTN-DEVSWARM-GENERIC-GIT-PROCESS-20261018 — korrigierter Ausführungsauftrag
 
-Autorität: Alex' Prozesspräzisierung vom 18.10.2026, insbesondere 22:27 Europe/Berlin. Status: ACTIVE_TO_RESUME. Veröffentlichung startet keine CLI. Native capability > standard > reuse > configure > integrate > custom build.
+Autorität: Alex' Prozesspräzisierung vom 18.10.2026, insbesondere 22:27 und 22:28 Europe/Berlin. Status: ACTIVE_TO_RESUME. Veröffentlichung startet keine CLI. Native capability > standard > reuse > configure > integrate > custom build.
 
 ## Verbindliche Korrektur des Ziels
 
@@ -56,13 +56,17 @@ Er schreibt einen vollständigen kandidatengebundenen Ergebnisbericht nach Git: 
 
 READY_FOR_UAT, REWORK_REQUIRED oder BLOCKED sind fachliche Berichtsergebnisse, keine frei erfundenen nativen Statuswerte. Modellurteil ersetzt keine deterministischen Pflichtchecks oder menschliche Approval. Ein endlicher Run kann technisch abgeschlossen sein und fachlich Nacharbeit verlangen; der Parentauftrag bleibt bis zur wirklichen Abnahme offen.
 
-## 5. Nacharbeit und weiterer Dev-Swarm-Lauf
+## 5. Nacharbeit als Child-Case und weiterer Dev-Swarm-Lauf
 
-Bei Nacharbeit entsteht ein tatsächlicher Folgearbeitsauftrag in Git, mit Ausgangskandidat, konkreten Findingreferenzen, Ziel und Abnahmekriterien. Im vorhandenen SupaCase wird die dazugehörige Arbeit idempotent angelegt/verknüpft; keine Shadow-Queue. Derselbe Auslöser darf keinen doppelten Auftrag erzeugen. Auftragserzeugung und tatsächlichen Queue-/Worklist-Readback belegen.
+Bei fachlicher Nacharbeit entsteht ein tatsächlicher Folgearbeitsauftrag in Git, mit Ausgangskandidat, konkreten Findingreferenzen, Ziel und Abnahmekriterien. Die dazugehörige native Arbeit ist ein Child-Case genau des Entwicklungs-Cases, dessen Ergebnis diese Nacharbeit notwendig gemacht hat. Nicht als bloßer weiterer Attempt im ursprünglichen Case und nicht als Geschwister-Case unter einem übergeordneten Sammelauftrag anlegen.
 
-Ein weiterer Entwicklungsversuch beginnt mit diesem Git-Auftrag und dem verifizierten Kandidaten über denselben allgemeinen Prozess. Keine festen Rückkanten in einen DAG und kein alter Run, der endlos offen gehalten oder umgedeutet wird. Historische Ergebnisse bleiben erhalten. Begründete Versuchslimits und manuelle Übernahme nach vorhandenem Vertrag statt Endlosschleife.
+Über den bestehenden nativen case_work-ensure-Vertrag die WorkIdentity mit parentCaseId des ursächlichen Entwicklungs-Cases und stabiler sourceId für dieses Nacharbeitspaket anlegen bzw. wiederfinden. Git-Auftrag, Finding-/Candidate-Referenzen und Parent-/Child-Beziehung im vorhandenen Vertragsformat verknüpfen. Tatsächliche native Anlage und Parent-/Child-/Worklist-Readbacks belegen. Kein Child für jeden Toolcall, Retry oder technischen Wiederanlauf; Replay desselben Auslösers findet dieselbe Arbeit wieder und erzeugt keinen zweiten Case oder doppelten Dispatch.
 
-Der Mensch sieht im Case tatsächliche geplante, wartende, laufende und abgeschlossene Arbeit gemäß dem bestehenden Lifecycle. Ein geplanter Child-Case beweist noch keinen automatischen Dispatch; automatischen nativen Folge-Start separat nachweisen. Review kann zurückgestellt sein, während Nacharbeit läuft; bereits vorhandene Git-Ergebnisse und eine tatsächlich verfügbare isolierte Preview bleiben einsehbar und tragen ihren jeweiligen Commit/Digest.
+Der folgende Dev-Swarm-Run wird an die case_id dieses Child-Cases gebunden und beginnt mit dessen Git-Auftrag und dem verifizierten Ausgangskandidaten durch denselben allgemeinen Prozess. Die technische Parent-Run-Verknüpfung ersetzt die fachliche Case-Hierarchie nicht. Erzeugt das Ergebnis dieses Child-Cases wiederum eigenständige fachliche Nacharbeit, ist deren Case ein Child dieses nun ursächlichen Cases. Keine festen Rückkanten in einen DAG und kein alter Run, der endlos offen gehalten oder umgedeutet wird. Historische Ergebnisse bleiben erhalten. Begründete Versuchslimits und manuelle Übernahme nach vorhandenem Vertrag statt Endlosschleife.
+
+Der Mensch verfolgt am ursächlichen Case Ergebnis und verknüpfte Nacharbeit mit tatsächlichen geplanten, wartenden, laufenden und abgeschlossenen Zuständen gemäß bestehendem Lifecycle. Der Parent darf nicht allein durch erfolgreichen Run-Abschluss oder Child-Anlage als akzeptiert/geschlossen gelten; erforderliche Child-Ergebnisse und fachliche Abnahme bleiben maßgeblich. Ein geplanter Child-Case beweist noch keinen automatischen Dispatch; tatsächlichen nativen Folge-Start mit Child-case_id und Git-Auftragsreferenz separat nachweisen. Review kann zurückgestellt sein, während Nacharbeit läuft; bereits vorhandene Git-Ergebnisse und eine tatsächlich verfügbare isolierte Preview bleiben einsehbar und tragen ihren jeweiligen Commit/Digest.
+
+Für den bestehenden Produktauftrag wäre bei daraus verursachter Nacharbeit der Entwicklungs-Case 913dbf33-9891-4712-b945-aab9a5cfe5b9 der Parent, nicht automatisch der übergeordnete Sammel-Case. Dies ist eine Zuordnungsvorgabe, keine Behauptung, ein neuer Child-Case oder Run sei bereits angelegt.
 
 ## Prompt, Skill, KB und ausführbare Tests
 
@@ -103,7 +107,7 @@ Produktcode kommt vom Swarm. Copilot konfiguriert vorhandene native Funktionen/S
 - Für beide dieselbe veröffentlichte Prozesskonfiguration verwenden. Nur Auftrags-/Repo-/Branch-/Artefakteingaben und vorhandene berechtigte Workspacekonfiguration variieren, nicht Dateinamen, Repoquellen oder Taskbedingungen im Graph ergänzen.
 - Native Agent-Toolevents belegen autonome Repositoryerkundung und Auswahl vollständiger benötigter Quellen. Kein Copilot-Prefetch festgelegter Dateien als Ersatz und keine zu breite Auswahl vertraulicher Daten.
 - Echte Git-Aufträge, Codecommits, ausführbare Dev-Prüfungen, drei parallele Breaker mit optional eigenen Dev-Prüfungen, Git-Reviewpersistenz/Readback und vollständige Konsolidierung belegen.
-- Einen begründet notwendigen Nacharbeitsfall bis zum tatsächlichen Git-Folgeauftrag, SupaCase-Worklist und weiteren nativen case-gebundenen Run durch denselben Prozess verfolgen; Replay erzeugt keine doppelte Arbeit. Ein Fall mit blockierendem Finding darf nicht als angenommen enden.
+- Einen begründet notwendigen Nacharbeitsfall bis zum tatsächlichen Git-Folgeauftrag, nativen Child-Case mit parentCaseId des verursachenden Entwicklungs-Cases, Worklist und weiteren nativen Run mit genau dessen Child-case_id durch denselben Prozess verfolgen; Parent-/Child-/Git-Readback belegen. Replay erzeugt weder doppelte Arbeit noch doppelten Dispatch. Ein Fall mit blockierendem Finding darf nicht als angenommen enden.
 - Reviewer bekommen denselben unveränderlichen Kandidaten; Dateiblobs und letzte Dateiänderungskommitts müssen nicht mit dem Kandidatencommit identisch sein. Ein Abruf am konkreten SHA und tatsächliche Protokoll-/Artefaktbindung sind der vorhandene Standardweg, kein neuer selbst gebauter SHA-Guard.
 - Menschlicher Case-Readback zeigt Ergebnis und echte Folgearbeit; Preview ist nur behauptet, wenn tatsächlich verfügbar und revisionsbezogen. Fehlender UAT-Nachweis bleibt offen, er wird nicht simuliert.
 
