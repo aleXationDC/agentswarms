@@ -1,6 +1,59 @@
 # Development Swarm UAT Operations Report
 
-**Status: PARTIAL — the native Case-bound Builder/reviewer graph and pinned source reads ran, but all three Builder attempts ended without an `upsert_file` tool call. The deployed Gitea MCP connector also lacks the branch/path/effect enforcement claimed by the Handoff, so no isolated probe or further product write is safe. Actions runs have no terminal result; independent acceptance and UAT remain outstanding.**
+**Status: PARTIAL — the dedicated Development MCP binding and its exact repository/branch/path scope are live and verified. The existing Case-bound Swarm now produced and natively read back candidate `e8f8cafd…`; focused local typecheck/tests pass, but ESLint still reports formatting errors, the latest Maintainability review contradicts the source readback, no CI result is available, and UAT remains policy-blocked. No acceptance or PASS is claimed.**
+
+## Continuation from Handoff `114da1b3f62cfc5be892f03114d681703de715af`
+
+The exact Handoff and its linked Source Audit `AXTN-DEVSWARM-MCP-BINDING-AUDIT-20261018.md` at `276111b79ef9cc2ed5b7a8e5cfcb2284cfa0c3a2` were read. The Handoff was integrated by fast-forward from the prior report commit `d185fb07d8aded2ce039e81b756d91d661524b71`; no history was rewritten.
+
+### Actual Development MCP binding and effective scope
+
+The published Builder uses `mcp_call_tool` with server name `aXtn Development Gitea`. The owner-bound registry row is `73ac0c94-a037-4ba7-b1fa-5a4c395aa482` for owner `83727979-ed5f-4a1b-8090-05e7bc3fe453`, connected to `http://axtn-development-gitea-mcp:8000/mcp`. AgentSwarms' bound server identity/endpoint matches that row. From the AgentSwarms network, the DNS alias resolves to `172.28.0.3`, the same address as the running dedicated container `axtn-native-agentswarms-development-gitea-mcp-1`. Its image ID is `sha256:63799d7f2c0837c8514d15210027d3af14e07506ef74d729c6d02750ae79bec1`, and its source-revision label is `9b700ff5d1cbd8205d356b1413375767f630960a`. This is separate from the general `axtn-gitea-mcp` image `dev-dfbb45a`; inspection of that general service is not used as evidence for the Builder's endpoint.
+
+Live non-secret limits on the dedicated service are:
+
+| Setting | Effective value |
+|---|---|
+| Readable repositories | `aXtn/development-swarm-acceptance`, `aXtn/axtn-agentswarms`, `aXtn/axtn-architecture` |
+| Writable repositories | `aXtn/development-swarm-acceptance`, `aXtn/axtn-agentswarms` |
+| Writable branch in `aXtn/axtn-agentswarms` | exactly `work/AXTN-SUPACASE-USABILITY-0001` |
+| Writable route used by this Case | exactly `src/routes/_authenticated/cases.tsx` (also other explicitly listed Case/account/contact routes and test/report paths) |
+| Allowed tools | `identity`, `fetch`, `repository_tree`, `create_branch`, `upsert_file`, `pull_request` |
+| Allowed actions | `identity:call`; `fetch:repo/file/branch/issue/pull`; `repository_tree:call`; `create_branch:call`; `upsert_file:call`; `pull_request:list/create/update/review` |
+| Write mode / transport | `review` / `streamable-http` |
+
+No credential or token value was read into the report. `effect` remains optional at the connector API and supplies idempotency when present; it is not external Case authorization. The AgentSwarms native Case start and persisted attempt ID bind the run, but that must not be represented as independent Case authorization enforced by the MCP service. The exact branch allowlist does not admit an effect-derived probe-branch name; no `create_branch` or probe write was attempted.
+
+### Native model comparison and Case product work
+
+The existing graph was not enlarged. Through owner RLS and the normal native publish function, only the Builder model was changed from `vllm/GLM-5.3-Flash` to the already configured `vllm/GLM-5.2` reviewer model for a bounded comparison. Draft and published snapshots matched at 69 nodes/118 edges, published version `a5094bd9-98d5-42ef-93ef-77fbcb5c7aed`; previous version `e9688945-eebe-460d-b48a-3069d045f499` remains available.
+
+The first comparison run, `32a9869d-c08b-57d9-ac55-02fcc2b6b30c`, is persisted for Case `913dbf33-9891-4712-b945-aab9a5cfe5b9` with `case_attempt_id` equal to the run ID, terminal `success`, 69/69 steps, and zero step errors. Its Builder step ran as `GLM-5.2` and recorded two `upsert_file` tool calls plus a `fetch` through the dedicated MCP server. Both writes targeted the existing authorized branch and exact Cases route, using the attempt-derived `operation_id`; native fetch read the result at commit `81f6442e8a015de720aa1949a00a2390c51f6bd7`, blob `f138a3a22a302438b5f69d53ce72bb285ab8a3c3`. The product change exposed `case_access_mode`, made “Mir zugewiesen” depend on `RESPONSIBLE`, and displayed the responsibility signal without deriving it from owner/contact.
+
+Three independent graph reviewers checked `81f6442…`: Security returned no findings; Contract required an explicit “Verantwortlicher” filter; Maintainability reported a blocking memoization issue. The existing Case reference advanced normally from version 21 / `e4ca073195ada22dc378f6da0f300f498f2ebbf2` to version 22 / `81f6442…`.
+
+The follow-up run `3d2063df-6316-50b4-ae83-77993065f691` was also persisted against the same Case with matching run/attempt IDs and terminal `success`, 69/69 steps, zero step errors. It fetched `81f6442…`, performed two `upsert_file` events on the same authorized branch/path with the attempt-bound operation ID, then fetched the resulting file at commit `e8f8cafd15fb7ba563bb344f8ed3a530d0cea3b9`, blob `9c77c63b1d44a5dba39d18196ec8c3411372ecd9` (25,429 bytes). The Case reference advanced from version 22 to version 23 and now points to that exact commit. A separate `git ls-remote` read confirmed the branch head is `e8f8cafd…`.
+
+Native file readback of that commit confirms the previously requested filter is present: `responsible` is carried through query state, `responsibleOptions` derives from `case_access_mode`, the filter UI is rendered, and `responsibleFilter` is applied in the `filtered` memo. The memo dependencies include `cases` and each filter/view/search input. The review graph nevertheless reported blocking HIGH findings that the filter was absent. Those findings contradict the source read back at the exact candidate SHA and remain unresolved review-quality discrepancies; they are not accepted as approvals or silently dismissed. Security returned no findings and Contract returned no findings on this candidate.
+
+The focused validations were run in an isolated local clone at exact candidate `e8f8cafd…` using the same `package-lock.json` SHA as the existing dependency installation:
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | passed |
+| `npx vitest run tests/unit/supacaseUsabilityAcceptance.test.ts tests/unit/caseAssignment.test.ts tests/unit/caseManagement.test.ts` | passed, 42/42 tests |
+| `npx eslint src/routes/_authenticated/cases.tsx` | failed: 11 Prettier-formatting errors at lines 6, 20–24, 133, 321, 336, 502, 525, and 587 |
+| Gitea Actions / CI | not verified; no PASS |
+
+Two subsequent Case-bound attempts to address formatting did not change the candidate. Run `46179ac5-ddd7-5dbc-a956-d246cd3865a6` completed with 69 steps and no product write; its Builder emitted no persisted `upsert_file` call. Run `6b5cd3f9-4875-5168-a1c9-92c0343d4a2c` also completed with 69 steps, but the Builder output was empty and had no tool calls. The branch remains at `e8f8cafd…`. Their reviewer outputs include additional claims inconsistent with the same source readback; a valid independent final review is still required. No further identical run should be started without a concrete change to the execution inputs.
+
+### Remaining probe, CI, and UAT boundaries
+
+The connector's single allowed write branch is the product branch, and its allowed path list has no independent harmless probe path/branch. Because the effect-derived branch cannot pass the exact branch allowlist, a distinct synthetic probe remains blocked by existing scope. The real product writes above are Case-bound product work, not a synthetic probe and not proof that the connector itself enforces Case authorization. No scope was widened and no isolated probe file/branch was created.
+
+The three historical Actions run endpoints were rechecked without credentials: runs `164`, `165`, and `166` each return HTTP 403. The official `tea` CLI is not installed in this environment, and no repository-authorized signed-in Gitea Actions read session is available here. **Exact needed operation:** provide the normal repository-authorized read-only Gitea UI/API session for `aXtn/axtn-agentswarms` Actions runs/jobs/logs `164`/`327`, `165`/`328`, and `166`/`329`. No admin credential or Runner reinstallation is requested; none of these runs is treated as terminal or as CI PASS.
+
+UAT remains blocked by the content exclusion on `supabase/supabase@058b546b56b665cd95c2e1a872a263cd74faf59c:docker/docker-compose.yml`. The blocked operation is consuming that exact pinned file as the isolated Host deployment input; its contents were not read, copied, or reconstructed. The existing Host source was previously checked at `aXtn/aXtn-host@cad8500a00995c98707045b04bc337fd351a96aa`: its Supabase target uses the production project and it has no separate `uat` target. **Concrete operator action:** the organization policy administrator must make that exact pinned artifact available through the approved Host deployment path (or supply that exact-provenance input at an approved isolated-runtime location); the Host operator must then configure/use a separately named isolated UAT target in the existing native Compose flow and verify it is isolated before running it. No unverified command or production-target substitution is proposed.
 
 ## Continuation from Handoff `f828292285852663cc2075d093a4a6dba8f27574`
 
