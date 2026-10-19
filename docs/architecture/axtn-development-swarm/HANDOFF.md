@@ -14,6 +14,15 @@ Nach belegter Korrektur kontrollierter neuer technischer Attempt am selben Case;
 
 Nächster fachlicher Endpunkt bleibt der echte vollständige Git-Plan mit Readback und gültiger revisionsgebundener Planfreigabe. Keine Produktimplementation vor Freigabe. Veröffentlichung startet keine CLI.
 
+## Aktuelle Bedienentscheidung — 19.10.2026, 13:40 Europe/Berlin
+
+Alex beauftragt die Fortsetzung des Intake. Die Workbench ist für ihn aktuell nicht ausreichend auffindbar/bedienbar; ihre Verbesserung wird bewusst zurückgestellt. Keine weitere Suche nach Cases, manuelle Navigation, Runstarts oder Scopekonfiguration vom Nutzer verlangen. Copilot führt die bereits beauftragte technische Diagnose/Korrektur und den kontrollierten nativen Intake bis zum vollständigen Git-Plan aus. Vorhandene Work-/Run-/Approvalverträge und native Case-Dokumentation bleiben verbindlich.
+
+Nächste konkrete Ausgabe an Alex: verständliche Zusammenfassung des tatsächlich vom Intake erstellten Plans, direkte geprüfte Gitea-Links zu Auftrag/Plan/Prüfbelegen am exakten Commit, offene Fachentscheidungen und die tatsächlich vorhandene Planfreigabe-Referenz. Keine erfundenen App-Deep-Links oder Hashlisten als alleinige Fortschrittsmeldung. Ein technischer weiterer Blockerbericht ersetzt diesen Meilenstein nicht; konkret zulässige Arbeit fortsetzen.
+
+Die Entscheidungsvorlage wird über den bestehenden Handoff/Report für diese Unterhaltung bereitgestellt; Veröffentlichung ist keine automatische Nachricht oder CLI-Ausführung. Die fachliche Planfreigabe bleibt erforderlich, wird nicht simuliert und die Unbenutzbarkeit der Workbench gewährt keine Produktimplementierung vor Freigabe. Wenn Alex hier die konkrete Vorlage entscheidet, diese tatsächliche Entscheidung anschließend über den bestehenden zulässigen nativen Bedienweg dokumentieren; keine neue Freigabe-/Case-Infrastruktur bauen.
+
+
 ---
 
 ## Vorherige Aufträge und Historie
