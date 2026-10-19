@@ -179,6 +179,11 @@ export function builderGraph({
       inputs: ["candidate_head_sha", "candidate_ci_state"],
       outputVar: "output",
     }),
+    node("warning", "output", {
+      label: "Exact-commit Dev returned warning; no candidate qualification",
+      inputs: ["candidate_head_sha", "candidate_ci_state"],
+      outputVar: "output",
+    }),
   ];
   const edges = [
     edge("input", "branch"),
@@ -201,8 +206,8 @@ export function builderGraph({
     edge("candidate_ci_gate", "output", "success"),
     edge("candidate_ci_gate", "pending", "pending"),
     edge("candidate_ci_gate", "failed", "failure"),
-    edge("candidate_ci_gate", "failed", "warning"),
     edge("candidate_ci_gate", "error", "error"),
+    edge("candidate_ci_gate", "warning", "warning"),
   ];
   return { nodes, edges };
 }

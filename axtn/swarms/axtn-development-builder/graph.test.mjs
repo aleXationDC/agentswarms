@@ -70,12 +70,13 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
       ["output", "success"],
       ["pending", "pending"],
       ["failed", "failure"],
-      ["failed", "warning"],
       ["error", "error"],
+      ["warning", "warning"],
     ],
   );
   assert.equal(graph.nodes.find((n) => n.id === "output").data.kind, "output");
   assert(graph.nodes.find((n) => n.id === "output").data.inputs.includes("candidate_head_sha"));
+  assert.equal(graph.nodes.find((n) => n.id === "warning").data.kind, "output");
   assert(!graph.edges.some((e) => e.source === "builder" && e.target === "output"));
   assert(
     graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("exact-commit Dev"),
