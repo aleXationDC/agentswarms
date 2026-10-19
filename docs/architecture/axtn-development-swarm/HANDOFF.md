@@ -1,3 +1,23 @@
+# Aktiver Handoff — Intake-Branchvertrag und tatsächliche Runtimebindung korrigieren
+
+Status ACTIVE_EXECUTION. Vollständig ausführen:
+handoffs/requests/AXTN-DEV-INTAKE-BRANCH-CONTRACT-20261019.md
+am Commit d9287d628afb0905ba439c9a59ec3ef37908dd22
+
+MFA-Reparatur ist laut veröffentlichtem Bericht deployed; Alex bestätigt am 19.10.2026, 13:20 Europe/Berlin: Auth ist wieder da. Keine erneute MFA-Reparatur und kein Löschen/Neueinrichten des Faktors.
+
+Aktueller Intake-Attempt 0007 blieb fachlich blockiert, aber NO-Gate verhinderte korrekt eine leere Approval. Die Diagnose im Bericht zum Branchargument ist anhand der tatsächlich eingesetzten Source falsch: create_branch erwartet den Präfix task/intake-plan und hängt den Effect-Suffix selbst an. Vollständigen Effect-Branch nicht als Eingabe verwenden. Dies wurde isoliert mit Originalfunktionen und gestubbten externen Grenzen reproduziert; kein Live-Write.
+
+Jetzt die echten Toolcall-Werte (einschließlich Effect/Basis) mit der tatsächlich wirksamen Registry-/Endpoint-/Container-/Scopekonfiguration vergleichen. Beide exakten Branchprüfungen berücksichtigen. Source-Provisionierer erlaubt Präfix und abgeleiteten Branch bereits; die konkrete Runtimeabweichung erst belegen, dann korrigieren. Keine weiteren blinden Attempts und keine globale Rechteerweiterung.
+
+Nach belegter Korrektur kontrollierter neuer technischer Attempt am selben Case; vorher terminale Inaktivität, keine offenen Approval/Checkpoint/aktive Arbeit und bisherige Nullwirkung prüfen. Einen fachlich blockierten success-Run nicht in error umdeuten. Falls vorhandener Host-Rebinder diesen Zustand nicht versteht, ist die im gepinnten Auftrag genau abgegrenzte Korrektur seines Inaktivitätsprüfers beauftragt.
+
+Nächster fachlicher Endpunkt bleibt der echte vollständige Git-Plan mit Readback und gültiger revisionsgebundener Planfreigabe. Keine Produktimplementation vor Freigabe. Veröffentlichung startet keine CLI.
+
+---
+
+## Vorherige Aufträge und Historie
+
 # Aktiver Zusatzauftrag — MFA-Sitzungsbestätigung wiederherstellen
 
 Status ACTIVE_REPAIR. Alex hat die Reparatur der verschwundenen MFA-Codebestätigung ausdrücklich beauftragt. Vollständig lesen:
