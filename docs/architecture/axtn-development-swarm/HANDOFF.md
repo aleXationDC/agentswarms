@@ -1,3 +1,21 @@
+# Aktiver Handoff — Intake-Profil und bestehende Branch-Recovery reparieren
+
+Status ACTIVE_EXECUTION. Zuerst vollständig ausführen:
+handoffs/requests/AXTN-DEV-INTAKE-CONNECTOR-REPAIR-20261019.md
+am Commit 8b82728a09afe99a9789688267761f117a95be02
+
+Grundlage ist der veröffentlichte Blockerbericht 5f99bc3316b95e386915739fa6e7704667871ac7. Der Scope-Case 577050e6-e596-4818-bc79-d1041c9ef02e wird weiterverwendet. Keine erneute allgemeine Bestandsaufnahme oder Warteforderung nach Architekturmandat für die hier beauftragte Konfiguration/Defektkorrektur.
+
+Konkret ausführen: getrenntes enges Intake-Profil mittels vorhandener Compose-/Registrykonfiguration (nötigenfalls separate Instanz desselben bestehenden Connector-Images), ohne Rechte-Kreuzprodukt mit dem Produktprofil; gezielte create_branch-Recovery-Korrektur am vorhandenen Baseline-Vertrag mit Regression für >1.612 Vorfahren und Replay nach Plancommit. Vorhandene Grenzen, Produktrechte und funktionierende Arbeit erhalten. Keine neue Policyengine, Orchestrierung oder Ledger-Infrastruktur.
+
+Die bisherige Formulierung „keine Quelländerung“ im reinen Konfigurationsauftrag ist für die genau benannte Recovery-Defektkorrektur abgelöst. Intake darf vor Gate 1 recherchieren und seine Planartefakte schreiben; Gate 1 sperrt Produktimplementation und genehmigt den danach vorliegenden konkreten Plan.
+
+Nach Tests, regulärem Release, Source-/Image-/Policy-/Registry-Readback direkt den nativen Intake mit autonomer Recherche bis zum echten Git-Plan einschließlich Integration/Gesamtprüfung und revisionsgebundenem Planfreigabe-Gate fortführen. Keine vorgetäuschte Approval, kein Produktwrite vor Freigabe. Veröffentlichung startet keine CLI.
+
+---
+
+## Vorherige Aufträge und Historie
+
 # Aktiver Handoff — Intake-Git-Arbeitsbereich konfigurieren und modular fortsetzen
 
 Status ACTIVE. Zuerst vollständig lesen und ausführen:
