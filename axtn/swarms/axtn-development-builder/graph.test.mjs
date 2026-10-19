@@ -20,6 +20,8 @@ test("Builder retains native skills, KB and provenance but not the historical ta
   assert.equal(agent.knowledgeBaseId, builderSnapshot.knowledgeBaseId);
   assert.deepEqual(agent.toolConfigs.mcp_server_names, [serverName]);
   assert(agent.systemPrompt.includes("Never omit tool_name"));
+  assert(agent.systemPrompt.includes('"arguments":{...}'));
+  assert(agent.systemPrompt.includes("never a JSON-encoded string"));
   assert(!JSON.stringify(graph).includes("caseAssignment"));
   assert(!JSON.stringify(graph).includes("cases.tsx"));
   assert(
