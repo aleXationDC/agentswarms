@@ -13,9 +13,37 @@ handoffs/plans/AXTN-DEV-PROCESS-MODULAR-20261019.md
 Commit f3c198df50181366fa8c8b327f8853c84436e6f6
 Blob 8a743fae22b3f46579852f899e91c09678ecb045.
 
-Gemeldeter echter Gate-Run 8ca0f035-d198-58a7-a9af-b3694610c351 und Approval 8d0498cb-e23c-4453-a25e-0650e8e0abf9 am Scope-Case 577050e6-e596-4818-bc79-d1041c9ef02e. Vor Nutzung tatsächlichen Zustand und Planbindung nativ lesen. Die Freigabe ist hier revisionsgebunden dokumentiert, aber eine native Entscheidung oder ein Resume wird damit nicht als bereits ausgeführt behauptet.
+Echter Gate-Run 8ca0f035-d198-58a7-a9af-b3694610c351 und Approval 8d0498cb-e23c-4453-a25e-0650e8e0abf9 am Scope-Case 577050e6-e596-4818-bc79-d1041c9ef02e. Zustand und unveränderte Planbindung wurden nativ zurückgelesen; die inzwischen ausgeführte Entscheidung und das Resume sind unten belegt.
 
-Über den vorhandenen zulässigen nativen Weg die tatsächliche Nutzerentscheidung dokumentieren und Gate fortsetzen; keine Simulation oder SQL-/Service-Role-Abkürzung. Keine erneute allgemeine Zustimmung verlangen. UAT/Produktionsfreigabe bleibt separat.
+Die tatsächliche Nutzerentscheidung wurde über den vorhandenen zulässigen nativen Weg dokumentiert und das Gate fortgesetzt; keine Simulation oder SQL-/Service-Role-Abkürzung. Keine erneute allgemeine Zustimmung verlangen. UAT/Produktionsfreigabe bleibt separat.
+
+## Verifizierter Ausführungsstand
+
+Die native Entscheidung ist inzwischen tatsächlich `approved` und Gate-Run
+`8ca0f035-d198-58a7-a9af-b3694610c351` erfolgreich fortgesetzt, ohne verbleibenden
+Checkpoint. Keine zweite Planentscheidung erzeugen.
+
+Vollständiger veröffentlichter Ergebnis-/Restlückenbericht:
+`handoffs/reports/AXTN-DEV-PROCESS-MODULAR-20261019.md`
+am Commit `1197e4e661edef7ffa562f8afbaa3af78f0c2f5d`.
+Dort stehen Quellen, Live-Image, CI-Ergebnis, native Objekte, Cases, vier
+Builder-Runs und die tatsächlich qualifizierten fail-closed Negativpfade.
+
+Skill-Voraussetzung B läuft kompatibel auf Quelle
+`2140f2f70503d3ae3471f92feb0b186d419a1d50`; fünf enge Builder-/Reviewer-/Audit-
+Git-Profile sind eingerichtet, Host-Quelle
+`25468590052b3589d12889a6b01541d93bdbca37`. Keine neue Credentialrunde nötig.
+
+Builder und Dev-Verifier sind separat nativ publiziert; die tatsächlichen
+Modellläufe haben aber noch keinen `upsert_file` und keinen neuen Produktkandidaten
+erzeugt. Initialer Lauf plus drei konkret begründete Korrekturzyklen sind
+ausgeschöpft. Zuletzt gab GLM-5.3-Flash einen begonnenen Toolcall nur als
+unvollständiges Markup aus; Mistral war auf der tatsächlichen Gatewayroute mit
+`PROVIDER_CAPABILITY_UNSUPPORTED` abgelehnt worden. Keine identischen Gesamtläufe,
+keinen Text-Toolcall als Write ausgeben, keine Policy/Parser-Umgehung und keine
+CLI-Produktimplementation. Die aktuelle native Kandidatenprüfung scheitert ohne
+persistiertes Kandidatenartefakt ausdrücklich; CI Pending/Failure erzeugt keine
+Approval. Die positive Builder-/Dev-/Ergebnisreview-Qualifikation bleibt offen.
 
 ## Jetzt umsetzen
 

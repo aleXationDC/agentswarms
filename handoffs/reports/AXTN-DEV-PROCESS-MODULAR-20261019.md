@@ -215,3 +215,24 @@ Reviews, Audit, fachliche Child-Case-/Dependency-Verbindung, Integration und
 Gesamtprüfung weiterhin offen. UAT und Produktionsfreigabe bleiben separat.
 UAT wurde in diesem Abschnitt nicht gestartet; eine historische Content-
 Exclusion wurde weder umgangen noch ohne neuen Befund als aufgehoben erklärt.
+
+## Native Fortschreibung nach Veröffentlichung
+
+Nach regulärem Push von `1197e4e661edef7ffa562f8afbaa3af78f0c2f5d` wurden zehn
+idempotente native Work-Transitions über die authentifizierte Case-API
+persistiert: Plattformkandidat, tatsächlicher Full-CI-Fehler, verifiziertes
+Deployment und begrenztes Reparaturergebnis; versionierte Builder-Konfiguration
+und tatsächlicher Schreibblocker; enge Review-/Audit-Konfiguration, ohne
+Review-Abnahme; Produkt-/Parent-Blocker mit echten Run-Referenzen.
+
+Readback bestätigt alle fünf verantwortlichen Cases weiterhin `OPEN`, korrekte
+unveränderte Parents, getrennte Actor-/Processing-/Execution-Dimensionen und
+revisionsgebundene Referenzen auf den veröffentlichten Bericht. Kein Parent,
+Produktpaket oder Reviewpaket wurde als vollständig/akzeptiert geschlossen.
+Der Bericht am obigen Commit wurde zusätzlich über den nativen Gitea-MCP-Read
+bytegleich zurückgelesen, Blob `0090df7ebbdf2d5228cda22a9ecabf01f1b3ff62`.
+
+Latenz/Tokenzahlen stammen aus den tatsächlichen nativen Steps.
+Zuverlässige finanzielle Gesamtkosten sind nicht qualifiziert; ein fehlender
+oder Null-Kostenwert wird nicht als kostenloser Lauf ausgegeben. Bestehende
+Budget-, Toolrunden-, Größen- und Scope-Grenzen wurden nicht erhöht.
