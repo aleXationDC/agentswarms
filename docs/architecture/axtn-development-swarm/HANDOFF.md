@@ -1,3 +1,21 @@
+# Aktiver Handoff — Intake-Git-Arbeitsbereich konfigurieren und modular fortsetzen
+
+Status ACTIVE. Zuerst vollständig lesen und ausführen:
+handoffs/requests/AXTN-DEV-INTAKE-GIT-SCOPE-20261019.md
+am Commit 735e0eef461ea084281ff91add88f142051aaf52
+
+Danach gilt weiterhin der modulare Gesamtauftrag AXTN-DEV-PROCESS-MODULAR-20261019. Der aktuelle Blocker wird als Konfigurationsarbeit an der vorhandenen scoped Integration behandelt, nicht als Anforderung nach neuen Credentials oder einer neuen Architektur.
+
+Der Handoff-Branch ist keine vorgeschriebene Intake-Ausgabebranch. CLI-Reports regulär unter der eigenen Copilot-Identität veröffentlichen. Für echte Swarm-Auftragswrites einen repo-/pfad-/branch-begrenzten Intake-Arbeitsbereich mit tatsächlicher Work-/Attempt-/Operation-Zuordnung und sicherem exaktem Baseline-Pin konfigurieren. Vorhandenes create_branch prüft Präfix UND abgeleiteten tatsächlichen Branch exakt; kein Wildcard-Support erfinden. Grenzen für Effect, 500er-Recovery, geschützte Branches und Content-Exclusion erhalten. Bestehende breite Produktrechte nicht versehentlich auf Intake übertragen.
+
+Die beschriebene notwendige Standardkonfiguration ist innerhalb des laufenden Implementierungsauftrags auszuführen. Laufende Arbeit/Operatoränderungen erhalten, im bestehenden SupaCase führen und echte positive/negative Nachweise liefern. Keine Produktpatches oder neuen Policy-/Dispatcher-Code als Abkürzung. Falls ein konkreter geschützter Konfigurationsweg tatsächlich verweigert wird, genau diesen Vorgang belegen.
+
+Nächster fachlicher Meilenstein: nativer Intake schreibt den vollständigen Git-Plan mit Teilaufträgen UND Integration/Gesamtprüfung, liest ihn zurück und legt die echte native Planfreigabe vor. Veröffentlichung des Handoffs startet keine CLI.
+
+---
+
+## Vorheriger modularer Handoff und Historie
+
 # Aktiver Handoff — modularer aXtn Development Process
 
 Status ACTIVE_STAGED_IMPLEMENTATION. Autorität: Alex' Prozessvorschlag und Fortsetzungsauftrag vom 19.10.2026. Vollständig lesen und stufenweise ausführen:
