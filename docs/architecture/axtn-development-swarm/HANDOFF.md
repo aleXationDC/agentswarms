@@ -1,3 +1,21 @@
+# Aktiver Handoff — fehlerhaften Intake nativ abbrechen und korrigiert wiederholen
+
+Status ACTIVE_EXECUTION. Zuerst vollständig ausführen:
+handoffs/requests/AXTN-DEV-INTAKE-NATIVE-RECOVERY-20261019.md
+am Commit c806bd81d1cad6ba965badb9daa6affc982f4754
+
+Die Connectorreparatur und das getrennte Profil sind laut Report 161025c17bf297b47a62c02e9ecdfe32d4cd18f5 erledigt. Aktueller Fehler: falsche Repositoryargumente, kein Git-Plan, dennoch leere pending Approval. Keine neue allgemeine Freigabe- oder Credentialanforderung.
+
+Native Recovery ist sourcebelegt am laufend gemeldeten App-Stand: cancelParkedSwarmRun in src/utils/swarmResume.functions.ts beendet suspended Runs, löscht deren Checkpoint und schließt ihre pending Approvals mit cancelled. Den exakt benannten fehlerhaften Run über diesen normalen Owner-/UI-/Serverfunktionsweg abbrechen und zurücklesen; keine fachliche Genehmigung oder Ablehnung simulieren. Keine DB-/Service-Role-Abkürzung.
+
+Dann denselben Case mit neuem technischem Attempt und korrekt konfiguriertem engen Intake-Profil fortsetzen. Exakte Repositorywerte: owner aXtn, repository axtn-agentswarms. Alte unveränderliche Run-/Effectbindung erhalten; keine Schreibweisen ausprobieren oder neue Cases je Retry. Vorhandene Intake-Instanz nach beendetem alten Versuch bevorzugt regulär neu konfigurieren, statt Container pro Attempt anzuhäufen.
+
+Readiness muss auf wirklichem Git-Write-/Readback und dem referenzierten Plan beruhen. Fehler-/Scope-Ablehnungen dürfen keine menschliche Planfreigabe erzeugen. Nächster Endpunkt ist der echte vollständige Git-Plan einschließlich Integration/Gesamtprüfung an einer gültigen nativen pending Planfreigabe. Keine Produktimplementation vor deren tatsächlicher Entscheidung.
+
+---
+
+## Vorherige Aufträge und Historie
+
 # Aktiver Handoff — Intake-Profil und bestehende Branch-Recovery reparieren
 
 Status ACTIVE_EXECUTION. Zuerst vollständig ausführen:
