@@ -1,3 +1,21 @@
+# Aktiver Handoff — realen Intake-Plan fachlich nachbessern, Gate nativ deterministisch führen
+
+Status ACTIVE_REWORK. Git-Plan 826e203d8aec61b0798e2095152c7935f9ef9ec2 / Blob 415b658e160fc62a23de72c57645e2e9483f1633 ist kanonisch gelesen und erhalten. Run 0012 ist error am leeren LLM-Readiness-Judge; keine native Approval oder Planfreigabe behaupten.
+
+Zuerst vollständig ausführen:
+handoffs/requests/AXTN-DEV-INTAKE-PLAN-REVIEW-0012-20261019.md
+am Commit d868b6072959ac1236b17d2093259552930ba2e0
+
+Der Plan ist noch nicht fachlich freigabereif: technische Subruns/fachliche Child-Cases verwechselt; nur zwei Plattformkorrekturen statt vollständiger modularer Lieferung geplant; kompatible Live-/Rollbackbasis und tatsächlicher UAT-/Dev-Nachweis fehlen. Große Source-Reads auf Vollständigkeit prüfen. Gezielt durch den Intake überarbeiten, vorhandene Recherche und Git-Artefakte weiterverwenden. Keine Produktimplementation.
+
+Leeren LLM-Judge nicht nochmals als technischen Dateiexistenz-/Readback-Wächter verwenden. Native Tool-Fehlerpropagation, deklarative Projektion und sourcegeprüften Router exact für eine echte gepinnte Artefaktprüfung qualifizieren. Neuer Read-only-Freigabelauf darf bestehenden Plan übernehmen, ohne dessen Schreibkette zu wiederholen; historische Runs und getrennte Herkunft erhalten. Allgemeine dynamische Übergabe weiterhin eigenständig nachweisen, keine versteckte Function-Guard oder manuelle Approval-Erzeugung.
+
+Die korrigierte Vorlage muss den vollständigen Prozess inklusive Integration/Gesamtprüfung abdecken und als echter nativer Gate-Lauf mit konkreter Planrevision vorliegen. Alex erhält die Entscheidungsvorlage hier über direkten Git-/Report-Handoff, keine manuelle Case-Suche. Bestehende MFA-/Connectorreparaturen erhalten. Veröffentlichung startet keine CLI.
+
+---
+
+## Vorherige Aufträge und Historie
+
 # Aktiver Handoff — Intake-Branchvertrag und tatsächliche Runtimebindung korrigieren
 
 Status ACTIVE_EXECUTION. Vollständig ausführen:
