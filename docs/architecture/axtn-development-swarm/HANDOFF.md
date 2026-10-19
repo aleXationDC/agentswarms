@@ -1,3 +1,19 @@
+# Aktiver Zusatzauftrag — MFA-Sitzungsbestätigung wiederherstellen
+
+Status ACTIVE_REPAIR. Alex hat die Reparatur der verschwundenen MFA-Codebestätigung ausdrücklich beauftragt. Vollständig lesen:
+handoffs/requests/AXTN-MFA-REAUTH-RESTORE-20261019.md
+am Commit 46ec3d785cdba145c1d35df4e22a76f0ea001e16
+
+Am sicheren Checkpoint vorziehen, gemeinsame Deployments serialisieren und laufende Intake-Arbeit erhalten. Bestehende Reauthentication-Implementierung und Tests aus fa3af14a26ca78197aba61be024476d02629e696 bzw. aktuellem Arbeitsbranch gezielt mit tatsächlicher Livebasis abgleichen, isoliert wiederherstellen, testen und regulär deployen. Kein vollständiges Branch-Rollback oder großflächiges Übernehmen fremder Änderungen.
+
+Ziel: /account bietet bei bestehendem Authenticator und AAL1 wieder Codeeingabe zur nativen Supabase-Sitzungsbestätigung auf AAL2; Maintenance bleibt geschützt und aktualisiert den Status. Authenticator nicht löschen oder neu einrichten. Persönlichen Code tippt Alex selbst im Browser; kein Code/Token in Chat/Git/Logs. Die persönliche positive MFA-Abnahme ist keine Voraussetzung, den geprüften Fix auszuliefern.
+
+Veröffentlichter Auftrag ist kein gestarteter CLI-/Deploymentlauf. Nach abgeschlossener Reparatur bisherigen Intake-Auftrag fortführen; dessen Details bleiben unten erhalten.
+
+---
+
+## Bestehender Intake-Auftrag und Historie
+
 # Aktiver Handoff — fehlerhaften Intake nativ abbrechen und korrigiert wiederholen
 
 Status ACTIVE_EXECUTION. Zuerst vollständig ausführen:
