@@ -43,7 +43,7 @@ test("complete decoded primary source, work order and formatting config reach th
   }
 });
 
-test("an incomplete model reply cannot return an unchanged branch as a successful candidate", () => {
+test("an incomplete or unqualified model result cannot return a branch as a candidate", () => {
   const graph = builderGraph({ builderSnapshot, serverName });
   assert.equal(
     graph.nodes.find((n) => n.id === "candidate_report").data.toolArgs.tool_name,
@@ -51,10 +51,35 @@ test("an incomplete model reply cannot return an unchanged branch as a successfu
   );
   assert.equal(graph.nodes.find((n) => n.id === "candidate_gate").data.routerMode, "exact");
   assert.deepEqual(
-    graph.edges.filter((e) => e.target === "head").map((e) => [e.source, e.label]),
-    [["candidate_gate", "false"]],
+    graph.edges.filter((e) => e.source === "candidate_gate").map((e) => [e.target, e.label]),
+    [["branch_head", "false"]],
   );
-  assert(!graph.edges.some((e) => e.source === "builder" && e.target === "head"));
+  const branchHead = graph.nodes.find((n) => n.id === "branch_head").data;
+  assert.equal(branchHead.httpResponsePath, "commit.id");
+  assert(branchHead.httpUrl.endsWith("/branches/{{created_branch}}"));
+  assert(branchHead.httpHeaders[0].value.includes("{{secret:MODULAR_GITEA_CI_READ}}"));
+  const status = graph.nodes.find((n) => n.id === "candidate_ci").data;
+  assert(status.httpUrl.endsWith("/commits/{{candidate_head_sha}}/status"));
+  assert.equal(status.httpResponsePath, "state");
+  assert(status.httpHeaders[0].value.includes("{{secret:MODULAR_GITEA_CI_READ}}"));
+  const ciGate = graph.nodes.find((n) => n.id === "candidate_ci_gate").data;
+  assert.equal(ciGate.routerMode, "exact");
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "candidate_ci_gate").map((e) => [e.target, e.label]),
+    [
+      ["output", "success"],
+      ["pending", "pending"],
+      ["failed", "failure"],
+      ["failed", "warning"],
+      ["error", "error"],
+    ],
+  );
+  assert.equal(graph.nodes.find((n) => n.id === "output").data.kind, "output");
+  assert(graph.nodes.find((n) => n.id === "output").data.inputs.includes("candidate_head_sha"));
+  assert(!graph.edges.some((e) => e.source === "builder" && e.target === "output"));
+  assert(
+    graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("exact-commit Dev"),
+  );
 });
 
 test("only exact successful CI and successful native write/readback reach the human result gate", () => {
