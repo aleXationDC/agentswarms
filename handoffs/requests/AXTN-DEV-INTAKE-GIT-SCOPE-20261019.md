@@ -1,0 +1,35 @@
+# AXTN-DEV-INTAKE-GIT-SCOPE-20261019 — bestehende Konfiguration für den neuen Auftrag
+
+Status ACTIVE. Ergänzt AXTN-DEV-PROCESS-MODULAR-20261019. Autorität: bestehender modularer Implementierungsauftrag und dessen notwendige repo-begrenzte Konfiguration. Keine neue Custom-Fähigkeit autorisiert.
+
+## Konkrete Ursache und Korrektur
+
+Alex meldet lokalen Reportcommit 3652639eaaffdc097ee67140dd22ae75d59ea2ee auf work/AXTN-DEV-PROCESS-MODULAR-EXACT-20261019. Dieser Report ist hier am angegebenen SHA/Pfad nicht remote lesbar; lokale Existenz/Readback nicht als remote geprüft behaupten. Bericht auf dem Host lesen und über den bestehenden eigenen Copilot-Git-Kanal veröffentlichen; keine productseitige Swarm-Policy zur Veröffentlichung eines CLI-Betriebsberichts voraussetzen. Konfigurierte eigene Copilot-Identität verwenden, keine Codex-Identität und keine fremde Session.
+
+Der Development-MCP ist laut Betriebsbericht auf die alte Produktbranch work/AXTN-SUPACASE-USABILITY-0001 begrenzt. Quellstand aXtn/aXtn-git@4235f9fb1bb6acc5b442d2017b3b4b75f685a12e bestätigt in mcp/src/axtn_gitea_mcp/server.py exakte ALLOWED_WRITE_BRANCHES_BY_REPOSITORY, repo-bezogene Schreibpfade sowie EFFECT_HISTORY_BASELINES je exakter Repo/Branch-Kombination. create_branch mit effect prüft sowohl den beantragten Präfix als auch den abgeleiteten tatsächlichen Branch; kein Wildcard-Präfixsupport behaupten. Aktive Source und geschützte nichtgeheime Policy-Metadaten vor Änderung neu zuordnen.
+
+Der Architektur-Handoff-Branch ist Eingabe, nicht das vorgeschriebene Schreibziel des Intake. Seine 1.611 Vorfahren begründen nicht allein ein neues Runtimeproblem. Ein eigener autorisierter Taskbranch kann über eine sichere Baseline den vollständig erfassten relevanten Effect-Verlauf begrenzen. Die 500er-Grenze bleibt erhalten.
+
+## Ausführung innerhalb bestehender Konfiguration
+
+1. Bestehenden Implementierungs-Parent und erforderliche Work-Identität über normalen erlaubten Owner-/Case-Weg lesen bzw. idempotent sicherstellen. Tatsächliche Case-/Attempt- und stabile Operation-ID für Branchanlage festlegen. Nicht auf noch unbekannte IDs warten, die im autorisierten Arbeitsablauf selbst beschafft/angelegt werden können. IDs sind keine Tokens; keine Zugangsdaten im Bericht.
+
+2. Intake benötigt zunächst nur genau das autorisierte App-Repo und versionierte Auftrags-/Ergebnisartefakte, keinen neuen Produktcode-Schreibscope. Lege einen kurzen konkreten work/-Task-Präfix (maximal 27 Zeichen im bestehenden create_branch-Vertrag) und die erlaubten exakten Auftrags-/Testberichtspfade fest. Bestehende Git-Aufträge/Handoffs bleiben lesbar. Kein globales work/*, keine fremden Repos, main/master, Merge/Admin oder Workflow-/Host-/Secretdateien freigeben.
+
+3. Tatsächliche immutable from_ref am autorisierten kompatiblen Quellstand lesen. Sichere Baseline-Provenienz im vorhandenen Effect-Vertrag prüfen; nicht einfach einen beliebigen aktuellen Head pinnen, der relevante Marker ausblendet. Case/Attempt/Operation und from_ref bestimmen nach bestehendem Algorithmus den erwarteten effect-abgeleiteten Branch. Diesen als erwartete Identität dokumentieren, nicht als bereits angelegtes Ergebnis ausgeben.
+
+4. Bestehende scoped Konfiguration über den regulären erlaubten Host-Konfigurationsweg einrichten: exakter zulässiger Task-Präfix und exakter erwarteter Effect-Branch, genaue Repo-/Artefaktpfade und geprüfter unveränderlicher Baseline-SHA für den tatsächlichen Schreibbranch. Bestehende Native-Image-/Registry-/Owner-Bindung nutzen. Danach führt der Intake die echte effect-gebundene create_branch-Operation aus; nur ihr verifizierter Rückgabebranch wird für folgende Writes verwendet. Stimmen erwarteter und tatsächlicher Branch nicht überein, stoppen statt dynamisch beliebigen Branch freizugeben.
+
+5. Die bestehende Policy kombiniert Branchlisten und Pfade auf Repositoryebene; sie beweist keine getrennte branchabhängige Pfadmatrix. Nicht durch Vereinigung alter Produktrechte mit Intake-Rechten unnötige Kreuzrechte schaffen. Den vorhandenen Konfigurations-/Integrationsprofilmechanismus für eine getrennte Intake-Rolle verwenden. Falls das Image dafür eine separate scoped Instanz benötigt, ausschließlich dasselbe bestehende gepinnte Image als eng begrenztes Standard-Konfigurationsprofil verwenden, ohne neue Controller-/Dispatcher-/Policy-Codebasis. Bei zeitweiser Umkonfiguration des bestehenden Endpunkts zuvor aktive Runs/Schreibabhängigkeiten prüfen, Operatorarbeit erhalten und den Betriebswechsel nachvollziehbar machen. Kleinste funktionierende Variante anhand tatsächlicher vorhandener Host-/Registryfähigkeit wählen und dokumentieren.
+
+6. Keine Quelländerung nötig, wenn die bestehende Konfiguration diese exakten Werte akzeptiert. Keine neuen Präfixregeln, globalen Scope-Erweiterungen, Limits oder Effect-Umgehungen implementieren. Vorhandene Instanz/Profil regulär bereitstellen und AgentSwarms ownergebundenen nativen Registry-/Agent-Toolzugriff prüfen. Keine neue Credentialrunde bei bereits konfigurierter funktionierender Identität. Content-Exclusion nicht über alternative Pfade umgehen; nur falls der konkrete erforderliche Deploymentweg tatsächlich gesperrt ist, präzisen verweigerten Vorgang und zulässige Betreiberaktion nennen.
+
+## Begrenzter Nachweis und direkte Fortsetzung
+
+Vor dem echten Auftrag vorhandene isolierte Policytests auf exakte positive/negative Grenzen konfigurieren. Kein vorsätzlich fehlerhafter Produktwrite. Reale positive Qualifikation ist der nützliche Intake-Git-Auftrag selbst: echter nativer Branch-Create, Git-Auftragswrite mit erforderlichem effect, Marker-/Blob-/Head-Readback, Case-/Run-Verknüpfung; Retry/LostResponse soweit sicher im vorhandenen Testaufbau bzw. ohne neue Mutation belegen. Fremde Repo-/Branch-/Pfad- und fehlende-Effect-Fälle müssen vor Git-Mutation scheitern.
+
+Branchanlage-Replay nach späteren Writes gesondert prüfen: am gelesenen Quellstand kann recover_branch noch die volle History scannen, während _effect_commit_history die Baseline berücksichtigt. Eine erfolgreich konfigurierte upsert-Baseline beweist deshalb nicht automatisch create_branch-Recovery auf langem Branch. Falls reproduzierbar betroffen, konkret isolieren und unabhängig mögliche Intake-Konfiguration/-Recherche fortführen; keine neue History-/Ledger-Architektur erfinden.
+
+Danach den modularen Auftrag fortsetzen: Intake recherchiert selbst und schreibt den vollständigen Plan inklusive Teilaufträgen, Abhängigkeiten, Integration und Gesamttest nach Git; tatsächliches natives Planfreigabe-Gate vorlegen. Nicht nach der Policyänderung oder einem weiteren Blockerbericht als Gesamtauftrag fertig melden. Keine Produktimplementierung vor der vereinbarten konkreten Planfreigabe.
+
+Bericht und tatsächliche Policy-/Objekt-/Case-/Git-/Run-Referenzen regulär veröffentlichen. Operator-Konfiguration ist Implementierungsarbeit im bestehenden SupaCase, kein Ersatz für den späteren autonomen Swarm-Git-Write. Keine bereits erfolgte Live-Änderung aus dieser Auftragserstellung ableiten.
