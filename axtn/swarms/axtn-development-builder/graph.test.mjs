@@ -290,7 +290,7 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
     ["candidate_evidence_write_gate", "candidate_evidence_readback", "candidate_evidence_write_error"],
     [
       "candidate_evidence_readback_gate",
-      "candidate_lineage_gate",
+      "candidate_evidence_lineage_projection",
       "candidate_evidence_readback_error",
     ],
   ]) {
@@ -303,6 +303,39 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
       ],
     );
   }
+  const evidenceReadback = graph.nodes.find(
+    (n) => n.id === "candidate_evidence_readback_projection",
+  ).data;
+  assert.deepEqual(
+    evidenceReadback.stateAssignments.map((assignment) => assignment.key),
+    ["candidate_evidence_readback_payload"],
+    "readback payload must be available before dependent projections run",
+  );
+  const lineageProjection = graph.nodes.find(
+    (n) => n.id === "candidate_evidence_lineage_projection",
+  ).data;
+  assert.deepEqual(
+    lineageProjection.stateAssignments.map((assignment) => [
+      assignment.key,
+      assignment.value,
+    ]),
+    [
+      [
+        "candidate_report_content",
+        "{{candidate_evidence_readback_payload.decoded_content}}",
+      ],
+      [
+        "candidate_report_commit",
+        "{{candidate_evidence_readback_payload.last_commit_sha}}",
+      ],
+    ],
+  );
+  assert.deepEqual(
+    graph.edges
+      .filter((edge) => edge.target === "candidate_lineage_gate")
+      .map((edge) => edge.source),
+    ["candidate_evidence_lineage_projection"],
+  );
 
   const lineageGate = graph.nodes.find((n) => n.id === "candidate_lineage_gate").data;
   assert.equal(lineageGate.routerMode, "exact");

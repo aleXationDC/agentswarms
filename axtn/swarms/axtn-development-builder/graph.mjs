@@ -306,6 +306,11 @@ export function builderGraph({
           key: "candidate_evidence_readback_payload",
           value: "{{candidate_evidence_readback_result.result.content[0].text}}",
         },
+      ],
+    }),
+    node("candidate_evidence_lineage_projection", "set_var", {
+      label: "Project decoded evidence content and commit from the completed readback",
+      stateAssignments: [
         {
           key: "candidate_report_content",
           value: "{{candidate_evidence_readback_payload.decoded_content}}",
@@ -520,7 +525,8 @@ export function builderGraph({
     edge("candidate_evidence_readback", "candidate_evidence_readback_error_projection"),
     edge("candidate_evidence_readback_projection", "candidate_evidence_readback_gate"),
     edge("candidate_evidence_readback_error_projection", "candidate_evidence_readback_gate"),
-    edge("candidate_evidence_readback_gate", "candidate_lineage_gate", "false"),
+    edge("candidate_evidence_readback_gate", "candidate_evidence_lineage_projection", "false"),
+    edge("candidate_evidence_lineage_projection", "candidate_lineage_gate"),
     edge("candidate_evidence_readback_gate", "candidate_evidence_readback_error", "true"),
     edge("candidate_lineage_gate", "branch_head", "match"),
     edge("candidate_lineage_gate", "lineage_mismatch", "mismatch"),
