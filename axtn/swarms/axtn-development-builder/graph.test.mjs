@@ -23,7 +23,9 @@ test("Builder retains native skills, KB and provenance but not the historical ta
   assert(agent.systemPrompt.includes('"arguments":{...}'));
   assert(agent.systemPrompt.includes("never a JSON-encoded string"));
   assert(agent.systemPrompt.includes("Use input.owner and input.repository exactly as supplied"));
-  assert(agent.systemPrompt.includes("Apply only the explicit source transformation stated in input.task"));
+  assert(agent.systemPrompt.includes("exact source transformation stated in the required input.request"));
+  assert(agent.systemPrompt.includes("If input.request is absent, empty or ambiguous, stop before any write"));
+  assert(!agent.systemPrompt.includes("input.task"));
   assert(!agent.systemPrompt.includes("do not imitate formatter output manually"));
   assert(!agent.systemPrompt.includes("parent_case_id"));
   assert(agent.systemPrompt.includes("Do not write the candidate evidence file"));
