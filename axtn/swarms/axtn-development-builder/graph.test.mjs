@@ -49,15 +49,110 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
     graph.nodes.find((n) => n.id === "candidate_report").data.toolArgs.tool_name,
     "fetch",
   );
+  assert.equal(
+    graph.nodes.find((n) => n.id === "candidate_source").data.toolArgs.tool_name,
+    "fetch",
+  );
   assert.equal(graph.nodes.find((n) => n.id === "candidate_gate").data.routerMode, "exact");
   assert.deepEqual(
     graph.edges.filter((e) => e.source === "candidate_gate").map((e) => [e.target, e.label]),
-    [["branch_head", "false"]],
+    [
+      ["candidate_source_gate", "false"],
+      ["report_read_error", "true"],
+    ],
+  );
+  assert.equal(graph.nodes.find((n) => n.id === "candidate_source_gate").data.routerMode, "exact");
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "candidate_source_gate").map((e) => [e.target, e.label]),
+    [
+      ["candidate_metadata", "false"],
+      ["source_read_error", "true"],
+    ],
+  );
+  const metadata = graph.nodes.find((n) => n.id === "candidate_metadata").data;
+  assert(metadata.stateAssignments.some((a) => a.key === "candidate_source_sha"));
+  assert(metadata.stateAssignments.some((a) => a.key === "candidate_source_last_commit_sha"));
+  const lineage = graph.nodes.find((n) => n.id === "candidate_lineage_projection").data;
+  assert(lineage.stateAssignments.some((a) => a.key === "reported_lineage"));
+  assert(lineage.stateAssignments.some((a) => a.key === "expected_lineage"));
+  const reportedLineage = lineage.stateAssignments.find((a) => a.key === "reported_lineage").value;
+  const expectedLineage = lineage.stateAssignments.find((a) => a.key === "expected_lineage").value;
+  for (const field of [
+    "caseId",
+    "attemptId",
+    "operationId",
+    "baselineSha",
+    "primarySourcePath",
+    "baselineSourceBlobSha",
+    "resultSourceBlobSha",
+    "sourceChangeSha",
+    "effect.case_id",
+    "effect.attempt_id",
+    "effect.operation_id",
+  ]) {
+    assert(reportedLineage.includes(`candidate_report_content.${field}`));
+  }
+  for (const field of [
+    "input.caseId",
+    "input.attemptId",
+    "input.baseline",
+    "input.primarySourcePath",
+    "source_blob",
+    "candidate_source_sha",
+    "candidate_source_last_commit_sha",
+    "input.effect.case_id",
+    "input.effect.attempt_id",
+    "input.effect.operation_id",
+  ]) {
+    assert(expectedLineage.includes(`{{${field}}}`));
+  }
+  assert(expectedLineage.includes("-candidate-evidence"));
+  const lineageGate = graph.nodes.find((n) => n.id === "candidate_lineage_gate").data;
+  assert.equal(lineageGate.routerMode, "exact");
+  assert.equal(lineageGate.routerInputMode, "compare");
+  assert.equal(lineageGate.routerComparison.left, "reported_lineage");
+  assert.equal(lineageGate.routerComparison.right, "expected_lineage");
+  assert.deepEqual(
+    graph.edges
+      .filter((e) => e.source === "candidate_lineage_gate")
+      .map((e) => [e.target, e.label]),
+    [
+      ["branch_head", "match"],
+      ["lineage_mismatch", "mismatch"],
+    ],
   );
   const branchHead = graph.nodes.find((n) => n.id === "branch_head").data;
   assert.equal(branchHead.httpResponsePath, "commit.id");
   assert(branchHead.httpUrl.endsWith("/branches/{{created_branch}}"));
   assert(branchHead.httpHeaders[0].value.includes("{{secret:MODULAR_GITEA_CI_READ}}"));
+  const reportHeadGate = graph.nodes.find((n) => n.id === "report_head_gate").data;
+  assert.equal(reportHeadGate.routerMode, "exact");
+  assert.equal(reportHeadGate.routerInputMode, "compare");
+  assert.equal(reportHeadGate.routerComparison.left, "candidate_report_commit");
+  assert.equal(reportHeadGate.routerComparison.right, "candidate_head_sha");
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "report_head_gate").map((e) => [e.target, e.label]),
+    [
+      ["source_delta_gate", "current"],
+      ["stale_report", "stale"],
+    ],
+  );
+  const sourceDeltaGate = graph.nodes.find((n) => n.id === "source_delta_gate").data;
+  assert.equal(sourceDeltaGate.routerMode, "exact");
+  assert.equal(sourceDeltaGate.routerInputMode, "compare");
+  assert.equal(sourceDeltaGate.routerComparison.left, "source_blob");
+  assert.equal(sourceDeltaGate.routerComparison.right, "candidate_source_sha");
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "source_delta_gate").map((e) => [e.target, e.label]),
+    [
+      ["candidate_ci", "changed"],
+      ["no_source_change", "unchanged"],
+    ],
+  );
+  assert.deepEqual(
+    graph.edges.filter((e) => e.target === "candidate_ci").map((e) => [e.source, e.label]),
+    [["source_delta_gate", "changed"]],
+  );
   const status = graph.nodes.find((n) => n.id === "candidate_ci").data;
   assert(status.httpUrl.endsWith("/commits/{{candidate_head_sha}}/status"));
   assert.equal(status.httpResponsePath, "state");
@@ -81,6 +176,7 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
   assert(
     graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("exact-commit Dev"),
   );
+  assert(graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("sourceChangeSha"));
 });
 
 test("only exact successful CI and successful native write/readback reach the human result gate", () => {
