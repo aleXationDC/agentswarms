@@ -22,11 +22,23 @@ test("Builder retains native skills, KB and provenance but not the historical ta
   assert(agent.systemPrompt.includes("Never omit tool_name"));
   assert(agent.systemPrompt.includes('"arguments":{...}'));
   assert(agent.systemPrompt.includes("never a JSON-encoded string"));
+  assert(agent.systemPrompt.includes("Do not write the candidate evidence file"));
   assert(!JSON.stringify(graph).includes("caseAssignment"));
   assert(!JSON.stringify(graph).includes("cases.tsx"));
-  assert(
-    !graph.nodes.some((n) => ["function", "loop", "condition", "evaluate"].includes(n.data.kind)),
+  assert.deepEqual(
+    graph.nodes
+      .filter((n) => n.data.kind === "function")
+      .map((n) => n.id)
+      .sort(),
+    [
+      "branch_error_projection",
+      "candidate_evidence_readback_error_projection",
+      "candidate_evidence_write_error_projection",
+      "candidate_report_error_projection",
+      "candidate_source_error_projection",
+    ].sort(),
   );
+  assert(!graph.nodes.some((n) => ["loop", "condition", "evaluate"].includes(n.data.kind)));
 });
 
 test("complete decoded primary source, work order and formatting config reach the Builder natively", () => {
@@ -47,16 +59,31 @@ test("complete decoded primary source, work order and formatting config reach th
 test("a failed effect-bound branch write exits before Builder or candidate calls", () => {
   const graph = builderGraph({ builderSnapshot, serverName });
   const branchProjection = graph.nodes.find((n) => n.id === "branch_error_projection").data;
-  assert(
-    branchProjection.stateAssignments.some(
-      (assignment) =>
-        assignment.key === "branch_is_error" &&
-        assignment.value === "{{branch_result.result.isError}}",
-    ),
+  assert.equal(branchProjection.kind, "function");
+  assert(branchProjection.functionCode.includes("JSON.parse(ctx.vars.branch_result)"));
+  assert(branchProjection.functionCode.includes('if ("error" in wire) return true;'));
+  assert(branchProjection.functionCode.includes("return wire.result.isError === true;"));
+  const projectError = new Function("ctx", branchProjection.functionCode);
+  assert.equal(
+    projectError({ vars: { branch_result: JSON.stringify({ result: { content: [] } }) } }),
+    false,
+    "an omitted MCP isError flag is a successful response",
   );
+  assert.equal(
+    projectError({
+      vars: { branch_result: JSON.stringify({ result: { isError: true, content: [] } }) },
+    }),
+    true,
+  );
+  assert.equal(
+    projectError({ vars: { branch_result: JSON.stringify({ error: "scope denied" }) } }),
+    true,
+  );
+  assert.throws(() => projectError({ vars: { branch_result: "{}" } }), /missing result/);
 
   const branchGate = graph.nodes.find((n) => n.id === "branch_gate").data;
   assert.equal(branchGate.routerMode, "exact");
+  assert.deepEqual(branchGate.inputs, ["branch_error_projection_is_error"]);
   assert.deepEqual(
     graph.edges.filter((edge) => edge.source === "branch_gate").map((edge) => [
       edge.target,
@@ -86,12 +113,15 @@ test("a failed effect-bound branch write exits before Builder or candidate calls
     graph.edges.filter((edge) => edge.target === "builder").map((edge) => edge.source),
     ["context"],
   );
-  for (const target of ["candidate_report", "candidate_source"]) {
-    assert.deepEqual(
-      graph.edges.filter((edge) => edge.target === target).map((edge) => edge.source),
-      ["builder"],
-    );
-  }
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.target === "candidate_source").map((edge) => edge.source),
+    ["builder"],
+  );
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.target === "candidate_report").map((edge) => edge.source),
+    ["source_delta_gate"],
+    "an unchanged source must stop before evidence fetch or write",
+  );
   for (const target of ["source", "work_order", "format_config"]) {
     assert.deepEqual(
       graph.edges.filter((edge) => edge.target === target).map((edge) => [
@@ -116,8 +146,21 @@ test("a failed effect-bound branch write exits before Builder or candidate calls
   );
 });
 
-test("an incomplete or unqualified model result cannot return a branch as a candidate", () => {
+test("native evidence write, exact readback, and no-op gate qualify only this changed source", () => {
   const graph = builderGraph({ builderSnapshot, serverName });
+  const nodeIds = new Set(graph.nodes.map((n) => n.id));
+  for (const edge of graph.edges) {
+    assert(nodeIds.has(edge.source), `missing edge source ${edge.source}`);
+    assert(nodeIds.has(edge.target), `missing edge target ${edge.target}`);
+  }
+  for (const router of graph.nodes.filter((n) => n.data.kind === "router")) {
+    const targets = graph.edges.filter((e) => e.source === router.id).map((e) => e.target);
+    assert.equal(
+      new Set(targets).size,
+      targets.length,
+      `router ${router.id} routes must use distinct destinations`,
+    );
+  }
   assert.equal(
     graph.nodes.find((n) => n.id === "candidate_report").data.toolArgs.tool_name,
     "fetch",
@@ -126,15 +169,19 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
     graph.nodes.find((n) => n.id === "candidate_source").data.toolArgs.tool_name,
     "fetch",
   );
-  assert.equal(graph.nodes.find((n) => n.id === "candidate_gate").data.routerMode, "exact");
+  const reportGate = graph.nodes.find((n) => n.id === "candidate_gate").data;
+  assert.equal(reportGate.routerMode, "exact");
+  assert.deepEqual(reportGate.inputs, ["candidate_report_error_projection_is_error"]);
   assert.deepEqual(
     graph.edges.filter((e) => e.source === "candidate_gate").map((e) => [e.target, e.label]),
     [
-      ["candidate_source_gate", "false"],
+      ["candidate_report_metadata", "false"],
       ["report_read_error", "true"],
     ],
   );
-  assert.equal(graph.nodes.find((n) => n.id === "candidate_source_gate").data.routerMode, "exact");
+  const sourceGate = graph.nodes.find((n) => n.id === "candidate_source_gate").data;
+  assert.equal(sourceGate.routerMode, "exact");
+  assert.deepEqual(sourceGate.inputs, ["candidate_source_error_projection_is_error"]);
   assert.deepEqual(
     graph.edges.filter((e) => e.source === "candidate_source_gate").map((e) => [e.target, e.label]),
     [
@@ -145,46 +192,104 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
   const metadata = graph.nodes.find((n) => n.id === "candidate_metadata").data;
   assert(metadata.stateAssignments.some((a) => a.key === "candidate_source_sha"));
   assert(metadata.stateAssignments.some((a) => a.key === "candidate_source_last_commit_sha"));
-  const lineage = graph.nodes.find((n) => n.id === "candidate_lineage_projection").data;
-  assert(lineage.stateAssignments.some((a) => a.key === "reported_lineage"));
-  assert(lineage.stateAssignments.some((a) => a.key === "expected_lineage"));
-  const reportedLineage = lineage.stateAssignments.find((a) => a.key === "reported_lineage").value;
-  const expectedLineage = lineage.stateAssignments.find((a) => a.key === "expected_lineage").value;
-  for (const field of [
-    "caseId",
-    "attemptId",
-    "operationId",
-    "baselineSha",
-    "primarySourcePath",
-    "baselineSourceBlobSha",
-    "resultSourceBlobSha",
-    "sourceChangeSha",
-    "effect.case_id",
-    "effect.attempt_id",
-    "effect.operation_id",
+  assert(
+    graph.nodes
+      .find((n) => n.id === "candidate_report_metadata")
+      .data.stateAssignments.some((a) => a.key === "candidate_report_base_sha"),
+  );
+
+  const sourceDeltaGate = graph.nodes.find((n) => n.id === "source_delta_gate").data;
+  assert.equal(sourceDeltaGate.routerMode, "exact");
+  assert.equal(sourceDeltaGate.routerInputMode, "compare");
+  assert.equal(sourceDeltaGate.routerComparison.left, "source_blob");
+  assert.equal(sourceDeltaGate.routerComparison.right, "candidate_source_sha");
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "source_delta_gate").map((e) => [e.target, e.label]),
+    [
+      ["no_source_change", "unchanged"],
+      ["candidate_report", "changed"],
+    ],
+  );
+
+  const evidenceFields = graph.nodes.find((n) => n.id === "candidate_evidence_fields").data;
+  for (const key of [
+    "owner",
+    "repository",
+    "branch",
+    "path",
+    "message",
+    "current_sha",
+    "effect",
   ]) {
-    assert(reportedLineage.includes(`candidate_report_content.${field}`));
+    assert(evidenceFields.stateAssignments.some((a) => a.key === key));
   }
+  const evidenceContent = evidenceFields.stateAssignments.find(
+    (a) => a.key === "candidate_evidence_content",
+  ).value;
   for (const field of [
-    "input.caseId",
-    "input.attemptId",
-    "input.baseline",
-    "input.primarySourcePath",
-    "source_blob",
-    "candidate_source_sha",
-    "candidate_source_last_commit_sha",
-    "input.effect.case_id",
-    "input.effect.attempt_id",
-    "input.effect.operation_id",
+    "{{input.caseId}}",
+    "{{input.attemptId}}",
+    "{{input.effect.operation_id}}-candidate-evidence",
+    "{{input.baseline}}",
+    "{{input.primarySourcePath}}",
+    "{{source_blob}}",
+    "{{candidate_source_sha}}",
+    "{{candidate_source_last_commit_sha}}",
+    "{{created_branch}}",
+    "{{input.effect.case_id}}",
+    "{{input.effect.attempt_id}}",
   ]) {
-    assert(expectedLineage.includes(`{{${field}}}`));
+    assert(evidenceContent.includes(field));
   }
-  assert(expectedLineage.includes("-candidate-evidence"));
+  assert(evidenceContent.includes('"changedPaths": ["{{input.primarySourcePath}}"]'));
+  const evidenceEffect = evidenceFields.stateAssignments.find((a) => a.key === "effect").value;
+  assert(evidenceEffect.includes('"case_id":"{{input.effect.case_id}}"'));
+  assert(evidenceEffect.includes('"attempt_id":"{{input.effect.attempt_id}}"'));
+  assert(evidenceEffect.includes('"operation_id":"{{input.effect.operation_id}}-candidate-evidence"'));
+
+  const evidenceMerge = graph.nodes.find((n) => n.id === "candidate_evidence_arguments").data;
+  assert.equal(evidenceMerge.kind, "merge");
+  assert.equal(evidenceMerge.mergeMode, "object");
+  for (const field of [
+    "owner",
+    "repository",
+    "branch",
+    "path",
+    "candidate_evidence_content",
+    "message",
+    "current_sha",
+    "effect",
+  ]) {
+    assert(evidenceMerge.inputs.includes(field));
+  }
+  assert.equal(
+    graph.nodes.find((n) => n.id === "candidate_evidence_write").data.toolArgs.arguments,
+    "{{candidate_evidence_arguments}}",
+  );
+
+  for (const [gateId, falseTarget, trueTarget] of [
+    ["candidate_evidence_write_gate", "candidate_evidence_readback", "candidate_evidence_write_error"],
+    [
+      "candidate_evidence_readback_gate",
+      "candidate_lineage_gate",
+      "candidate_evidence_readback_error",
+    ],
+  ]) {
+    assert.equal(graph.nodes.find((n) => n.id === gateId).data.routerMode, "exact");
+    assert.deepEqual(
+      graph.edges.filter((e) => e.source === gateId).map((e) => [e.target, e.label]),
+      [
+        [falseTarget, "false"],
+        [trueTarget, "true"],
+      ],
+    );
+  }
+
   const lineageGate = graph.nodes.find((n) => n.id === "candidate_lineage_gate").data;
   assert.equal(lineageGate.routerMode, "exact");
   assert.equal(lineageGate.routerInputMode, "compare");
-  assert.equal(lineageGate.routerComparison.left, "reported_lineage");
-  assert.equal(lineageGate.routerComparison.right, "expected_lineage");
+  assert.equal(lineageGate.routerComparison.left, "candidate_report_content");
+  assert.equal(lineageGate.routerComparison.right, "candidate_evidence_content");
   assert.deepEqual(
     graph.edges
       .filter((e) => e.source === "candidate_lineage_gate")
@@ -206,25 +311,17 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
   assert.deepEqual(
     graph.edges.filter((e) => e.source === "report_head_gate").map((e) => [e.target, e.label]),
     [
-      ["source_delta_gate", "current"],
       ["stale_report", "stale"],
+      ["candidate_ci", "current"],
     ],
   );
-  const sourceDeltaGate = graph.nodes.find((n) => n.id === "source_delta_gate").data;
-  assert.equal(sourceDeltaGate.routerMode, "exact");
-  assert.equal(sourceDeltaGate.routerInputMode, "compare");
-  assert.equal(sourceDeltaGate.routerComparison.left, "source_blob");
-  assert.equal(sourceDeltaGate.routerComparison.right, "candidate_source_sha");
   assert.deepEqual(
-    graph.edges.filter((e) => e.source === "source_delta_gate").map((e) => [e.target, e.label]),
-    [
-      ["candidate_ci", "changed"],
-      ["no_source_change", "unchanged"],
-    ],
+    graph.edges.filter((e) => e.target === "report_head_gate").map((e) => e.source),
+    ["branch_head"],
   );
   assert.deepEqual(
     graph.edges.filter((e) => e.target === "candidate_ci").map((e) => [e.source, e.label]),
-    [["source_delta_gate", "changed"]],
+    [["report_head_gate", "current"]],
   );
   const status = graph.nodes.find((n) => n.id === "candidate_ci").data;
   assert(status.httpUrl.endsWith("/commits/{{candidate_head_sha}}/status"));
@@ -249,7 +346,7 @@ test("an incomplete or unqualified model result cannot return a branch as a cand
   assert(
     graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("exact-commit Dev"),
   );
-  assert(graph.nodes.find((n) => n.id === "builder").data.systemPrompt.includes("sourceChangeSha"));
+  assert(evidenceContent.includes('"sourceChangeSha"'));
 });
 
 test("only exact successful CI and successful native write/readback reach the human result gate", () => {

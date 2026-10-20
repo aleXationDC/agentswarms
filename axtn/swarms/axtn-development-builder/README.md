@@ -5,7 +5,10 @@ execution request `f6c53b6d65a29ecdadb2baf359b5fa48e67c108e`.
 The existing 69-node process and standalone Intake remain unchanged.
 
 `graph.mjs` contains graph configuration, not a dispatcher or runtime.
-`builderGraph` uses native Input, Tool, Set Variable, Agent and Output nodes.
+`builderGraph` uses native Input, Tool, Set Variable, bounded Function
+projections, Agent, exact Router, Merge and Output nodes. Functions only decode
+MCP response envelopes; exact Routers own all branching and Merge composes the
+typed evidence arguments.
 `devVerificationGraph` uses native HTTP, Set Variable, Merge, Tool,
 exact Router, Approval and Output nodes. There are no Functions, model judges,
 hidden waits, automatic retries or custom lifecycle stores.
@@ -76,13 +79,17 @@ raising its limit or chunking writes. It is not a general arbitrary-source
 fetch loop. The Agent remains responsible for necessary smaller source reads.
 
 Each full-file write needs its own Effect operation and actual Git blob SHA.
-Intermediate commits skip CI; the final candidate report triggers the existing
-standard workflow. Git success is not Dev success, and technical Run success
-does not mean the work contract was fulfilled. Preserve source/Run evidence when
-the model returns incomplete or empty output.
-The final candidate-evidence fetch and exact native success gate fail closed
-when the model produced no persisted report. This is a necessary minimum
-candidate check, not a substitute for exact-commit CI or independent review.
+The Builder writes only the authorized primary source, then the graph reads it
+back and stops before evidence/CI if the source is unchanged. The graph creates
+the case-, attempt-, baseline-, source- and branch-bound candidate report from
+that Git readback, writes it through the same scoped MCP integration, fetches
+it back exactly, and requires the evidence commit to be the branch head.
+Intermediate commits skip CI; the native final evidence commit triggers the
+existing standard workflow. Git success is not Dev success, and technical Run
+success does not mean the work contract was fulfilled. Preserve source/Run
+evidence when the model returns incomplete or empty output. This remains a
+minimum candidate check, not a substitute for exact-commit CI or independent
+review.
 
 ## Verify input and result gate
 
