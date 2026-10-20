@@ -75,6 +75,19 @@ test("a failed effect-bound branch write exits before Builder or candidate calls
   );
   assert.equal(
     projectError({
+      vars: {
+        branch_result: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { content: [], isError: false },
+        }),
+      },
+    }),
+    false,
+    "the actual successful MCP response envelope passes the branch gate",
+  );
+  assert.equal(
+    projectError({
       vars: { branch_result: JSON.stringify({ result: { isError: true, content: [] } }) },
     }),
     true,
