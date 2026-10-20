@@ -212,7 +212,7 @@ export function builderGraph({
       label: "Compose case-bound evidence fields from native Git readbacks",
       stateAssignments: [
         {
-          key: "candidate_evidence_content",
+          key: "content",
           value: [
             "# Candidate Evidence",
             "",
@@ -222,7 +222,7 @@ export function builderGraph({
             "{",
             '  "schema": "axtn.modular-builder.candidate-evidence/v1",',
             '  "caseId": "{{input.caseId}}",',
-            '  "attemptId": "{{input.attemptId}}",',
+            '  "attemptId": "{{input.effect.attempt_id}}",',
             '  "operationId": "{{input.effect.operation_id}}-candidate-evidence",',
             '  "baselineSha": "{{input.baseline}}",',
             '  "primarySourcePath": "{{input.primarySourcePath}}",',
@@ -267,7 +267,7 @@ export function builderGraph({
         "repository",
         "branch",
         "path",
-        "candidate_evidence_content",
+        "content",
         "message",
         "current_sha",
         "effect",
@@ -333,7 +333,7 @@ export function builderGraph({
       routerInputMode: "compare",
       routerComparison: {
         left: "candidate_report_content",
-        right: "candidate_evidence_content",
+        right: "content",
         equalRoute: "match",
         differentRoute: "mismatch",
       },
@@ -458,7 +458,7 @@ export function builderGraph({
     node("lineage_mismatch", "output", {
       label:
         "Candidate evidence does not match the current Case, Attempt, Effect, baseline or source result",
-      inputs: ["candidate_report_content", "candidate_evidence_content"],
+      inputs: ["candidate_report_content", "content"],
       outputVar: "output",
     }),
     node("stale_report", "output", {

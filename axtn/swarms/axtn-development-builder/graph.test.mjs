@@ -243,11 +243,11 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
     assert(evidenceFields.stateAssignments.some((a) => a.key === key));
   }
   const evidenceContent = evidenceFields.stateAssignments.find(
-    (a) => a.key === "candidate_evidence_content",
+    (a) => a.key === "content",
   ).value;
   for (const field of [
     "{{input.caseId}}",
-    "{{input.attemptId}}",
+    "{{input.effect.attempt_id}}",
     "{{input.effect.operation_id}}-candidate-evidence",
     "{{input.baseline}}",
     "{{input.primarySourcePath}}",
@@ -274,7 +274,7 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
     "repository",
     "branch",
     "path",
-    "candidate_evidence_content",
+    "content",
     "message",
     "current_sha",
     "effect",
@@ -308,7 +308,7 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
   assert.equal(lineageGate.routerMode, "exact");
   assert.equal(lineageGate.routerInputMode, "compare");
   assert.equal(lineageGate.routerComparison.left, "candidate_report_content");
-  assert.equal(lineageGate.routerComparison.right, "candidate_evidence_content");
+  assert.equal(lineageGate.routerComparison.right, "content");
   assert.deepEqual(
     graph.edges
       .filter((e) => e.source === "candidate_lineage_gate")
