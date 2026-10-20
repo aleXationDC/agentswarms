@@ -22,6 +22,10 @@ test("Builder retains native skills, KB and provenance but not the historical ta
   assert(agent.systemPrompt.includes("Never omit tool_name"));
   assert(agent.systemPrompt.includes('"arguments":{...}'));
   assert(agent.systemPrompt.includes("never a JSON-encoded string"));
+  assert(agent.systemPrompt.includes("Use input.owner and input.repository exactly as supplied"));
+  assert(agent.systemPrompt.includes("Apply only the explicit source transformation stated in input.task"));
+  assert(!agent.systemPrompt.includes("do not imitate formatter output manually"));
+  assert(!agent.systemPrompt.includes("parent_case_id"));
   assert(agent.systemPrompt.includes("Do not write the candidate evidence file"));
   assert(!JSON.stringify(graph).includes("caseAssignment"));
   assert(!JSON.stringify(graph).includes("cases.tsx"));
@@ -206,9 +210,24 @@ test("native evidence write, exact readback, and no-op gate qualify only this ch
   assert.deepEqual(
     graph.edges.filter((e) => e.source === "source_delta_gate").map((e) => [e.target, e.label]),
     [
-      ["no_source_change", "unchanged"],
+      ["no_source_change_status", "unchanged"],
       ["candidate_report", "changed"],
     ],
+  );
+  const noSourceChangeStatus = graph.nodes.find((n) => n.id === "no_source_change_status").data;
+  assert.equal(
+    noSourceChangeStatus.stateAssignments[0].value,
+    "NO CANDIDATE: primary source is unchanged; candidate evidence and exact-SHA CI were skipped.",
+  );
+  const noSourceChangeOutput = graph.nodes.find((n) => n.id === "no_source_change").data;
+  assert.deepEqual(noSourceChangeOutput.inputs, [
+    "no_source_change_status",
+    "source_blob",
+    "candidate_source_sha",
+  ]);
+  assert.deepEqual(
+    graph.edges.filter((e) => e.source === "no_source_change_status").map((e) => e.target),
+    ["no_source_change"],
   );
 
   const evidenceFields = graph.nodes.find((n) => n.id === "candidate_evidence_fields").data;

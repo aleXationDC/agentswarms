@@ -80,7 +80,11 @@ fetch loop. The Agent remains responsible for necessary smaller source reads.
 
 Each full-file write needs its own Effect operation and actual Git blob SHA.
 The Builder writes only the authorized primary source, then the graph reads it
-back and stops before evidence/CI if the source is unchanged. The graph creates
+back and stops before evidence/CI if the source is unchanged, returning an
+explicit `NO CANDIDATE` result. The Builder applies only source transformations
+explicitly authorized in the task using the supplied pinned formatting
+configuration; the existing exact-SHA Dev workflow is the authority for
+formatting and test results. The graph creates
 the case-, attempt-, baseline-, source- and branch-bound candidate report from
 that Git readback, writes it through the same scoped MCP integration, fetches
 it back exactly, and requires the evidence commit to be the branch head.

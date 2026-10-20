@@ -130,11 +130,11 @@ export function builderGraph({
         "You are the native Development Builder. Execute the authorized Git work order supplied in input, using only your dedicated scoped MCP server.",
         'Every mcp_call_tool invocation MUST have exactly three top-level fields: {"server_name":"<dedicated server>","tool_name":"fetch or upsert_file","arguments":{...}}. `arguments` MUST be the remote tool\'s JSON object, never a JSON-encoded string. Never omit tool_name. Never repeat an identical invalid-parameters call: stop and report the exact malformed argument instead.',
         "The native source node supplies the complete primary source and its Git blob. The branch node already created the actual effect-derived branch. Never create a second branch or invent a ref. Additional necessary sources must be read from the pinned Git work order/baseline. Repository paths belong in task input and Git, never in this reusable process definition.",
-        "The complete primary source, pinned work order and actual repository formatting configuration are already supplied as decoded native projections. Use those exact values; do not refetch them or fetch their base64 payloads. Read only genuinely missing, small related sources explicitly required by the work order. Stop if a required source is incomplete.",
+        "Use input.owner and input.repository exactly as supplied, including casing; never substitute aliases. The complete primary source, pinned work order and actual repository formatting configuration are already supplied as decoded native projections. Use those exact values; do not refetch them or fetch their base64 payloads. Read only genuinely missing, small related sources explicitly required by the work order. Stop if a required source is incomplete.",
         "Use real tool calls and batch only independent, necessary reads within the existing tool-round budget. The complete primary source is supplied outside the capped tool transcript; do not refetch it.",
         "Implement only the authorized task; preserve existing code, tests, Case identities and history. Do not invent a product defect to demonstrate a write. For every upsert_file use the actual current_sha, full UTF-8 content, actual created_branch, and exactly the effect keys case_id, attempt_id, operation_id. This invocation is formatting-only: write only input.primarySourcePath, once, using operation_id input.effect.operation_id + '-format'. Its intermediate commit message must include [skip ci]; the native final evidence write deliberately does not. After a successful write or any write uncertainty, stop immediately; never replay or write different content under the same effect. Never put AXTN-EFFECT markers in messages.",
-        "The native graph owns candidate-evidence creation after it reads the changed source back. Do not write the candidate evidence file or call the branch head. Read back the primary source after the one product write, then stop. Use the repository's deterministic formatter through the existing Dev workflow; do not imitate formatter output manually. Do not claim formatting, lint, behavior tests, typecheck, build, CI, UAT or approval passed based on model reasoning or Git success.",
-        "Preserve the exact nullable type `parent_case_id: string | null;`; do not replace the union with invalid TypeScript. The authorized formatting change is limited to the already-changed assignment-correction source; do not make semantic or unrelated edits.",
+        "The native graph owns candidate-evidence creation after it reads the changed source back. Do not write the candidate evidence file or call the branch head. Read back the primary source after the one product write, then stop. Apply only the explicit source transformation stated in input.task using the supplied primary source and pinned formatting configuration; no formatter-execution tool is available here. The existing exact-SHA Dev workflow is the authority for formatting, lint, behavior tests, typecheck and build results. Do not claim any check, CI, UAT or approval passed based on model reasoning or Git success.",
+        "Preserve exact invariants stated in input.task and the pinned work order. Do not change behavior, nullability or existing assertions unless specifically authorized.",
         "A persisted baseline report or a new commit with no successful exact-commit Dev status is not a candidate. Only the native exact-SHA Dev status gate can return a verified candidate; pending, missing, failed or malformed status is not success. Return exact branch/SHA and Git evidence references only after that gate. At most three causal correction cycles are permitted by the work contract, but this invocation never silently restarts itself, changes its Effect payload or grants its own acceptance. Stop on scope denial, uncertain write or exhausted tool budget.",
       ].join("\n\n"),
     }),
@@ -374,6 +374,16 @@ export function builderGraph({
       },
       outputVar: "source_delta_gate",
     }),
+    node("no_source_change_status", "set_var", {
+      label: "Mark unchanged source as explicitly unqualified",
+      stateAssignments: [
+        {
+          key: "no_source_change_status",
+          value:
+            "NO CANDIDATE: primary source is unchanged; candidate evidence and exact-SHA CI were skipped.",
+        },
+      ],
+    }),
     node("candidate_ci", "http", {
       label: "Read exact-commit Dev status for the actual candidate SHA",
       inputs: ["input", "candidate_head_sha"],
@@ -458,7 +468,7 @@ export function builderGraph({
     }),
     node("no_source_change", "output", {
       label: "Primary source blob is unchanged; report-only or no-op work is not a candidate",
-      inputs: ["source_blob", "candidate_source_sha"],
+      inputs: ["no_source_change_status", "source_blob", "candidate_source_sha"],
       outputVar: "output",
     }),
     node("branch_failed", "output", {
@@ -490,7 +500,8 @@ export function builderGraph({
     edge("candidate_source_gate", "candidate_metadata", "false"),
     edge("candidate_source_gate", "source_read_error", "true"),
     edge("candidate_metadata", "source_delta_gate"),
-    edge("source_delta_gate", "no_source_change", "unchanged"),
+    edge("source_delta_gate", "no_source_change_status", "unchanged"),
+    edge("no_source_change_status", "no_source_change"),
     edge("source_delta_gate", "candidate_report", "changed"),
     edge("candidate_report", "candidate_projection"),
     edge("candidate_report", "candidate_report_error_projection"),
