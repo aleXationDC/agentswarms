@@ -41,7 +41,7 @@ test("complete decoded primary source, work order and formatting config reach th
   for (const source of ["source", "work_order", "format_config"]) {
     assert(graph.edges.some((e) => e.source === source && e.target === "payloads"));
   }
-  assert(graph.edges.some((e) => e.source === "branch_gate" && e.target === "payloads"));
+  assert(graph.edges.some((e) => e.source === "branch_success" && e.target === "payloads"));
 });
 
 test("a failed effect-bound branch write exits before Builder or candidate calls", () => {
@@ -63,11 +63,20 @@ test("a failed effect-bound branch write exits before Builder or candidate calls
       edge.label,
     ]),
     [
-      ["payloads", "false"],
+      ["branch_success", "false"],
       ["branch_failed", "true"],
     ],
   );
   assert(!graph.edges.some((edge) => edge.source === "branch" && edge.target === "payloads"));
+  assert(
+    graph.nodes
+      .find((node) => node.id === "branch_success")
+      .data.stateAssignments.some(
+        (assignment) =>
+          assignment.key === "branch_payload" &&
+          assignment.value === "{{branch_result.result.content[0].text}}",
+      ),
+  );
   assert.deepEqual(
     graph.edges.filter((edge) => edge.source === "branch_failed"),
     [],
@@ -83,13 +92,23 @@ test("a failed effect-bound branch write exits before Builder or candidate calls
       ["builder"],
     );
   }
+  for (const target of ["source", "work_order", "format_config"]) {
+    assert.deepEqual(
+      graph.edges.filter((edge) => edge.target === target).map((edge) => [
+        edge.source,
+        edge.label,
+      ]),
+      [["branch_success", undefined]],
+    );
+    assert(!graph.edges.some((edge) => edge.source === "input" && edge.target === target));
+  }
   assert.deepEqual(
     graph.edges.filter((edge) => edge.target === "payloads").map((edge) => [
       edge.source,
       edge.label,
     ]),
     [
-      ["branch_gate", "false"],
+      ["branch_success", undefined],
       ["source", undefined],
       ["work_order", undefined],
       ["format_config", undefined],

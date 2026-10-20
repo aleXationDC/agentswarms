@@ -48,6 +48,12 @@ export function builderGraph({
       inputs: ["branch_is_error"],
       outputVar: "branch_gate",
     }),
+    node("branch_success", "set_var", {
+      label: "Project the created branch before starting any reads",
+      stateAssignments: [
+        { key: "branch_payload", value: "{{branch_result.result.content[0].text}}" },
+      ],
+    }),
     mcp(
       "source",
       "fetch",
@@ -73,7 +79,6 @@ export function builderGraph({
       label: "Native MCP response projections",
       stateAssignments: [
         { key: "source_payload", value: "{{source_result.result.content[0].text}}" },
-        { key: "branch_payload", value: "{{branch_result.result.content[0].text}}" },
         { key: "work_order_payload", value: "{{work_order_result.result.content[0].text}}" },
         { key: "format_config_payload", value: "{{format_config_result.result.content[0].text}}" },
       ],
@@ -343,13 +348,14 @@ export function builderGraph({
   ];
   const edges = [
     edge("input", "branch"),
-    edge("input", "source"),
-    edge("input", "work_order"),
-    edge("input", "format_config"),
     edge("branch", "branch_error_projection"),
     edge("branch_error_projection", "branch_gate"),
-    edge("branch_gate", "payloads", "false"),
+    edge("branch_gate", "branch_success", "false"),
     edge("branch_gate", "branch_failed", "true"),
+    edge("branch_success", "source"),
+    edge("branch_success", "work_order"),
+    edge("branch_success", "format_config"),
+    edge("branch_success", "payloads"),
     edge("source", "payloads"),
     edge("work_order", "payloads"),
     edge("format_config", "payloads"),
