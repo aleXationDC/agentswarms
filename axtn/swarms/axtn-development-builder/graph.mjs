@@ -36,6 +36,18 @@ export function builderGraph({
       "branch_result",
       serverName,
     ),
+    node("branch_error_projection", "set_var", {
+      label: "Project native branch-write error state",
+      stateAssignments: [
+        { key: "branch_is_error", value: "{{branch_result.result.isError}}" },
+      ],
+    }),
+    node("branch_gate", "router", {
+      label: "Stop before Builder work when effect-bound branch creation fails",
+      routerMode: "exact",
+      inputs: ["branch_is_error"],
+      outputVar: "branch_gate",
+    }),
     mcp(
       "source",
       "fetch",
@@ -323,13 +335,21 @@ export function builderGraph({
       inputs: ["source_blob", "candidate_source_sha"],
       outputVar: "output",
     }),
+    node("branch_failed", "output", {
+      label: "Effect-bound branch creation failed; no Builder or candidate call was made",
+      inputs: ["branch_result"],
+      outputVar: "output",
+    }),
   ];
   const edges = [
     edge("input", "branch"),
     edge("input", "source"),
     edge("input", "work_order"),
     edge("input", "format_config"),
-    edge("branch", "payloads"),
+    edge("branch", "branch_error_projection"),
+    edge("branch_error_projection", "branch_gate"),
+    edge("branch_gate", "payloads", "false"),
+    edge("branch_gate", "branch_failed", "true"),
     edge("source", "payloads"),
     edge("work_order", "payloads"),
     edge("format_config", "payloads"),

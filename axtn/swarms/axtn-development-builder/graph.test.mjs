@@ -38,9 +38,63 @@ test("complete decoded primary source, work order and formatting config reach th
     );
     assert(graph.nodes.find((n) => n.id === "builder").data.inputs.includes(field));
   }
-  for (const source of ["source", "work_order", "format_config", "branch"]) {
+  for (const source of ["source", "work_order", "format_config"]) {
     assert(graph.edges.some((e) => e.source === source && e.target === "payloads"));
   }
+  assert(graph.edges.some((e) => e.source === "branch_gate" && e.target === "payloads"));
+});
+
+test("a failed effect-bound branch write exits before Builder or candidate calls", () => {
+  const graph = builderGraph({ builderSnapshot, serverName });
+  const branchProjection = graph.nodes.find((n) => n.id === "branch_error_projection").data;
+  assert(
+    branchProjection.stateAssignments.some(
+      (assignment) =>
+        assignment.key === "branch_is_error" &&
+        assignment.value === "{{branch_result.result.isError}}",
+    ),
+  );
+
+  const branchGate = graph.nodes.find((n) => n.id === "branch_gate").data;
+  assert.equal(branchGate.routerMode, "exact");
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.source === "branch_gate").map((edge) => [
+      edge.target,
+      edge.label,
+    ]),
+    [
+      ["payloads", "false"],
+      ["branch_failed", "true"],
+    ],
+  );
+  assert(!graph.edges.some((edge) => edge.source === "branch" && edge.target === "payloads"));
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.source === "branch_failed"),
+    [],
+    "a branch failure must be terminal",
+  );
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.target === "builder").map((edge) => edge.source),
+    ["context"],
+  );
+  for (const target of ["candidate_report", "candidate_source"]) {
+    assert.deepEqual(
+      graph.edges.filter((edge) => edge.target === target).map((edge) => edge.source),
+      ["builder"],
+    );
+  }
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.target === "payloads").map((edge) => [
+      edge.source,
+      edge.label,
+    ]),
+    [
+      ["branch_gate", "false"],
+      ["source", undefined],
+      ["work_order", undefined],
+      ["format_config", undefined],
+    ],
+  );
 });
 
 test("an incomplete or unqualified model result cannot return a branch as a candidate", () => {
